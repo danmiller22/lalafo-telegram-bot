@@ -1,0 +1,1 @@
+"""Aiogram payment bot package."""
