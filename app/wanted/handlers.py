@@ -140,7 +140,7 @@ async def wanted_tenants(message: Message, state: FSMContext) -> None:
     await state.update_data(tenants=tenants)
     await state.set_state(WantedAdForm.notes)
     await message.answer(
-        "📝 Дополнительные пожелания?\n\nНапример: с мебелью, можно с котом.",
+        "📝 Дополнительно?\n\nНапример: с мебелью, можно с котом.",
         reply_markup=notes_keyboard(),
     )
 
@@ -158,7 +158,9 @@ async def _ask_contact(message: Message, state: FSMContext, username: str | None
 async def wanted_notes(message: Message, state: FSMContext) -> None:
     notes = (message.text or "").strip()
     if not 2 <= len(notes) <= 500:
-        await message.answer("Введите пожелания до 500 символов или нажмите «Пропустить».")
+        await message.answer(
+            "Введите дополнительную информацию до 500 символов или нажмите «Пропустить»."
+        )
         return
     await state.update_data(notes=notes)
     await _ask_contact(message, state, message.from_user.username)

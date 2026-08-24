@@ -30,7 +30,7 @@ def format_wanted_preview(data: Mapping[str, Any]) -> str:
             f"💰 Бюджет: до {format_money(int(data['budget']))} сом/мес.",
             f"📅 Заселение: {data['move_in']}",
             f"👥 Кто будет жить: {data['tenants']}",
-            f"📝 Пожелания: {data['notes']}",
+            f"📝 Дополнительно: {data['notes']}",
             f"📞 Контакты: {data['contact']}",
         ]
     )
