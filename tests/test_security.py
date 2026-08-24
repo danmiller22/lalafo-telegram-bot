@@ -42,7 +42,7 @@ def test_callback_data_is_short_and_contains_no_phone():
     for callback in (
         contact.inline_keyboard[0][0].callback_data,
         payment.inline_keyboard[1][0].callback_data,
-        status.inline_keyboard[0][0].callback_data,
+        status.inline_keyboard[1][0].callback_data,
         reveal.inline_keyboard[0][0].callback_data,
         admin.inline_keyboard[0][0].callback_data,
         admin.inline_keyboard[0][1].callback_data,
