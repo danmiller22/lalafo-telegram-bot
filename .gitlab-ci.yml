@@ -1,0 +1,24 @@
+image: python:3.12-bookworm
+
+variables:
+  DRY_RUN: "true"
+  TEST_MODE: "true"
+  LOG_LEVEL: "INFO"
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+
+cache:
+  key: python-3.12
+  paths:
+    - .cache/pip
+
+scrape_dry_run:
+  resource_group: lalafo-scraper
+  before_script:
+    - python --version
+    - python -m pip install -r requirements.txt
+  script:
+    - python -m scripts.scrape_publish
+    - python -c "import urllib.request; urllib.request.urlopen('https://statutory-mallissa-2danmiller-f1c1b08d.koyeb.app/health', timeout=20).read()"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - if: '$CI_PIPELINE_SOURCE == "web"'
