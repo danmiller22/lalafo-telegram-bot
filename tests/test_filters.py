@@ -1,7 +1,7 @@
 import pytest
 
 from app.lalafo.parser import is_allowed
-from app.telegram.formatting import format_apartment
+from app.telegram.formatting import format_apartment, format_public_apartment
 from tests.helpers import make_ad
 
 
@@ -48,3 +48,8 @@ def test_agency_listing_is_allowed_but_not_identified_on_card():
 def test_optional_district_and_deposit_are_omitted():
     text = format_apartment(make_ad(district=None, deposit=None, rooms="studio"))
     assert text == "🏠 Студия\n🏙 Бишкек\n💰 35 000 сом"
+
+
+def test_public_card_has_short_bot_promotion():
+    text = format_public_apartment(make_ad(), bot_username="@arenda312bot")
+    assert text.endswith("🔎 Ищете квартиру? Подайте заявку: @arenda312bot")

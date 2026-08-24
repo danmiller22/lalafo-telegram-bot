@@ -27,6 +27,11 @@ def format_apartment(ad: LalafoAd | Apartment) -> str:
     return "\n".join(lines)
 
 
+def format_public_apartment(ad: LalafoAd | Apartment, *, bot_username: str) -> str:
+    username = bot_username.lstrip("@")
+    return f"{format_apartment(ad)}\n\n🔎 Ищете квартиру? Подайте заявку: @{username}"
+
+
 def user_label(request: PaymentRequest) -> str:
     if request.username:
         return f"@{request.username}"

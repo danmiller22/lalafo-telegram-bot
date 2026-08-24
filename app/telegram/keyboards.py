@@ -5,7 +5,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from app.security import TokenSigner
 
 
-APARTMENT_KEYBOARD_VERSION = 2
+APARTMENT_KEYBOARD_VERSION = 3
 
 
 def _support_row(support_url: str) -> list[InlineKeyboardButton]:
@@ -28,7 +28,7 @@ def apartment_keyboard(
             ],
             [
                 InlineKeyboardButton(
-                    text="🔎 Ищете квартиру? Подать заявку",
+                    text="🔎 Подать заявку",
                     url=f"{bot_url}?start=want",
                 )
             ],

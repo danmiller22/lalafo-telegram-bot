@@ -68,7 +68,7 @@ def test_callback_data_is_short_and_contains_no_phone():
     assert len(f"pay_{payload}") <= 64
     assert "." not in payload
     assert signer.verify_start_id("payment-link", payload) == 123456789
-    assert group.inline_keyboard[1][0].text == "🔎 Ищете квартиру? Подать заявку"
+    assert group.inline_keyboard[1][0].text == "🔎 Подать заявку"
     assert group.inline_keyboard[1][0].url == "https://t.me/arenda312bot?start=want"
     assert payment.inline_keyboard[0][0].url == "https://qr.finik.kg/payment"
     for keyboard in (group, payment, status, reveal, private_payment, private_contact):

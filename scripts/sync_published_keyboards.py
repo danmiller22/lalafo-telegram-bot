@@ -11,7 +11,7 @@ from app.config import get_settings
 from app.database import create_engine_and_session
 from app.models import Apartment
 from app.security import TokenSigner
-from app.telegram.formatting import format_apartment
+from app.telegram.formatting import format_public_apartment
 from app.telegram.keyboards import APARTMENT_KEYBOARD_VERSION, apartment_keyboard
 
 
@@ -54,7 +54,10 @@ async def run() -> int:
                     await bot.edit_message_text(
                         chat_id=apartment.telegram_chat_id,
                         message_id=apartment.telegram_message_id,
-                        text=format_apartment(apartment),
+                        text=format_public_apartment(
+                            apartment,
+                            bot_username=settings.telegram_bot_username,
+                        ),
                         reply_markup=apartment_keyboard(
                             apartment.id,
                             signer=signer,

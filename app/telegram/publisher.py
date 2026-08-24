@@ -9,7 +9,7 @@ from aiogram.types import InputMediaPhoto, Message
 
 from app.lalafo.models import LalafoAd
 from app.security import TokenSigner
-from app.telegram.formatting import format_apartment
+from app.telegram.formatting import format_public_apartment
 from app.telegram.keyboards import apartment_keyboard
 
 logger = logging.getLogger(__name__)
@@ -79,7 +79,7 @@ class TelegramPublisher:
             return await self._retry(
                 self.bot.send_message,
                 chat_id=self.chat_id,
-                text=format_apartment(ad),
+                text=format_public_apartment(ad, bot_username=self.bot_username),
                 reply_markup=apartment_keyboard(
                     apartment_id,
                     signer=self.signer,
