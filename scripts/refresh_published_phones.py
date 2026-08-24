@@ -7,7 +7,7 @@ from sqlalchemy import select, update
 
 from app.config import get_settings
 from app.database import create_engine_and_session
-from app.lalafo.client import LalafoClient, LalafoError
+from app.lalafo.client import LalafoClient, LalafoError, LalafoNotFound
 from app.lalafo.models import PHONE_SOURCE_VERSION
 from app.lalafo.parser import LalafoParseError
 from app.models import Apartment
@@ -27,6 +27,7 @@ async def run() -> int:
     checked = 0
     changed = 0
     disabled = 0
+    unavailable = 0
     failed = 0
     try:
         async with sessions() as session:
@@ -65,6 +66,26 @@ async def run() -> int:
             for apartment_id, lalafo_id, source_url, is_active in rows:
                 try:
                     ad = await client.detail(source_url)
+                except LalafoNotFound:
+                    async with sessions.begin() as session:
+                        await session.execute(
+                            update(Apartment)
+                            .where(Apartment.id == apartment_id)
+                            .values(
+                                phone_source_version=PHONE_SOURCE_VERSION,
+                                active=False,
+                            )
+                        )
+                    checked += 1
+                    unavailable += 1
+                    if is_active:
+                        disabled += 1
+                    logger.info(
+                        "Disabled unavailable apartment_id=%s lalafo_id=%s",
+                        apartment_id,
+                        lalafo_id,
+                    )
+                    continue
                 except (LalafoError, LalafoParseError, ValueError) as exc:
                     failed += 1
                     logger.warning(
@@ -107,10 +128,11 @@ async def run() -> int:
                     claimed_phones.add(ad.phone)
                 await asyncio.sleep(0.2)
         logger.info(
-            "Published phones verified: checked=%d changed=%d disabled=%d failed=%d",
+            "Published phones verified: checked=%d changed=%d disabled=%d unavailable=%d failed=%d",
             checked,
             changed,
             disabled,
+            unavailable,
             failed,
         )
         return 1 if rows and checked == 0 else 0
