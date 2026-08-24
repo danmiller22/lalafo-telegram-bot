@@ -75,7 +75,8 @@ async def test_wanted_ad_format_and_owner_listing(repositories):
     assert "35 000 сом" in text
     assert "семейная пара" in text
     assert "@tenant" in text
-    assert "ЗАЯВКА ОТ АРЕНДАТОРА" in format_wanted_public(ad)
+    assert format_wanted_public(ad).startswith("🔎 Ищу")
+    assert "📞 Контакты: @tenant" in format_wanted_public(ad)
     assert [row.id for row in await repo.owned(100)] == [ad.id]
 
 

@@ -23,7 +23,7 @@ def room_label(value: str) -> str:
 def format_wanted_preview(data: Mapping[str, Any]) -> str:
     return "\n".join(
         [
-            "🔎 Ищу квартиру",
+            "🔎 Ищу",
             "",
             f"🏠 Комнаты: {room_label(str(data['rooms']))}",
             f"📍 Район: {data['district']}",
@@ -31,7 +31,7 @@ def format_wanted_preview(data: Mapping[str, Any]) -> str:
             f"📅 Заселение: {data['move_in']}",
             f"👥 Кто будет жить: {data['tenants']}",
             f"📝 Пожелания: {data['notes']}",
-            f"📞 Связь: {data['contact']}",
+            f"📞 Контакты: {data['contact']}",
         ]
     )
 
@@ -64,4 +64,4 @@ def format_wanted_admin(ad: WantedAd) -> str:
 
 
 def format_wanted_public(ad: WantedAd) -> str:
-    return "\n".join(["📣 ЗАЯВКА ОТ АРЕНДАТОРА", "", format_wanted_ad(ad)])
+    return format_wanted_ad(ad)

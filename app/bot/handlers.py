@@ -22,6 +22,7 @@ from app.telegram.keyboards import (
 )
 from app.telegram.private_delivery import send_private_contact
 from app.wanted.keyboards import main_menu_keyboard
+from app.wanted.handlers import begin_wanted_form
 
 logger = logging.getLogger(__name__)
 router = Router(name="user")
@@ -41,8 +42,11 @@ async def start_handler(
     bot: Bot,
     state: FSMContext,
 ) -> None:
-    await state.clear()
     payload = _start_payload(message)
+    if payload == "want":
+        await begin_wanted_form(message, state)
+        return
+    await state.clear()
     if payload.startswith("pay_"):
         apartment_id = signer.verify_start_id("payment-link", payload[4:])
         if apartment_id is None:

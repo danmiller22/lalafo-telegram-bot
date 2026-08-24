@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 router = Router(name="wanted-user")
 
 
-async def _begin_form(message: Message, state: FSMContext) -> None:
+async def begin_wanted_form(message: Message, state: FSMContext) -> None:
     await state.clear()
     await state.set_state(WantedAdForm.rooms)
     await message.answer(
@@ -39,7 +39,7 @@ async def _begin_form(message: Message, state: FSMContext) -> None:
 
 @router.message(F.chat.type == "private", Command("want"))
 async def wanted_command(message: Message, state: FSMContext) -> None:
-    await _begin_form(message, state)
+    await begin_wanted_form(message, state)
 
 
 @router.callback_query(F.data == "wanted:new")
@@ -48,7 +48,7 @@ async def wanted_start(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.answer("Откройте личный чат бота.", show_alert=True)
         return
     await callback.answer()
-    await _begin_form(callback.message, state)
+    await begin_wanted_form(callback.message, state)
 
 
 @router.message(Command("cancel"))
@@ -97,7 +97,7 @@ async def wanted_district(message: Message, state: FSMContext) -> None:
     await state.update_data(district=district)
     await state.set_state(WantedAdForm.budget)
     await message.answer(
-        "💰 Какой максимальный бюджет в сомах за месяц?\n\nНапример: 30000",
+        "💰 Какой максимальный бюджет за месяц?\n\nНапример: 30000",
         reply_markup=form_cancel_keyboard(),
     )
 

@@ -55,6 +55,29 @@ async def test_plain_start_shows_wanted_ad_button():
 
 
 @pytest.mark.asyncio
+async def test_wanted_deep_link_starts_form_immediately():
+    message = SimpleNamespace(
+        text="/start want",
+        from_user=SimpleNamespace(id=100),
+        answer=AsyncMock(),
+    )
+    state = SimpleNamespace(clear=AsyncMock(), set_state=AsyncMock())
+
+    await start_handler(
+        message,
+        service=None,
+        signer=TokenSigner("a-very-long-test-secret"),
+        settings=Settings(),
+        bot=object(),
+        state=state,
+    )
+
+    state.clear.assert_awaited_once()
+    state.set_state.assert_awaited_once()
+    assert "Сколько комнат вам нужно?" in message.answer.await_args.args[0]
+
+
+@pytest.mark.asyncio
 async def test_want_command_starts_room_form():
     message = SimpleNamespace(answer=AsyncMock())
     state = SimpleNamespace(clear=AsyncMock(), set_state=AsyncMock())
@@ -130,7 +153,8 @@ async def test_admin_approval_publishes_to_group_and_notifies_owner():
 
     first_send = bot.send_message.await_args_list[0]
     assert first_send.args[0] == -100123
-    assert "ЗАЯВКА ОТ АРЕНДАТОРА" in first_send.args[1]
+    assert first_send.args[1].startswith("🔎 Ищу")
+    assert "📞 Контакты: @tenant" in first_send.args[1]
     await_args = wanted_ads.mark_published.await_args
     assert await_args.args == (ad.id, 777)
     assert bot.send_message.await_args_list[1].args[0] == ad.telegram_user_id

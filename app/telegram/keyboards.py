@@ -13,13 +13,20 @@ def apartment_keyboard(
     apartment_id: int, *, signer: TokenSigner, bot_username: str, support_url: str
 ) -> InlineKeyboardMarkup:
     payment_token = signer.sign_start_id("payment-link", apartment_id)
-    private_url = f"https://t.me/{bot_username.lstrip('@')}?start=pay_{payment_token}"
+    bot_url = f"https://t.me/{bot_username.lstrip('@')}"
+    private_url = f"{bot_url}?start=pay_{payment_token}"
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
                     text="🔐 Посмотреть номер",
                     url=private_url,
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔎 Ищете квартиру? Подать заявку",
+                    url=f"{bot_url}?start=want",
                 )
             ],
             _support_row(support_url),
