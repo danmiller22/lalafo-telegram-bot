@@ -187,6 +187,20 @@ async def paid_handler(
     if apartment_id is None:
         await callback.answer("Недействительная кнопка.", show_alert=True)
         return
+    result = await service.contact_status(callback.from_user.id, apartment_id)
+    if result.status == "approved" and result.apartment:
+        text = (
+            "✅ Оплата подтверждена\n\n"
+            f"📞 Номер собственника:\n{display_phone(result.apartment.phone)}"
+        )
+        await callback.answer(text[:200], show_alert=True, cache_time=0)
+        return
+    if result.status == "pending":
+        await callback.answer("⏳ Оплата ещё проверяется.", show_alert=True)
+        return
+    if result.status == "unavailable":
+        await callback.answer("Квартира больше недоступна.", show_alert=True)
+        return
     await _submit_for_review(
         callback,
         apartment_id,

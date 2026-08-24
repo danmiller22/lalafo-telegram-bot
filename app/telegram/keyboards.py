@@ -31,7 +31,7 @@ def payment_keyboard(
             [InlineKeyboardButton(text="💳 Оплатить через Finik", url=payment_url)],
             [
                 InlineKeyboardButton(
-                    text="✅ Я оплатил",
+                    text="✅ Я оплатил / Показать номер",
                     callback_data=f"paid:{paid_token}",
                 )
             ],
