@@ -84,6 +84,19 @@ async def startup() -> None:
             drop_pending_updates=False,
         )
         logger.info("Telegram webhook enabled at %s", webhook_url)
+        try:
+            from scripts.sync_published_keyboards import run as sync_published_keyboards
+
+            sync_exit_code = await sync_published_keyboards()
+            if sync_exit_code != 0:
+                logger.warning(
+                    "Published keyboard startup sync exited with code %d",
+                    sync_exit_code,
+                )
+        except Exception:
+            # A temporary Telegram failure must not prevent the webhook service
+            # from starting. The scheduled cloud job will retry the same sync.
+            logger.exception("Published keyboard startup sync failed")
 
 
 @app.on_event("shutdown")
