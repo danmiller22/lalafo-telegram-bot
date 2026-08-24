@@ -11,7 +11,7 @@
 - Koyeb держит payment bot и health endpoint; scraper работает только в одноразовой VM Semaphore.
 - Lalafo читается обычным HTTP через публичные JSON-маршруты `/api/search/v3/feed`, которые использует сама веб-страница; браузер/Playwright не нужен.
 - Основная защита от дублей и платежи хранятся в Neon PostgreSQL; `data/posted_ads.json` остаётся резервным state для постоянных окружений.
-- Payment bot работает постоянно через aiogram long polling: `python -m app.bot`.
+- Payment bot получает обновления через защищённый Telegram webhook. Входящий запрос будит бесплатный Koyeb после scale-to-zero, поэтому постоянный локальный процесс и keepalive не нужны.
 - Production полностью облачный; локальный запуск для эксплуатации не требуется.
 
 ## 1. Telegram bot и группа
@@ -121,10 +121,12 @@ Secret называется `lalafo-production`. Scheduled Task запускае
 Koyeb запускает `uvicorn app.web:app` и получает те же Telegram/Neon secrets, а также:
 
 - `RUN_BOT=true`
+- `TELEGRAM_WEBHOOK_URL=https://statutory-mallissa-2danmiller-f1c1b08d.koyeb.app/telegram/webhook`;
+- `TELEGRAM_WEBHOOK_SECRET` — отдельная URL-safe строка не короче 32 символов;
 - `RUN_TRIGGER_SECRET` — случайная строка не короче 32 символов;
 - `DRY_RUN=true` — HTTP-service сам не публикует объявления.
 
-`GET /health` возвращает `200` только когда payment bot действительно работает. Scraper в Semaphore вызывает health endpoint после каждого успешного цикла.
+При старте Koyeb сам регистрирует webhook в Telegram. Telegram повторяет доставку при временной недоступности сервиса, а входящий webhook будит scale-to-zero instance. `GET /health` возвращает `200` только после успешной инициализации payment bot. Scraper в Semaphore вызывает health endpoint после каждого успешного цикла.
 
 ## 7. Активация публикации
 

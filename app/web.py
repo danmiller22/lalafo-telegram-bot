@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 import secrets
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import FastAPI, Header, HTTPException, status
+from aiogram.types import Update
+from fastapi import FastAPI, Header, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 
+from app.bot.main import BotRuntime, create_runtime
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -17,7 +18,7 @@ app = FastAPI(title="Lalafo Telegram service", docs_url=None, redoc_url=None)
 
 _run_lock = asyncio.Lock()
 _scraper_task: asyncio.Task[None] | None = None
-_bot_task: asyncio.Task[None] | None = None
+_bot_runtime: BotRuntime | None = None
 _run_state: dict[str, Any] = {
     "running": False,
     "last_started_at": None,
@@ -63,7 +64,7 @@ async def _execute_scraper() -> int:
 
 @app.on_event("startup")
 async def startup() -> None:
-    global _bot_task
+    global _bot_runtime
     settings = get_settings()
     logging.basicConfig(
         level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -71,25 +72,30 @@ async def startup() -> None:
     )
     settings.require_run_trigger_secret()
     if settings.run_bot:
-        from app.bot.main import run as run_bot
-
-        _bot_task = asyncio.create_task(run_bot(), name="telegram-bot")
+        webhook_url = settings.require_telegram_webhook_url()
+        webhook_secret = settings.require_telegram_webhook_secret()
+        _bot_runtime = await create_runtime()
+        await _bot_runtime.bot.set_webhook(
+            webhook_url,
+            secret_token=webhook_secret,
+            allowed_updates=_bot_runtime.dispatcher.resolve_used_update_types(),
+            drop_pending_updates=False,
+        )
+        logger.info("Telegram webhook enabled at %s", webhook_url)
 
 
 @app.on_event("shutdown")
 async def shutdown() -> None:
-    global _bot_task
-    if _bot_task is not None:
-        _bot_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await _bot_task
-        _bot_task = None
+    global _bot_runtime
+    if _bot_runtime is not None:
+        await _bot_runtime.close()
+        _bot_runtime = None
 
 
 @app.get("/health")
 async def health() -> JSONResponse:
     settings = get_settings()
-    if settings.run_bot and (_bot_task is None or _bot_task.done()):
+    if settings.run_bot and _bot_runtime is None:
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             content={"status": "error", "bot": "stopped"},
@@ -100,6 +106,29 @@ async def health() -> JSONResponse:
             "bot": "running" if settings.run_bot else "disabled",
         }
     )
+
+
+@app.post("/telegram/webhook", include_in_schema=False)
+async def telegram_webhook(
+    request: Request,
+    x_telegram_bot_api_secret_token: str | None = Header(default=None),
+) -> Response:
+    settings = get_settings()
+    runtime = _bot_runtime
+    if not settings.run_bot or runtime is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
+    expected = settings.require_telegram_webhook_secret()
+    if not x_telegram_bot_api_secret_token or not secrets.compare_digest(
+        x_telegram_bot_api_secret_token, expected
+    ):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
+    update = Update.model_validate(await request.json(), context={"bot": runtime.bot})
+    await runtime.dispatcher.feed_update(
+        runtime.bot,
+        update,
+        **runtime.workflow_data,
+    )
+    return Response(status_code=status.HTTP_200_OK)
 
 
 @app.get("/status")

@@ -50,6 +50,8 @@ class Settings(BaseSettings):
 
     run_trigger_secret: str = ""
     run_bot: bool = False
+    telegram_webhook_url: str = ""
+    telegram_webhook_secret: str = ""
 
     log_level: str = "INFO"
 
@@ -85,6 +87,19 @@ class Settings(BaseSettings):
         if len(self.run_trigger_secret) < 32:
             raise RuntimeError("RUN_TRIGGER_SECRET must contain at least 32 characters")
         return self.run_trigger_secret
+
+    def require_telegram_webhook_url(self) -> str:
+        if not self.telegram_webhook_url.startswith("https://"):
+            raise RuntimeError("TELEGRAM_WEBHOOK_URL must be an HTTPS URL")
+        return self.telegram_webhook_url.rstrip("/")
+
+    def require_telegram_webhook_secret(self) -> str:
+        secret = self.telegram_webhook_secret
+        if len(secret) < 32 or not all(char.isalnum() or char in "_-" for char in secret):
+            raise RuntimeError(
+                "TELEGRAM_WEBHOOK_SECRET must contain at least 32 URL-safe characters"
+            )
+        return secret
 
 
 @lru_cache(maxsize=1)

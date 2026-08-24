@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -20,6 +22,7 @@ def configure(monkeypatch: pytest.MonkeyPatch) -> None:
         last_exit_code=None,
     )
     web._scraper_task = None
+    web._bot_runtime = None
     yield
     get_settings.cache_clear()
 
@@ -74,3 +77,30 @@ async def test_health_fails_when_enabled_bot_is_not_running(
         response = await client.get("/health")
     assert response.status_code == 503
     assert response.json() == {"status": "error", "bot": "stopped"}
+
+
+@pytest.mark.asyncio
+async def test_telegram_webhook_requires_secret_and_dispatches_update(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    webhook_secret = "w" * 32
+    monkeypatch.setenv("RUN_BOT", "true")
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", webhook_secret)
+    get_settings.cache_clear()
+    feed_update = AsyncMock()
+    web._bot_runtime = SimpleNamespace(
+        bot=object(),
+        dispatcher=SimpleNamespace(feed_update=feed_update),
+        workflow_data={"marker": "test"},
+    )
+    transport = httpx.ASGITransport(app=web.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        denied = await client.post("/telegram/webhook", json={"update_id": 1})
+        accepted = await client.post(
+            "/telegram/webhook",
+            json={"update_id": 2},
+            headers={"X-Telegram-Bot-Api-Secret-Token": webhook_secret},
+        )
+    assert denied.status_code == 401
+    assert accepted.status_code == 200
+    feed_update.assert_awaited_once()
