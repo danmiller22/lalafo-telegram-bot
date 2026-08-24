@@ -10,7 +10,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 DEFAULT_SEARCH_URL = (
     "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
     "dolgosrochnaya-arenda-kvartir/1-bedroom/2-bedrooms/studio/owner/"
-    "bez-podseleniya?price[to]=35000"
+    "real-estate-agency/bez-podseleniya?price[to]=35000"
 )
 
 
@@ -67,7 +67,7 @@ class Settings(BaseSettings):
 
     @property
     def effective_post_limit(self) -> int:
-        return 1 if self.test_mode else max(1, self.max_new_posts_per_run)
+        return 1 if self.test_mode else max(12, self.max_new_posts_per_run)
 
     @property
     def allowed_rooms(self) -> tuple[str, ...]:

@@ -155,12 +155,12 @@ class LalafoClient:
             params.append((f"parameters[69][{index}]", value))
         if "bez-podseleniya" in path_parts:
             params.append(("parameters[946][0]", "81537"))
-        # Owner wins when a legacy URL contains both owner and agency segments.
-        # The paid contact flow must never sell the same agency number for many cards.
+        offerer_index = 0
         if "owner" in path_parts:
-            params.append(("parameters[2149][0]", "19057"))
-        elif "real-estate-agency" in path_parts:
-            params.append(("parameters[2149][0]", "42340"))
+            params.append((f"parameters[2149][{offerer_index}]", "19057"))
+            offerer_index += 1
+        if "real-estate-agency" in path_parts:
+            params.append((f"parameters[2149][{offerer_index}]", "42340"))
         for key, value in parse_qsl(parts.query, keep_blank_values=True):
             if key in {"price[from]", "price[to]", "currency", "sort_by"}:
                 params.append((key, value))

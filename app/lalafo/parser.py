@@ -165,8 +165,6 @@ def is_allowed(ad: LalafoAd, *, city: str, max_price: int, rooms: tuple[str, ...
         return False, "rooms"
     if not ad.no_subletting:
         return False, "subletting"
-    if not ad.owner_listing:
-        return False, "not_owner"
     if not ad.photo_urls:
         return False, "photos"
     if not ad.phone:

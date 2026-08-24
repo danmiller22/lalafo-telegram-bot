@@ -13,6 +13,12 @@ from app.telegram.formatting import format_apartment
 logger = logging.getLogger(__name__)
 
 
+def candidate_quality(ad) -> tuple[int, bool, float]:
+    """Prefer photo-rich, well-located and recently updated apartments."""
+    updated_at = ad.source_updated_at.timestamp() if ad.source_updated_at else 0
+    return len(ad.photo_urls), bool(ad.district), updated_at
+
+
 async def run() -> int:
     settings = get_settings()
     logging.basicConfig(
@@ -21,7 +27,9 @@ async def run() -> int:
     )
     state = PostedState.load(settings.posted_state_path)
     limit = settings.effective_post_limit
+    selection_pool_limit = limit * 3
     candidates = []
+    candidate_phones: set[str] = set()
     total_found = 0
     page_number = 1
 
@@ -51,7 +59,7 @@ async def run() -> int:
     async with LalafoClient(
         timeout=settings.http_timeout_seconds, max_retries=settings.http_max_retries
     ) as client:
-        while len(candidates) < limit:
+        while len(candidates) < selection_pool_limit:
             try:
                 page = await client.search(settings.lalafo_search_url, page=page_number)
             except (LalafoError, LalafoParseError) as exc:
@@ -69,7 +77,7 @@ async def run() -> int:
                 reverse=True,
             )
             for search_ad in page.items:
-                if len(candidates) >= limit:
+                if len(candidates) >= selection_pool_limit:
                     break
                 if state.contains(search_ad.lalafo_id):
                     continue
@@ -111,12 +119,18 @@ async def run() -> int:
                 if apartments is not None and await apartments.is_duplicate(ad):
                     logger.info("Skipping DB duplicate id=%s", ad.lalafo_id)
                     continue
+                if ad.phone in candidate_phones:
+                    logger.info("Skipping repeated contact id=%s", ad.lalafo_id)
+                    continue
                 candidates.append(ad)
+                candidate_phones.add(ad.phone)
             if page_number >= page.page_count:
                 break
             page_number += 1
 
-    logger.info("Eligible new apartments selected: %d", len(candidates))
+    candidates.sort(key=candidate_quality, reverse=True)
+    candidates = candidates[:limit]
+    logger.info("Eligible photo-prioritized apartments selected: %d", len(candidates))
     for ad in candidates:
         logger.info(
             "DRY candidate id=%s rooms=%s city=%s district=%s price=%s deposit=%s photos=%s phone=%s",

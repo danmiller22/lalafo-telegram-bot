@@ -25,7 +25,8 @@ def test_search_params_preserve_configured_filters():
         "2774",
     }
     assert set(params[key] for key in params if key.startswith("parameters[2149]")) == {
-        "19057"
+        "19057",
+        "42340",
     }
     assert params["parameters[946][0]"] == "81537"
 

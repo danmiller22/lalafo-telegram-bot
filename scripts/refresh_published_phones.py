@@ -87,10 +87,7 @@ async def run() -> int:
                     current_phone = await session.scalar(
                         select(Apartment.phone).where(Apartment.id == apartment_id)
                     )
-                    should_disable = bool(
-                        is_active
-                        and (not ad.owner_listing or ad.phone in claimed_phones)
-                    )
+                    should_disable = bool(is_active and ad.phone in claimed_phones)
                     await session.execute(
                         update(Apartment)
                         .where(Apartment.id == apartment_id)

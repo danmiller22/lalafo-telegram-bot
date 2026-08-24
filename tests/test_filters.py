@@ -13,7 +13,6 @@ from tests.helpers import make_ad
         ({"rooms": "3"}, "rooms"),
         ({"city": "Ош"}, "wrong_city"),
         ({"no_subletting": False}, "subletting"),
-        ({"owner_listing": False}, "not_owner"),
         ({"photo_urls": []}, "photos"),
         ({"category_id": 1}, "wrong_category"),
     ],
@@ -36,6 +35,14 @@ def test_allowed_and_format_has_no_source_or_description():
     )
     assert "lalafo" not in text.lower()
     assert ad.phone not in text
+
+
+def test_agency_listing_is_allowed_but_not_identified_on_card():
+    ad = make_ad(owner_listing=False)
+    assert is_allowed(ad, city="Бишкек", max_price=35000, rooms=("studio", "1", "2"))[0]
+    text = format_apartment(ad)
+    assert "риелтор" not in text.casefold()
+    assert "собственник" not in text.casefold()
 
 
 def test_optional_district_and_deposit_are_omitted():
