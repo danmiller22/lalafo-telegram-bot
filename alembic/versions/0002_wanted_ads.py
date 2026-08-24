@@ -10,6 +10,11 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # The hosted webhook also calls metadata.create_all() on startup. If it
+    # created this additive table before Alembic ran, only stamp the revision.
+    inspector = sa.inspect(op.get_bind())
+    if "wanted_ads" in inspector.get_table_names():
+        return
     op.create_table(
         "wanted_ads",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
@@ -42,6 +47,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    inspector = sa.inspect(op.get_bind())
+    if "wanted_ads" not in inspector.get_table_names():
+        return
     op.drop_index("ix_wanted_ads_status_created", table_name="wanted_ads")
     op.drop_index("ix_wanted_ads_telegram_user_id", table_name="wanted_ads")
     op.drop_table("wanted_ads")
