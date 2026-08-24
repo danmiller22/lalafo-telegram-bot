@@ -124,7 +124,7 @@ async def run() -> int:
                     continue
                 candidates.append(ad)
                 candidate_phones.add(ad.phone)
-            if page_number >= page.page_count:
+            if page_number >= min(page.page_count, settings.max_search_pages):
                 break
             page_number += 1
 
