@@ -135,7 +135,11 @@ async def paid_handler(
             show_alert=True,
         )
         return
-    if submission.outcome == "pending":
+    request = await payments.get_request(submission.request.id)
+    if request is None:
+        await callback.answer("Не удалось загрузить запрос.", show_alert=True)
+        return
+    if submission.outcome == "pending" and request.admin_message_id:
         await callback.answer("⏳ Оплата уже отправлена на проверку.", show_alert=True)
         return
     if not settings.admin_user_id:
@@ -145,14 +149,22 @@ async def paid_handler(
             show_alert=True,
         )
         return
-    request = await payments.get_request(submission.request.id)
-    if request is None:
-        await callback.answer("Не удалось загрузить запрос.", show_alert=True)
+    if not await payments.claim_admin_notification(request.id):
+        await callback.answer("⏳ Оплата уже отправлена на проверку.", show_alert=True)
         return
-    admin_message = await bot.send_message(
-        settings.admin_user_id,
-        format_admin_card(request),
-        reply_markup=admin_keyboard(request.id, signer=signer),
-    )
-    await payments.set_admin_message(request.id, admin_message.message_id)
+    try:
+        admin_message = await bot.send_message(
+            settings.admin_user_id,
+            format_admin_card(request),
+            reply_markup=admin_keyboard(request.id, signer=signer),
+        )
+    except Exception as exc:
+        await payments.release_admin_notification(request.id)
+        logger.error("Admin payment notification failed: %s", type(exc).__name__)
+        await callback.answer(
+            "⏳ Запрос сохранён. Не удалось уведомить администратора; попробуйте ещё раз.",
+            show_alert=True,
+        )
+        return
+    await payments.finish_admin_notification(request.id, admin_message.message_id)
     await callback.answer("⏳ Оплата отправлена на проверку.", show_alert=True)

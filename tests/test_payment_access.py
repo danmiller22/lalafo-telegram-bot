@@ -61,3 +61,24 @@ async def test_missing_or_inactive_apartment_denies_access(repositories, service
         await service.submit_payment(
             user_id=1, apartment_id=apartment.id, username=None, first_name="User"
         )
+
+
+@pytest.mark.asyncio
+async def test_admin_notification_claim_is_atomic_and_retryable(repositories, service):
+    apartments, payments, _ = repositories
+    apartment = await apartments.upsert_discovered(make_ad(lalafo_id=444))
+    submission = await service.submit_payment(
+        user_id=300, apartment_id=apartment.id, username="buyer", first_name="Buyer"
+    )
+
+    assert await payments.claim_admin_notification(submission.request.id) is True
+    assert await payments.claim_admin_notification(submission.request.id) is False
+
+    await payments.release_admin_notification(submission.request.id)
+    assert await payments.claim_admin_notification(submission.request.id) is True
+    assert await payments.finish_admin_notification(submission.request.id, 98765) is True
+    assert await payments.finish_admin_notification(submission.request.id, 99999) is False
+
+    request = await payments.get_request(submission.request.id)
+    assert request is not None
+    assert request.admin_message_id == 98765

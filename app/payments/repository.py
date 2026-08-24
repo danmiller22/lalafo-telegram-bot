@@ -228,6 +228,44 @@ class PaymentRepository:
                 .values(admin_message_id=message_id)
             )
 
+    async def claim_admin_notification(self, request_id: int) -> bool:
+        """Atomically reserve one admin notification send for a pending request."""
+        async with self.sessions.begin() as session:
+            result = await session.execute(
+                update(PaymentRequest)
+                .where(
+                    PaymentRequest.id == request_id,
+                    PaymentRequest.status == "pending",
+                    PaymentRequest.admin_message_id.is_(None),
+                )
+                .values(admin_message_id=-1)
+            )
+            return result.rowcount == 1
+
+    async def finish_admin_notification(self, request_id: int, message_id: int) -> bool:
+        async with self.sessions.begin() as session:
+            result = await session.execute(
+                update(PaymentRequest)
+                .where(
+                    PaymentRequest.id == request_id,
+                    PaymentRequest.admin_message_id == -1,
+                )
+                .values(admin_message_id=message_id)
+            )
+            return result.rowcount == 1
+
+    async def release_admin_notification(self, request_id: int) -> None:
+        """Allow a later click to retry after Telegram notification failure."""
+        async with self.sessions.begin() as session:
+            await session.execute(
+                update(PaymentRequest)
+                .where(
+                    PaymentRequest.id == request_id,
+                    PaymentRequest.admin_message_id == -1,
+                )
+                .values(admin_message_id=None)
+            )
+
     async def decide(self, request_id: int, *, approve: bool, admin_id: int) -> str:
         now = datetime.now(timezone.utc)
         values = (
