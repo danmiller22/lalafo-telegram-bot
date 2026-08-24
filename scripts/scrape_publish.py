@@ -25,6 +25,29 @@ async def run() -> int:
     total_found = 0
     page_number = 1
 
+    engine = None
+    apartments = None
+    token = ""
+    callback_secret = ""
+    if not settings.dry_run:
+        from app.database import create_engine_and_session, init_db
+        from app.payments.repository import ApartmentRepository
+
+        try:
+            token = settings.require_bot_token()
+            callback_secret = settings.require_callback_secret()
+        except RuntimeError as exc:
+            logger.error("Production configuration is incomplete: %s", exc)
+            return 2
+        engine, sessions = create_engine_and_session(settings.database_url)
+        try:
+            await init_db(engine)
+        except Exception as exc:
+            logger.error("Database initialization failed safely: %s", type(exc).__name__)
+            await engine.dispose()
+            return 2
+        apartments = ApartmentRepository(sessions)
+
     async with LalafoClient(
         timeout=settings.http_timeout_seconds, max_retries=settings.http_max_retries
     ) as client:
@@ -33,6 +56,8 @@ async def run() -> int:
                 page = await client.search(settings.lalafo_search_url, page=page_number)
             except (LalafoError, LalafoParseError) as exc:
                 logger.error("Search failed safely: %s", exc)
+                if engine is not None:
+                    await engine.dispose()
                 return 2
             if page_number == 1:
                 total_found = page.total
@@ -83,6 +108,9 @@ async def run() -> int:
                     continue
                 if state.contains(ad.lalafo_id, ad_fingerprint(ad)):
                     continue
+                if apartments is not None and await apartments.is_duplicate(ad):
+                    logger.info("Skipping DB duplicate id=%s", ad.lalafo_id)
+                    continue
                 candidates.append(ad)
             if page_number >= page.page_count:
                 break
@@ -107,22 +135,20 @@ async def run() -> int:
         logger.info("DRY_RUN enabled: Telegram, database and state were not changed")
         return 0
     if not candidates:
+        if engine is not None:
+            await engine.dispose()
         return 0
 
     # Keep DRY_RUN lightweight enough for free 512 MB services. These modules
     # are needed only when a real Telegram/database publication is requested.
     from aiogram import Bot
 
-    from app.database import create_engine_and_session, init_db
-    from app.payments.repository import ApartmentRepository
     from app.security import TokenSigner
     from app.telegram.publisher import TelegramPublishError, TelegramPublisher
 
-    token = settings.require_bot_token()
-    signer = TokenSigner(settings.require_callback_secret())
-    engine, sessions = create_engine_and_session(settings.database_url)
-    await init_db(engine)
-    apartments = ApartmentRepository(sessions)
+    assert engine is not None
+    assert apartments is not None
+    signer = TokenSigner(callback_secret)
     bot = Bot(token=token)
     publisher = TelegramPublisher(
         bot,

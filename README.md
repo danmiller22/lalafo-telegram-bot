@@ -6,11 +6,13 @@
 
 ## Как устроено
 
-- GitHub Actions запускает scraper в `17` и `47` минут каждого часа.
+- Semaphore Cloud запускает scraper каждые 2 часа (`0 */2 * * *`) на Python 3.12.
+- GitHub Actions проверяет тесты и миграции при изменениях кода, но не обращается к Lalafo.
+- Koyeb держит payment bot и health endpoint; scraper работает только в одноразовой VM Semaphore.
 - Lalafo читается обычным HTTP через публичные JSON-маршруты `/api/search/v3/feed`, которые использует сама веб-страница; браузер/Playwright не нужен.
-- История публикаций хранится в `data/posted_ads.json`, а квартиры и платежи — в PostgreSQL.
+- Основная защита от дублей и платежи хранятся в Neon PostgreSQL; `data/posted_ads.json` остаётся резервным state для постоянных окружений.
 - Payment bot работает постоянно через aiogram long polling: `python -m app.bot`.
-- Локально можно использовать SQLite, production-конфигурация рассчитана на Neon PostgreSQL.
+- Production полностью облачный; локальный запуск для эксплуатации не требуется.
 
 ## 1. Telegram bot и группа
 
@@ -33,7 +35,7 @@ Token нельзя добавлять в исходники, README или `post
 
 Для локального smoke test без Neon используйте `DATABASE_URL=sqlite:///data/bot.db`.
 
-## 3. Локальная настройка
+## 3. Опциональная среда разработчика
 
 Требуется Python 3.12.
 
@@ -95,33 +97,43 @@ python -m app.bot
 5. После подтверждения вернитесь к исходной квартире и снова нажмите `Получить номер`.
 6. Номер появится только в персональном callback alert, не в группе и не в личном сообщении.
 
-## 6. GitHub repository и Secrets
+## 6. Облачная production-конфигурация
 
-Создайте repository, загрузите проект и откройте **Settings → Secrets and variables → Actions**.
+### Semaphore Secret
 
-Secrets:
+Создайте Secret, доступный только проекту `lalafo-telegram-bot`:
 
 - `TELEGRAM_BOT_TOKEN`
 - `DATABASE_URL`
 - `CALLBACK_SECRET`
 - `ADMIN_USER_ID`
+- `TELEGRAM_GROUP_ID`
 
-Variables:
+Secret называется `lalafo-production`. Scheduled Task запускает только `.semaphore/production.yml`; обычные push запускают безопасный `.semaphore/semaphore.yml` с `DRY_RUN=true`.
 
-- `TELEGRAM_GROUP_ID=-1004389602150`
-- `DRY_RUN=true`
-- `TEST_MODE=true`
+В production pipeline используются:
 
-Workflow уже имеет `contents: write`, `concurrency` и commit/push только при изменении state.
+- `DRY_RUN=false`
+- `TEST_MODE=true` для первого контролируемого запуска, затем `false`.
 
-## 7. Первый запуск GitHub Actions
+### Koyeb service
 
-1. Откройте вкладку **Actions**.
-2. Выберите **Lalafo scraper**.
-3. Нажмите **Run workflow**.
-4. Убедитесь в логах, что `DRY_RUN enabled` и телефон замаскирован.
-5. Для первой реальной публикации оставьте `TEST_MODE=true`, переключите `DRY_RUN=false` и снова нажмите **Run workflow**.
-6. После проверки одной карточки можно переключить `TEST_MODE=false`. Расписание включается автоматически после появления workflow в default branch.
+Koyeb запускает `uvicorn app.web:app` и получает те же Telegram/Neon secrets, а также:
+
+- `RUN_BOT=true`
+- `RUN_TRIGGER_SECRET` — случайная строка не короче 32 символов;
+- `DRY_RUN=true` — HTTP-service сам не публикует объявления.
+
+`GET /health` возвращает `200` только когда payment bot действительно работает. Scraper в Semaphore вызывает health endpoint после каждого успешного цикла.
+
+## 7. Активация публикации
+
+1. Выполните Semaphore workflow с `DRY_RUN=true` и убедитесь, что Lalafo отвечает `200`, телефон замаскирован, а Telegram/БД не меняются.
+2. Добавьте production secrets в Semaphore и Koyeb.
+3. Запустите Koyeb с `RUN_BOT=true` и проверьте `/health`: `{"status":"ok","bot":"running"}`.
+4. Для первой публикации оставьте `TEST_MODE=true`, установите `DRY_RUN=false` только в Semaphore и запустите Task вручную.
+5. Проверьте одну карточку и полный flow оплаты. После этого установите `TEST_MODE=false`.
+6. Активный Scheduled Task выполняется каждые 2 часа.
 
 ## 8. Тесты
 
@@ -134,6 +146,7 @@ pytest -q
 ## Troubleshooting
 
 - **Lalafo 403/429:** scraper не обходит защиту, ждёт с backoff и завершает run с понятным логом. State не очищается.
+- **Облачный runner получает 403:** не используйте proxy/CAPTCHA bypass; смените легитимный runner. Проверенный для этого проекта runner — Semaphore Cloud.
 - **Не приходит admin card:** проверьте `ADMIN_USER_ID`; username недостаточен для Bot API.
 - **Telegram не скачал фото:** scraper повторит album с основной фотографией; объявление без доступного фото не публикуется.
 - **Бот отвечает `Квартира больше недоступна`:** запись отсутствует, выключена или не содержит телефона.

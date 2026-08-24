@@ -82,3 +82,16 @@ async def test_admin_notification_claim_is_atomic_and_retryable(repositories, se
     request = await payments.get_request(submission.request.id)
     assert request is not None
     assert request.admin_message_id == 98765
+
+
+@pytest.mark.asyncio
+async def test_published_apartment_blocks_id_and_fingerprint_duplicates(repositories):
+    apartments, _, _ = repositories
+    original = make_ad(lalafo_id=555)
+    apartment = await apartments.upsert_discovered(original)
+
+    assert await apartments.is_duplicate(original) is False
+    await apartments.mark_published(apartment.id, chat_id=-100123, message_id=77)
+
+    assert await apartments.is_duplicate(original) is True
+    assert await apartments.is_duplicate(make_ad(lalafo_id=556)) is True
