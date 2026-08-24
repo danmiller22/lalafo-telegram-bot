@@ -1,0 +1,50 @@
+version: 2.1
+
+orbs:
+  python: circleci/python@3.1.0
+
+jobs:
+  test:
+    executor:
+      name: python/default
+      tag: "3.12"
+    resource_class: small
+    steps:
+      - checkout
+      - python/install-packages:
+          pkg-manager: pip
+      - run:
+          name: Run tests
+          command: pytest
+
+  scrape_dry_run:
+    executor:
+      name: python/default
+      tag: "3.12"
+    resource_class: small
+    environment:
+      DRY_RUN: "true"
+      TEST_MODE: "true"
+      LOG_LEVEL: INFO
+    steps:
+      - checkout
+      - python/install-packages:
+          pkg-manager: pip
+      - run:
+          name: Check Lalafo in safe dry-run mode
+          command: python -m scripts.scrape_publish
+
+workflows:
+  validate:
+    jobs:
+      - test
+
+  scheduled_dry_run:
+    triggers:
+      - schedule:
+          cron: "17,47 * * * *"
+          filters:
+            branches:
+              only: main
+    jobs:
+      - scrape_dry_run
