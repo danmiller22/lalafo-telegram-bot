@@ -28,7 +28,7 @@ def payment_keyboard(
     paid_token = signer.sign_id("paid", apartment_id)
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="💳 Оплатить через Finik", url=payment_url)],
+            [InlineKeyboardButton(text="💳 Ссылка на оплату", url=payment_url)],
             [
                 InlineKeyboardButton(
                     text="✅ Я оплатил / Показать номер",
@@ -42,7 +42,7 @@ def payment_keyboard(
 def finik_keyboard(payment_redirect_url: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="💳 Оплатить через Finik", url=payment_redirect_url)]
+            [InlineKeyboardButton(text="💳 Ссылка на оплату", url=payment_redirect_url)]
         ]
     )
 
