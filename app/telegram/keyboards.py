@@ -74,12 +74,9 @@ def private_payment_keyboard(
     )
 
 
-def private_contact_keyboard(
-    source_url: str, *, support_url: str
-) -> InlineKeyboardMarkup:
+def private_contact_keyboard(*, support_url: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🔗 Открыть объявление", url=source_url)],
             _support_row(support_url),
         ]
     )

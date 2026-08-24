@@ -33,10 +33,7 @@ async def send_private_contact(
     support_url: str,
 ) -> None:
     text = format_private_contact(apartment)
-    reply_markup = private_contact_keyboard(
-        apartment.source_url,
-        support_url=support_url,
-    )
+    reply_markup = private_contact_keyboard(support_url=support_url)
     if apartment.photo_urls:
         try:
             await bot.send_photo(

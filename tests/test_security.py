@@ -47,10 +47,7 @@ def test_callback_data_is_short_and_contains_no_phone():
         payment_url="https://qr.finik.kg/payment",
         support_url=support_url,
     )
-    private_contact = private_contact_keyboard(
-        "https://lalafo.kg/example",
-        support_url=support_url,
-    )
+    private_contact = private_contact_keyboard(support_url=support_url)
     for callback in (
         payment.inline_keyboard[1][0].callback_data,
         status.inline_keyboard[1][0].callback_data,
@@ -76,7 +73,7 @@ def test_callback_data_is_short_and_contains_no_phone():
         "✅ Проверить оплату",
         "🛟 Техподдержка",
     ]
-    assert private_contact.inline_keyboard[0][0].url == "https://lalafo.kg/example"
+    assert len(private_contact.inline_keyboard) == 1
 
 
 def test_payment_and_status_keyboards_keep_recovery_actions():
