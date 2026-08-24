@@ -67,7 +67,7 @@ class Settings(BaseSettings):
 
     @property
     def effective_post_limit(self) -> int:
-        return 1 if self.test_mode else max(12, self.max_new_posts_per_run)
+        return 1 if self.test_mode else max(20, self.max_new_posts_per_run)
 
     @property
     def allowed_rooms(self) -> tuple[str, ...]:
