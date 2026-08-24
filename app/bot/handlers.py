@@ -13,7 +13,7 @@ from app.payments.repository import PaymentRepository
 from app.payments.service import PaymentService
 from app.security import TokenSigner
 from app.telegram.formatting import format_admin_card
-from app.telegram.keyboards import admin_keyboard, payment_keyboard
+from app.telegram.keyboards import admin_keyboard, finik_keyboard
 
 logger = logging.getLogger(__name__)
 router = Router(name="user")
@@ -47,13 +47,17 @@ async def start_handler(
         if result.status == "unavailable":
             await message.answer("Квартира больше недоступна.")
             return
-        text = "❌ Оплата не подтверждена.\nМожно отправить на проверку повторно." if result.status == "rejected" else "Для получения номера оплатите через Finik."
-        await message.answer(
-            text,
-            reply_markup=payment_keyboard(
-                apartment_id, signer=signer, payment_url=settings.finik_payment_url
-            ),
+        text = (
+            "❌ Оплата не подтверждена. Оплатите повторно через Finik."
+            if result.status == "rejected"
+            else "Для получения номера оплатите через Finik."
         )
+        payment_message = await message.answer(text)
+        redirect_token = signer.sign_values(
+            "finik-redirect", apartment_id, message.chat.id, payment_message.message_id
+        )
+        redirect_url = f"{settings.require_public_base_url()}/pay/{redirect_token}"
+        await payment_message.edit_reply_markup(reply_markup=finik_keyboard(redirect_url))
         return
     await message.answer(
         "Бот открывает контакты квартир после ручной проверки оплаты.\n"
@@ -130,6 +134,7 @@ async def paid_handler(
         await callback.answer("Квартира больше недоступна.", show_alert=True)
         return
     if submission.outcome == "approved":
+        await callback.message.edit_text("✅ Оплата уже подтверждена.")
         await callback.answer(
             "✅ Оплата подтверждена. Нажмите «Получить номер» под квартирой.",
             show_alert=True,
@@ -140,6 +145,7 @@ async def paid_handler(
         await callback.answer("Не удалось загрузить запрос.", show_alert=True)
         return
     if submission.outcome == "pending" and request.admin_message_id:
+        await callback.message.edit_text("⏳ Оплата уже отправлена на проверку.")
         await callback.answer("⏳ Оплата уже отправлена на проверку.", show_alert=True)
         return
     if not settings.admin_user_id:
@@ -148,8 +154,10 @@ async def paid_handler(
             "⏳ Запрос сохранён. Администратор ещё не настроен — обратитесь в поддержку.",
             show_alert=True,
         )
+        await callback.message.edit_text("⏳ Запрос сохранён и ожидает настройки администратора.")
         return
     if not await payments.claim_admin_notification(request.id):
+        await callback.message.edit_text("⏳ Оплата уже отправлена на проверку.")
         await callback.answer("⏳ Оплата уже отправлена на проверку.", show_alert=True)
         return
     try:
@@ -161,10 +169,14 @@ async def paid_handler(
     except Exception as exc:
         await payments.release_admin_notification(request.id)
         logger.error("Admin payment notification failed: %s", type(exc).__name__)
+        await callback.message.edit_text(
+            "⏳ Запрос сохранён. Администратор увидит его в списке ожидающих."
+        )
         await callback.answer(
-            "⏳ Запрос сохранён. Не удалось уведомить администратора; попробуйте ещё раз.",
+            "⏳ Запрос сохранён. Администратор увидит его в списке ожидающих.",
             show_alert=True,
         )
         return
     await payments.finish_admin_notification(request.id, admin_message.message_id)
+    await callback.message.edit_text("⏳ Оплата отправлена администратору на проверку.")
     await callback.answer("⏳ Оплата отправлена на проверку.", show_alert=True)

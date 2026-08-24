@@ -50,8 +50,6 @@ async def run() -> int:
                     reply_markup=apartment_keyboard(
                         apartment.id,
                         signer=signer,
-                        support_url=settings.support_url,
-                        payment_url=settings.finik_payment_url,
                     ),
                 )
                 updated += 1

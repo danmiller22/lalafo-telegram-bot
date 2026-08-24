@@ -45,3 +45,22 @@ class TokenSigner:
             return base36_decode(encoded)
         except (ValueError, TypeError):
             return None
+
+    def sign_values(self, purpose: str, *values: int) -> str:
+        if not values:
+            raise ValueError("at least one value is required")
+        encoded = ".".join(base36_encode(value) for value in values)
+        return f"{encoded}.{self._signature(purpose, encoded)}"
+
+    def verify_values(self, purpose: str, token: str, *, count: int) -> tuple[int, ...] | None:
+        try:
+            encoded, signature = token.rsplit(".", 1)
+            parts = encoded.split(".")
+            if len(parts) != count:
+                return None
+            expected = self._signature(purpose, encoded)
+            if not hmac.compare_digest(signature, expected):
+                return None
+            return tuple(base36_decode(part) for part in parts)
+        except (ValueError, TypeError):
+            return None

@@ -26,15 +26,11 @@ class TelegramPublisher:
         *,
         chat_id: int,
         signer: TokenSigner,
-        support_url: str,
-        payment_url: str,
         max_photos: int = 5,
     ) -> None:
         self.bot = bot
         self.chat_id = chat_id
         self.signer = signer
-        self.support_url = support_url
-        self.payment_url = payment_url
         self.max_photos = max(1, min(max_photos, 10))
 
     async def _retry(self, method, *args, **kwargs):
@@ -80,12 +76,7 @@ class TelegramPublisher:
                 self.bot.send_message,
                 chat_id=self.chat_id,
                 text=format_apartment(ad),
-                reply_markup=apartment_keyboard(
-                    apartment_id,
-                    signer=self.signer,
-                    support_url=self.support_url,
-                    payment_url=self.payment_url,
-                ),
+                reply_markup=apartment_keyboard(apartment_id, signer=self.signer),
             )
         except Exception as exc:
             for message in album_messages:

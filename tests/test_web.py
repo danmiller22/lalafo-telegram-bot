@@ -8,6 +8,7 @@ import httpx
 import pytest
 
 from app.config import get_settings
+from app.security import TokenSigner
 from app import web
 
 
@@ -104,3 +105,27 @@ async def test_telegram_webhook_requires_secret_and_dispatches_update(
     assert denied.status_code == 401
     assert accepted.status_code == 200
     feed_update.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_payment_redirect_replaces_button_and_opens_finik(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("RUN_BOT", "true")
+    monkeypatch.setenv("CALLBACK_SECRET", "c" * 32)
+    monkeypatch.setenv("FINIK_PAYMENT_URL", "https://qr.finik.kg/test-payment")
+    get_settings.cache_clear()
+    edit_markup = AsyncMock()
+    web._bot_runtime = SimpleNamespace(
+        bot=SimpleNamespace(edit_message_reply_markup=edit_markup)
+    )
+    signer = TokenSigner("c" * 32)
+    token = signer.sign_values("finik-redirect", 11, 22, 33)
+    transport = httpx.ASGITransport(app=web.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(f"/pay/{token}")
+        invalid = await client.get(f"/pay/{token}x")
+    assert response.status_code == 302
+    assert response.headers["location"] == "https://qr.finik.kg/test-payment"
+    assert invalid.status_code == 404
+    edit_markup.assert_awaited_once()

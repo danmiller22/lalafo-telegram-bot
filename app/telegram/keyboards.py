@@ -6,36 +6,32 @@ from app.security import TokenSigner
 
 
 def apartment_keyboard(
-    apartment_id: int, *, signer: TokenSigner, support_url: str, payment_url: str
+    apartment_id: int, *, signer: TokenSigner
 ) -> InlineKeyboardMarkup:
     contact_token = signer.sign_id("contact", apartment_id)
-    paid_token = signer.sign_id("paid", apartment_id)
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="💳 Оплатить через Finik", url=payment_url)],
-            [
-                InlineKeyboardButton(
-                    text="✅ Я оплатил — отправить на проверку",
-                    callback_data=f"paid:{paid_token}",
-                )
-            ],
             [
                 InlineKeyboardButton(
                     text="📞 Получить номер", callback_data=f"contact:{contact_token}"
                 )
             ],
-            [InlineKeyboardButton(text="💬 Техподдержка", url=support_url)],
         ]
     )
 
 
-def payment_keyboard(
-    apartment_id: int, *, signer: TokenSigner, payment_url: str
-) -> InlineKeyboardMarkup:
+def finik_keyboard(payment_redirect_url: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="💳 Оплатить через Finik", url=payment_redirect_url)]
+        ]
+    )
+
+
+def paid_keyboard(apartment_id: int, *, signer: TokenSigner) -> InlineKeyboardMarkup:
     token = signer.sign_id("paid", apartment_id)
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="💳 Оплатить", url=payment_url)],
             [InlineKeyboardButton(text="✅ Я оплатил", callback_data=f"paid:{token}")],
         ]
     )

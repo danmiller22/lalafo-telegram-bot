@@ -101,6 +101,13 @@ class Settings(BaseSettings):
             )
         return secret
 
+    def require_public_base_url(self) -> str:
+        webhook_url = self.require_telegram_webhook_url()
+        suffix = "/telegram/webhook"
+        if not webhook_url.endswith(suffix):
+            raise RuntimeError(f"TELEGRAM_WEBHOOK_URL must end with {suffix}")
+        return webhook_url[: -len(suffix)]
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

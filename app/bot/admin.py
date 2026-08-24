@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from aiogram import F, Router
+import logging
+
+from aiogram import Bot, F, Router
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 
@@ -12,6 +14,7 @@ from app.security import TokenSigner
 from app.telegram.formatting import format_admin_decision, user_label
 
 router = Router(name="admin")
+logger = logging.getLogger(__name__)
 
 
 def _is_admin(user_id: int, settings: Settings) -> bool:
@@ -68,6 +71,7 @@ async def admin_callback(
     settings: Settings,
     service: PaymentService,
     signer: TokenSigner,
+    bot: Bot,
 ) -> None:
     if not _is_admin(callback.from_user.id, settings):
         await callback.answer("Недостаточно прав.", show_alert=True)
@@ -93,4 +97,15 @@ async def admin_callback(
         await callback.answer("Запрос уже обработан.", show_alert=True)
         return
     await callback.message.edit_text(format_admin_decision(request, outcome == "approved"))
+    try:
+        await bot.send_message(
+            request.telegram_user_id,
+            (
+                "✅ Оплата подтверждена. Нажмите «Получить номер» под квартирой."
+                if approve
+                else "❌ Оплата не подтверждена. Можно отправить её на проверку повторно."
+            ),
+        )
+    except Exception as exc:
+        logger.warning("Could not notify payment user: %s", type(exc).__name__)
     await callback.answer("Готово")

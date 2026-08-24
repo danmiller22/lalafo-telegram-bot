@@ -8,10 +8,12 @@ from typing import Any
 
 from aiogram.types import Update
 from fastapi import FastAPI, Header, HTTPException, Request, Response, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 
 from app.bot.main import BotRuntime, create_runtime
 from app.config import get_settings
+from app.security import TokenSigner
+from app.telegram.keyboards import paid_keyboard
 
 logger = logging.getLogger(__name__)
 app = FastAPI(title="Lalafo Telegram service", docs_url=None, redoc_url=None)
@@ -129,6 +131,28 @@ async def telegram_webhook(
         **runtime.workflow_data,
     )
     return Response(status_code=status.HTTP_200_OK)
+
+
+@app.get("/pay/{token}", include_in_schema=False)
+async def open_finik_payment(token: str) -> RedirectResponse:
+    settings = get_settings()
+    runtime = _bot_runtime
+    if not settings.run_bot or runtime is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
+    signer = TokenSigner(settings.require_callback_secret())
+    values = signer.verify_values("finik-redirect", token, count=3)
+    if values is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    apartment_id, chat_id, message_id = values
+    try:
+        await runtime.bot.edit_message_reply_markup(
+            chat_id=chat_id,
+            message_id=message_id,
+            reply_markup=paid_keyboard(apartment_id, signer=signer),
+        )
+    except Exception:
+        logger.exception("Could not replace Finik button with paid confirmation")
+    return RedirectResponse(settings.finik_payment_url, status_code=status.HTTP_302_FOUND)
 
 
 @app.get("/status")
