@@ -9,9 +9,7 @@ from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException, status
 
-from app.bot.main import run as run_bot
 from app.config import get_settings
-from scripts.scrape_publish import run as run_scraper
 
 logger = logging.getLogger(__name__)
 app = FastAPI(title="Lalafo Telegram service", docs_url=None, redoc_url=None)
@@ -42,7 +40,7 @@ def _authorize(authorization: str | None) -> None:
         )
 
 
-async def _execute_scraper() -> None:
+async def _execute_scraper() -> int:
     async with _run_lock:
         _run_state.update(
             running=True,
@@ -51,12 +49,15 @@ async def _execute_scraper() -> None:
             last_exit_code=None,
         )
         try:
+            from scripts.scrape_publish import run as run_scraper
+
             _run_state["last_exit_code"] = await run_scraper()
         except Exception:
             _run_state["last_exit_code"] = 1
             logger.exception("Hosted scraper run failed")
         finally:
             _run_state.update(running=False, last_finished_at=_now())
+        return int(_run_state["last_exit_code"])
 
 
 @app.on_event("startup")
@@ -69,6 +70,8 @@ async def startup() -> None:
     )
     settings.require_run_trigger_secret()
     if settings.run_bot:
+        from app.bot.main import run as run_bot
+
         _bot_task = asyncio.create_task(run_bot(), name="telegram-bot")
 
 
@@ -93,11 +96,10 @@ async def scraper_status(authorization: str | None = Header(default=None)) -> di
     return dict(_run_state)
 
 
-@app.post("/run", status_code=status.HTTP_202_ACCEPTED)
-async def trigger_scraper(authorization: str | None = Header(default=None)) -> dict[str, str]:
-    global _scraper_task
+@app.post("/run")
+async def trigger_scraper(authorization: str | None = Header(default=None)) -> dict[str, str | int]:
     _authorize(authorization)
-    if _run_state["running"] or (_scraper_task is not None and not _scraper_task.done()):
+    if _run_lock.locked():
         return {"status": "already_running"}
-    _scraper_task = asyncio.create_task(_execute_scraper(), name="lalafo-scraper")
-    return {"status": "accepted"}
+    exit_code = await _execute_scraper()
+    return {"status": "completed", "exit_code": exit_code}

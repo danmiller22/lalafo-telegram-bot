@@ -3,18 +3,12 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from aiogram import Bot
-
 from app.config import get_settings
-from app.database import create_engine_and_session, init_db
 from app.lalafo.client import LalafoClient, LalafoError, LalafoNotFound
 from app.lalafo.parser import LalafoParseError, is_allowed
 from app.lalafo.phone import mask_phone
-from app.payments.repository import ApartmentRepository
-from app.security import TokenSigner
 from app.state import PostedState, ad_fingerprint
 from app.telegram.formatting import format_apartment
-from app.telegram.publisher import TelegramPublishError, TelegramPublisher
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +108,15 @@ async def run() -> int:
         return 0
     if not candidates:
         return 0
+
+    # Keep DRY_RUN lightweight enough for free 512 MB services. These modules
+    # are needed only when a real Telegram/database publication is requested.
+    from aiogram import Bot
+
+    from app.database import create_engine_and_session, init_db
+    from app.payments.repository import ApartmentRepository
+    from app.security import TokenSigner
+    from app.telegram.publisher import TelegramPublishError, TelegramPublisher
 
     token = settings.require_bot_token()
     signer = TokenSigner(settings.require_callback_secret())

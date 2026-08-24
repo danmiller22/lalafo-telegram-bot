@@ -47,14 +47,15 @@ async def test_trigger_runs_once(monkeypatch: pytest.MonkeyPatch) -> None:
         await asyncio.sleep(0)
         return 0
 
-    monkeypatch.setattr(web, "run_scraper", fake_run)
+    import scripts.scrape_publish
+
+    monkeypatch.setattr(scripts.scrape_publish, "run", fake_run)
     transport = httpx.ASGITransport(app=web.app)
     headers = {"Authorization": f"Bearer {'x' * 32}"}
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post("/run", headers=headers)
-        assert response.status_code == 202
-        assert response.json() == {"status": "accepted"}
-        await web._scraper_task
+        assert response.status_code == 200
+        assert response.json() == {"status": "completed", "exit_code": 0}
         status_response = await client.get("/status", headers=headers)
     assert calls == 1
     assert status_response.json()["last_exit_code"] == 0
