@@ -6,14 +6,16 @@ from app.security import TokenSigner
 
 
 def apartment_keyboard(
-    apartment_id: int, *, signer: TokenSigner
+    apartment_id: int, *, signer: TokenSigner, payment_url: str
 ) -> InlineKeyboardMarkup:
     contact_token = signer.sign_id("contact", apartment_id)
     return InlineKeyboardMarkup(
         inline_keyboard=[
+            [InlineKeyboardButton(text="💳 Оплатить через Finik", url=payment_url)],
             [
                 InlineKeyboardButton(
-                    text="📞 Получить номер", callback_data=f"contact:{contact_token}"
+                    text="✅ Я оплатил / Получить номер",
+                    callback_data=f"contact:{contact_token}",
                 )
             ],
         ]
