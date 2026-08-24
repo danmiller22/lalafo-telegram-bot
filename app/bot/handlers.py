@@ -13,7 +13,7 @@ from app.payments.repository import PaymentRepository
 from app.payments.service import PaymentService
 from app.security import TokenSigner
 from app.telegram.formatting import format_admin_card
-from app.telegram.keyboards import admin_keyboard, finik_keyboard
+from app.telegram.keyboards import admin_keyboard, finik_keyboard, payment_keyboard
 
 logger = logging.getLogger(__name__)
 router = Router(name="user")
@@ -100,15 +100,15 @@ async def contact_handler(
     if result.status == "unavailable":
         await callback.answer("Квартира больше недоступна.", show_alert=True)
         return
-    await _submit_for_review(
-        callback,
-        apartment_id,
-        service=service,
-        payments=payments,
-        signer=signer,
-        settings=settings,
-        bot=bot,
-    )
+    if callback.message:
+        await callback.message.edit_reply_markup(
+            reply_markup=payment_keyboard(
+                apartment_id,
+                signer=signer,
+                payment_url=settings.finik_payment_url,
+            )
+        )
+    await callback.answer("Оплатите через Finik, затем нажмите «Я оплатил».")
 
 
 async def _submit_for_review(
@@ -196,8 +196,3 @@ async def paid_handler(
         settings=settings,
         bot=bot,
     )
-    if callback.message:
-        try:
-            await callback.message.edit_reply_markup(reply_markup=None)
-        except Exception:
-            pass

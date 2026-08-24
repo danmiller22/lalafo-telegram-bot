@@ -1,5 +1,5 @@
 from app.security import TokenSigner
-from app.telegram.keyboards import admin_keyboard, apartment_keyboard
+from app.telegram.keyboards import admin_keyboard, apartment_keyboard, payment_keyboard
 
 
 def test_signed_callback_and_tampering():
@@ -15,16 +15,21 @@ def test_callback_data_is_short_and_contains_no_phone():
     contact = apartment_keyboard(
         123456789, signer=signer, payment_url="https://qr.finik.kg/payment"
     )
+    payment = payment_keyboard(
+        123456789, signer=signer, payment_url="https://qr.finik.kg/payment"
+    )
     admin = admin_keyboard(987654321, signer=signer)
     for callback in (
-        contact.inline_keyboard[1][0].callback_data,
+        contact.inline_keyboard[0][0].callback_data,
+        payment.inline_keyboard[1][0].callback_data,
         admin.inline_keyboard[0][0].callback_data,
         admin.inline_keyboard[0][1].callback_data,
     ):
         assert len(callback.encode()) <= 64
         assert "+996" not in callback
 
-    assert contact.inline_keyboard[0][0].url == "https://qr.finik.kg/payment"
+    assert contact.inline_keyboard[0][0].url is None
+    assert payment.inline_keyboard[0][0].url == "https://qr.finik.kg/payment"
 
 
 def test_multi_value_signature_rejects_tampering():
