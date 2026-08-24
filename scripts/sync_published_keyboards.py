@@ -29,6 +29,7 @@ async def run() -> int:
     bot = Bot(token=settings.require_bot_token())
     updated = 0
     unchanged = 0
+    skipped = 0
     failed = 0
     try:
         async with sessions.begin() as session:
@@ -79,15 +80,32 @@ async def run() -> int:
                     )
                     await asyncio.sleep(wait_seconds)
                 except TelegramBadRequest as exc:
-                    if "message is not modified" in str(exc).lower():
+                    error_text = str(exc).lower()
+                    if "message is not modified" in error_text:
                         unchanged += 1
                         apartment.keyboard_version = APARTMENT_KEYBOARD_VERSION
                         break
+                    if any(
+                        reason in error_text
+                        for reason in (
+                            "message to edit not found",
+                            "message can't be edited",
+                            "chat not found",
+                        )
+                    ):
+                        skipped += 1
+                        apartment.keyboard_version = APARTMENT_KEYBOARD_VERSION
+                        logger.info(
+                            "Skipping unavailable legacy apartment card id=%s: %s",
+                            apartment.id,
+                            exc,
+                        )
+                        break
                     failed += 1
                     logger.warning(
-                        "Could not update apartment keyboard id=%s: %s",
+                        "Could not update apartment keyboard id=%s: %r",
                         apartment.id,
-                        type(exc).__name__,
+                        exc,
                     )
                     break
         synced_ids = [
@@ -103,12 +121,13 @@ async def run() -> int:
                     .values(keyboard_version=APARTMENT_KEYBOARD_VERSION)
                 )
         logger.info(
-            "Published keyboards synced: updated=%d unchanged=%d failed=%d",
+            "Published keyboards synced: updated=%d unchanged=%d skipped=%d failed=%d",
             updated,
             unchanged,
+            skipped,
             failed,
         )
-        if apartments and updated == 0 and unchanged == 0:
+        if apartments and updated == 0 and unchanged == 0 and skipped == 0:
             return 1
         return 0
     finally:
