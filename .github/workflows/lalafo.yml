@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: "17,47 * * * *"
   workflow_dispatch:
+    inputs:
+      run_scraper:
+        description: Run Lalafo scraper after tests and migrations
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -14,7 +20,10 @@ concurrency:
 
 jobs:
   scrape:
-    runs-on: macos-15
+    # Lalafo rejects GitHub-hosted IP ranges. Scheduled scraping stays disabled
+    # until an allowed self-hosted runner is connected and SCRAPER_ENABLED=true.
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.SCRAPER_ENABLED == 'true' }}
+    runs-on: ${{ vars.SCRAPER_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 10
     env:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -47,9 +56,10 @@ jobs:
         if: ${{ env.DATABASE_URL != '' }}
         run: alembic upgrade head
       - name: Scrape and publish
+        if: ${{ github.event_name == 'schedule' || inputs.run_scraper }}
         run: python -m scripts.scrape_publish
       - name: Commit updated deduplication state
-        if: ${{ env.DRY_RUN != 'true' }}
+        if: ${{ (github.event_name == 'schedule' || inputs.run_scraper) && env.DRY_RUN != 'true' }}
         shell: bash
         run: |
           if git diff --quiet -- data/posted_ads.json; then
