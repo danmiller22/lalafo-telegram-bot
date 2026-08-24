@@ -5,6 +5,9 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from app.security import TokenSigner
 
 
+APARTMENT_KEYBOARD_VERSION = 2
+
+
 def _support_row(support_url: str) -> list[InlineKeyboardButton]:
     return [InlineKeyboardButton(text="🛟 Техподдержка", url=support_url)]
 

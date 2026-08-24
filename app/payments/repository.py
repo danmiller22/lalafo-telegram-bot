@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 from app.lalafo.models import LalafoAd
 from app.models import Apartment, PaymentRequest
 from app.state import ad_fingerprint
+from app.telegram.keyboards import APARTMENT_KEYBOARD_VERSION
 
 
 @dataclass(frozen=True)
@@ -102,6 +103,7 @@ class ApartmentRepository:
             apartment.telegram_message_id = message_id
             apartment.published_at = datetime.now(timezone.utc)
             apartment.publication_status = "published"
+            apartment.keyboard_version = APARTMENT_KEYBOARD_VERSION
             await session.flush()
             await session.refresh(apartment)
             return apartment

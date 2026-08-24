@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import secrets
+from contextlib import suppress
 from datetime import UTC, datetime
 from typing import Any
 
@@ -21,6 +22,7 @@ app = FastAPI(title="Lalafo Telegram service", docs_url=None, redoc_url=None)
 _run_lock = asyncio.Lock()
 _scraper_task: asyncio.Task[None] | None = None
 _bot_runtime: BotRuntime | None = None
+_keyboard_sync_task: asyncio.Task[None] | None = None
 _run_state: dict[str, Any] = {
     "running": False,
     "last_started_at": None,
@@ -64,9 +66,22 @@ async def _execute_scraper() -> int:
         return int(_run_state["last_exit_code"])
 
 
+async def _sync_outdated_keyboards() -> None:
+    try:
+        from scripts.sync_published_keyboards import run as run_keyboard_sync
+
+        exit_code = await run_keyboard_sync()
+        if exit_code:
+            logger.error("Hosted apartment keyboard sync exited with code %s", exit_code)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.exception("Hosted apartment keyboard sync failed")
+
+
 @app.on_event("startup")
 async def startup() -> None:
-    global _bot_runtime
+    global _bot_runtime, _keyboard_sync_task
     settings = get_settings()
     logging.basicConfig(
         level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -84,11 +99,17 @@ async def startup() -> None:
             drop_pending_updates=False,
         )
         logger.info("Telegram webhook enabled at %s", webhook_url)
+        _keyboard_sync_task = asyncio.create_task(_sync_outdated_keyboards())
 
 
 @app.on_event("shutdown")
 async def shutdown() -> None:
-    global _bot_runtime
+    global _bot_runtime, _keyboard_sync_task
+    if _keyboard_sync_task is not None and not _keyboard_sync_task.done():
+        _keyboard_sync_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await _keyboard_sync_task
+    _keyboard_sync_task = None
     if _bot_runtime is not None:
         await _bot_runtime.close()
         _bot_runtime = None

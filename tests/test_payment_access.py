@@ -1,6 +1,7 @@
 import pytest
 
 from app.payments.service import PaymentService
+from app.telegram.keyboards import APARTMENT_KEYBOARD_VERSION
 from tests.helpers import make_ad
 
 
@@ -92,6 +93,10 @@ async def test_published_apartment_blocks_id_and_fingerprint_duplicates(reposito
 
     assert await apartments.is_duplicate(original) is False
     await apartments.mark_published(apartment.id, chat_id=-100123, message_id=77)
+
+    published = await apartments.get(apartment.id)
+    assert published is not None
+    assert published.keyboard_version == APARTMENT_KEYBOARD_VERSION
 
     assert await apartments.is_duplicate(original) is True
     assert await apartments.is_duplicate(make_ad(lalafo_id=556)) is True

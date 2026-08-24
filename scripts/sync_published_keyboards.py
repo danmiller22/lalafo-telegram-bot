@@ -5,14 +5,14 @@ import logging
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.config import get_settings
 from app.database import create_engine_and_session
 from app.models import Apartment
 from app.security import TokenSigner
 from app.telegram.formatting import format_apartment
-from app.telegram.keyboards import apartment_keyboard
+from app.telegram.keyboards import APARTMENT_KEYBOARD_VERSION, apartment_keyboard
 
 
 logger = logging.getLogger(__name__)
@@ -39,6 +39,7 @@ async def run() -> int:
                             Apartment.publication_status == "published",
                             Apartment.telegram_chat_id.is_not(None),
                             Apartment.telegram_message_id.is_not(None),
+                            Apartment.keyboard_version < APARTMENT_KEYBOARD_VERSION,
                         )
                     )
                 ).all()
@@ -61,6 +62,7 @@ async def run() -> int:
                         ),
                     )
                     updated += 1
+                    apartment.keyboard_version = APARTMENT_KEYBOARD_VERSION
                     break
                 except TelegramRetryAfter as exc:
                     if attempt == 4:
@@ -79,6 +81,7 @@ async def run() -> int:
                 except TelegramBadRequest as exc:
                     if "message is not modified" in str(exc).lower():
                         unchanged += 1
+                        apartment.keyboard_version = APARTMENT_KEYBOARD_VERSION
                         break
                     failed += 1
                     logger.warning(
@@ -87,6 +90,18 @@ async def run() -> int:
                         type(exc).__name__,
                     )
                     break
+        synced_ids = [
+            apartment.id
+            for apartment in apartments
+            if apartment.keyboard_version == APARTMENT_KEYBOARD_VERSION
+        ]
+        if synced_ids:
+            async with sessions.begin() as session:
+                await session.execute(
+                    update(Apartment)
+                    .where(Apartment.id.in_(synced_ids))
+                    .values(keyboard_version=APARTMENT_KEYBOARD_VERSION)
+                )
         logger.info(
             "Published keyboards synced: updated=%d unchanged=%d failed=%d",
             updated,

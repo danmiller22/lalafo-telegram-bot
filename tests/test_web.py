@@ -24,6 +24,7 @@ def configure(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     web._scraper_task = None
     web._bot_runtime = None
+    web._keyboard_sync_task = None
     yield
     get_settings.cache_clear()
 
