@@ -70,7 +70,7 @@ def test_callback_data_is_short_and_contains_no_phone():
     assert signer.verify_start_id("payment-link", payload) == 123456789
     assert group.inline_keyboard[1][0].text == "🛟 Техподдержка"
     assert len(group.inline_keyboard) == 2
-    assert group.inline_keyboard[1][0].url == "https://t.me/arenda312bot?start=want"
+    assert group.inline_keyboard[1][0].url == "https://t.me/support"
     assert payment.inline_keyboard[0][0].url == "https://qr.finik.kg/payment"
     for keyboard in (group, payment, status, reveal, private_payment, private_contact):
         assert keyboard.inline_keyboard[-1][0].text == "🛟 Техподдержка"
