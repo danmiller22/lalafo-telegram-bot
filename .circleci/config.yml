@@ -9,10 +9,10 @@ jobs:
       - checkout
       - run:
           name: Install dependencies
-          command: python -m pip install --user -r requirements.txt
+          command: python --version && python -m venv /tmp/lalafo-venv && /tmp/lalafo-venv/bin/python -m pip install -r requirements.txt
       - run:
           name: Run tests
-          command: pytest -q
+          command: /tmp/lalafo-venv/bin/python -m pytest -q
 
   scrape_dry_run:
     docker:
@@ -26,10 +26,10 @@ jobs:
       - checkout
       - run:
           name: Install dependencies
-          command: python -m pip install --user -r requirements.txt
+          command: python --version && python -m venv /tmp/lalafo-venv && /tmp/lalafo-venv/bin/python -m pip install -r requirements.txt
       - run:
           name: Check Lalafo in safe dry-run mode
-          command: python -m scripts.scrape_publish
+          command: /tmp/lalafo-venv/bin/python -m scripts.scrape_publish
       - run:
           name: Keep the payment bot service awake
           command: >-
