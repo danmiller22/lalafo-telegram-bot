@@ -148,6 +148,9 @@ async def run() -> int:
                 if ad.price < settings.min_price:
                     logger.info("Skipping ad id=%s reason=min_price", ad.lalafo_id)
                     continue
+                if settings.preferred_districts_only and not is_preferred_district(ad.district):
+                    logger.info("Skipping ad id=%s reason=district_priority", ad.lalafo_id)
+                    continue
                 if not settings.allow_no_district and not ad.district:
                     logger.info("Skipping ad id=%s reason=district", ad.lalafo_id)
                     continue
