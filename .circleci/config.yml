@@ -38,6 +38,9 @@ workflows:
   validate:
     jobs:
       - test
+      - scrape_dry_run:
+          requires:
+            - test
 
   scheduled_dry_run:
     triggers:
