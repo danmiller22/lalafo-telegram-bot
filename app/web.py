@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException, status
+from fastapi.responses import JSONResponse
 
 from app.config import get_settings
 
@@ -86,8 +87,19 @@ async def shutdown() -> None:
 
 
 @app.get("/health")
-async def health() -> dict[str, str]:
-    return {"status": "ok"}
+async def health() -> JSONResponse:
+    settings = get_settings()
+    if settings.run_bot and (_bot_task is None or _bot_task.done()):
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"status": "error", "bot": "stopped"},
+        )
+    return JSONResponse(
+        content={
+            "status": "ok",
+            "bot": "running" if settings.run_bot else "disabled",
+        }
+    )
 
 
 @app.get("/status")

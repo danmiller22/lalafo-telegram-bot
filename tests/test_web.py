@@ -28,7 +28,9 @@ def configure(monkeypatch: pytest.MonkeyPatch) -> None:
 async def test_health_and_authentication() -> None:
     transport = httpx.ASGITransport(app=web.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        assert (await client.get("/health")).status_code == 200
+        health = await client.get("/health")
+        assert health.status_code == 200
+        assert health.json() == {"status": "ok", "bot": "disabled"}
         assert (await client.post("/run")).status_code == 401
         response = await client.get(
             "/status", headers={"Authorization": f"Bearer {'x' * 32}"}
@@ -59,3 +61,16 @@ async def test_trigger_runs_once(monkeypatch: pytest.MonkeyPatch) -> None:
         status_response = await client.get("/status", headers=headers)
     assert calls == 1
     assert status_response.json()["last_exit_code"] == 0
+
+
+@pytest.mark.asyncio
+async def test_health_fails_when_enabled_bot_is_not_running(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("RUN_BOT", "true")
+    get_settings.cache_clear()
+    transport = httpx.ASGITransport(app=web.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/health")
+    assert response.status_code == 503
+    assert response.json() == {"status": "error", "bot": "stopped"}

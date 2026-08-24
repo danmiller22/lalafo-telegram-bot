@@ -33,6 +33,11 @@ jobs:
       - run:
           name: Check Lalafo in safe dry-run mode
           command: python -m scripts.scrape_publish
+      - run:
+          name: Keep the payment bot service awake
+          command: >-
+            curl --fail --silent --show-error --retry 3 --retry-delay 5
+            https://statutory-mallissa-2danmiller-f1c1b08d.koyeb.app/health
 
 workflows:
   validate:
