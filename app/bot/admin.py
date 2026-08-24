@@ -14,6 +14,7 @@ from app.security import TokenSigner
 from app.telegram.formatting import format_admin_decision, user_label
 from app.telegram.keyboards import private_payment_keyboard
 from app.telegram.private_delivery import send_private_contact
+from app.wanted.repository import WantedAdRepository
 
 router = Router(name="admin")
 logger = logging.getLogger(__name__)
@@ -32,16 +33,25 @@ async def admin_handler(message: Message, settings: Settings) -> None:
 
 @router.message(Command("pending"))
 async def pending_handler(
-    message: Message, settings: Settings, payments: PaymentRepository
+    message: Message,
+    settings: Settings,
+    payments: PaymentRepository,
+    wanted_ads: WantedAdRepository,
 ) -> None:
     if not _is_admin(message.from_user.id, settings):
         return
     rows = await payments.pending()
-    if not rows:
+    wanted_rows = await wanted_ads.pending()
+    if not rows and not wanted_rows:
         await message.answer("Нет ожидающих проверок.")
         return
     lines = ["⏳ Ожидают проверки:"]
     lines.extend(f"#{row.id} · квартира #{row.apartment_id} · {user_label(row)}" for row in rows)
+    lines.extend(
+        f"Заявка #{row.id} · {row.district} · "
+        f"@{row.username or row.telegram_user_id}"
+        for row in wanted_rows
+    )
     await message.answer("\n".join(lines))
 
 
@@ -51,10 +61,12 @@ async def stats_handler(
     settings: Settings,
     payments: PaymentRepository,
     apartments: ApartmentRepository,
+    wanted_ads: WantedAdRepository,
 ) -> None:
     if not _is_admin(message.from_user.id, settings):
         return
     counts = await payments.counts()
+    wanted_counts = await wanted_ads.counts()
     await message.answer(
         "\n".join(
             [
@@ -62,6 +74,8 @@ async def stats_handler(
                 f"Pending payments: {counts['pending']}",
                 f"Approved payments: {counts['approved']}",
                 f"Rejected payments: {counts['rejected']}",
+                f"Wanted ads pending: {wanted_counts.get('pending', 0)}",
+                f"Wanted ads published: {wanted_counts.get('published', 0)}",
             ]
         )
     )

@@ -4,6 +4,7 @@ import logging
 
 from aiogram import Bot, F, Router
 from aiogram.filters import Command, CommandStart
+from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from app.bot.callbacks import CONTACT_PREFIX, PAID_PREFIX, VIEW_PREFIX
@@ -20,6 +21,7 @@ from app.telegram.keyboards import (
     status_keyboard,
 )
 from app.telegram.private_delivery import send_private_contact
+from app.wanted.keyboards import main_menu_keyboard
 
 logger = logging.getLogger(__name__)
 router = Router(name="user")
@@ -37,7 +39,9 @@ async def start_handler(
     signer: TokenSigner,
     settings: Settings,
     bot: Bot,
+    state: FSMContext,
 ) -> None:
+    await state.clear()
     payload = _start_payload(message)
     if payload.startswith("pay_"):
         apartment_id = signer.verify_start_id("payment-link", payload[4:])
@@ -90,8 +94,10 @@ async def start_handler(
         )
         return
     await message.answer(
-        "Бот открывает контакты квартир после ручной проверки оплаты.\n"
-        "Выберите квартиру в группе и нажмите «Посмотреть номер»."
+        "🏠 Сервис аренды квартир\n\n"
+        "Здесь можно получить контакт собственника из группы или разместить "
+        "собственную заявку «Ищу квартиру».",
+        reply_markup=main_menu_keyboard(settings.support_url),
     )
 
 

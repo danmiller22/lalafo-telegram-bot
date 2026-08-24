@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from aiogram import Bot, Dispatcher
+from aiogram.fsm.storage.memory import MemoryStorage
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.bot import admin, handlers
@@ -14,6 +15,9 @@ from app.database import create_engine_and_session, init_db
 from app.payments.repository import ApartmentRepository, PaymentRepository
 from app.payments.service import PaymentService
 from app.security import TokenSigner
+from app.wanted import admin as wanted_admin
+from app.wanted import handlers as wanted_handlers
+from app.wanted.repository import WantedAdRepository
 
 
 @dataclass(slots=True)
@@ -35,10 +39,13 @@ async def create_runtime() -> BotRuntime:
     await init_db(engine)
     apartments = ApartmentRepository(sessions)
     payments = PaymentRepository(sessions)
+    wanted_ads = WantedAdRepository(sessions)
     service = PaymentService(apartments, payments, admin_user_id=settings.admin_user_id)
     bot = Bot(token=settings.require_bot_token())
-    dispatcher = Dispatcher()
+    dispatcher = Dispatcher(storage=MemoryStorage())
+    dispatcher.include_router(wanted_admin.router)
     dispatcher.include_router(admin.router)
+    dispatcher.include_router(wanted_handlers.router)
     dispatcher.include_router(handlers.router)
     workflow_data = {
         "settings": settings,
@@ -46,6 +53,7 @@ async def create_runtime() -> BotRuntime:
         "apartments": apartments,
         "payments": payments,
         "service": service,
+        "wanted_ads": wanted_ads,
     }
     try:
         me = await bot.get_me()
