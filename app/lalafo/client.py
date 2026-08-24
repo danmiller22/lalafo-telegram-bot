@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
+import uuid
+from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 
-from app.lalafo.parser import parse_detail_page, parse_search_page
+from app.lalafo.parser import parse_detail_data, parse_search_data
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +29,7 @@ class LalafoNotFound(LalafoError):
 class LalafoClient:
     def __init__(self, *, timeout: float = 25.0, max_retries: int = 3) -> None:
         self.max_retries = max_retries
+        self._user_hash = str(uuid.uuid4())
         self._client = httpx.AsyncClient(
             follow_redirects=True,
             timeout=httpx.Timeout(timeout),
@@ -36,6 +40,13 @@ class LalafoClient:
                 ),
                 "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.7",
                 "Accept": "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
+                # Required request context used by Lalafo's own web client.
+                "device": "pc",
+                "language": "ru_RU",
+                "country-id": "12",
+                "user-hash": self._user_hash,
+                "content-type": "application/json",
+                "X-Cache-Bypass": "yes",
             },
         )
 
@@ -48,11 +59,13 @@ class LalafoClient:
     async def close(self) -> None:
         await self._client.aclose()
 
-    async def _get(self, url: str) -> str:
+    async def _get_json(self, url: str) -> dict[str, Any]:
         last_error: Exception | None = None
         for attempt in range(self.max_retries + 1):
             try:
-                response = await self._client.get(url)
+                response = await self._client.get(
+                    url, headers={"request-id": str(uuid.uuid4())}
+                )
                 if response.status_code in (403, 429):
                     if attempt >= self.max_retries:
                         raise LalafoAccessError(
@@ -68,7 +81,10 @@ class LalafoClient:
                         "Temporary Lalafo error", request=response.request, response=response
                     )
                 response.raise_for_status()
-                return response.text
+                payload = response.json()
+                if not isinstance(payload, dict):
+                    raise LalafoError("Lalafo JSON response is not an object")
+                return payload
             except LalafoNotFound:
                 raise
             except LalafoAccessError:
@@ -80,14 +96,70 @@ class LalafoClient:
                 await asyncio.sleep(2**attempt)
         raise LalafoError(f"Lalafo request failed after retries: {type(last_error).__name__}")
 
+    @staticmethod
+    def _search_params(search_url: str, page: int) -> list[tuple[str, str]]:
+        """Translate the configured human URL to Lalafo's public feed filters."""
+        parts = urlsplit(search_url)
+        path_parts = {part for part in parts.path.split("/") if part}
+        room_ids = {
+            "studio": "15496",
+            "1-bedroom": "2773",
+            "2-bedrooms": "2774",
+        }
+        offer_ids = {
+            "real-estate-agency": "42340",
+            "owner": "19057",
+        }
+        params: list[tuple[str, str]] = [
+            ("expand", "url"),
+            ("per-page", "20"),
+            ("category_id", "2044"),
+            ("page", str(page)),
+            ("city_id", "103184"),
+        ]
+        for index, (_, value) in enumerate(
+            (item for item in room_ids.items() if item[0] in path_parts)
+        ):
+            params.append((f"parameters[69][{index}]", value))
+        if "bez-podseleniya" in path_parts:
+            params.append(("parameters[946][0]", "81537"))
+        for index, (_, value) in enumerate(
+            (item for item in offer_ids.items() if item[0] in path_parts)
+        ):
+            params.append((f"parameters[2149][{index}]", value))
+        for key, value in parse_qsl(parts.query, keep_blank_values=True):
+            if key in {"price[from]", "price[to]", "currency", "sort_by"}:
+                params.append((key, value))
+        params.append(("with_feed_banner", "true"))
+        return params
+
     async def search(self, search_url: str, page: int = 1):
         parts = urlsplit(search_url)
-        params = dict(parse_qsl(parts.query, keep_blank_values=True))
-        params["page"] = str(page)
-        url = urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(params), parts.fragment))
-        html = await self._get(url)
-        return parse_search_page(html)
+        api_url = urlunsplit(
+            (
+                parts.scheme,
+                parts.netloc,
+                "/api/search/v3/feed/search",
+                urlencode(self._search_params(search_url, page)),
+                "",
+            )
+        )
+        data = await self._get_json(api_url)
+        return parse_search_data(data, base_url=f"{parts.scheme}://{parts.netloc}")
 
     async def detail(self, detail_url: str):
-        html = await self._get(detail_url)
-        return parse_detail_page(html, source_url=detail_url)
+        match = re.search(r"-id-(\d+)(?:$|[/?#])", detail_url)
+        if not match:
+            raise LalafoError("Lalafo detail URL has no advertisement id")
+        parts = urlsplit(detail_url)
+        api_url = urlunsplit(
+            (
+                parts.scheme,
+                parts.netloc,
+                f"/api/search/v3/feed/details/{match.group(1)}",
+                "expand=url",
+                "",
+            )
+        )
+        data = await self._get_json(api_url)
+        return parse_detail_data(data, source_url=detail_url)

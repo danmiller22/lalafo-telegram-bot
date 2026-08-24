@@ -59,13 +59,10 @@ def _image_urls(item: dict[str, Any]) -> list[str]:
     return result
 
 
-def parse_search_page(html: str, *, base_url: str = "https://lalafo.kg") -> SearchPage:
-    payload = _next_data(html)
-    data = _query_data(payload, "listingFeed")
-    pages = (data or {}).get("pages") or []
-    if not pages:
-        raise LalafoParseError("Lalafo listingFeed has no pages")
-    page = pages[0]
+def parse_search_data(page: dict[str, Any], *, base_url: str = "https://lalafo.kg") -> SearchPage:
+    """Parse one response from Lalafo's first-party public feed endpoint."""
+    if not isinstance(page, dict):
+        raise LalafoParseError("Lalafo feed payload is not an object")
     items: list[SearchAd] = []
     for raw in page.get("items") or []:
         if not isinstance(raw, dict) or not raw.get("id") or not raw.get("url"):
@@ -95,9 +92,18 @@ def parse_search_page(html: str, *, base_url: str = "https://lalafo.kg") -> Sear
     )
 
 
-def parse_detail_page(html: str, *, source_url: str) -> LalafoAd:
+def parse_search_page(html: str, *, base_url: str = "https://lalafo.kg") -> SearchPage:
+    """Compatibility parser for server-rendered Next.js pages."""
     payload = _next_data(html)
-    raw = _query_data(payload, "detail")
+    data = _query_data(payload, "listingFeed")
+    pages = (data or {}).get("pages") or []
+    if not pages:
+        raise LalafoParseError("Lalafo listingFeed has no pages")
+    return parse_search_data(pages[0], base_url=base_url)
+
+
+def parse_detail_data(raw: dict[str, Any], *, source_url: str) -> LalafoAd:
+    """Parse one response from Lalafo's first-party public details endpoint."""
     if not isinstance(raw, dict) or not raw.get("id"):
         raise LalafoParseError("Lalafo detail payload is empty")
     if raw.get("hide_phone"):
@@ -131,6 +137,13 @@ def parse_detail_page(html: str, *, source_url: str) -> LalafoAd:
         source_created_at=_timestamp(raw.get("created_time")),
         source_updated_at=_timestamp(raw.get("updated_time")),
     )
+
+
+def parse_detail_page(html: str, *, source_url: str) -> LalafoAd:
+    """Compatibility parser for server-rendered Next.js pages."""
+    payload = _next_data(html)
+    raw = _query_data(payload, "detail")
+    return parse_detail_data(raw, source_url=source_url)
 
 
 def is_allowed(ad: LalafoAd, *, city: str, max_price: int, rooms: tuple[str, ...]) -> tuple[bool, str]:

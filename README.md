@@ -7,7 +7,7 @@
 ## Как устроено
 
 - GitHub Actions запускает scraper в `17` и `47` минут каждого часа.
-- Lalafo читается обычным HTTP из серверного Next.js JSON `__NEXT_DATA__`; браузер/Playwright не нужен.
+- Lalafo читается обычным HTTP через публичные JSON-маршруты `/api/search/v3/feed`, которые использует сама веб-страница; браузер/Playwright не нужен.
 - История публикаций хранится в `data/posted_ads.json`, а квартиры и платежи — в PostgreSQL.
 - Payment bot работает постоянно через aiogram long polling: `python -m app.bot`.
 - Локально можно использовать SQLite, production-конфигурация рассчитана на Neon PostgreSQL.
