@@ -59,6 +59,7 @@ async def start_handler(
                 user_id=message.from_user.id,
                 apartment=result.apartment,
                 support_url=settings.support_url,
+                max_photos=settings.max_photos_per_apartment,
             )
             return
         if result.status == "unavailable":
@@ -210,6 +211,7 @@ async def _submit_for_review(
                 user_id=callback.from_user.id,
                 apartment=result.apartment,
                 support_url=settings.support_url,
+                max_photos=settings.max_photos_per_apartment,
             )
             await callback.answer("✅ Полная карточка отправлена вам в этот чат.")
         else:
@@ -302,6 +304,7 @@ async def view_contact_handler(
                 user_id=callback.from_user.id,
                 apartment=result.apartment,
                 support_url=settings.support_url,
+                max_photos=settings.max_photos_per_apartment,
             )
             await callback.answer("✅ Полная карточка отправлена вам в этот чат.")
         else:
@@ -395,6 +398,7 @@ async def paid_handler(
                 user_id=callback.from_user.id,
                 apartment=result.apartment,
                 support_url=settings.support_url,
+                max_photos=settings.max_photos_per_apartment,
             )
             await callback.answer("✅ Полная карточка отправлена вам в этот чат.")
         else:

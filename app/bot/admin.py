@@ -121,6 +121,7 @@ async def admin_callback(
                 user_id=request.telegram_user_id,
                 apartment=apartment,
                 support_url=settings.support_url,
+                max_photos=settings.max_photos_per_apartment,
             )
         except Exception:
             logger.exception("Could not deliver approved apartment privately")
