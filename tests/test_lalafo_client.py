@@ -1,4 +1,9 @@
-from app.lalafo.client import LalafoClient
+import json
+from unittest.mock import AsyncMock
+
+import pytest
+
+from app.lalafo.client import LalafoClient, LalafoError
 
 
 SEARCH_URL = (
@@ -24,3 +29,62 @@ def test_search_params_preserve_configured_filters():
         "19057",
     }
     assert params["parameters[946][0]"] == "81537"
+
+
+def detail_html(ad_id: int, phone: str) -> str:
+    payload = {
+        "props": {
+            "pageProps": {
+                "dehydratedState": {
+                    "queries": [
+                        {
+                            "queryKey": ["detail", 12, "ru_RU", ad_id],
+                            "state": {
+                                "data": {
+                                    "id": ad_id,
+                                    "category_id": 2044,
+                                    "mobile": phone,
+                                    "price": 30000,
+                                    "currency": "KGS",
+                                    "city": "Бишкек",
+                                    "params": [
+                                        {"name": "Количество комнат", "value": "1 комната"},
+                                        {"name": "Для кого", "value": "Без подселения"},
+                                    ],
+                                    "images": [{"original_url": "https://img.example/1.jpg"}],
+                                }
+                            },
+                        }
+                    ]
+                }
+            }
+        }
+    }
+    return (
+        '<html><script id="__NEXT_DATA__" type="application/json">'
+        f"{json.dumps(payload)}</script></html>"
+    )
+
+
+@pytest.mark.asyncio
+async def test_detail_uses_matching_page_phone():
+    client = LalafoClient()
+    client._get_text = AsyncMock(return_value=detail_html(77701377, "+996554252534"))
+    try:
+        ad = await client.detail("https://lalafo.kg/bishkek/ads/example-id-77701377")
+    finally:
+        await client.close()
+
+    assert ad.lalafo_id == 77701377
+    assert ad.phone == "+996554252534"
+
+
+@pytest.mark.asyncio
+async def test_detail_rejects_mismatched_page():
+    client = LalafoClient()
+    client._get_text = AsyncMock(return_value=detail_html(43393050, "+996555000617"))
+    try:
+        with pytest.raises(LalafoError, match="detail mismatch"):
+            await client.detail("https://lalafo.kg/bishkek/ads/example-id-77701377")
+    finally:
+        await client.close()

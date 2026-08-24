@@ -5,6 +5,9 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
+PHONE_SOURCE_VERSION = 1
+
+
 class SearchAd(BaseModel):
     lalafo_id: int
     detail_url: str

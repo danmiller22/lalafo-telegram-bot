@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
-from app.lalafo.models import LalafoAd
+from app.lalafo.models import PHONE_SOURCE_VERSION, LalafoAd
 from app.models import Apartment, PaymentRequest
 from app.state import ad_fingerprint
 from app.telegram.keyboards import APARTMENT_KEYBOARD_VERSION
@@ -64,6 +64,7 @@ class ApartmentRepository:
                     lalafo_id=ad.lalafo_id,
                     source_url=ad.source_url,
                     phone=ad.phone,
+                    phone_source_version=PHONE_SOURCE_VERSION,
                     fingerprint=fingerprint,
                     price=ad.price,
                     rooms=ad.rooms,
@@ -79,6 +80,7 @@ class ApartmentRepository:
             else:
                 apartment.source_url = ad.source_url
                 apartment.phone = ad.phone
+                apartment.phone_source_version = PHONE_SOURCE_VERSION
                 apartment.fingerprint = fingerprint
                 apartment.price = ad.price
                 apartment.rooms = ad.rooms

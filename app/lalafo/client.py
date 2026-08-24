@@ -9,7 +9,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 
-from app.lalafo.parser import parse_detail_data, parse_search_data
+from app.lalafo.parser import parse_detail_page, parse_search_data
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +96,42 @@ class LalafoClient:
                 await asyncio.sleep(2**attempt)
         raise LalafoError(f"Lalafo request failed after retries: {type(last_error).__name__}")
 
+    async def _get_text(self, url: str) -> str:
+        last_error: Exception | None = None
+        for attempt in range(self.max_retries + 1):
+            try:
+                response = await self._client.get(
+                    url,
+                    headers={
+                        "request-id": str(uuid.uuid4()),
+                        "Accept": "text/html,application/xhtml+xml",
+                    },
+                )
+                if response.status_code in (403, 429):
+                    if attempt >= self.max_retries:
+                        raise LalafoAccessError(
+                            f"Lalafo returned HTTP {response.status_code}; access was not bypassed"
+                        )
+                    retry_after = float(response.headers.get("Retry-After", 0) or 0)
+                    await asyncio.sleep(max(retry_after, 2**attempt))
+                    continue
+                if response.status_code in (404, 410):
+                    raise LalafoNotFound("Lalafo advertisement is unavailable")
+                if response.status_code >= 500:
+                    raise httpx.HTTPStatusError(
+                        "Temporary Lalafo error", request=response.request, response=response
+                    )
+                response.raise_for_status()
+                return response.text
+            except (LalafoNotFound, LalafoAccessError):
+                raise
+            except (httpx.TimeoutException, httpx.NetworkError, httpx.HTTPStatusError) as exc:
+                last_error = exc
+                if attempt >= self.max_retries:
+                    break
+                await asyncio.sleep(2**attempt)
+        raise LalafoError(f"Lalafo request failed after retries: {type(last_error).__name__}")
+
     @staticmethod
     def _search_params(search_url: str, page: int) -> list[tuple[str, str]]:
         """Translate the configured human URL to Lalafo's public feed filters."""
@@ -151,15 +187,11 @@ class LalafoClient:
         match = re.search(r"-id-(\d+)(?:$|[/?#])", detail_url)
         if not match:
             raise LalafoError("Lalafo detail URL has no advertisement id")
-        parts = urlsplit(detail_url)
-        api_url = urlunsplit(
-            (
-                parts.scheme,
-                parts.netloc,
-                f"/api/search/v3/feed/details/{match.group(1)}",
-                "expand=url",
-                "",
+        expected_id = int(match.group(1))
+        html = await self._get_text(detail_url)
+        ad = parse_detail_page(html, source_url=detail_url)
+        if ad.lalafo_id != expected_id:
+            raise LalafoError(
+                f"Lalafo detail mismatch: expected {expected_id}, received {ad.lalafo_id}"
             )
-        )
-        data = await self._get_json(api_url)
-        return parse_detail_data(data, source_url=detail_url)
+        return ad
