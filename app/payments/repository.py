@@ -48,6 +48,11 @@ class ApartmentRepository:
                         (Apartment.fingerprint == fingerprint)
                         & (Apartment.publication_status == "published")
                     )
+                    | (
+                        (Apartment.phone == ad.phone)
+                        & (Apartment.publication_status == "published")
+                        & (Apartment.active.is_(True))
+                    )
                 )
             )
             return result.first() is not None

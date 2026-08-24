@@ -102,3 +102,6 @@ async def test_published_apartment_blocks_id_and_fingerprint_duplicates(reposito
 
     assert await apartments.is_duplicate(original) is True
     assert await apartments.is_duplicate(make_ad(lalafo_id=556)) is True
+    assert await apartments.is_duplicate(
+        make_ad(lalafo_id=557, price=30000, district="Другой район")
+    ) is True

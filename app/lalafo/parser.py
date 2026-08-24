@@ -124,6 +124,8 @@ def parse_detail_data(raw: dict[str, Any], *, source_url: str) -> LalafoAd:
         # Lalafo authors commonly use 1 som as a placeholder rather than a real deposit.
         deposit = None
     audience = str(params.get("Для кого") or "")
+    offerer = str(params.get("Кто предлагает") or "").strip().casefold()
+    realtor_service = str(params.get("Услуги риэлтора") or "").strip()
     return LalafoAd(
         lalafo_id=int(raw["id"]),
         source_url=source_url,
@@ -137,6 +139,7 @@ def parse_detail_data(raw: dict[str, Any], *, source_url: str) -> LalafoAd:
         photo_urls=_image_urls(raw),
         category_id=int(raw.get("category_id") or 0),
         no_subletting="без подселения" in audience.lower(),
+        owner_listing=offerer == "собственник" and not realtor_service,
         source_created_at=_timestamp(raw.get("created_time")),
         source_updated_at=_timestamp(raw.get("updated_time")),
     )
@@ -162,6 +165,8 @@ def is_allowed(ad: LalafoAd, *, city: str, max_price: int, rooms: tuple[str, ...
         return False, "rooms"
     if not ad.no_subletting:
         return False, "subletting"
+    if not ad.owner_listing:
+        return False, "not_owner"
     if not ad.photo_urls:
         return False, "photos"
     if not ad.phone:

@@ -13,6 +13,7 @@ from tests.helpers import make_ad
         ({"rooms": "3"}, "rooms"),
         ({"city": "Ош"}, "wrong_city"),
         ({"no_subletting": False}, "subletting"),
+        ({"owner_listing": False}, "not_owner"),
         ({"photo_urls": []}, "photos"),
         ({"category_id": 1}, "wrong_category"),
     ],

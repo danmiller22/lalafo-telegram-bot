@@ -84,6 +84,7 @@ def test_parse_detail_page_uses_structured_fields_and_description_deposit():
                 {"name": "Количество комнат", "value": "1 комната"},
                 {"name": "Район Бишкека", "value": "7 мкр"},
                 {"name": "Для кого", "value": "Без подселения, Семейным"},
+                {"name": "Кто предлагает", "value": "Собственник"},
             ],
             "images": [{"original_url": "https://img.example/1.jpg"}],
             "created_time": 1_700_000_000,
@@ -96,6 +97,33 @@ def test_parse_detail_page_uses_structured_fields_and_description_deposit():
     assert ad.deposit == 15000
     assert ad.phone == "+996555123456"
     assert ad.no_subletting
+    assert ad.owner_listing
+
+
+def test_realtor_service_is_not_an_owner_listing():
+    ad = parse_detail_data(
+        {
+            "id": 46,
+            "category_id": 2044,
+            "mobile": "+996555123456",
+            "price": 30000,
+            "currency": "KGS",
+            "city": "Бишкек",
+            "params": [
+                {"name": "Количество комнат", "value": "1 комната"},
+                {"name": "Для кого", "value": "Без подселения"},
+                {"name": "Кто предлагает", "value": "Собственник"},
+                {
+                    "name": "Услуги риэлтора",
+                    "value": "Выдача контактов/адресов собственника",
+                },
+            ],
+            "images": [{"original_url": "https://img.example/5.jpg"}],
+        },
+        source_url="https://lalafo.kg/bishkek/ads/test-id-46",
+    )
+
+    assert ad.owner_listing is False
 
 
 def test_parse_public_detail_json():

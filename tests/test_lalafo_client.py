@@ -25,8 +25,7 @@ def test_search_params_preserve_configured_filters():
         "2774",
     }
     assert set(params[key] for key in params if key.startswith("parameters[2149]")) == {
-        "42340",
-        "19057",
+        "19057"
     }
     assert params["parameters[946][0]"] == "81537"
 
@@ -50,6 +49,7 @@ def detail_html(ad_id: int, phone: str) -> str:
                                     "params": [
                                         {"name": "Количество комнат", "value": "1 комната"},
                                         {"name": "Для кого", "value": "Без подселения"},
+                                        {"name": "Кто предлагает", "value": "Собственник"},
                                     ],
                                     "images": [{"original_url": "https://img.example/1.jpg"}],
                                 }

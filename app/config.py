@@ -10,7 +10,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 DEFAULT_SEARCH_URL = (
     "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
     "dolgosrochnaya-arenda-kvartir/1-bedroom/2-bedrooms/studio/owner/"
-    "real-estate-agency/bez-podseleniya?price[to]=35000"
+    "bez-podseleniya?price[to]=35000"
 )
 
 

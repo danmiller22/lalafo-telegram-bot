@@ -5,7 +5,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
-PHONE_SOURCE_VERSION = 1
+PHONE_SOURCE_VERSION = 2
 
 
 class SearchAd(BaseModel):
@@ -38,5 +38,6 @@ class LalafoAd(BaseModel):
     photo_urls: list[str]
     category_id: int
     no_subletting: bool
+    owner_listing: bool
     source_created_at: datetime | None = None
     source_updated_at: datetime | None = None

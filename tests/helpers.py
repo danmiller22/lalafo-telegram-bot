@@ -17,6 +17,7 @@ def make_ad(**overrides) -> LalafoAd:
         "photo_urls": ["https://img5.lalafo.com/example.jpeg"],
         "category_id": 2044,
         "no_subletting": True,
+        "owner_listing": True,
     }
     values.update(overrides)
     return LalafoAd(**values)

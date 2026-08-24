@@ -26,16 +26,35 @@ async def run() -> int:
     engine, sessions = create_engine_and_session(settings.database_url)
     checked = 0
     changed = 0
+    disabled = 0
     failed = 0
     try:
         async with sessions() as session:
+            claimed_phones = set(
+                (
+                    await session.scalars(
+                        select(Apartment.phone).where(
+                            Apartment.publication_status == "published",
+                            Apartment.active.is_(True),
+                            Apartment.phone_source_version >= PHONE_SOURCE_VERSION,
+                        )
+                    )
+                ).all()
+            )
             rows = list(
                 (
                     await session.execute(
-                        select(Apartment.id, Apartment.lalafo_id, Apartment.source_url).where(
+                        select(
+                            Apartment.id,
+                            Apartment.lalafo_id,
+                            Apartment.source_url,
+                            Apartment.active,
+                        )
+                        .where(
                             Apartment.publication_status == "published",
                             Apartment.phone_source_version < PHONE_SOURCE_VERSION,
                         )
+                        .order_by(Apartment.published_at.desc(), Apartment.id.desc())
                     )
                 ).all()
             )
@@ -43,7 +62,7 @@ async def run() -> int:
             timeout=settings.http_timeout_seconds,
             max_retries=settings.http_max_retries,
         ) as client:
-            for apartment_id, lalafo_id, source_url in rows:
+            for apartment_id, lalafo_id, source_url, is_active in rows:
                 try:
                     ad = await client.detail(source_url)
                 except (LalafoError, LalafoParseError, ValueError) as exc:
@@ -68,6 +87,10 @@ async def run() -> int:
                     current_phone = await session.scalar(
                         select(Apartment.phone).where(Apartment.id == apartment_id)
                     )
+                    should_disable = bool(
+                        is_active
+                        and (not ad.owner_listing or ad.phone in claimed_phones)
+                    )
                     await session.execute(
                         update(Apartment)
                         .where(Apartment.id == apartment_id)
@@ -75,16 +98,22 @@ async def run() -> int:
                             phone=ad.phone,
                             fingerprint=ad_fingerprint(ad),
                             phone_source_version=PHONE_SOURCE_VERSION,
+                            active=False if should_disable else is_active,
                         )
                     )
                 checked += 1
                 if current_phone != ad.phone:
                     changed += 1
+                if should_disable:
+                    disabled += 1
+                elif is_active:
+                    claimed_phones.add(ad.phone)
                 await asyncio.sleep(0.2)
         logger.info(
-            "Published phones verified: checked=%d changed=%d failed=%d",
+            "Published phones verified: checked=%d changed=%d disabled=%d failed=%d",
             checked,
             changed,
+            disabled,
             failed,
         )
         return 1 if rows and checked == 0 else 0
