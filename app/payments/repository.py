@@ -35,6 +35,18 @@ class ApartmentRepository:
             )
             return result.scalar_one_or_none()
 
+    async def published_lalafo_ids(self, lalafo_ids: list[int]) -> set[int]:
+        if not lalafo_ids:
+            return set()
+        async with self.sessions() as session:
+            result = await session.scalars(
+                select(Apartment.lalafo_id).where(
+                    Apartment.lalafo_id.in_(lalafo_ids),
+                    Apartment.publication_status == "published",
+                )
+            )
+            return set(result.all())
+
     async def is_duplicate(self, ad: LalafoAd) -> bool:
         fingerprint = ad_fingerprint(ad)
         async with self.sessions() as session:

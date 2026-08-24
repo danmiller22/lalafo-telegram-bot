@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 
 from app.config import get_settings
 from app.lalafo.client import LalafoClient, LalafoError, LalafoNotFound
+from app.lalafo.models import LalafoAd
 from app.lalafo.parser import LalafoParseError, is_allowed
 from app.lalafo.phone import mask_phone
 from app.state import PostedState, ad_fingerprint
@@ -12,11 +14,35 @@ from app.telegram.formatting import format_apartment
 
 logger = logging.getLogger(__name__)
 
+PREFERRED_DISTRICT_TERMS = (
+    "филармони",
+    "цум",
+    "гум",
+    "восток-5",
+    "восток 5",
+    "дордой плаза",
+    "dordoi plaza",
+)
 
-def candidate_quality(ad) -> tuple[int, bool, float]:
-    """Prefer photo-rich, well-located and recently updated apartments."""
+
+def is_preferred_district(district: str | None) -> bool:
+    normalized = (district or "").casefold().replace("ё", "е")
+    return any(term in normalized for term in PREFERRED_DISTRICT_TERMS) or bool(
+        re.search(r"(?<!\d)[567]\s*мкр", normalized)
+    )
+
+
+def candidate_quality(ad: LalafoAd) -> tuple[bool, bool, int, int, bool, float]:
+    """Prefer requested areas and photo-rich bargains over expensive listings."""
     updated_at = ad.source_updated_at.timestamp() if ad.source_updated_at else 0
-    return len(ad.photo_urls), bool(ad.district), updated_at
+    return (
+        is_preferred_district(ad.district),
+        len(ad.photo_urls) >= 5,
+        -ad.price,
+        len(ad.photo_urls),
+        bool(ad.district),
+        updated_at,
+    )
 
 
 async def run() -> int:
@@ -76,14 +102,25 @@ async def run() -> int:
                 key=lambda item: item.updated_at.timestamp() if item.updated_at else 0,
                 reverse=True,
             )
+            published_ids = (
+                await apartments.published_lalafo_ids(
+                    [item.lalafo_id for item in page.items]
+                )
+                if apartments is not None
+                else set()
+            )
             for search_ad in page.items:
                 if len(candidates) >= selection_pool_limit:
                     break
                 if state.contains(search_ad.lalafo_id):
                     continue
+                if search_ad.lalafo_id in published_ids:
+                    continue
                 if search_ad.currency and search_ad.currency.upper() != "KGS":
                     continue
-                if search_ad.price and search_ad.price > settings.max_price:
+                if search_ad.price and not (
+                    settings.min_price <= search_ad.price <= settings.max_price
+                ):
                     continue
                 if settings.only_with_photos and not search_ad.photo_urls:
                     continue
@@ -107,6 +144,9 @@ async def run() -> int:
                 )
                 if not allowed:
                     logger.info("Skipping ad id=%s reason=%s", ad.lalafo_id, reason)
+                    continue
+                if ad.price < settings.min_price:
+                    logger.info("Skipping ad id=%s reason=min_price", ad.lalafo_id)
                     continue
                 if not settings.allow_no_district and not ad.district:
                     logger.info("Skipping ad id=%s reason=district", ad.lalafo_id)

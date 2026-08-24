@@ -32,10 +32,11 @@ class Settings(BaseSettings):
 
     lalafo_search_url: str = DEFAULT_SEARCH_URL
     city: str = "Бишкек"
+    min_price: int = 8_000
     max_price: int = 35_000
     rooms: str = "studio,1,2"
     max_new_posts_per_run: int = 10
-    max_search_pages: int = 12
+    max_search_pages: int = 18
     max_photos_per_apartment: int = 5
     only_with_photos: bool = True
     allow_no_deposit: bool = True
@@ -68,7 +69,7 @@ class Settings(BaseSettings):
 
     @property
     def effective_post_limit(self) -> int:
-        return 1 if self.test_mode else max(20, self.max_new_posts_per_run)
+        return 1 if self.test_mode else max(25, self.max_new_posts_per_run)
 
     @property
     def allowed_rooms(self) -> tuple[str, ...]:

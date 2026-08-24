@@ -2,6 +2,7 @@ import pytest
 
 from app.lalafo.parser import is_allowed
 from app.telegram.formatting import format_apartment, format_public_apartment
+from scripts.scrape_publish import candidate_quality, is_preferred_district
 from tests.helpers import make_ad
 
 
@@ -53,3 +54,27 @@ def test_optional_district_and_deposit_are_omitted():
 def test_public_card_has_short_bot_promotion():
     text = format_public_apartment(make_ad(), bot_username="@arenda312bot")
     assert text.endswith("🔎 Ищете квартиру? Подайте заявку: @arenda312bot")
+
+
+@pytest.mark.parametrize(
+    "district",
+    ["Филармония", "ЦУМ", "ГУМ", "Восток-5 мкр", "5 мкр", "6 мкр", "7 мкр", "Дордой Плаза"],
+)
+def test_requested_districts_are_preferred(district):
+    assert is_preferred_district(district)
+
+
+def test_other_numbered_microdistrict_is_not_mistaken_for_fifth():
+    assert not is_preferred_district("15 мкр")
+
+
+def test_quality_prefers_requested_area_then_photo_rich_bargains():
+    preferred = make_ad(district="Филармония", photo_urls=["1"], price=30_000)
+    elsewhere = make_ad(district="Асанбай", photo_urls=["1", "2"], price=20_000)
+    assert candidate_quality(preferred) > candidate_quality(elsewhere)
+
+    bargain = make_ad(district="5 мкр", photo_urls=["1"] * 5, price=20_000)
+    expensive = make_ad(district="5 мкр", photo_urls=["1"] * 10, price=35_000)
+    sparse = make_ad(district="5 мкр", photo_urls=["1"] * 4, price=10_000)
+    assert candidate_quality(bargain) > candidate_quality(expensive)
+    assert candidate_quality(bargain) > candidate_quality(sparse)
