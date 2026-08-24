@@ -20,7 +20,6 @@ app = FastAPI(title="Lalafo Telegram service", docs_url=None, redoc_url=None)
 
 _run_lock = asyncio.Lock()
 _scraper_task: asyncio.Task[None] | None = None
-_keyboard_sync_task: asyncio.Task[None] | None = None
 _bot_runtime: BotRuntime | None = None
 _run_state: dict[str, Any] = {
     "running": False,
@@ -65,25 +64,9 @@ async def _execute_scraper() -> int:
         return int(_run_state["last_exit_code"])
 
 
-async def _sync_published_keyboards() -> None:
-    try:
-        from scripts.sync_published_keyboards import run as sync_published_keyboards
-
-        sync_exit_code = await sync_published_keyboards()
-        if sync_exit_code != 0:
-            logger.warning(
-                "Published keyboard startup sync exited with code %d",
-                sync_exit_code,
-            )
-    except asyncio.CancelledError:
-        raise
-    except Exception:
-        logger.exception("Published keyboard startup sync failed")
-
-
 @app.on_event("startup")
 async def startup() -> None:
-    global _bot_runtime, _keyboard_sync_task
+    global _bot_runtime
     settings = get_settings()
     logging.basicConfig(
         level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -101,19 +84,11 @@ async def startup() -> None:
             drop_pending_updates=False,
         )
         logger.info("Telegram webhook enabled at %s", webhook_url)
-        _keyboard_sync_task = asyncio.create_task(_sync_published_keyboards())
 
 
 @app.on_event("shutdown")
 async def shutdown() -> None:
-    global _bot_runtime, _keyboard_sync_task
-    if _keyboard_sync_task is not None:
-        _keyboard_sync_task.cancel()
-        try:
-            await _keyboard_sync_task
-        except asyncio.CancelledError:
-            pass
-        _keyboard_sync_task = None
+    global _bot_runtime
     if _bot_runtime is not None:
         await _bot_runtime.close()
         _bot_runtime = None

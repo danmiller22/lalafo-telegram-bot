@@ -22,6 +22,5 @@ blocks:
             - python --version
             - python -m pip install -r requirements.txt
             - alembic upgrade head
-            - python -m scripts.sync_published_keyboards
             - python -m scripts.scrape_publish
             - curl --fail --silent --show-error --retry 3 --retry-delay 5 https://statutory-mallissa-2danmiller-f1c1b08d.koyeb.app/health
