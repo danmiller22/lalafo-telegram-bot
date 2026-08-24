@@ -53,16 +53,18 @@ async def start_handler(
             await message.answer("Квартира больше недоступна.")
             return
         text = (
-            "❌ Оплата не подтверждена. Оплатите повторно через Finik."
+            "❌ Оплата не подтверждена. Повторите оплату по ссылке ниже."
             if result.status == "rejected"
-            else "Для получения номера оплатите через Finik."
+            else "Для получения номера используйте ссылку на оплату ниже."
         )
         payment_message = await message.answer(text)
         redirect_token = signer.sign_values(
             "finik-redirect", apartment_id, message.chat.id, payment_message.message_id
         )
         redirect_url = f"{settings.require_public_base_url()}/pay/{redirect_token}"
-        await payment_message.edit_reply_markup(reply_markup=finik_keyboard(redirect_url))
+        await payment_message.edit_reply_markup(
+            reply_markup=finik_keyboard(redirect_url, support_url=settings.support_url)
+        )
         return
     await message.answer(
         "Бот открывает контакты квартир после ручной проверки оплаты.\n"
@@ -101,19 +103,34 @@ async def contact_handler(
         return
     if result.status == "pending":
         await callback.answer("⏳ Оплата уже отправлена на проверку.", show_alert=True)
+        if callback.message:
+            try:
+                await callback.message.edit_reply_markup(
+                    reply_markup=status_keyboard(
+                        apartment_id,
+                        signer=signer,
+                        payment_url=settings.finik_payment_url,
+                        support_url=settings.support_url,
+                    )
+                )
+            except Exception:
+                logger.exception("Could not restore pending payment keyboard")
         return
     if result.status == "unavailable":
         await callback.answer("Квартира больше недоступна.", show_alert=True)
         return
     if callback.message:
+        await callback.answer("Открываю оплату…")
         await callback.message.edit_reply_markup(
             reply_markup=payment_keyboard(
                 apartment_id,
                 signer=signer,
                 payment_url=settings.finik_payment_url,
+                support_url=settings.support_url,
             )
         )
-    await callback.answer("Оплатите через Finik, затем нажмите «Я оплатил».")
+        return
+    await callback.answer("Открываю оплату…")
 
 
 async def _submit_for_review(
@@ -143,22 +160,37 @@ async def _submit_for_review(
             show_alert=True,
         )
         return
+    alert_text = (
+        "⏳ Оплата уже проверяется.\n\n"
+        "Кнопки останутся под квартирой — повторно оплачивать не нужно."
+        if submission.outcome == "pending"
+        else "⏳ Оплата отправлена на проверку.\n\n"
+        "Кнопки останутся под квартирой. После подтверждения нажмите "
+        "«Проверить оплату / Получить номер»."
+    )
+    await callback.answer(alert_text, show_alert=True)
+    if callback.message:
+        try:
+            await callback.message.edit_reply_markup(
+                reply_markup=status_keyboard(
+                    apartment_id,
+                    signer=signer,
+                    payment_url=settings.finik_payment_url,
+                    support_url=settings.support_url,
+                )
+            )
+        except Exception:
+            logger.exception("Could not keep payment status keyboard on apartment card")
     request = await payments.get_request(submission.request.id)
     if request is None:
-        await callback.answer("Не удалось загрузить запрос.", show_alert=True)
+        logger.error("Could not reload payment request id=%s", submission.request.id)
         return
     if submission.outcome == "pending" and request.admin_message_id:
-        await callback.answer("⏳ Оплата уже отправлена на проверку.", show_alert=True)
         return
     if not settings.admin_user_id:
         logger.error("ADMIN_USER_ID is not configured; payment request remains pending")
-        await callback.answer(
-            "⏳ Запрос сохранён. Администратор ещё не настроен — обратитесь в поддержку.",
-            show_alert=True,
-        )
         return
     if not await payments.claim_admin_notification(request.id):
-        await callback.answer("⏳ Оплата уже отправлена на проверку.", show_alert=True)
         return
     try:
         admin_message = await bot.send_message(
@@ -169,25 +201,8 @@ async def _submit_for_review(
     except Exception as exc:
         await payments.release_admin_notification(request.id)
         logger.error("Admin payment notification failed: %s", type(exc).__name__)
-        await callback.answer(
-            "⏳ Запрос сохранён. Администратор увидит его в списке ожидающих.",
-            show_alert=True,
-        )
         return
     await payments.finish_admin_notification(request.id, admin_message.message_id)
-    if callback.message:
-        try:
-            await callback.message.edit_reply_markup(
-                reply_markup=status_keyboard(apartment_id, signer=signer)
-            )
-        except Exception:
-            logger.exception("Could not switch apartment card to payment status button")
-    await callback.answer(
-        "⏳ Оплата отправлена на проверку.\n\n"
-        "Не закрывайте эту карточку: после подтверждения бот уведомит вас "
-        "прямо под квартирой.",
-        show_alert=True,
-    )
 
 
 @router.callback_query(F.data.startswith(VIEW_PREFIX))
@@ -212,23 +227,37 @@ async def view_contact_handler(
         return
     if result.status == "pending":
         await callback.answer(
-            "⏳ Оплата ещё проверяется. Мы уведомим вас под этой квартирой.",
+            "⏳ Оплата ещё проверяется.\n\n"
+            "Кнопка останется на месте. После подтверждения нажмите её ещё раз.",
             show_alert=True,
         )
+        if callback.message:
+            try:
+                await callback.message.edit_reply_markup(
+                    reply_markup=status_keyboard(
+                        apartment_id,
+                        signer=signer,
+                        payment_url=settings.finik_payment_url,
+                        support_url=settings.support_url,
+                    )
+                )
+            except Exception:
+                logger.exception("Could not restore pending payment keyboard")
         return
     if result.status == "rejected":
+        await callback.answer(
+            "❌ Оплата не подтверждена. Можно повторить оплату и отправить её снова.",
+            show_alert=True,
+        )
         if callback.message:
             await callback.message.edit_reply_markup(
                 reply_markup=payment_keyboard(
                     apartment_id,
                     signer=signer,
                     payment_url=settings.finik_payment_url,
+                    support_url=settings.support_url,
                 )
             )
-        await callback.answer(
-            "❌ Оплата не подтверждена. Можно повторить оплату и отправить её снова.",
-            show_alert=True,
-        )
         return
     if result.status == "unavailable":
         await callback.answer("Квартира больше недоступна.", show_alert=True)
@@ -237,6 +266,18 @@ async def view_contact_handler(
         "Сначала откройте ссылку на оплату и нажмите «Я оплатил».",
         show_alert=True,
     )
+    if callback.message:
+        try:
+            await callback.message.edit_reply_markup(
+                reply_markup=payment_keyboard(
+                    apartment_id,
+                    signer=signer,
+                    payment_url=settings.finik_payment_url,
+                    support_url=settings.support_url,
+                )
+            )
+        except Exception:
+            logger.exception("Could not restore unpaid payment keyboard")
 
 
 @router.callback_query(F.data.startswith(PAID_PREFIX))
@@ -262,7 +303,22 @@ async def paid_handler(
         await callback.answer(text[:200], show_alert=True, cache_time=0)
         return
     if result.status == "pending":
-        await callback.answer("⏳ Оплата ещё проверяется.", show_alert=True)
+        await callback.answer(
+            "⏳ Оплата ещё проверяется. Повторно оплачивать не нужно.",
+            show_alert=True,
+        )
+        if callback.message:
+            try:
+                await callback.message.edit_reply_markup(
+                    reply_markup=status_keyboard(
+                        apartment_id,
+                        signer=signer,
+                        payment_url=settings.finik_payment_url,
+                        support_url=settings.support_url,
+                    )
+                )
+            except Exception:
+                logger.exception("Could not restore pending payment keyboard")
         return
     if result.status == "unavailable":
         await callback.answer("Квартира больше недоступна.", show_alert=True)

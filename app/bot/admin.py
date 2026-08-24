@@ -108,7 +108,11 @@ async def admin_callback(
             f"✅ {mention}, оплата подтверждена.\n"
             "Нажмите кнопку ниже — номер откроется только вам."
         )
-        reply_markup = reveal_keyboard(apartment.id, signer=signer)
+        reply_markup = reveal_keyboard(
+            apartment.id,
+            signer=signer,
+            support_url=settings.support_url,
+        )
     else:
         notification = (
             f"❌ {mention}, оплата пока не подтверждена.\n"
@@ -118,6 +122,7 @@ async def admin_callback(
             apartment.id,
             signer=signer,
             payment_url=settings.finik_payment_url,
+            support_url=settings.support_url,
         )
     try:
         await bot.send_message(

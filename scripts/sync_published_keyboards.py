@@ -57,6 +57,7 @@ async def run() -> int:
                             apartment.id,
                             signer=signer,
                             payment_url=settings.finik_payment_url,
+                            support_url=settings.support_url,
                         ),
                     )
                     updated += 1

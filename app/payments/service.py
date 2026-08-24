@@ -21,11 +21,16 @@ class PaymentService:
         self.admin_user_id = admin_user_id
 
     async def contact_status(self, user_id: int, apartment_id: int) -> ContactResult:
+        request = await self.payments.get_access(user_id, apartment_id)
+        if request is not None:
+            apartment = request.apartment
+            if apartment is None or not apartment.active or not apartment.phone:
+                return ContactResult("unavailable", apartment)
+            return ContactResult(request.status, apartment)
         apartment = await self.apartments.get(apartment_id)
         if apartment is None or not apartment.active or not apartment.phone:
             return ContactResult("unavailable", apartment)
-        request = await self.payments.get_access(user_id, apartment_id)
-        return ContactResult(request.status if request else "unpaid", apartment)
+        return ContactResult("unpaid", apartment)
 
     async def submit_payment(
         self,

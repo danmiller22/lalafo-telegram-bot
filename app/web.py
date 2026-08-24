@@ -173,10 +173,14 @@ async def open_finik_payment(token: str) -> RedirectResponse:
         await runtime.bot.edit_message_reply_markup(
             chat_id=chat_id,
             message_id=message_id,
-            reply_markup=paid_keyboard(apartment_id, signer=signer),
+            reply_markup=paid_keyboard(
+                apartment_id,
+                signer=signer,
+                support_url=settings.support_url,
+            ),
         )
     except Exception:
-        logger.exception("Could not replace Finik button with paid confirmation")
+        logger.exception("Could not replace payment button with paid confirmation")
     return RedirectResponse(settings.finik_payment_url, status_code=status.HTTP_302_FOUND)
 
 
