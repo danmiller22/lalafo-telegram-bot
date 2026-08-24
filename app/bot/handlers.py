@@ -8,17 +8,18 @@ from aiogram.types import CallbackQuery, Message
 
 from app.bot.callbacks import CONTACT_PREFIX, PAID_PREFIX, VIEW_PREFIX
 from app.config import Settings
-from app.lalafo.phone import display_phone
 from app.payments.repository import PaymentRepository
 from app.payments.service import PaymentService
 from app.security import TokenSigner
-from app.telegram.formatting import format_admin_card
+from app.telegram.formatting import format_admin_card, format_apartment
 from app.telegram.keyboards import (
     admin_keyboard,
-    finik_keyboard,
+    apartment_keyboard,
     payment_keyboard,
+    private_payment_keyboard,
     status_keyboard,
 )
+from app.telegram.private_delivery import send_private_contact
 
 logger = logging.getLogger(__name__)
 router = Router(name="user")
@@ -35,6 +36,7 @@ async def start_handler(
     service: PaymentService,
     signer: TokenSigner,
     settings: Settings,
+    bot: Bot,
 ) -> None:
     payload = _start_payload(message)
     if payload.startswith("pay_"):
@@ -43,32 +45,53 @@ async def start_handler(
             await message.answer("Ссылка недействительна. Вернитесь к карточке квартиры.")
             return
         result = await service.contact_status(message.from_user.id, apartment_id)
-        if result.status == "approved":
-            await message.answer("✅ Оплата подтверждена. Нажмите «Получить номер» под квартирой.")
-            return
-        if result.status == "pending":
-            await message.answer("⏳ Оплата уже отправлена на проверку.")
+        if result.status == "approved" and result.apartment:
+            await send_private_contact(
+                bot,
+                user_id=message.from_user.id,
+                apartment=result.apartment,
+                support_url=settings.support_url,
+            )
             return
         if result.status == "unavailable":
             await message.answer("Квартира больше недоступна.")
             return
-        text = (
-            "❌ Оплата не подтверждена. Повторите оплату по ссылке ниже."
-            if result.status == "rejected"
-            else "Для получения номера используйте ссылку на оплату ниже."
-        )
-        payment_message = await message.answer(text)
-        redirect_token = signer.sign_values(
-            "finik-redirect", apartment_id, message.chat.id, payment_message.message_id
-        )
-        redirect_url = f"{settings.require_public_base_url()}/pay/{redirect_token}"
-        await payment_message.edit_reply_markup(
-            reply_markup=finik_keyboard(redirect_url, support_url=settings.support_url)
+        apartment_text = format_apartment(result.apartment) if result.apartment else "Квартира"
+        if result.status == "pending":
+            text = (
+                "⏳ Оплата уже отправлена на проверку.\n\n"
+                f"{apartment_text}\n\n"
+                "Повторно оплачивать не нужно. После подтверждения полная карточка "
+                "с номером придёт сюда автоматически."
+            )
+        elif result.status == "rejected":
+            text = (
+                "❌ Оплата не подтверждена.\n\n"
+                f"{apartment_text}\n\n"
+                "Доступ к номеру собственника стоит 100 сом. "
+                "Можно повторить оплату и снова проверить её."
+            )
+        else:
+            text = (
+                "🔐 Доступ к номеру собственника\n\n"
+                f"{apartment_text}\n\n"
+                "Стоимость одного номера — 100 сом.\n"
+                "После оплаты нажмите «Проверить оплату»."
+            )
+        await message.answer(
+            text,
+            reply_markup=private_payment_keyboard(
+                apartment_id,
+                signer=signer,
+                payment_url=settings.finik_payment_url,
+                support_url=settings.support_url,
+                pending=result.status == "pending",
+            ),
         )
         return
     await message.answer(
         "Бот открывает контакты квартир после ручной проверки оплаты.\n"
-        "Выберите квартиру в группе и нажмите «Получить номер»."
+        "Выберите квартиру в группе и нажмите «Посмотреть номер»."
     )
 
 
@@ -98,8 +121,19 @@ async def contact_handler(
         return
     result = await service.contact_status(callback.from_user.id, apartment_id)
     if result.status == "approved" and result.apartment:
-        text = f"✅ Оплата подтверждена\n\n📞 Номер собственника:\n{display_phone(result.apartment.phone)}"
-        await callback.answer(text[:200], show_alert=True, cache_time=0)
+        await callback.answer(
+            "✅ Оплата подтверждена. Откройте личный чат бота из обновлённой кнопки.",
+            show_alert=True,
+        )
+        if callback.message:
+            await callback.message.edit_reply_markup(
+                reply_markup=apartment_keyboard(
+                    apartment_id,
+                    signer=signer,
+                    bot_username=settings.telegram_bot_username,
+                    support_url=settings.support_url,
+                )
+            )
         return
     if result.status == "pending":
         await callback.answer("⏳ Оплата уже отправлена на проверку.", show_alert=True)
@@ -120,12 +154,12 @@ async def contact_handler(
         await callback.answer("Квартира больше недоступна.", show_alert=True)
         return
     if callback.message:
-        await callback.answer("Открываю оплату…")
+        await callback.answer("Откройте обновлённую кнопку под квартирой.", show_alert=True)
         await callback.message.edit_reply_markup(
-            reply_markup=payment_keyboard(
+            reply_markup=apartment_keyboard(
                 apartment_id,
                 signer=signer,
-                payment_url=settings.finik_payment_url,
+                bot_username=settings.telegram_bot_username,
                 support_url=settings.support_url,
             )
         )
@@ -155,30 +189,62 @@ async def _submit_for_review(
         await callback.answer("Квартира больше недоступна.", show_alert=True)
         return
     if submission.outcome == "approved":
-        await callback.answer(
-            "✅ Оплата подтверждена. Нажмите «Получить номер» ещё раз.",
-            show_alert=True,
-        )
+        result = await service.contact_status(callback.from_user.id, apartment_id)
+        if (
+            callback.message
+            and callback.message.chat.type == "private"
+            and result.apartment
+        ):
+            await send_private_contact(
+                bot,
+                user_id=callback.from_user.id,
+                apartment=result.apartment,
+                support_url=settings.support_url,
+            )
+            await callback.answer("✅ Полная карточка отправлена вам в этот чат.")
+        else:
+            await callback.answer(
+                "✅ Оплата подтверждена. Откройте личный чат бота из карточки квартиры.",
+                show_alert=True,
+            )
         return
-    alert_text = (
-        "⏳ Оплата уже проверяется.\n\n"
-        "Кнопки останутся под квартирой — повторно оплачивать не нужно."
-        if submission.outcome == "pending"
-        else "⏳ Оплата отправлена на проверку.\n\n"
-        "Кнопки останутся под квартирой. После подтверждения нажмите "
-        "«Проверить оплату / Получить номер»."
-    )
+    is_private = bool(callback.message and callback.message.chat.type == "private")
+    if submission.outcome == "pending":
+        alert_text = (
+            "⏳ Оплата уже проверяется.\n\n"
+            "Повторно оплачивать не нужно. Полная карточка с номером придёт сюда "
+            "после подтверждения."
+            if is_private
+            else "⏳ Оплата уже проверяется.\n\n"
+            "Кнопки останутся под квартирой — повторно оплачивать не нужно."
+        )
+    else:
+        alert_text = (
+            "⏳ Оплата отправлена на проверку.\n\n"
+            "После подтверждения бот автоматически пришлёт сюда полную карточку с номером."
+            if is_private
+            else "⏳ Оплата отправлена на проверку.\n\n"
+            "После подтверждения откройте личный чат бота из карточки квартиры."
+        )
     await callback.answer(alert_text, show_alert=True)
     if callback.message:
         try:
-            await callback.message.edit_reply_markup(
-                reply_markup=status_keyboard(
+            if callback.message.chat.type == "private":
+                reply_markup = private_payment_keyboard(
+                    apartment_id,
+                    signer=signer,
+                    payment_url=settings.finik_payment_url,
+                    support_url=settings.support_url,
+                    pending=True,
+                )
+            else:
+                reply_markup = status_keyboard(
                     apartment_id,
                     signer=signer,
                     payment_url=settings.finik_payment_url,
                     support_url=settings.support_url,
                 )
-            )
+            await callback.message.edit_reply_markup(reply_markup=reply_markup)
         except Exception:
             logger.exception("Could not keep payment status keyboard on apartment card")
     request = await payments.get_request(submission.request.id)
@@ -211,6 +277,7 @@ async def view_contact_handler(
     service: PaymentService,
     signer: TokenSigner,
     settings: Settings,
+    bot: Bot,
 ) -> None:
     token = (callback.data or "")[len(VIEW_PREFIX) :]
     apartment_id = signer.verify_id("view", token)
@@ -219,11 +286,19 @@ async def view_contact_handler(
         return
     result = await service.contact_status(callback.from_user.id, apartment_id)
     if result.status == "approved" and result.apartment:
-        text = (
-            "✅ Оплата подтверждена\n\n"
-            f"📞 Номер собственника:\n{display_phone(result.apartment.phone)}"
-        )
-        await callback.answer(text[:200], show_alert=True, cache_time=0)
+        if callback.message and callback.message.chat.type == "private":
+            await send_private_contact(
+                bot,
+                user_id=callback.from_user.id,
+                apartment=result.apartment,
+                support_url=settings.support_url,
+            )
+            await callback.answer("✅ Полная карточка отправлена вам в этот чат.")
+        else:
+            await callback.answer(
+                "✅ Оплата подтверждена. Откройте личный чат бота из карточки квартиры.",
+                show_alert=True,
+            )
         return
     if result.status == "pending":
         await callback.answer(
@@ -233,14 +308,22 @@ async def view_contact_handler(
         )
         if callback.message:
             try:
-                await callback.message.edit_reply_markup(
-                    reply_markup=status_keyboard(
+                if callback.message.chat.type == "private":
+                    reply_markup = private_payment_keyboard(
+                        apartment_id,
+                        signer=signer,
+                        payment_url=settings.finik_payment_url,
+                        support_url=settings.support_url,
+                        pending=True,
+                    )
+                else:
+                    reply_markup = status_keyboard(
                         apartment_id,
                         signer=signer,
                         payment_url=settings.finik_payment_url,
                         support_url=settings.support_url,
                     )
-                )
+                await callback.message.edit_reply_markup(reply_markup=reply_markup)
             except Exception:
                 logger.exception("Could not restore pending payment keyboard")
         return
@@ -296,11 +379,19 @@ async def paid_handler(
         return
     result = await service.contact_status(callback.from_user.id, apartment_id)
     if result.status == "approved" and result.apartment:
-        text = (
-            "✅ Оплата подтверждена\n\n"
-            f"📞 Номер собственника:\n{display_phone(result.apartment.phone)}"
-        )
-        await callback.answer(text[:200], show_alert=True, cache_time=0)
+        if callback.message and callback.message.chat.type == "private":
+            await send_private_contact(
+                bot,
+                user_id=callback.from_user.id,
+                apartment=result.apartment,
+                support_url=settings.support_url,
+            )
+            await callback.answer("✅ Полная карточка отправлена вам в этот чат.")
+        else:
+            await callback.answer(
+                "✅ Оплата подтверждена. Откройте личный чат бота из карточки квартиры.",
+                show_alert=True,
+            )
         return
     if result.status == "pending":
         await callback.answer(
@@ -309,14 +400,22 @@ async def paid_handler(
         )
         if callback.message:
             try:
-                await callback.message.edit_reply_markup(
-                    reply_markup=status_keyboard(
+                if callback.message.chat.type == "private":
+                    reply_markup = private_payment_keyboard(
+                        apartment_id,
+                        signer=signer,
+                        payment_url=settings.finik_payment_url,
+                        support_url=settings.support_url,
+                        pending=True,
+                    )
+                else:
+                    reply_markup = status_keyboard(
                         apartment_id,
                         signer=signer,
                         payment_url=settings.finik_payment_url,
                         support_url=settings.support_url,
                     )
-                )
+                await callback.message.edit_reply_markup(reply_markup=reply_markup)
             except Exception:
                 logger.exception("Could not restore pending payment keyboard")
         return

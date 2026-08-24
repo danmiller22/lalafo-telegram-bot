@@ -10,16 +10,16 @@ def _support_row(support_url: str) -> list[InlineKeyboardButton]:
 
 
 def apartment_keyboard(
-    apartment_id: int, *, signer: TokenSigner, payment_url: str, support_url: str
+    apartment_id: int, *, signer: TokenSigner, bot_username: str, support_url: str
 ) -> InlineKeyboardMarkup:
-    del payment_url
-    contact_token = signer.sign_id("contact", apartment_id)
+    payment_token = signer.sign_id("payment-link", apartment_id)
+    private_url = f"https://t.me/{bot_username.lstrip('@')}?start=pay_{payment_token}"
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="🔐 Получить номер",
-                    callback_data=f"contact:{contact_token}",
+                    text="🔐 Посмотреть номер",
+                    url=private_url,
                 )
             ],
             _support_row(support_url),
@@ -46,6 +46,40 @@ def payment_keyboard(
                     callback_data=f"view:{signer.sign_id('view', apartment_id)}",
                 )
             ],
+            _support_row(support_url),
+        ]
+    )
+
+
+def private_payment_keyboard(
+    apartment_id: int,
+    *,
+    signer: TokenSigner,
+    payment_url: str,
+    support_url: str,
+    pending: bool = False,
+) -> InlineKeyboardMarkup:
+    token = signer.sign_id("paid", apartment_id)
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="💳 Оплатить 100 сом", url=payment_url)],
+            [
+                InlineKeyboardButton(
+                    text=("⏳ Проверить оплату" if pending else "✅ Проверить оплату"),
+                    callback_data=f"paid:{token}",
+                )
+            ],
+            _support_row(support_url),
+        ]
+    )
+
+
+def private_contact_keyboard(
+    source_url: str, *, support_url: str
+) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🔗 Открыть объявление", url=source_url)],
             _support_row(support_url),
         ]
     )

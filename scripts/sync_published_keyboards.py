@@ -56,7 +56,7 @@ async def run() -> int:
                         reply_markup=apartment_keyboard(
                             apartment.id,
                             signer=signer,
-                            payment_url=settings.finik_payment_url,
+                            bot_username=settings.telegram_bot_username,
                             support_url=settings.support_url,
                         ),
                     )

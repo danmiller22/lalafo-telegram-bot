@@ -4,7 +4,7 @@ import logging
 
 from aiogram import Bot, F, Router
 from aiogram.filters import Command
-from aiogram.types import CallbackQuery, Message, ReplyParameters
+from aiogram.types import CallbackQuery, Message
 
 from app.bot.callbacks import ADMIN_PREFIX
 from app.config import Settings
@@ -12,7 +12,8 @@ from app.payments.repository import ApartmentRepository, PaymentRepository
 from app.payments.service import PaymentService
 from app.security import TokenSigner
 from app.telegram.formatting import format_admin_decision, user_label
-from app.telegram.keyboards import payment_keyboard, reveal_keyboard
+from app.telegram.keyboards import private_payment_keyboard
+from app.telegram.private_delivery import send_private_contact
 
 router = Router(name="admin")
 logger = logging.getLogger(__name__)
@@ -98,42 +99,36 @@ async def admin_callback(
         await callback.answer("Запрос уже обработан.", show_alert=True)
         return
     await callback.message.edit_text(format_admin_decision(request, outcome == "approved"))
-    await callback.answer("Готово")
     apartment = request.apartment
-    if not apartment.telegram_chat_id or not apartment.telegram_message_id:
-        return
-    mention = f'<a href="tg://user?id={request.telegram_user_id}">Покупатель</a>'
     if outcome == "approved":
-        notification = (
-            f"✅ {mention}, оплата подтверждена.\n"
-            "Нажмите кнопку ниже — номер откроется только вам."
-        )
-        reply_markup = reveal_keyboard(
-            apartment.id,
-            signer=signer,
-            support_url=settings.support_url,
-        )
+        try:
+            await send_private_contact(
+                bot,
+                user_id=request.telegram_user_id,
+                apartment=apartment,
+                support_url=settings.support_url,
+            )
+        except Exception:
+            logger.exception("Could not deliver approved apartment privately")
+            await callback.answer(
+                "Оплата подтверждена, но Telegram не принял личное сообщение. "
+                "Клиент получит карточку при повторном открытии бота.",
+                show_alert=True,
+            )
+            return
+        await callback.answer("✅ Подтверждено. Полная карточка отправлена клиенту в личку.")
     else:
-        notification = (
-            f"❌ {mention}, оплата пока не подтверждена.\n"
-            "Проверьте платеж или повторите попытку."
-        )
-        reply_markup = payment_keyboard(
-            apartment.id,
-            signer=signer,
-            payment_url=settings.finik_payment_url,
-            support_url=settings.support_url,
-        )
-    try:
-        await bot.send_message(
-            apartment.telegram_chat_id,
-            notification,
-            parse_mode="HTML",
-            reply_markup=reply_markup,
-            reply_parameters=ReplyParameters(
-                message_id=apartment.telegram_message_id,
-                allow_sending_without_reply=True,
-            ),
-        )
-    except Exception:
-        logger.exception("Could not notify buyer below apartment card")
+        try:
+            await bot.send_message(
+                request.telegram_user_id,
+                "❌ Оплата пока не подтверждена. Проверьте платеж или повторите попытку.",
+                reply_markup=private_payment_keyboard(
+                    apartment.id,
+                    signer=signer,
+                    payment_url=settings.finik_payment_url,
+                    support_url=settings.support_url,
+                ),
+            )
+        except Exception:
+            logger.exception("Could not notify rejected buyer privately")
+        await callback.answer("Оплата отклонена. Клиенту отправлено уведомление.")

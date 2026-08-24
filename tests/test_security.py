@@ -3,6 +3,8 @@ from app.telegram.keyboards import (
     admin_keyboard,
     apartment_keyboard,
     payment_keyboard,
+    private_contact_keyboard,
+    private_payment_keyboard,
     reveal_keyboard,
     status_keyboard,
 )
@@ -19,10 +21,10 @@ def test_signed_callback_and_tampering():
 def test_callback_data_is_short_and_contains_no_phone():
     signer = TokenSigner("a-very-long-test-secret")
     support_url = "https://t.me/support_test"
-    contact = apartment_keyboard(
+    group = apartment_keyboard(
         123456789,
         signer=signer,
-        payment_url="https://qr.finik.kg/payment",
+        bot_username="arenda312bot",
         support_url=support_url,
     )
     payment = payment_keyboard(
@@ -39,22 +41,42 @@ def test_callback_data_is_short_and_contains_no_phone():
         support_url=support_url,
     )
     reveal = reveal_keyboard(123456789, signer=signer, support_url=support_url)
+    private_payment = private_payment_keyboard(
+        123456789,
+        signer=signer,
+        payment_url="https://qr.finik.kg/payment",
+        support_url=support_url,
+    )
+    private_contact = private_contact_keyboard(
+        "https://lalafo.kg/example",
+        support_url=support_url,
+    )
     for callback in (
-        contact.inline_keyboard[0][0].callback_data,
         payment.inline_keyboard[1][0].callback_data,
         status.inline_keyboard[1][0].callback_data,
         reveal.inline_keyboard[0][0].callback_data,
+        private_payment.inline_keyboard[1][0].callback_data,
         admin.inline_keyboard[0][0].callback_data,
         admin.inline_keyboard[0][1].callback_data,
     ):
         assert len(callback.encode()) <= 64
         assert "+996" not in callback
 
-    assert contact.inline_keyboard[0][0].url is None
+    private_url = group.inline_keyboard[0][0].url
+    assert private_url.startswith("https://t.me/arenda312bot?start=pay_")
+    payload = private_url.split("?start=pay_", 1)[1]
+    assert signer.verify_id("payment-link", payload) == 123456789
     assert payment.inline_keyboard[0][0].url == "https://qr.finik.kg/payment"
-    for keyboard in (contact, payment, status, reveal):
+    for keyboard in (group, payment, status, reveal, private_payment, private_contact):
         assert keyboard.inline_keyboard[-1][0].text == "🛟 Техподдержка"
         assert keyboard.inline_keyboard[-1][0].url == support_url
+
+    assert [row[0].text for row in private_payment.inline_keyboard] == [
+        "💳 Оплатить 100 сом",
+        "✅ Проверить оплату",
+        "🛟 Техподдержка",
+    ]
+    assert private_contact.inline_keyboard[0][0].url == "https://lalafo.kg/example"
 
 
 def test_payment_and_status_keyboards_keep_recovery_actions():

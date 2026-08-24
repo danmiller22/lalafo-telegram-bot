@@ -1,0 +1,24 @@
+version: v1.0
+name: One-time Telegram keyboard sync
+
+agent:
+  machine:
+    type: f1-standard-2
+    os_image: ubuntu2404
+
+execution_time_limit:
+  minutes: 10
+
+blocks:
+  - name: Update published apartment buttons
+    task:
+      secrets:
+        - name: lalafo-production
+      jobs:
+        - name: Sync Telegram keyboards
+          commands:
+            - checkout
+            - sem-version python 3.12
+            - python -m pip install -r requirements.txt
+            - alembic upgrade head
+            - python -m scripts.sync_published_keyboards

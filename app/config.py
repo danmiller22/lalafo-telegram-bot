@@ -21,7 +21,7 @@ class Settings(BaseSettings):
 
     telegram_bot_token: str = ""
     telegram_group_id: int = -1004389602150
-    telegram_bot_username: str = ""
+    telegram_bot_username: str = "arenda312bot"
     admin_user_id: int = 0
     admin_username: str = "maxkgz2"
     support_url: str = "https://t.me/maxkgz2"

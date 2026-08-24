@@ -154,7 +154,7 @@ async def run() -> int:
         bot,
         chat_id=settings.telegram_group_id,
         signer=signer,
-        payment_url=settings.finik_payment_url,
+        bot_username=settings.telegram_bot_username,
         support_url=settings.support_url,
         max_photos=settings.max_photos_per_apartment,
     )

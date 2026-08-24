@@ -26,14 +26,14 @@ class TelegramPublisher:
         *,
         chat_id: int,
         signer: TokenSigner,
-        payment_url: str,
+        bot_username: str,
         support_url: str,
         max_photos: int = 5,
     ) -> None:
         self.bot = bot
         self.chat_id = chat_id
         self.signer = signer
-        self.payment_url = payment_url
+        self.bot_username = bot_username
         self.support_url = support_url
         self.max_photos = max(1, min(max_photos, 10))
 
@@ -83,7 +83,7 @@ class TelegramPublisher:
                 reply_markup=apartment_keyboard(
                     apartment_id,
                     signer=self.signer,
-                    payment_url=self.payment_url,
+                    bot_username=self.bot_username,
                     support_url=self.support_url,
                 ),
             )
