@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from aiogram import F, Router
+import logging
+
+from aiogram import Bot, F, Router
 from aiogram.filters import Command
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, ReplyParameters
 
 from app.bot.callbacks import ADMIN_PREFIX
 from app.config import Settings
@@ -10,8 +12,10 @@ from app.payments.repository import ApartmentRepository, PaymentRepository
 from app.payments.service import PaymentService
 from app.security import TokenSigner
 from app.telegram.formatting import format_admin_decision, user_label
+from app.telegram.keyboards import payment_keyboard, reveal_keyboard
 
 router = Router(name="admin")
+logger = logging.getLogger(__name__)
 
 
 def _is_admin(user_id: int, settings: Settings) -> bool:
@@ -68,6 +72,7 @@ async def admin_callback(
     settings: Settings,
     service: PaymentService,
     signer: TokenSigner,
+    bot: Bot,
 ) -> None:
     if not _is_admin(callback.from_user.id, settings):
         await callback.answer("Недостаточно прав.", show_alert=True)
@@ -94,3 +99,36 @@ async def admin_callback(
         return
     await callback.message.edit_text(format_admin_decision(request, outcome == "approved"))
     await callback.answer("Готово")
+    apartment = request.apartment
+    if not apartment.telegram_chat_id or not apartment.telegram_message_id:
+        return
+    mention = f'<a href="tg://user?id={request.telegram_user_id}">Покупатель</a>'
+    if outcome == "approved":
+        notification = (
+            f"✅ {mention}, оплата подтверждена.\n"
+            "Нажмите кнопку ниже — номер откроется только вам."
+        )
+        reply_markup = reveal_keyboard(apartment.id, signer=signer)
+    else:
+        notification = (
+            f"❌ {mention}, оплата пока не подтверждена.\n"
+            "Проверьте платеж или повторите попытку."
+        )
+        reply_markup = payment_keyboard(
+            apartment.id,
+            signer=signer,
+            payment_url=settings.finik_payment_url,
+        )
+    try:
+        await bot.send_message(
+            apartment.telegram_chat_id,
+            notification,
+            parse_mode="HTML",
+            reply_markup=reply_markup,
+            reply_parameters=ReplyParameters(
+                message_id=apartment.telegram_message_id,
+                allow_sending_without_reply=True,
+            ),
+        )
+    except Exception:
+        logger.exception("Could not notify buyer below apartment card")

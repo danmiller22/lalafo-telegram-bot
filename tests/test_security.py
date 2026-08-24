@@ -1,5 +1,11 @@
 from app.security import TokenSigner
-from app.telegram.keyboards import admin_keyboard, apartment_keyboard, payment_keyboard
+from app.telegram.keyboards import (
+    admin_keyboard,
+    apartment_keyboard,
+    payment_keyboard,
+    reveal_keyboard,
+    status_keyboard,
+)
 
 
 def test_signed_callback_and_tampering():
@@ -19,9 +25,13 @@ def test_callback_data_is_short_and_contains_no_phone():
         123456789, signer=signer, payment_url="https://qr.finik.kg/payment"
     )
     admin = admin_keyboard(987654321, signer=signer)
+    status = status_keyboard(123456789, signer=signer)
+    reveal = reveal_keyboard(123456789, signer=signer)
     for callback in (
         contact.inline_keyboard[0][0].callback_data,
         payment.inline_keyboard[1][0].callback_data,
+        status.inline_keyboard[0][0].callback_data,
+        reveal.inline_keyboard[0][0].callback_data,
         admin.inline_keyboard[0][0].callback_data,
         admin.inline_keyboard[0][1].callback_data,
     ):

@@ -56,6 +56,34 @@ def paid_keyboard(apartment_id: int, *, signer: TokenSigner) -> InlineKeyboardMa
     )
 
 
+def status_keyboard(apartment_id: int, *, signer: TokenSigner) -> InlineKeyboardMarkup:
+    token = signer.sign_id("view", apartment_id)
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="⏳ Проверить оплату / Получить номер",
+                    callback_data=f"view:{token}",
+                )
+            ]
+        ]
+    )
+
+
+def reveal_keyboard(apartment_id: int, *, signer: TokenSigner) -> InlineKeyboardMarkup:
+    token = signer.sign_id("view", apartment_id)
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="📞 Показать номер",
+                    callback_data=f"view:{token}",
+                )
+            ]
+        ]
+    )
+
+
 def admin_keyboard(request_id: int, *, signer: TokenSigner) -> InlineKeyboardMarkup:
     token = signer.sign_id("admin", request_id)
     return InlineKeyboardMarkup(

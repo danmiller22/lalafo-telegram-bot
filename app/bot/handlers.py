@@ -6,14 +6,19 @@ from aiogram import Bot, F, Router
 from aiogram.filters import Command, CommandStart
 from aiogram.types import CallbackQuery, Message
 
-from app.bot.callbacks import CONTACT_PREFIX, PAID_PREFIX
+from app.bot.callbacks import CONTACT_PREFIX, PAID_PREFIX, VIEW_PREFIX
 from app.config import Settings
 from app.lalafo.phone import display_phone
 from app.payments.repository import PaymentRepository
 from app.payments.service import PaymentService
 from app.security import TokenSigner
 from app.telegram.formatting import format_admin_card
-from app.telegram.keyboards import admin_keyboard, finik_keyboard, payment_keyboard
+from app.telegram.keyboards import (
+    admin_keyboard,
+    finik_keyboard,
+    payment_keyboard,
+    status_keyboard,
+)
 
 logger = logging.getLogger(__name__)
 router = Router(name="user")
@@ -170,7 +175,68 @@ async def _submit_for_review(
         )
         return
     await payments.finish_admin_notification(request.id, admin_message.message_id)
-    await callback.answer("⏳ Оплата отправлена на проверку.", show_alert=True)
+    if callback.message:
+        try:
+            await callback.message.edit_reply_markup(
+                reply_markup=status_keyboard(apartment_id, signer=signer)
+            )
+        except Exception:
+            logger.exception("Could not switch apartment card to payment status button")
+    await callback.answer(
+        "⏳ Оплата отправлена на проверку.\n\n"
+        "Не закрывайте эту карточку: после подтверждения бот уведомит вас "
+        "прямо под квартирой.",
+        show_alert=True,
+    )
+
+
+@router.callback_query(F.data.startswith(VIEW_PREFIX))
+async def view_contact_handler(
+    callback: CallbackQuery,
+    service: PaymentService,
+    signer: TokenSigner,
+    settings: Settings,
+) -> None:
+    token = (callback.data or "")[len(VIEW_PREFIX) :]
+    apartment_id = signer.verify_id("view", token)
+    if apartment_id is None:
+        await callback.answer("Недействительная кнопка.", show_alert=True)
+        return
+    result = await service.contact_status(callback.from_user.id, apartment_id)
+    if result.status == "approved" and result.apartment:
+        text = (
+            "✅ Оплата подтверждена\n\n"
+            f"📞 Номер собственника:\n{display_phone(result.apartment.phone)}"
+        )
+        await callback.answer(text[:200], show_alert=True, cache_time=0)
+        return
+    if result.status == "pending":
+        await callback.answer(
+            "⏳ Оплата ещё проверяется. Мы уведомим вас под этой квартирой.",
+            show_alert=True,
+        )
+        return
+    if result.status == "rejected":
+        if callback.message:
+            await callback.message.edit_reply_markup(
+                reply_markup=payment_keyboard(
+                    apartment_id,
+                    signer=signer,
+                    payment_url=settings.finik_payment_url,
+                )
+            )
+        await callback.answer(
+            "❌ Оплата не подтверждена. Можно повторить оплату и отправить её снова.",
+            show_alert=True,
+        )
+        return
+    if result.status == "unavailable":
+        await callback.answer("Квартира больше недоступна.", show_alert=True)
+        return
+    await callback.answer(
+        "Сначала откройте ссылку на оплату и нажмите «Я оплатил».",
+        show_alert=True,
+    )
 
 
 @router.callback_query(F.data.startswith(PAID_PREFIX))
