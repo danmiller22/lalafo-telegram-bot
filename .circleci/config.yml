@@ -3,20 +3,20 @@ version: 2.1
 jobs:
   test:
     docker:
-      - image: cimg/python:3.12
+      - image: python:3.12-bookworm
     resource_class: small
     steps:
       - checkout
       - run:
           name: Install dependencies
-          command: python --version && python -m venv /tmp/lalafo-venv && /tmp/lalafo-venv/bin/python -m pip install -r requirements.txt
+          command: python --version && python -m pip install -r requirements.txt
       - run:
           name: Run tests
-          command: /tmp/lalafo-venv/bin/python -m pytest -q
+          command: python -m pytest -q
 
   scrape_dry_run:
     docker:
-      - image: cimg/python:3.12
+      - image: python:3.12-bookworm
     resource_class: small
     environment:
       DRY_RUN: "true"
@@ -26,10 +26,10 @@ jobs:
       - checkout
       - run:
           name: Install dependencies
-          command: python --version && python -m venv /tmp/lalafo-venv && /tmp/lalafo-venv/bin/python -m pip install -r requirements.txt
+          command: python --version && python -m pip install -r requirements.txt
       - run:
           name: Check Lalafo in safe dry-run mode
-          command: /tmp/lalafo-venv/bin/python -m scripts.scrape_publish
+          command: python -m scripts.scrape_publish
       - run:
           name: Keep the payment bot service awake
           command: >-
