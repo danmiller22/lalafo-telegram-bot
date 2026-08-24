@@ -40,7 +40,7 @@ async def start_handler(
 ) -> None:
     payload = _start_payload(message)
     if payload.startswith("pay_"):
-        apartment_id = signer.verify_id("payment-link", payload[4:])
+        apartment_id = signer.verify_start_id("payment-link", payload[4:])
         if apartment_id is None:
             await message.answer("Ссылка недействительна. Вернитесь к карточке квартиры.")
             return

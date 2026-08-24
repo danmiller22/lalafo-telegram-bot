@@ -46,6 +46,17 @@ class TokenSigner:
         except (ValueError, TypeError):
             return None
 
+    def sign_start_id(self, purpose: str, value: int) -> str:
+        """Sign an ID using only characters allowed in Telegram start parameters."""
+        return self.sign_id(purpose, value).replace(".", "-", 1)
+
+    def verify_start_id(self, purpose: str, token: str) -> int | None:
+        """Verify a Telegram-safe start parameter token."""
+        encoded, separator, signature = token.partition("-")
+        if not separator or not encoded or not signature:
+            return None
+        return self.verify_id(purpose, f"{encoded}.{signature}")
+
     def sign_values(self, purpose: str, *values: int) -> str:
         if not values:
             raise ValueError("at least one value is required")

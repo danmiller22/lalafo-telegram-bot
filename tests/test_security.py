@@ -1,3 +1,5 @@
+import re
+
 from app.security import TokenSigner
 from app.telegram.keyboards import (
     admin_keyboard,
@@ -62,7 +64,10 @@ def test_callback_data_is_short_and_contains_no_phone():
     private_url = group.inline_keyboard[0][0].url
     assert private_url.startswith("https://t.me/arenda312bot?start=pay_")
     payload = private_url.split("?start=pay_", 1)[1]
-    assert signer.verify_id("payment-link", payload) == 123456789
+    assert re.fullmatch(r"[A-Za-z0-9_-]+", payload)
+    assert len(f"pay_{payload}") <= 64
+    assert "." not in payload
+    assert signer.verify_start_id("payment-link", payload) == 123456789
     assert payment.inline_keyboard[0][0].url == "https://qr.finik.kg/payment"
     for keyboard in (group, payment, status, reveal, private_payment, private_contact):
         assert keyboard.inline_keyboard[-1][0].text == "🛟 Техподдержка"
@@ -108,3 +113,13 @@ def test_multi_value_signature_rejects_tampering():
     token = signer.sign_values("finik-redirect", 1, 2, 3)
     assert signer.verify_values("finik-redirect", token, count=3) == (1, 2, 3)
     assert signer.verify_values("finik-redirect", token + "x", count=3) is None
+
+
+def test_start_signature_is_telegram_safe_and_rejects_tampering():
+    signer = TokenSigner("a-very-long-test-secret")
+    token = signer.sign_start_id("payment-link", 152)
+
+    assert re.fullmatch(r"[A-Za-z0-9_-]+", token)
+    assert signer.verify_start_id("payment-link", token) == 152
+    assert signer.verify_start_id("payment-link", token + "x") is None
+    assert signer.verify_start_id("other-purpose", token) is None

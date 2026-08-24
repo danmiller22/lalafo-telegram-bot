@@ -12,7 +12,7 @@ def _support_row(support_url: str) -> list[InlineKeyboardButton]:
 def apartment_keyboard(
     apartment_id: int, *, signer: TokenSigner, bot_username: str, support_url: str
 ) -> InlineKeyboardMarkup:
-    payment_token = signer.sign_id("payment-link", apartment_id)
+    payment_token = signer.sign_start_id("payment-link", apartment_id)
     private_url = f"https://t.me/{bot_username.lstrip('@')}?start=pay_{payment_token}"
     return InlineKeyboardMarkup(
         inline_keyboard=[
