@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     http_timeout_seconds: float = 25.0
     http_max_retries: int = 3
 
+    run_trigger_secret: str = ""
+    run_bot: bool = False
+
     log_level: str = "INFO"
 
     @field_validator("admin_user_id", mode="before")
@@ -77,6 +80,11 @@ class Settings(BaseSettings):
         if not self.callback_secret or self.callback_secret == "change-me-in-production":
             raise RuntimeError("Set a strong CALLBACK_SECRET before running the bot")
         return self.callback_secret
+
+    def require_run_trigger_secret(self) -> str:
+        if len(self.run_trigger_secret) < 32:
+            raise RuntimeError("RUN_TRIGGER_SECRET must contain at least 32 characters")
+        return self.run_trigger_secret
 
 
 @lru_cache(maxsize=1)
