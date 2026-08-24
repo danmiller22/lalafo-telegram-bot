@@ -7,6 +7,7 @@ from typing import Any
 
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import BotCommand
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.bot import admin, handlers
@@ -57,6 +58,14 @@ async def create_runtime() -> BotRuntime:
     }
     try:
         me = await bot.get_me()
+        await bot.set_my_commands(
+            [
+                BotCommand(command="start", description="Главное меню"),
+                BotCommand(command="want", description="Разместить «Ищу квартиру»"),
+                BotCommand(command="mywanted", description="Мои заявки"),
+                BotCommand(command="status", description="Проверить работу бота"),
+            ]
+        )
         logging.getLogger(__name__).info("Bot initialized: @%s (id=%s)", me.username, me.id)
     except Exception:
         await bot.session.close()
