@@ -120,6 +120,9 @@ def parse_detail_data(raw: dict[str, Any], *, source_url: str) -> LalafoAd:
         deposit = None
     if deposit is None:
         deposit = parse_deposit(raw.get("description"))
+    if deposit == 1:
+        # Lalafo authors commonly use 1 som as a placeholder rather than a real deposit.
+        deposit = None
     audience = str(params.get("Для кого") or "")
     return LalafoAd(
         lalafo_id=int(raw["id"]),

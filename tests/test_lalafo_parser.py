@@ -118,3 +118,24 @@ def test_parse_public_detail_json():
     )
     assert ad.rooms == "studio"
     assert ad.deposit == 10000
+
+
+def test_one_som_deposit_placeholder_is_omitted():
+    ad = parse_detail_data(
+        {
+            "id": 45,
+            "category_id": 2044,
+            "mobile": "+996555123456",
+            "price": 30000,
+            "currency": "KGS",
+            "city": "Бишкек",
+            "params": [
+                {"name": "Количество комнат", "value": "1 комната"},
+                {"name": "Для кого", "value": "Без подселения"},
+                {"name": "Депозит, сом", "value": "1"},
+            ],
+            "images": [{"original_url": "https://img.example/4.jpg"}],
+        },
+        source_url="https://lalafo.kg/bishkek/ads/test-id-45",
+    )
+    assert ad.deposit is None

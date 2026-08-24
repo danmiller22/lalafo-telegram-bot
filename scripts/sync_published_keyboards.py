@@ -11,6 +11,7 @@ from app.config import get_settings
 from app.database import create_engine_and_session
 from app.models import Apartment
 from app.security import TokenSigner
+from app.telegram.formatting import format_apartment
 from app.telegram.keyboards import apartment_keyboard
 
 
@@ -30,7 +31,7 @@ async def run() -> int:
     unchanged = 0
     failed = 0
     try:
-        async with sessions() as session:
+        async with sessions.begin() as session:
             apartments = list(
                 (
                     await session.scalars(
@@ -42,11 +43,15 @@ async def run() -> int:
                     )
                 ).all()
             )
+            for apartment in apartments:
+                if apartment.deposit == 1:
+                    apartment.deposit = None
         for apartment in apartments:
             try:
-                await bot.edit_message_reply_markup(
+                await bot.edit_message_text(
                     chat_id=apartment.telegram_chat_id,
                     message_id=apartment.telegram_message_id,
+                    text=format_apartment(apartment),
                     reply_markup=apartment_keyboard(
                         apartment.id,
                         signer=signer,

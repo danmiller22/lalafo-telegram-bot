@@ -8,6 +8,7 @@ from aiogram.types import CallbackQuery, Message
 
 from app.bot.callbacks import ADMIN_PREFIX
 from app.config import Settings
+from app.lalafo.phone import display_phone
 from app.payments.repository import ApartmentRepository, PaymentRepository
 from app.payments.service import PaymentService
 from app.security import TokenSigner
@@ -98,10 +99,13 @@ async def admin_callback(
         return
     await callback.message.edit_text(format_admin_decision(request, outcome == "approved"))
     try:
+        apartment = request.apartment
         await bot.send_message(
             request.telegram_user_id,
             (
-                "✅ Оплата подтверждена. Нажмите «Получить номер» под квартирой."
+                "✅ Оплата подтверждена.\n\n"
+                f"📞 Номер собственника:\n{display_phone(apartment.phone)}\n\n"
+                "🔒 Этот номер отправлен только вам."
                 if approve
                 else "❌ Оплата не подтверждена. Можно отправить её на проверку повторно."
             ),
