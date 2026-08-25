@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -13,6 +14,40 @@ from app.lalafo.phone import normalize_kg_phone
 
 class LalafoParseError(ValueError):
     pass
+
+
+def _normalized_listing_text(value: Any) -> str:
+    return re.sub(r"[^\w]+", " ", str(value or "").casefold().replace("ё", "е")).strip()
+
+
+def _is_without_subletting(raw: dict[str, Any], params: dict[str, Any]) -> bool:
+    """Infer whether the whole apartment is offered rather than shared housing.
+
+    Lalafo does not require authors to select either subletting option. Missing
+    metadata therefore means a regular whole-apartment rental. Some authors
+    select both options; in that contradictory case the explicit shared-housing
+    option wins so the card never promises a private apartment incorrectly.
+    """
+    audience = _normalized_listing_text(params.get("Для кого"))
+    if "с подселением" in audience:
+        return False
+    if "без подселения" in audience:
+        return True
+
+    listing_text = _normalized_listing_text(
+        " ".join((str(raw.get("title") or ""), str(raw.get("description") or "")))
+    )
+    shared_markers = (
+        "с подселением",
+        "койко место",
+        "койкоместо",
+        "место в комнате",
+        "подселим",
+        "подселю",
+    )
+    if any(marker in listing_text for marker in shared_markers):
+        return False
+    return True
 
 
 def _next_data(html: str) -> dict[str, Any]:
@@ -123,7 +158,6 @@ def parse_detail_data(raw: dict[str, Any], *, source_url: str) -> LalafoAd:
     if deposit == 1:
         # Lalafo authors commonly use 1 som as a placeholder rather than a real deposit.
         deposit = None
-    audience = str(params.get("Для кого") or "")
     offerer = str(params.get("Кто предлагает") or "").strip().casefold()
     realtor_service = str(params.get("Услуги риэлтора") or "").strip()
     return LalafoAd(
@@ -138,7 +172,7 @@ def parse_detail_data(raw: dict[str, Any], *, source_url: str) -> LalafoAd:
         deposit=deposit,
         photo_urls=_image_urls(raw),
         category_id=int(raw.get("category_id") or 0),
-        no_subletting="без подселения" in audience.lower(),
+        no_subletting=_is_without_subletting(raw, params),
         owner_listing=offerer == "собственник" and not realtor_service,
         source_created_at=_timestamp(raw.get("created_time")),
         source_updated_at=_timestamp(raw.get("updated_time")),

@@ -1,0 +1,26 @@
+version: v1.0
+name: Repair apartment subletting labels
+
+agent:
+  machine:
+    type: f1-standard-2
+    os_image: ubuntu2404
+
+execution_time_limit:
+  minutes: 10
+
+blocks:
+  - name: Repair recent Telegram cards
+    task:
+      secrets:
+        - name: lalafo-production
+      jobs:
+        - name: Recheck and edit recent cards
+          commands:
+            - checkout
+            - sem-version python 3.12
+            - python --version
+            - python -m pip install -r requirements.txt
+            - alembic upgrade head
+            - python -m scripts.refresh_published_subletting
+            - curl --fail --silent --show-error --retry 3 --retry-delay 5 https://statutory-mallissa-2danmiller-f1c1b08d.koyeb.app/health

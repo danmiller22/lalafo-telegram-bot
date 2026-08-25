@@ -126,6 +126,74 @@ def test_realtor_service_is_not_an_owner_listing():
     assert ad.owner_listing is False
 
 
+def test_regular_apartment_without_subletting_metadata_defaults_to_no_subletting():
+    ad = parse_detail_data(
+        {
+            "id": 47,
+            "category_id": 2044,
+            "mobile": "+996555123456",
+            "price": 28000,
+            "currency": "KGS",
+            "city": "Бишкек",
+            "title": "1 комната, Кызыл Аскер Собственник, Семейным",
+            "description": "Сдаю квартиру, кухня и санузел отдельно",
+            "params": [
+                {"name": "Количество комнат", "value": "1 комната"},
+                {"name": "Для кого", "value": "Семейным"},
+            ],
+            "images": [{"original_url": "https://img.example/6.jpg"}],
+        },
+        source_url="https://lalafo.kg/bishkek/ads/test-id-47",
+    )
+
+    assert ad.no_subletting is True
+
+
+def test_explicit_subletting_wins_when_lalafo_contains_both_options():
+    ad = parse_detail_data(
+        {
+            "id": 48,
+            "category_id": 2044,
+            "mobile": "+996555123456",
+            "price": 25000,
+            "currency": "KGS",
+            "city": "Бишкек",
+            "title": "Студия",
+            "params": [
+                {"name": "Количество комнат", "value": "Студия"},
+                {
+                    "name": "Для кого",
+                    "value": "Без подселения, С подселением, Студентам",
+                },
+            ],
+            "images": [{"original_url": "https://img.example/7.jpg"}],
+        },
+        source_url="https://lalafo.kg/bishkek/ads/test-id-48",
+    )
+
+    assert ad.no_subletting is False
+
+
+def test_shared_housing_description_is_detected_without_audience_option():
+    ad = parse_detail_data(
+        {
+            "id": 49,
+            "category_id": 2044,
+            "mobile": "+996555123456",
+            "price": 12000,
+            "currency": "KGS",
+            "city": "Бишкек",
+            "title": "Аренда койко-места",
+            "description": "Сдается место в комнате",
+            "params": [{"name": "Количество комнат", "value": "1 комната"}],
+            "images": [{"original_url": "https://img.example/8.jpg"}],
+        },
+        source_url="https://lalafo.kg/bishkek/ads/test-id-49",
+    )
+
+    assert ad.no_subletting is False
+
+
 def test_parse_public_detail_json():
     ad = parse_detail_data(
         {
