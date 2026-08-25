@@ -2,7 +2,11 @@ import pytest
 
 from app.lalafo.parser import is_allowed
 from app.telegram.formatting import format_apartment, format_public_apartment
-from scripts.scrape_publish import candidate_quality, is_preferred_district
+from scripts.scrape_publish import (
+    candidate_quality,
+    is_preferred_district,
+    select_balanced_candidates,
+)
 from tests.helpers import make_ad
 
 
@@ -78,3 +82,37 @@ def test_quality_prefers_requested_area_then_photo_rich_bargains():
     sparse = make_ad(district="5 мкр", photo_urls=["1"] * 4, price=10_000)
     assert candidate_quality(bargain) > candidate_quality(expensive)
     assert candidate_quality(bargain) > candidate_quality(sparse)
+
+
+def test_balanced_selection_uses_70_percent_realtors_and_30_percent_owners():
+    candidates = [
+        make_ad(
+            lalafo_id=index,
+            phone=f"+996700000{index:03d}",
+            owner_listing=index >= 10,
+            price=20_000 + index,
+        )
+        for index in range(20)
+    ]
+
+    selected = select_balanced_candidates(candidates, 10)
+
+    assert len(selected) == 10
+    assert sum(not ad.owner_listing for ad in selected) == 7
+    assert sum(ad.owner_listing for ad in selected) == 3
+
+
+def test_balanced_selection_fills_shortage_from_available_group():
+    candidates = [
+        make_ad(
+            lalafo_id=index,
+            phone=f"+996701000{index:03d}",
+            owner_listing=index == 0,
+        )
+        for index in range(10)
+    ]
+
+    selected = select_balanced_candidates(candidates, 10)
+
+    assert len(selected) == 10
+    assert sum(ad.owner_listing for ad in selected) == 1

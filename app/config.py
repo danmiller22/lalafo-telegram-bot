@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     rooms: str = "studio,1,2"
     max_new_posts_per_run: int = 10
     max_search_pages: int = 50
-    preferred_districts_only: bool = True
+    preferred_districts_only: bool = False
     max_photos_per_apartment: int = 5
     only_with_photos: bool = True
     allow_no_deposit: bool = True

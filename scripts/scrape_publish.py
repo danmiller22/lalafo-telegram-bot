@@ -45,6 +45,34 @@ def candidate_quality(ad: LalafoAd) -> tuple[bool, bool, int, int, bool, float]:
     )
 
 
+def select_balanced_candidates(candidates: list[LalafoAd], limit: int) -> list[LalafoAd]:
+    """Select roughly 70% realtor and 30% owner listings when supply allows.
+
+    Requested districts and photo-rich bargains remain the primary quality
+    signals inside each group. If one group is short, the other group fills the
+    remaining slots so a run does not stay artificially empty.
+    """
+    if limit <= 0:
+        return []
+
+    ranked = sorted(candidates, key=candidate_quality, reverse=True)
+    realtor_target = round(limit * 0.70)
+    owner_target = limit - realtor_target
+    realtor_ads = [ad for ad in ranked if not ad.owner_listing]
+    owner_ads = [ad for ad in ranked if ad.owner_listing]
+
+    selected = realtor_ads[:realtor_target] + owner_ads[:owner_target]
+    selected_ids = {ad.lalafo_id for ad in selected}
+    for ad in ranked:
+        if len(selected) >= limit:
+            break
+        if ad.lalafo_id not in selected_ids:
+            selected.append(ad)
+            selected_ids.add(ad.lalafo_id)
+
+    return sorted(selected, key=candidate_quality, reverse=True)
+
+
 async def run() -> int:
     settings = get_settings()
     logging.basicConfig(
@@ -149,8 +177,10 @@ async def run() -> int:
                     logger.info("Skipping ad id=%s reason=min_price", ad.lalafo_id)
                     continue
                 if settings.preferred_districts_only and not is_preferred_district(ad.district):
-                    logger.info("Skipping ad id=%s reason=district_priority", ad.lalafo_id)
-                    continue
+                    logger.info(
+                        "Keeping fallback ad id=%s outside preferred districts",
+                        ad.lalafo_id,
+                    )
                 if not settings.allow_no_district and not ad.district:
                     logger.info("Skipping ad id=%s reason=district", ad.lalafo_id)
                     continue
@@ -171,9 +201,15 @@ async def run() -> int:
                 break
             page_number += 1
 
-    candidates.sort(key=candidate_quality, reverse=True)
-    candidates = candidates[:limit]
+    candidates = select_balanced_candidates(candidates, limit)
+    realtor_count = sum(not ad.owner_listing for ad in candidates)
+    owner_count = len(candidates) - realtor_count
     logger.info("Eligible photo-prioritized apartments selected: %d", len(candidates))
+    logger.info(
+        "Listing mix selected: realtor=%d owner=%d target=70/30",
+        realtor_count,
+        owner_count,
+    )
     for ad in candidates:
         logger.info(
             "DRY candidate id=%s rooms=%s city=%s district=%s price=%s deposit=%s photos=%s phone=%s",
