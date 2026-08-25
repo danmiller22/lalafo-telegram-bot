@@ -54,6 +54,7 @@ async def run() -> int:
     )
     state = PostedState.load(settings.posted_state_path)
     limit = settings.effective_post_limit
+    candidate_pool_target = max(limit * 3, limit)
     candidates = []
     candidate_phones: set[str] = set()
 
@@ -84,7 +85,7 @@ async def run() -> int:
         timeout=settings.http_timeout_seconds, max_retries=settings.http_max_retries
     ) as client:
         page_number = 1
-        while True:
+        while len(candidates) < candidate_pool_target:
             try:
                 page = await client.search(DEFAULT_SEARCH_URL, page=page_number)
             except (LalafoError, LalafoParseError) as exc:
@@ -108,6 +109,8 @@ async def run() -> int:
                 else set()
             )
             for search_ad in page.items:
+                if len(candidates) >= candidate_pool_target:
+                    break
                 if state.contains(search_ad.lalafo_id):
                     continue
                 if search_ad.lalafo_id in published_ids:
