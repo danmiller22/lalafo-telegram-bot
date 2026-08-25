@@ -28,25 +28,99 @@ def _is_without_subletting(raw: dict[str, Any], params: dict[str, Any]) -> bool:
     select both options; in that contradictory case "Без подселения" wins.
     """
     audience = _normalized_listing_text(params.get("Для кого"))
-    if "без подселения" in audience:
+    has_without_option = "без подселения" in audience
+    has_with_option = "с подселением" in audience
+    if has_without_option and has_with_option:
         return True
-    if "с подселением" in audience:
-        return False
 
     listing_text = _normalized_listing_text(
         " ".join((str(raw.get("title") or ""), str(raw.get("description") or "")))
     )
+    whole_apartment_markers = (
+        "без подселения",
+        "квартиру целиком",
+        "квартира полностью",
+        "отдельная квартира",
+        "полноценная квартира",
+        "кухня и санузел отдельно",
+        "кухня санузел отдельно",
+        "хозяева не живут",
+        "без хозяев",
+    )
+    if any(marker in listing_text for marker in whole_apartment_markers):
+        return True
+
     shared_markers = (
         "с подселением",
+        "на подселение",
+        "подселение",
         "койко место",
         "койкоместо",
         "место в комнате",
+        "комната в квартире",
+        "сдается комната",
+        "сдаю комнату",
+        "сдается зал",
+        "сдается целый зал",
+        "общежитие",
+        "хостел",
         "подселим",
         "подселю",
     )
     if any(marker in listing_text for marker in shared_markers):
         return False
+    if has_without_option:
+        return True
+    if has_with_option:
+        return False
     return True
+
+
+_DISTRICT_ALIASES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Дордой Плаза", ("дордой плаза",)),
+    ("Филармония", ("филармония", "филармонии")),
+    ("Восток-5", ("восток 5",)),
+    ("Аламедин-1", ("аламедин 1", "аламидин 1")),
+    ("Кызыл Аскер", ("кызыл аскер",)),
+    ("Арча-Бешик", ("арча бешик",)),
+    ("Рабочий Городок", ("рабочий городок",)),
+    ("Мед Академия", ("мед академия", "медакадемия")),
+    ("Западный автовокзал", ("западный автовокзал", "западного автовокзала")),
+    ("Баткенский рынок", ("баткенский рынок",)),
+    ("Старый толчок", ("старый толчок",)),
+    ("1000 мелочей", ("1000 мелочей", "тысяча мелочей")),
+    ("Азия Молл", ("азия молл", "asia mall")),
+    ("Бишкек Парк", ("бишкек парк",)),
+    ("Юг-2", ("юг 2", "вефа", "vefa")),
+    ("Тунгуч", ("тунгуч",)),
+    ("Учкун", ("учкун",)),
+    ("Политех", ("политех",)),
+    ("ТЭЦ", ("тэц",)),
+    ("Кудайберген", ("кудайберген",)),
+    ("ЦУМ", ("цум",)),
+    ("ГУМ", ("гум",)),
+)
+
+
+def _infer_district(raw: dict[str, Any], params: dict[str, Any]) -> str | None:
+    explicit = str(params.get("Район Бишкека") or "").strip()
+    if explicit:
+        return explicit
+
+    listing_text = _normalized_listing_text(
+        " ".join((str(raw.get("title") or ""), str(raw.get("description") or "")))
+    )
+    microdistrict = re.search(
+        r"(?:^|\s)(\d{1,2})\s*(?:мкр|микрорайон)(?:\s|$)", listing_text
+    )
+    if microdistrict:
+        return f"{int(microdistrict.group(1))} мкр"
+
+    padded_text = f" {listing_text} "
+    for canonical, aliases in _DISTRICT_ALIASES:
+        if any(f" {alias} " in padded_text for alias in aliases):
+            return canonical
+    return None
 
 
 def _next_data(html: str) -> dict[str, Any]:
@@ -146,7 +220,7 @@ def parse_detail_data(raw: dict[str, Any], *, source_url: str) -> LalafoAd:
     rooms_value = str(params.get("Количество комнат") or "").strip().lower()
     room_map = {"студия": "studio", "1 комната": "1", "2 комнаты": "2"}
     rooms = room_map.get(rooms_value, rooms_value)
-    district = str(params.get("Район Бишкека") or "").strip() or None
+    district = _infer_district(raw, params)
     deposit_value = params.get("Депозит, сом")
     try:
         deposit = int(str(deposit_value).replace(" ", "")) if deposit_value else None

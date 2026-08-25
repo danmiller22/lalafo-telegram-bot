@@ -194,6 +194,67 @@ def test_shared_housing_description_is_detected_without_audience_option():
     assert ad.no_subletting is False
 
 
+def test_whole_apartment_text_overrides_incorrect_subletting_option():
+    ad = parse_detail_data(
+        {
+            "id": 50,
+            "category_id": 2044,
+            "mobile": "+996555123456",
+            "price": 30000,
+            "currency": "KGS",
+            "city": "Бишкек",
+            "title": "Отдельная квартира в аренду",
+            "description": "Кухня и санузел отдельно, хозяева не живут",
+            "params": [
+                {"name": "Количество комнат", "value": "1 комната"},
+                {"name": "Для кого", "value": "С подселением"},
+            ],
+            "images": [{"original_url": "https://img.example/9.jpg"}],
+        },
+        source_url="https://lalafo.kg/bishkek/ads/test-id-50",
+    )
+
+    assert ad.no_subletting is True
+
+
+def test_district_is_inferred_from_description_when_parameter_is_missing():
+    ad = parse_detail_data(
+        {
+            "id": 51,
+            "category_id": 2044,
+            "mobile": "+996555123456",
+            "price": 30000,
+            "currency": "KGS",
+            "city": "Бишкек",
+            "description": "Сдаю квартиру в районе Юг-2 возле ВЕФА",
+            "params": [{"name": "Количество комнат", "value": "2 комнаты"}],
+            "images": [{"original_url": "https://img.example/10.jpg"}],
+        },
+        source_url="https://lalafo.kg/bishkek/ads/test-id-51",
+    )
+
+    assert ad.district == "Юг-2"
+
+
+def test_numbered_microdistrict_is_inferred_from_title():
+    ad = parse_detail_data(
+        {
+            "id": 52,
+            "category_id": 2044,
+            "mobile": "+996555123456",
+            "price": 30000,
+            "currency": "KGS",
+            "city": "Бишкек",
+            "title": "Квартира в 6 микрорайоне",
+            "params": [{"name": "Количество комнат", "value": "2 комнаты"}],
+            "images": [{"original_url": "https://img.example/11.jpg"}],
+        },
+        source_url="https://lalafo.kg/bishkek/ads/test-id-52",
+    )
+
+    assert ad.district == "6 мкр"
+
+
 def test_parse_public_detail_json():
     ad = parse_detail_data(
         {
