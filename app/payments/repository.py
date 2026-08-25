@@ -88,6 +88,7 @@ class ApartmentRepository:
                     district=ad.district,
                     city=ad.city,
                     deposit=ad.deposit,
+                    no_subletting=ad.no_subletting,
                     photo_urls=ad.photo_urls,
                     source_updated_at=ad.source_updated_at,
                     active=True,
@@ -104,6 +105,7 @@ class ApartmentRepository:
                 apartment.district = ad.district
                 apartment.city = ad.city
                 apartment.deposit = ad.deposit
+                apartment.no_subletting = ad.no_subletting
                 apartment.photo_urls = ad.photo_urls
                 apartment.source_updated_at = ad.source_updated_at
                 apartment.active = True

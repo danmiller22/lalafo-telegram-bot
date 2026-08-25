@@ -38,6 +38,7 @@ class Apartment(Base):
     district: Mapped[str | None] = mapped_column(String(255))
     city: Mapped[str] = mapped_column(String(100), nullable=False)
     deposit: Mapped[int | None] = mapped_column(Integer)
+    no_subletting: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     photo_urls: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     telegram_message_id: Mapped[int | None] = mapped_column(BigInteger)
     telegram_chat_id: Mapped[int | None] = mapped_column(BigInteger)

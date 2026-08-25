@@ -9,8 +9,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_SEARCH_URL = (
     "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
-    "dolgosrochnaya-arenda-kvartir/1-bedroom/2-bedrooms/studio/owner/"
-    "real-estate-agency/bez-podseleniya?price[to]=35000"
+    "dolgosrochnaya-arenda-kvartir/1-bedroom/2-bedrooms/studio?price[to]=40000"
 )
 
 
@@ -33,9 +32,9 @@ class Settings(BaseSettings):
     lalafo_search_url: str = DEFAULT_SEARCH_URL
     city: str = "Бишкек"
     min_price: int = 8_000
-    max_price: int = 35_000
+    max_price: int = 40_000
     rooms: str = "studio,1,2"
-    max_new_posts_per_run: int = 10
+    max_new_posts_per_run: int = 40
     max_search_pages: int = 50
     preferred_districts_only: bool = False
     max_photos_per_apartment: int = 5
@@ -70,7 +69,7 @@ class Settings(BaseSettings):
 
     @property
     def effective_post_limit(self) -> int:
-        return 1 if self.test_mode else max(25, self.max_new_posts_per_run)
+        return 1 if self.test_mode else max(40, self.max_new_posts_per_run)
 
     @property
     def allowed_rooms(self) -> tuple[str, ...]:
