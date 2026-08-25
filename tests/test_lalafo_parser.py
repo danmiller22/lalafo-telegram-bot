@@ -149,7 +149,7 @@ def test_regular_apartment_without_subletting_metadata_defaults_to_no_subletting
     assert ad.no_subletting is True
 
 
-def test_explicit_subletting_wins_when_lalafo_contains_both_options():
+def test_no_subletting_wins_when_lalafo_contains_both_options():
     ad = parse_detail_data(
         {
             "id": 48,
@@ -171,7 +171,7 @@ def test_explicit_subletting_wins_when_lalafo_contains_both_options():
         source_url="https://lalafo.kg/bishkek/ads/test-id-48",
     )
 
-    assert ad.no_subletting is False
+    assert ad.no_subletting is True
 
 
 def test_shared_housing_description_is_detected_without_audience_option():

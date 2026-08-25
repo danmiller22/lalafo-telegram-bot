@@ -25,14 +25,13 @@ def _is_without_subletting(raw: dict[str, Any], params: dict[str, Any]) -> bool:
 
     Lalafo does not require authors to select either subletting option. Missing
     metadata therefore means a regular whole-apartment rental. Some authors
-    select both options; in that contradictory case the explicit shared-housing
-    option wins so the card never promises a private apartment incorrectly.
+    select both options; in that contradictory case "Без подселения" wins.
     """
     audience = _normalized_listing_text(params.get("Для кого"))
-    if "с подселением" in audience:
-        return False
     if "без подселения" in audience:
         return True
+    if "с подселением" in audience:
+        return False
 
     listing_text = _normalized_listing_text(
         " ".join((str(raw.get("title") or ""), str(raw.get("description") or "")))
