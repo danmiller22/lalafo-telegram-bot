@@ -111,7 +111,7 @@ def _infer_district(raw: dict[str, Any], params: dict[str, Any]) -> str | None:
         " ".join((str(raw.get("title") or ""), str(raw.get("description") or "")))
     )
     microdistrict = re.search(
-        r"(?:^|\s)(\d{1,2})\s*(?:мкр|микрорайон)(?:\s|$)", listing_text
+        r"(?:^|\s)(\d{1,2})\s*(?:мкр|микрорайон(?:е|а)?)(?:\s|$)", listing_text
     )
     if microdistrict:
         return f"{int(microdistrict.group(1))} мкр"
