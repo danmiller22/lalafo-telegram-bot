@@ -45,12 +45,9 @@ def test_agency_listing_is_allowed_but_not_identified_on_card():
     assert "собственник" not in text.casefold()
 
 
-def test_missing_district_is_labeled_and_optional_deposit_is_omitted():
+def test_missing_district_and_optional_deposit_are_omitted():
     text = format_apartment(make_ad(district=None, deposit=None, rooms="studio"))
-    assert text == (
-        "🏠 Студия\n📍 Район уточняется\n🏙 Бишкек\n"
-        "💰 35 000 сом\n🚪 Без подселения"
-    )
+    assert text == "🏠 Студия\n🏙 Бишкек\n💰 35 000 сом\n🚪 Без подселения"
 
 
 def test_subletting_listing_is_allowed_and_labeled():

@@ -18,7 +18,8 @@ def room_title(rooms: str) -> str:
 
 def format_apartment(ad: LalafoAd | Apartment) -> str:
     lines = [f"🏠 {room_title(ad.rooms)}"]
-    lines.append(f"📍 {ad.district or 'Район уточняется'}")
+    if ad.district:
+        lines.append(f"📍 {ad.district}")
     lines.append(f"🏙 {ad.city}")
     lines.append(f"💰 {format_money(ad.price)} сом")
     lines.append("🚪 Без подселения" if ad.no_subletting else "👥 С подселением")
