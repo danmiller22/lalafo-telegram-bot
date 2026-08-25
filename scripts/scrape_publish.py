@@ -81,11 +81,8 @@ async def run() -> int:
     )
     state = PostedState.load(settings.posted_state_path)
     limit = settings.effective_post_limit
-    selection_pool_limit = limit * 3
     candidates = []
     candidate_phones: set[str] = set()
-    total_found = 0
-    page_number = 1
 
     engine = None
     apartments = None
@@ -113,93 +110,114 @@ async def run() -> int:
     async with LalafoClient(
         timeout=settings.http_timeout_seconds, max_retries=settings.http_max_retries
     ) as client:
-        while len(candidates) < selection_pool_limit:
-            try:
-                page = await client.search(settings.lalafo_search_url, page=page_number)
-            except (LalafoError, LalafoParseError) as exc:
-                logger.error("Search failed safely: %s", exc)
-                if engine is not None:
-                    await engine.dispose()
-                return 2
-            if page_number == 1:
-                total_found = page.total
-                logger.info("Lalafo search found %d advertisements", total_found)
-            if not page.items:
-                break
-            page.items.sort(
-                key=lambda item: item.updated_at.timestamp() if item.updated_at else 0,
-                reverse=True,
-            )
-            published_ids = (
-                await apartments.published_lalafo_ids(
-                    [item.lalafo_id for item in page.items]
-                )
-                if apartments is not None
-                else set()
-            )
-            for search_ad in page.items:
-                if len(candidates) >= selection_pool_limit:
-                    break
-                if state.contains(search_ad.lalafo_id):
-                    continue
-                if search_ad.lalafo_id in published_ids:
-                    continue
-                if search_ad.currency and search_ad.currency.upper() != "KGS":
-                    continue
-                if search_ad.price and not (
-                    settings.min_price <= search_ad.price <= settings.max_price
-                ):
-                    continue
-                if settings.only_with_photos and not search_ad.photo_urls:
-                    continue
+        realtor_target = round(limit * 0.70)
+        owner_target = limit - realtor_target
+        search_groups = (
+            ("realtor", False, max(realtor_target * 3, realtor_target)),
+            ("owner", True, max(owner_target * 3, owner_target)),
+        )
+        for offerer, owner_listing, pool_target in search_groups:
+            if pool_target == 0:
+                continue
+            page_number = 1
+            group_count = 0
+            while group_count < pool_target:
                 try:
-                    ad = await client.detail(search_ad.detail_url)
-                except LalafoNotFound:
-                    logger.info("Skipping unavailable ad id=%s", search_ad.lalafo_id)
-                    continue
-                except (LalafoError, LalafoParseError, ValueError) as exc:
-                    logger.warning(
-                        "Skipping broken ad id=%s error=%s",
-                        search_ad.lalafo_id,
-                        type(exc).__name__,
+                    page = await client.search(
+                        settings.lalafo_search_url,
+                        page=page_number,
+                        offerer=offerer,
                     )
-                    continue
-                allowed, reason = is_allowed(
-                    ad,
-                    city=settings.city,
-                    max_price=settings.max_price,
-                    rooms=settings.allowed_rooms,
-                )
-                if not allowed:
-                    logger.info("Skipping ad id=%s reason=%s", ad.lalafo_id, reason)
-                    continue
-                if ad.price < settings.min_price:
-                    logger.info("Skipping ad id=%s reason=min_price", ad.lalafo_id)
-                    continue
-                if settings.preferred_districts_only and not is_preferred_district(ad.district):
+                except (LalafoError, LalafoParseError) as exc:
+                    logger.error("%s search failed safely: %s", offerer, exc)
+                    if engine is not None:
+                        await engine.dispose()
+                    return 2
+                if page_number == 1:
                     logger.info(
-                        "Keeping fallback ad id=%s outside preferred districts",
-                        ad.lalafo_id,
+                        "Lalafo %s search found %d advertisements",
+                        offerer,
+                        page.total,
                     )
-                if not settings.allow_no_district and not ad.district:
-                    logger.info("Skipping ad id=%s reason=district", ad.lalafo_id)
-                    continue
-                if not settings.allow_no_deposit and ad.deposit is None:
-                    logger.info("Skipping ad id=%s reason=deposit", ad.lalafo_id)
-                    continue
-                if state.contains(ad.lalafo_id, ad_fingerprint(ad)):
-                    continue
-                if apartments is not None and await apartments.is_duplicate(ad):
-                    logger.info("Skipping DB duplicate id=%s", ad.lalafo_id)
-                    continue
-                if ad.phone in candidate_phones:
-                    logger.info("Skipping repeated contact id=%s", ad.lalafo_id)
-                    continue
-                candidates.append(ad)
-                candidate_phones.add(ad.phone)
-            if page_number >= min(page.page_count, settings.max_search_pages):
-                break
-            page_number += 1
+                if not page.items:
+                    break
+                page.items.sort(
+                    key=lambda item: item.updated_at.timestamp() if item.updated_at else 0,
+                    reverse=True,
+                )
+                published_ids = (
+                    await apartments.published_lalafo_ids(
+                        [item.lalafo_id for item in page.items]
+                    )
+                    if apartments is not None
+                    else set()
+                )
+                for search_ad in page.items:
+                    if group_count >= pool_target:
+                        break
+                    if state.contains(search_ad.lalafo_id):
+                        continue
+                    if search_ad.lalafo_id in published_ids:
+                        continue
+                    if search_ad.currency and search_ad.currency.upper() != "KGS":
+                        continue
+                    if search_ad.price and not (
+                        settings.min_price <= search_ad.price <= settings.max_price
+                    ):
+                        continue
+                    if settings.only_with_photos and not search_ad.photo_urls:
+                        continue
+                    try:
+                        ad = await client.detail(search_ad.detail_url)
+                    except LalafoNotFound:
+                        logger.info("Skipping unavailable ad id=%s", search_ad.lalafo_id)
+                        continue
+                    except (LalafoError, LalafoParseError, ValueError) as exc:
+                        logger.warning(
+                            "Skipping broken ad id=%s error=%s",
+                            search_ad.lalafo_id,
+                            type(exc).__name__,
+                        )
+                        continue
+                    if ad.owner_listing != owner_listing:
+                        logger.info(
+                            "Skipping offerer mismatch id=%s expected=%s",
+                            ad.lalafo_id,
+                            offerer,
+                        )
+                        continue
+                    allowed, reason = is_allowed(
+                        ad,
+                        city=settings.city,
+                        max_price=settings.max_price,
+                        rooms=settings.allowed_rooms,
+                    )
+                    if not allowed:
+                        logger.info("Skipping ad id=%s reason=%s", ad.lalafo_id, reason)
+                        continue
+                    if ad.price < settings.min_price:
+                        logger.info("Skipping ad id=%s reason=min_price", ad.lalafo_id)
+                        continue
+                    if not settings.allow_no_district and not ad.district:
+                        logger.info("Skipping ad id=%s reason=district", ad.lalafo_id)
+                        continue
+                    if not settings.allow_no_deposit and ad.deposit is None:
+                        logger.info("Skipping ad id=%s reason=deposit", ad.lalafo_id)
+                        continue
+                    if state.contains(ad.lalafo_id, ad_fingerprint(ad)):
+                        continue
+                    if apartments is not None and await apartments.is_duplicate(ad):
+                        logger.info("Skipping DB duplicate id=%s", ad.lalafo_id)
+                        continue
+                    if ad.phone in candidate_phones:
+                        logger.info("Skipping repeated contact id=%s", ad.lalafo_id)
+                        continue
+                    candidates.append(ad)
+                    candidate_phones.add(ad.phone)
+                    group_count += 1
+                if page_number >= min(page.page_count, settings.max_search_pages):
+                    break
+                page_number += 1
 
     candidates = select_balanced_candidates(candidates, limit)
     realtor_count = sum(not ad.owner_listing for ad in candidates)

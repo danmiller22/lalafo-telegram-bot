@@ -133,7 +133,9 @@ class LalafoClient:
         raise LalafoError(f"Lalafo request failed after retries: {type(last_error).__name__}")
 
     @staticmethod
-    def _search_params(search_url: str, page: int) -> list[tuple[str, str]]:
+    def _search_params(
+        search_url: str, page: int, offerer: str | None = None
+    ) -> list[tuple[str, str]]:
         """Translate the configured human URL to Lalafo's public feed filters."""
         parts = urlsplit(search_url)
         path_parts = {part for part in parts.path.split("/") if part}
@@ -155,26 +157,33 @@ class LalafoClient:
             params.append((f"parameters[69][{index}]", value))
         if "bez-podseleniya" in path_parts:
             params.append(("parameters[946][0]", "81537"))
-        offerer_index = 0
-        if "owner" in path_parts:
-            params.append((f"parameters[2149][{offerer_index}]", "19057"))
-            offerer_index += 1
-        if "real-estate-agency" in path_parts:
-            params.append((f"parameters[2149][{offerer_index}]", "42340"))
+        if offerer == "owner":
+            params.append(("parameters[2149][0]", "19057"))
+        elif offerer == "realtor":
+            params.append(("parameters[2149][0]", "42340"))
+        else:
+            offerer_index = 0
+            if "owner" in path_parts:
+                params.append((f"parameters[2149][{offerer_index}]", "19057"))
+                offerer_index += 1
+            if "real-estate-agency" in path_parts:
+                params.append((f"parameters[2149][{offerer_index}]", "42340"))
         for key, value in parse_qsl(parts.query, keep_blank_values=True):
             if key in {"price[from]", "price[to]", "currency", "sort_by"}:
                 params.append((key, value))
         params.append(("with_feed_banner", "true"))
         return params
 
-    async def search(self, search_url: str, page: int = 1):
+    async def search(
+        self, search_url: str, page: int = 1, offerer: str | None = None
+    ):
         parts = urlsplit(search_url)
         api_url = urlunsplit(
             (
                 parts.scheme,
                 parts.netloc,
                 "/api/search/v3/feed/search",
-                urlencode(self._search_params(search_url, page)),
+                urlencode(self._search_params(search_url, page, offerer)),
                 "",
             )
         )

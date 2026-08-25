@@ -31,6 +31,18 @@ def test_search_params_preserve_configured_filters():
     assert params["parameters[946][0]"] == "81537"
 
 
+@pytest.mark.parametrize(
+    ("offerer", "expected"),
+    [("realtor", "42340"), ("owner", "19057")],
+)
+def test_search_params_can_target_each_offerer_independently(offerer, expected):
+    params = dict(LalafoClient._search_params(SEARCH_URL, 1, offerer))
+    offerer_values = [
+        value for key, value in params.items() if key.startswith("parameters[2149]")
+    ]
+    assert offerer_values == [expected]
+
+
 def detail_html(ad_id: int, phone: str) -> str:
     payload = {
         "props": {
