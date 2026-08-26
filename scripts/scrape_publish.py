@@ -15,6 +15,10 @@ from app.telegram.formatting import format_apartment
 logger = logging.getLogger(__name__)
 
 PREFERRED_DISTRICT_TERMS = (
+    "центр",
+    "золотой квадрат",
+    "площадь ала-тоо",
+    "эркиндик",
     "филармони",
     "цум",
     "гум",
@@ -25,8 +29,20 @@ PREFERRED_DISTRICT_TERMS = (
     "бишкек парк",
     "караван",
 )
+CENTRAL_DISTRICT_TERMS = (
+    "центр",
+    "золотой квадрат",
+    "площадь ала-тоо",
+    "эркиндик",
+    "филармони",
+    "цум",
+    "гум",
+    "дордой плаза",
+    "бишкек парк",
+    "караван",
+)
 SOURCE_MAX_PRICE = 40_000
-SOURCE_MAX_SEARCH_PAGES = 15
+SOURCE_MAX_SEARCH_PAGES = 20
 
 
 def is_preferred_district(district: str | None) -> bool:
@@ -36,11 +52,28 @@ def is_preferred_district(district: str | None) -> bool:
     )
 
 
-def candidate_quality(ad: LalafoAd) -> tuple[bool, bool, int, int, bool, float]:
-    """Prefer requested areas and photo-rich bargains over expensive listings."""
+def is_central_district(district: str | None) -> bool:
+    normalized = (district or "").casefold().replace("ё", "е")
+    return any(term in normalized for term in CENTRAL_DISTRICT_TERMS)
+
+
+def candidate_quality(ad: LalafoAd) -> tuple[int, bool, bool, bool, int, int, bool, float]:
+    """Put cheap central apartments first, then other requested-area bargains."""
     updated_at = ad.source_updated_at.timestamp() if ad.source_updated_at else 0
+    central = is_central_district(ad.district)
+    preferred = is_preferred_district(ad.district)
+    affordable = ad.price <= 32_000
+    very_affordable = ad.price <= 27_000
+    priority_score = (
+        (5 if central else 0)
+        + (3 if preferred else 0)
+        + (3 if affordable else 0)
+        + (1 if very_affordable else 0)
+    )
     return (
-        is_preferred_district(ad.district),
+        priority_score,
+        central,
+        affordable,
         len(ad.photo_urls) >= 5,
         -ad.price,
         len(ad.photo_urls),
@@ -57,7 +90,7 @@ async def run() -> int:
     )
     state = PostedState.load(settings.posted_state_path)
     limit = settings.effective_post_limit
-    candidate_pool_limit = max(limit, min(limit * 2, 80))
+    candidate_pool_limit = max(limit, min(limit * 2, 120))
     candidates = []
     candidate_phones: set[str] = set()
 

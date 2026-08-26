@@ -2,7 +2,11 @@ import pytest
 
 from app.lalafo.parser import is_allowed
 from app.telegram.formatting import format_apartment, format_public_apartment
-from scripts.scrape_publish import candidate_quality, is_preferred_district
+from scripts.scrape_publish import (
+    candidate_quality,
+    is_central_district,
+    is_preferred_district,
+)
 from tests.helpers import make_ad
 
 
@@ -75,6 +79,8 @@ def test_public_card_has_short_bot_promotion():
         "Дордой Плаза",
         "Бишкек Парк",
         "Караван ТЦ",
+        "Центр",
+        "Золотой квадрат",
     ],
 )
 def test_requested_districts_are_preferred(district):
@@ -95,3 +101,13 @@ def test_quality_prefers_requested_area_then_photo_rich_bargains():
     sparse = make_ad(district="5 мкр", photo_urls=["1"] * 4, price=10_000)
     assert candidate_quality(bargain) > candidate_quality(expensive)
     assert candidate_quality(bargain) > candidate_quality(sparse)
+
+
+def test_quality_puts_cheap_central_apartment_first():
+    central_bargain = make_ad(district="Центр", photo_urls=["1"] * 5, price=25_000)
+    central_expensive = make_ad(district="ЦУМ", photo_urls=["1"] * 10, price=39_000)
+    cheap_outskirts = make_ad(district="Асанбай", photo_urls=["1"] * 10, price=20_000)
+
+    assert is_central_district(central_bargain.district)
+    assert candidate_quality(central_bargain) > candidate_quality(central_expensive)
+    assert candidate_quality(central_bargain) > candidate_quality(cheap_outskirts)
