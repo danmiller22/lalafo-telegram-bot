@@ -129,6 +129,11 @@ class LalafoChatClient:
         )
         if response.status_code == 401:
             raise LalafoChatAuthenticationError("Lalafo session expired")
+        if response.is_error:
+            detail = response.text.replace("\n", " ")[:500]
+            raise LalafoChatError(
+                f"Lalafo chat list rejected with HTTP {response.status_code}: {detail}"
+            )
         response.raise_for_status()
         payload = response.json()
         updates = payload.get("chatUpdates", []) if isinstance(payload, dict) else []
