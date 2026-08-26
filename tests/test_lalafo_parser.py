@@ -255,6 +255,65 @@ def test_numbered_microdistrict_is_inferred_from_title():
     assert ad.district == "6 мкр"
 
 
+def test_abbreviated_microdistrict_is_inferred_from_description():
+    ad = parse_detail_data(
+        {
+            "id": 54,
+            "category_id": 2044,
+            "mobile": "+996555123456",
+            "price": 20000,
+            "currency": "KGS",
+            "city": "Бишкек",
+            "description": "Ищу девушку на подселение. 5 мкрн, все условия.",
+            "params": [{"name": "Количество комнат", "value": "1 комната"}],
+            "images": [{"original_url": "https://img.example/13.jpg"}],
+        },
+        source_url="https://lalafo.kg/bishkek/ads/test-id-54",
+    )
+
+    assert ad.district == "5 мкр"
+
+
+def test_any_lalafo_district_parameter_name_is_supported():
+    ad = parse_detail_data(
+        {
+            "id": 55,
+            "category_id": 2044,
+            "mobile": "+996555123456",
+            "price": 30000,
+            "currency": "KGS",
+            "city": "Бишкек",
+            "params": [
+                {"name": "Количество комнат", "value": "2 комнаты"},
+                {"name": "Район", "value": "Асанбай"},
+            ],
+            "images": [{"original_url": "https://img.example/14.jpg"}],
+        },
+        source_url="https://lalafo.kg/bishkek/ads/test-id-55",
+    )
+
+    assert ad.district == "Асанбай"
+
+
+def test_short_landmark_title_is_used_as_district():
+    ad = parse_detail_data(
+        {
+            "id": 56,
+            "category_id": 2044,
+            "mobile": "+996555123456",
+            "price": 30000,
+            "currency": "KGS",
+            "city": "Бишкек",
+            "title": "Манас Сдается 1х ком квартира",
+            "params": [{"name": "Количество комнат", "value": "1 комната"}],
+            "images": [{"original_url": "https://img.example/15.jpg"}],
+        },
+        source_url="https://lalafo.kg/bishkek/ads/test-id-56",
+    )
+
+    assert ad.district == "Манас"
+
+
 def test_priority_landmark_from_text_is_more_specific_than_broad_district():
     ad = parse_detail_data(
         {

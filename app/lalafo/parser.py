@@ -111,16 +111,38 @@ _DISTRICT_ALIASES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Кудайберген", ("кудайберген",)),
     ("ЦУМ", ("цум",)),
     ("ГУМ", ("гум",)),
+    ("Манас", ("манас",)),
+    ("Асанбай", ("асанбай",)),
+    ("Джал", ("джал",)),
+    ("Кок-Жар", ("кок жар",)),
+    ("Улан", ("улан",)),
+    ("Орто-Сай", ("орто сай",)),
+    ("Ошский рынок", ("ошский рынок", "ош базар")),
+    ("Аламединский рынок", ("аламединский рынок", "аламедин базар")),
+    ("Молодая Гвардия", ("молодая гвардия", "молодой гвардии")),
+    ("КНУ", ("кну",)),
+    ("Таатан", ("таатан",)),
+    ("Карпинка", ("карпинка",)),
+    ("Советская", ("советская",)),
+    ("Аю Гранд", ("аю гранд",)),
 )
 
 
 def _infer_district(raw: dict[str, Any], params: dict[str, Any]) -> str | None:
-    explicit = str(params.get("Район Бишкека") or "").strip()
+    explicit = next(
+        (
+            str(value).strip()
+            for name, value in params.items()
+            if "район" in _normalized_listing_text(name) and str(value or "").strip()
+        ),
+        "",
+    )
     listing_text = _normalized_listing_text(
         " ".join((str(raw.get("title") or ""), str(raw.get("description") or "")))
     )
     microdistrict = re.search(
-        r"(?:^|\s)(\d{1,2})\s*(?:мкр|микрорайон(?:е|а)?)(?:\s|$)", listing_text
+        r"(?:^|\s)(\d{1,2})\s*(?:мкр(?:н|он)?|микрорайон(?:е|а)?)(?:\s|$)",
+        listing_text,
     )
     if microdistrict:
         return f"{int(microdistrict.group(1))} мкр"

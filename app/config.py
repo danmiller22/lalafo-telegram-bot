@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     max_photos_per_apartment: int = 5
     only_with_photos: bool = True
     allow_no_deposit: bool = True
-    allow_no_district: bool = True
+    allow_no_district: bool = False
     dry_run: bool = False
     test_mode: bool = False
 
