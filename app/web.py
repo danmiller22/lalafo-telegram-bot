@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 
 from app.bot.main import BotRuntime, create_runtime
 from app.config import get_settings
+from app.lalafo.auto_reply import LalafoAutoResponder
 from app.security import TokenSigner
 from app.telegram.keyboards import paid_keyboard
 
@@ -23,6 +24,7 @@ _run_lock = asyncio.Lock()
 _scraper_task: asyncio.Task[None] | None = None
 _bot_runtime: BotRuntime | None = None
 _keyboard_sync_task: asyncio.Task[None] | None = None
+_lalafo_auto_responder: LalafoAutoResponder | None = None
 _run_state: dict[str, Any] = {
     "running": False,
     "last_started_at": None,
@@ -81,7 +83,7 @@ async def _sync_outdated_keyboards() -> None:
 
 @app.on_event("startup")
 async def startup() -> None:
-    global _bot_runtime, _keyboard_sync_task
+    global _bot_runtime, _keyboard_sync_task, _lalafo_auto_responder
     settings = get_settings()
     logging.basicConfig(
         level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -100,11 +102,23 @@ async def startup() -> None:
         )
         logger.info("Telegram webhook enabled at %s", webhook_url)
         _keyboard_sync_task = asyncio.create_task(_sync_outdated_keyboards())
+    if settings.lalafo_auto_reply_enabled:
+        login, password = settings.require_lalafo_auto_reply_credentials()
+        _lalafo_auto_responder = LalafoAutoResponder(
+            login=login,
+            password=password,
+            poll_seconds=settings.lalafo_auto_reply_poll_seconds,
+        )
+        _lalafo_auto_responder.start()
+        logger.info("Lalafo cloud auto-reply supervisor enabled")
 
 
 @app.on_event("shutdown")
 async def shutdown() -> None:
-    global _bot_runtime, _keyboard_sync_task
+    global _bot_runtime, _keyboard_sync_task, _lalafo_auto_responder
+    if _lalafo_auto_responder is not None:
+        await _lalafo_auto_responder.close()
+        _lalafo_auto_responder = None
     if _keyboard_sync_task is not None and not _keyboard_sync_task.done():
         _keyboard_sync_task.cancel()
         with suppress(asyncio.CancelledError):
@@ -123,10 +137,18 @@ async def health() -> JSONResponse:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             content={"status": "error", "bot": "stopped"},
         )
+    auto_reply: dict[str, Any] | str = "disabled"
+    if settings.lalafo_auto_reply_enabled:
+        auto_reply = (
+            _lalafo_auto_responder.status()
+            if _lalafo_auto_responder is not None
+            else {"state": "stopped"}
+        )
     return JSONResponse(
         content={
             "status": "ok",
             "bot": "running" if settings.run_bot else "disabled",
+            "lalafo_auto_reply": auto_reply,
         }
     )
 

@@ -13,6 +13,9 @@
 - Основная защита от дублей и платежи хранятся в Neon PostgreSQL; `data/posted_ads.json` остаётся резервным state для постоянных окружений.
 - Payment bot получает обновления через защищённый Telegram webhook. Входящий запрос будит бесплатный Koyeb после scale-to-zero, поэтому постоянный локальный процесс и keepalive не нужны.
 - Production полностью облачный; локальный запуск для эксплуатации не требуется.
+- Koyeb держит соединение с чатами Lalafo и на любое новое входящее сообщение
+  отвечает одним фиксированным текстом. GitHub Actions будит бесплатный
+  scale-to-zero сервис каждые 5 минут.
 
 ## 1. Telegram bot и группа
 
@@ -134,6 +137,9 @@ Koyeb запускает `uvicorn app.web:app` и получает те же Tel
 - `TELEGRAM_WEBHOOK_SECRET` — отдельная URL-safe строка не короче 32 символов;
 - `RUN_TRIGGER_SECRET` — случайная строка не короче 32 символов;
 - `DRY_RUN=true` — HTTP-service сам не публикует объявления.
+- `LALAFO_AUTO_REPLY_ENABLED=true`;
+- `LALAFO_LOGIN` и `LALAFO_PASSWORD` — только в защищённых secrets Koyeb;
+- `LALAFO_AUTO_REPLY_POLL_SECONDS=10`.
 
 При старте Koyeb сам регистрирует webhook в Telegram. Telegram повторяет доставку при временной недоступности сервиса, а входящий webhook будит scale-to-zero instance. `GET /health` возвращает `200` только после успешной инициализации payment bot. Scraper в Semaphore вызывает health endpoint после каждого успешного цикла.
 

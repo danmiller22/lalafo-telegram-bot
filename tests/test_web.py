@@ -25,6 +25,7 @@ def configure(monkeypatch: pytest.MonkeyPatch) -> None:
     web._scraper_task = None
     web._bot_runtime = None
     web._keyboard_sync_task = None
+    web._lalafo_auto_responder = None
     yield
     get_settings.cache_clear()
 
@@ -35,7 +36,11 @@ async def test_health_and_authentication() -> None:
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         health = await client.get("/health")
         assert health.status_code == 200
-        assert health.json() == {"status": "ok", "bot": "disabled"}
+        assert health.json() == {
+            "status": "ok",
+            "bot": "disabled",
+            "lalafo_auto_reply": "disabled",
+        }
         assert (await client.post("/run")).status_code == 401
         response = await client.get(
             "/status", headers={"Authorization": f"Bearer {'x' * 32}"}

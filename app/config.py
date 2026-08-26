@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     callback_secret: str = "change-me-in-production"
 
     lalafo_search_url: str = DEFAULT_SEARCH_URL
+    lalafo_auto_reply_enabled: bool = False
+    lalafo_login: str = ""
+    lalafo_password: str = ""
+    lalafo_auto_reply_poll_seconds: float = 10.0
     city: str = "Бишкек"
     min_price: int = 8_000
     max_price: int = 40_000
@@ -79,6 +83,13 @@ class Settings(BaseSettings):
         if not self.telegram_bot_token:
             raise RuntimeError("TELEGRAM_BOT_TOKEN is required for this operation")
         return self.telegram_bot_token
+
+    def require_lalafo_auto_reply_credentials(self) -> tuple[str, str]:
+        if not self.lalafo_login or not self.lalafo_password:
+            raise RuntimeError(
+                "LALAFO_LOGIN and LALAFO_PASSWORD are required when auto-reply is enabled"
+            )
+        return self.lalafo_login, self.lalafo_password
 
     def require_callback_secret(self) -> str:
         if not self.callback_secret or self.callback_secret == "change-me-in-production":
