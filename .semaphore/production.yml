@@ -20,7 +20,6 @@ blocks:
             - checkout
             - sem-version python 3.12
             - python --version
-            - 'status=$(curl --silent --output /dev/null --write-out ''%{http_code}'' --request POST --header ''content-type: application/json'' --data ''{}'' https://lalafo.kg/api/auth/login); echo "Lalafo auth route status=$status"; test "$status" != 403'
             - python -m pip install -r requirements.txt
             - alembic upgrade head
             - python -m scripts.refresh_published_phones

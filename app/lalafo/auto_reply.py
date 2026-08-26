@@ -315,6 +315,12 @@ class LalafoAutoResponder:
         self.last_scan_at = datetime.now(UTC)
         return sent
 
+    async def run_once(self) -> int:
+        """Connect, answer the latest incoming message in each chat, then return."""
+        if not self._socket.connected:
+            await self._connect()
+        return await self.scan_once()
+
     async def _wait_for_wake(self) -> None:
         self._wake.clear()
         try:
