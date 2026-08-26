@@ -1,0 +1,22 @@
+name: Lalafo cloud network check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Check Lalafo auth route without credentials
+        shell: bash
+        run: |
+          status=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            --request POST \
+            --header 'content-type: application/json' \
+            --data '{}' \
+            https://lalafo.kg/api/auth/login)
+          echo "status=$status"
