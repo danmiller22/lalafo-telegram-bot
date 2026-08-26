@@ -7,7 +7,7 @@ agent:
     os_image: ubuntu2404
 
 execution_time_limit:
-  minutes: 15
+  minutes: 30
 
 blocks:
   - name: Publish new apartments
