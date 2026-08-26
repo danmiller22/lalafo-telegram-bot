@@ -6,6 +6,7 @@ from scripts.scrape_publish import (
     candidate_quality,
     is_central_district,
     is_preferred_district,
+    select_publish_batch,
 )
 from tests.helpers import make_ad
 
@@ -81,6 +82,10 @@ def test_public_card_has_short_bot_promotion():
         "Караван ТЦ",
         "Центр",
         "Золотой квадрат",
+        "Площадь Ала-Тоо",
+        "Ош базар",
+        "Молодая Гвардия",
+        "Аламедин-1",
     ],
 )
 def test_requested_districts_are_preferred(district):
@@ -111,3 +116,29 @@ def test_quality_puts_cheap_central_apartment_first():
     assert is_central_district(central_bargain.district)
     assert candidate_quality(central_bargain) > candidate_quality(central_expensive)
     assert candidate_quality(central_bargain) > candidate_quality(cheap_outskirts)
+
+
+def test_publish_batch_targets_sixty_five_percent_requested_districts():
+    preferred = [
+        make_ad(lalafo_id=index, district="ЦУМ", phone=f"+996555000{index:03d}")
+        for index in range(1, 81)
+    ]
+    other = [
+        make_ad(lalafo_id=100 + index, district="Асанбай", phone=f"+996700000{index:03d}")
+        for index in range(1, 81)
+    ]
+
+    selected = select_publish_batch(preferred + other, 60)
+
+    assert len(selected) == 60
+    assert sum(is_preferred_district(ad.district) for ad in selected) == 39
+
+
+def test_publish_batch_fills_available_space_when_one_group_is_small():
+    preferred = [make_ad(lalafo_id=1, district="ГУМ")]
+    other = [make_ad(lalafo_id=10 + index, district="Джал") for index in range(10)]
+
+    selected = select_publish_batch(preferred + other, 8)
+
+    assert len(selected) == 8
+    assert preferred[0] in selected

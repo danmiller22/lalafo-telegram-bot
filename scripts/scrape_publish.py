@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import re
 
 from app.config import DEFAULT_SEARCH_URL, get_settings
@@ -28,6 +29,12 @@ PREFERRED_DISTRICT_TERMS = (
     "dordoi plaza",
     "бишкек парк",
     "караван",
+    "площадь",
+    "ошский рынок",
+    "ош базар",
+    "молодая гвардия",
+    "аламедин-1",
+    "аламедин 1",
 )
 CENTRAL_DISTRICT_TERMS = (
     "центр",
@@ -43,6 +50,8 @@ CENTRAL_DISTRICT_TERMS = (
 )
 SOURCE_MAX_PRICE = 40_000
 SOURCE_MAX_SEARCH_PAGES = 20
+PREFERRED_BATCH_SHARE = 0.65
+MAX_CANDIDATE_POOL = 300
 
 
 def is_preferred_district(district: str | None) -> bool:
@@ -82,6 +91,29 @@ def candidate_quality(ad: LalafoAd) -> tuple[int, bool, bool, bool, int, int, bo
     )
 
 
+def select_publish_batch(candidates: list[LalafoAd], limit: int) -> list[LalafoAd]:
+    """Build a batch targeting 65% requested districts when supply allows it."""
+    if limit <= 0 or not candidates:
+        return []
+    preferred = sorted(
+        (ad for ad in candidates if is_preferred_district(ad.district)),
+        key=candidate_quality,
+        reverse=True,
+    )
+    other = sorted(
+        (ad for ad in candidates if not is_preferred_district(ad.district)),
+        key=candidate_quality,
+        reverse=True,
+    )
+    total = min(limit, len(candidates))
+    preferred_target = min(len(preferred), math.ceil(total * PREFERRED_BATCH_SHARE))
+    selected = preferred[:preferred_target]
+    selected.extend(other[: total - len(selected)])
+    if len(selected) < total:
+        selected.extend(preferred[preferred_target : preferred_target + total - len(selected)])
+    return sorted(selected, key=candidate_quality, reverse=True)
+
+
 async def run() -> int:
     settings = get_settings()
     logging.basicConfig(
@@ -90,7 +122,7 @@ async def run() -> int:
     )
     state = PostedState.load(settings.posted_state_path)
     limit = settings.effective_post_limit
-    candidate_pool_limit = max(limit, min(limit * 2, 120))
+    candidate_pool_limit = max(limit, min(limit * 5, MAX_CANDIDATE_POOL))
     candidates = []
     candidate_phones: set[str] = set()
 
@@ -207,8 +239,16 @@ async def run() -> int:
                 break
             page_number += 1
 
-    candidates.sort(key=candidate_quality, reverse=True)
-    candidates = candidates[:limit]
+    candidates = select_publish_batch(candidates, limit)
+    preferred_count = sum(is_preferred_district(ad.district) for ad in candidates)
+    preferred_percent = round(preferred_count * 100 / len(candidates)) if candidates else 0
+    logger.info(
+        "Preferred-district share: %d/%d (%d%%), target=%d%%",
+        preferred_count,
+        len(candidates),
+        preferred_percent,
+        round(PREFERRED_BATCH_SHARE * 100),
+    )
     logger.info("Eligible photo-prioritized apartments selected: %d", len(candidates))
     for ad in candidates:
         logger.info(
