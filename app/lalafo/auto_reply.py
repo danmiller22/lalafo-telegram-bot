@@ -114,7 +114,7 @@ class LalafoChatClient:
     async def chats(self) -> list[dict[str, Any]]:
         session = self.require_session()
         response = await self._http.post(
-            "/api/chat/v4/chat-update/get-paginated?sort=date",
+            "/api/chat/v4/chat-update/get-paginated",
             headers=self._headers(token=session.token, bypass_cache=True),
             json={
                 "syncTime": 0,
