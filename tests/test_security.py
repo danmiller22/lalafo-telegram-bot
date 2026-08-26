@@ -53,7 +53,11 @@ def test_callback_data_is_short_and_contains_no_phone():
     )
     private_contact = private_contact_keyboard(support_url=support_url)
     receipt = receipt_payment_keyboard(
-        payment_url="https://qr.finik.kg/payment", support_url=support_url
+        123456789,
+        current_plan="single",
+        signer=signer,
+        payment_url="https://qr.finik.kg/payment",
+        support_url=support_url,
     )
     pending_receipt = pending_payment_keyboard(
         123456789, signer=signer, support_url=support_url
@@ -65,6 +69,7 @@ def test_callback_data_is_short_and_contains_no_phone():
         private_payment.inline_keyboard[0][0].callback_data,
         private_payment.inline_keyboard[1][0].callback_data,
         pending_receipt.inline_keyboard[0][0].callback_data,
+        receipt.inline_keyboard[2][0].callback_data,
         admin.inline_keyboard[0][0].callback_data,
         admin.inline_keyboard[0][1].callback_data,
     ):
@@ -103,6 +108,7 @@ def test_callback_data_is_short_and_contains_no_phone():
     assert receipt.inline_keyboard[0][0].text == "💳 Ссылка на оплату"
     assert receipt.inline_keyboard[1][0].text == "✅ Я оплатил(а)"
     assert receipt.inline_keyboard[1][0].callback_data == "receipt:send"
+    assert receipt.inline_keyboard[2][0].text == "⭐ Выбрать неделю — 700 сом"
     assert pending_receipt.inline_keyboard[0][0].text == "⏳ Чек проверяется"
     assert len(private_contact.inline_keyboard) == 1
 

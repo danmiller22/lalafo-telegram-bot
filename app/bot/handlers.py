@@ -98,6 +98,9 @@ async def start_handler(
             )
         reply_markup = (
             receipt_payment_keyboard(
+                apartment_id,
+                current_plan=result.plan or SINGLE_PLAN,
+                signer=signer,
                 payment_url=settings.finik_payment_url,
                 support_url=settings.support_url,
             )
@@ -185,6 +188,9 @@ async def plan_handler(
         await callback.message.edit_text(
             text,
             reply_markup=receipt_payment_keyboard(
+                apartment_id,
+                current_plan=plan,
+                signer=signer,
                 payment_url=settings.finik_payment_url,
                 support_url=settings.support_url,
             ),
@@ -392,6 +398,9 @@ async def view_contact_handler(
         if callback.message:
             await callback.message.edit_reply_markup(
                 reply_markup=receipt_payment_keyboard(
+                    apartment_id,
+                    current_plan=result.plan or SINGLE_PLAN,
+                    signer=signer,
                     payment_url=settings.finik_payment_url,
                     support_url=settings.support_url,
                 )
@@ -512,6 +521,9 @@ async def paid_handler(
         if callback.message:
             await callback.message.edit_reply_markup(
                 reply_markup=receipt_payment_keyboard(
+                    apartment_id,
+                    current_plan=result.plan or SINGLE_PLAN,
+                    signer=signer,
                     payment_url=settings.finik_payment_url,
                     support_url=settings.support_url,
                 )
