@@ -249,6 +249,15 @@ async def receipt_handler(
     await payments.finish_admin_notification(request.id, admin_message.message_id)
 
 
+@router.callback_query(F.data == "receipt:send")
+async def receipt_prompt_handler(callback: CallbackQuery) -> None:
+    await callback.answer(
+        "🧾 Отправьте в этот чат фото или файл чека. После этого оплата "
+        "автоматически уйдёт администратору на проверку.",
+        show_alert=True,
+    )
+
+
 @router.message(Command("myid"))
 async def myid_handler(message: Message) -> None:
     await message.answer(f"Ваш Telegram ID: {message.from_user.id}")

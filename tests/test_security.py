@@ -101,6 +101,8 @@ def test_callback_data_is_short_and_contains_no_phone():
         "🛟 Техподдержка",
     ]
     assert receipt.inline_keyboard[0][0].text == "💳 Ссылка на оплату"
+    assert receipt.inline_keyboard[1][0].text == "✅ Я оплатил(а)"
+    assert receipt.inline_keyboard[1][0].callback_data == "receipt:send"
     assert pending_receipt.inline_keyboard[0][0].text == "⏳ Чек проверяется"
     assert len(private_contact.inline_keyboard) == 1
 

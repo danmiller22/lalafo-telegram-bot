@@ -97,6 +97,11 @@ def receipt_payment_keyboard(
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="💳 Ссылка на оплату", url=payment_url)],
+            [
+                InlineKeyboardButton(
+                    text="✅ Я оплатил(а)", callback_data="receipt:send"
+                )
+            ],
             _support_row(support_url),
         ]
     )
