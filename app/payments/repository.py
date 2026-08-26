@@ -10,6 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from app.lalafo.models import PHONE_SOURCE_VERSION, LalafoAd
 from app.models import Apartment, PaymentRequest
+from app.payment_plans import SINGLE_PLAN, WEEK_PLAN, expires_at_for
 from app.state import ad_fingerprint
 from app.telegram.keyboards import APARTMENT_KEYBOARD_VERSION
 
@@ -172,6 +173,23 @@ class PaymentRepository:
             )
             return result.scalar_one_or_none()
 
+    async def active_weekly_access(self, user_id: int) -> PaymentRequest | None:
+        now = datetime.now(timezone.utc)
+        async with self.sessions() as session:
+            result = await session.execute(
+                select(PaymentRequest)
+                .where(
+                    PaymentRequest.telegram_user_id == user_id,
+                    PaymentRequest.plan == WEEK_PLAN,
+                    PaymentRequest.status == "approved",
+                    PaymentRequest.access_expires_at.is_not(None),
+                    PaymentRequest.access_expires_at > now,
+                )
+                .order_by(PaymentRequest.access_expires_at.desc())
+                .limit(1)
+            )
+            return result.scalar_one_or_none()
+
     async def submit(
         self,
         *,
@@ -179,6 +197,7 @@ class PaymentRepository:
         apartment_id: int,
         username: str | None,
         first_name: str | None,
+        plan: str = SINGLE_PLAN,
     ) -> PaymentSubmission:
         try:
             return await self._submit_once(
@@ -186,6 +205,7 @@ class PaymentRepository:
                 apartment_id=apartment_id,
                 username=username,
                 first_name=first_name,
+                plan=plan,
             )
         except IntegrityError:
             # A concurrent click may win the unique (user, apartment) insert.
@@ -195,6 +215,7 @@ class PaymentRepository:
                 apartment_id=apartment_id,
                 username=username,
                 first_name=first_name,
+                plan=plan,
             )
 
     async def _submit_once(
@@ -204,6 +225,7 @@ class PaymentRepository:
         apartment_id: int,
         username: str | None,
         first_name: str | None,
+        plan: str,
     ) -> PaymentSubmission:
         async with self.sessions.begin() as session:
             apartment = await session.get(Apartment, apartment_id)
@@ -222,19 +244,32 @@ class PaymentRepository:
                     apartment_id=apartment_id,
                     username=username,
                     first_name=first_name,
-                    status="pending",
+                    plan=plan,
+                    status="awaiting_receipt",
                 )
                 session.add(request)
                 outcome = "created"
-            elif request.status == "approved":
+            elif (
+                request.status == "approved"
+                and request.plan == SINGLE_PLAN
+                and plan == SINGLE_PLAN
+            ):
                 outcome = "approved"
             elif request.status == "pending":
                 outcome = "pending"
+            elif request.status == "awaiting_receipt" and request.plan == plan:
+                outcome = "awaiting_receipt"
             else:
-                request.status = "pending"
+                request.status = "awaiting_receipt"
+                request.plan = plan
                 request.username = username
                 request.first_name = first_name
                 request.created_at = datetime.now(timezone.utc)
+                request.receipt_file_id = None
+                request.receipt_file_type = None
+                request.approved_at = None
+                request.approved_by = None
+                request.access_expires_at = None
                 request.rejected_at = None
                 request.rejected_by = None
                 request.admin_message_id = None
@@ -242,6 +277,30 @@ class PaymentRepository:
             await session.flush()
             await session.refresh(request)
             return PaymentSubmission(request=request, outcome=outcome)
+
+    async def submit_receipt(
+        self, *, user_id: int, file_id: str, file_type: str
+    ) -> PaymentRequest | None:
+        async with self.sessions.begin() as session:
+            result = await session.execute(
+                select(PaymentRequest)
+                .where(
+                    PaymentRequest.telegram_user_id == user_id,
+                    PaymentRequest.status == "awaiting_receipt",
+                )
+                .order_by(PaymentRequest.created_at.desc())
+                .limit(1)
+            )
+            request = result.scalar_one_or_none()
+            if request is None:
+                return None
+            request.receipt_file_id = file_id
+            request.receipt_file_type = file_type
+            request.status = "pending"
+            request.admin_message_id = None
+            await session.flush()
+            request_id = request.id
+        return await self.get_request(request_id)
 
     async def set_admin_message(self, request_id: int, message_id: int) -> None:
         async with self.sessions.begin() as session:
@@ -291,23 +350,23 @@ class PaymentRepository:
 
     async def decide(self, request_id: int, *, approve: bool, admin_id: int) -> str:
         now = datetime.now(timezone.utc)
-        values = (
-            {"status": "approved", "approved_at": now, "approved_by": admin_id}
-            if approve
-            else {"status": "rejected", "rejected_at": now, "rejected_by": admin_id}
-        )
         async with self.sessions.begin() as session:
-            result = await session.execute(
-                update(PaymentRequest)
-                .where(PaymentRequest.id == request_id, PaymentRequest.status == "pending")
-                .values(**values)
-            )
-            if result.rowcount == 1:
-                return str(values["status"])
             current = await session.get(PaymentRequest, request_id)
             if current is None:
                 return "missing"
-            return f"already_{current.status}"
+            if current.status != "pending":
+                return f"already_{current.status}"
+            if approve:
+                current.status = "approved"
+                current.approved_at = now
+                current.approved_by = admin_id
+                current.access_expires_at = expires_at_for(current.plan, now)
+                return "approved"
+            current.status = "rejected"
+            current.rejected_at = now
+            current.rejected_by = admin_id
+            current.access_expires_at = None
+            return "rejected"
 
     async def pending(self, limit: int = 20) -> list[PaymentRequest]:
         async with self.sessions() as session:

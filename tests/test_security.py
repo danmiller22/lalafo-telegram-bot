@@ -5,8 +5,10 @@ from app.telegram.keyboards import (
     admin_keyboard,
     apartment_keyboard,
     payment_keyboard,
+    pending_payment_keyboard,
     private_contact_keyboard,
     private_payment_keyboard,
+    receipt_payment_keyboard,
     reveal_keyboard,
     status_keyboard,
 )
@@ -50,11 +52,19 @@ def test_callback_data_is_short_and_contains_no_phone():
         support_url=support_url,
     )
     private_contact = private_contact_keyboard(support_url=support_url)
+    receipt = receipt_payment_keyboard(
+        payment_url="https://qr.finik.kg/payment", support_url=support_url
+    )
+    pending_receipt = pending_payment_keyboard(
+        123456789, signer=signer, support_url=support_url
+    )
     for callback in (
         payment.inline_keyboard[1][0].callback_data,
         status.inline_keyboard[1][0].callback_data,
         reveal.inline_keyboard[0][0].callback_data,
+        private_payment.inline_keyboard[0][0].callback_data,
         private_payment.inline_keyboard[1][0].callback_data,
+        pending_receipt.inline_keyboard[0][0].callback_data,
         admin.inline_keyboard[0][0].callback_data,
         admin.inline_keyboard[0][1].callback_data,
     ):
@@ -72,15 +82,26 @@ def test_callback_data_is_short_and_contains_no_phone():
     assert group.inline_keyboard[1][0].url == "https://t.me/arenda312bot?start=want"
     assert len(group.inline_keyboard) == 3
     assert payment.inline_keyboard[0][0].url == "https://qr.finik.kg/payment"
-    for keyboard in (group, payment, status, reveal, private_payment, private_contact):
+    for keyboard in (
+        group,
+        payment,
+        status,
+        reveal,
+        private_payment,
+        private_contact,
+        receipt,
+        pending_receipt,
+    ):
         assert keyboard.inline_keyboard[-1][0].text == "🛟 Техподдержка"
         assert keyboard.inline_keyboard[-1][0].url == support_url
 
     assert [row[0].text for row in private_payment.inline_keyboard] == [
-        "💳 Оплатить 100 сом",
-        "✅ Проверить оплату",
+        "🔐 Один номер — 200 сом",
+        "⭐ Неделя доступа — 700 сом",
         "🛟 Техподдержка",
     ]
+    assert receipt.inline_keyboard[0][0].text == "💳 Ссылка на оплату"
+    assert pending_receipt.inline_keyboard[0][0].text == "⏳ Чек проверяется"
     assert len(private_contact.inline_keyboard) == 1
 
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.lalafo.models import LalafoAd
 from app.models import Apartment, PaymentRequest
+from app.payment_plans import plan_label, plan_price
 
 
 def format_money(value: int) -> str:
@@ -35,7 +36,7 @@ def format_public_apartment(ad: LalafoAd | Apartment, *, bot_username: str) -> s
 
 def user_label(request: PaymentRequest) -> str:
     if request.username:
-        return f"@{request.username}"
+        return f"@{request.username} (ID {request.telegram_user_id})"
     return f"{request.first_name or 'Пользователь'} ({request.telegram_user_id})"
 
 
@@ -46,7 +47,9 @@ def format_admin_card(request: PaymentRequest) -> str:
         "",
         f"🏠 Квартира #{apartment.id}",
         f"👤 {user_label(request)}",
-        "💰 Контакт: 100 сом",
+        f"💳 Тариф: {plan_label(request.plan)}",
+        f"💰 Оплата: {plan_price(request.plan)} сом",
+        "🧾 Чек прикреплён клиентом",
     ]
     if apartment.district:
         lines.append(f"📍 {apartment.district}")
@@ -61,5 +64,6 @@ def format_admin_decision(request: PaymentRequest, approved: bool) -> str:
             "",
             f"🏠 Квартира #{request.apartment.id}",
             f"👤 {user_label(request)}",
+            f"💳 {plan_label(request.plan)} · {plan_price(request.plan)} сом",
         ]
     )

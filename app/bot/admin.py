@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+from datetime import timezone
+from zoneinfo import ZoneInfo
 
 from aiogram import Bot, F, Router
 from aiogram.filters import Command
@@ -14,6 +16,7 @@ from app.security import TokenSigner
 from app.telegram.formatting import format_admin_decision, user_label
 from app.telegram.keyboards import private_payment_keyboard
 from app.telegram.private_delivery import send_private_contact
+from app.payment_plans import WEEK_PLAN
 from app.wanted.repository import WantedAdRepository
 
 router = Router(name="admin")
@@ -112,10 +115,26 @@ async def admin_callback(
     if outcome not in {"approved", "rejected"}:
         await callback.answer("Запрос уже обработан.", show_alert=True)
         return
-    await callback.message.edit_text(format_admin_decision(request, outcome == "approved"))
+    decision_text = format_admin_decision(request, outcome == "approved")
+    if callback.message.photo or callback.message.document:
+        await callback.message.edit_caption(caption=decision_text)
+    else:
+        await callback.message.edit_text(decision_text)
     apartment = request.apartment
     if outcome == "approved":
         try:
+            if request.plan == WEEK_PLAN and request.access_expires_at:
+                expires = request.access_expires_at
+                if expires.tzinfo is None:
+                    expires = expires.replace(tzinfo=timezone.utc)
+                local_expiry = expires.astimezone(ZoneInfo("Asia/Bishkek"))
+                await bot.send_message(
+                    request.telegram_user_id,
+                    "⭐ Доступ ко всем номерам активирован на 7 дней.\n"
+                    f"Работает до {local_expiry:%d.%m.%Y %H:%M} по Бишкеку.\n\n"
+                    "Нажимайте «Посмотреть номер» под любой квартирой — бот "
+                    "сразу пришлёт её полную карточку сюда.",
+                )
             await send_private_contact(
                 bot,
                 user_id=request.telegram_user_id,
@@ -131,7 +150,7 @@ async def admin_callback(
                 show_alert=True,
             )
             return
-        await callback.answer("✅ Подтверждено. Полная карточка отправлена клиенту в личку.")
+        await callback.answer("✅ Подтверждено. Доступ выдан клиенту.")
     else:
         try:
             await bot.send_message(

@@ -255,6 +255,28 @@ def test_numbered_microdistrict_is_inferred_from_title():
     assert ad.district == "6 мкр"
 
 
+def test_priority_landmark_from_text_is_more_specific_than_broad_district():
+    ad = parse_detail_data(
+        {
+            "id": 53,
+            "category_id": 2044,
+            "mobile": "+996555123456",
+            "price": 30000,
+            "currency": "KGS",
+            "city": "Бишкек",
+            "title": "Квартира возле ТЦ Караван",
+            "params": [
+                {"name": "Количество комнат", "value": "2 комнаты"},
+                {"name": "Район Бишкека", "value": "Центр"},
+            ],
+            "images": [{"original_url": "https://img.example/12.jpg"}],
+        },
+        source_url="https://lalafo.kg/bishkek/ads/test-id-53",
+    )
+
+    assert ad.district == "Караван ТЦ"
+
+
 def test_parse_public_detail_json():
     ad = parse_detail_data(
         {

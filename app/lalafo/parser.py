@@ -91,6 +91,7 @@ _DISTRICT_ALIASES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("1000 мелочей", ("1000 мелочей", "тысяча мелочей")),
     ("Азия Молл", ("азия молл", "asia mall")),
     ("Бишкек Парк", ("бишкек парк",)),
+    ("Караван ТЦ", ("караван тц", "тц караван", "караван")),
     ("Юг-2", ("юг 2", "вефа", "vefa")),
     ("Тунгуч", ("тунгуч",)),
     ("Учкун", ("учкун",)),
@@ -104,9 +105,6 @@ _DISTRICT_ALIASES: tuple[tuple[str, tuple[str, ...]], ...] = (
 
 def _infer_district(raw: dict[str, Any], params: dict[str, Any]) -> str | None:
     explicit = str(params.get("Район Бишкека") or "").strip()
-    if explicit:
-        return explicit
-
     listing_text = _normalized_listing_text(
         " ".join((str(raw.get("title") or ""), str(raw.get("description") or "")))
     )
@@ -120,7 +118,7 @@ def _infer_district(raw: dict[str, Any], params: dict[str, Any]) -> str | None:
     for canonical, aliases in _DISTRICT_ALIASES:
         if any(f" {alias} " in padded_text for alias in aliases):
             return canonical
-    return None
+    return explicit or None
 
 
 def _next_data(html: str) -> dict[str, Any]:

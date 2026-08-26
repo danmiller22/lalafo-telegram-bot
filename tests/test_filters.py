@@ -64,7 +64,18 @@ def test_public_card_has_short_bot_promotion():
 
 @pytest.mark.parametrize(
     "district",
-    ["Филармония", "ЦУМ", "ГУМ", "Восток-5 мкр", "5 мкр", "6 мкр", "7 мкр", "Дордой Плаза"],
+    [
+        "Филармония",
+        "ЦУМ",
+        "ГУМ",
+        "Восток-5 мкр",
+        "5 мкр",
+        "6 мкр",
+        "7 мкр",
+        "Дордой Плаза",
+        "Бишкек Парк",
+        "Караван ТЦ",
+    ],
 )
 def test_requested_districts_are_preferred(district):
     assert is_preferred_district(district)

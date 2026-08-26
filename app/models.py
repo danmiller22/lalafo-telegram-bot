@@ -74,12 +74,16 @@ class PaymentRequest(Base):
     )
     username: Mapped[str | None] = mapped_column(String(64))
     first_name: Mapped[str | None] = mapped_column(String(255))
+    plan: Mapped[str] = mapped_column(String(16), nullable=False, default="single")
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    receipt_file_id: Mapped[str | None] = mapped_column(String(255))
+    receipt_file_type: Mapped[str | None] = mapped_column(String(16))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow
     )
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     approved_by: Mapped[int | None] = mapped_column(BigInteger)
+    access_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     rejected_by: Mapped[int | None] = mapped_column(BigInteger)
     admin_message_id: Mapped[int | None] = mapped_column(BigInteger)

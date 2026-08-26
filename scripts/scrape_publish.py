@@ -22,6 +22,8 @@ PREFERRED_DISTRICT_TERMS = (
     "восток 5",
     "дордой плаза",
     "dordoi plaza",
+    "бишкек парк",
+    "караван",
 )
 SOURCE_MAX_PRICE = 40_000
 SOURCE_MAX_SEARCH_PAGES = 15
@@ -55,6 +57,7 @@ async def run() -> int:
     )
     state = PostedState.load(settings.posted_state_path)
     limit = settings.effective_post_limit
+    candidate_pool_limit = max(limit, min(limit * 2, 80))
     candidates = []
     candidate_phones: set[str] = set()
 
@@ -85,7 +88,7 @@ async def run() -> int:
         timeout=settings.http_timeout_seconds, max_retries=settings.http_max_retries
     ) as client:
         page_number = 1
-        while len(candidates) < limit:
+        while len(candidates) < candidate_pool_limit:
             try:
                 page = await client.search(DEFAULT_SEARCH_URL, page=page_number)
             except (LalafoError, LalafoParseError) as exc:
@@ -109,7 +112,7 @@ async def run() -> int:
                 else set()
             )
             for search_ad in page.items:
-                if len(candidates) >= limit:
+                if len(candidates) >= candidate_pool_limit:
                     break
                 if state.contains(search_ad.lalafo_id):
                     continue

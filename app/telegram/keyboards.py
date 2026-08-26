@@ -3,9 +3,10 @@ from __future__ import annotations
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from app.security import TokenSigner
+from app.payment_plans import SINGLE_PRICE, WEEK_PRICE
 
 
-APARTMENT_KEYBOARD_VERSION = 5
+APARTMENT_KEYBOARD_VERSION = 6
 
 
 def _support_row(support_url: str) -> list[InlineKeyboardButton]:
@@ -69,14 +70,47 @@ def private_payment_keyboard(
     support_url: str,
     pending: bool = False,
 ) -> InlineKeyboardMarkup:
-    token = signer.sign_id("paid", apartment_id)
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="💳 Оплатить 100 сом", url=payment_url)],
             [
                 InlineKeyboardButton(
-                    text=("⏳ Проверить оплату" if pending else "✅ Проверить оплату"),
-                    callback_data=f"paid:{token}",
+                    text=f"🔐 Один номер — {SINGLE_PRICE} сом",
+                    callback_data=(
+                        f"plan:s:{signer.sign_id('plan-single', apartment_id)}"
+                    ),
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=f"⭐ Неделя доступа — {WEEK_PRICE} сом",
+                    callback_data=f"plan:w:{signer.sign_id('plan-week', apartment_id)}",
+                )
+            ],
+            _support_row(support_url),
+        ]
+    )
+
+
+def receipt_payment_keyboard(
+    *, payment_url: str, support_url: str
+) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="💳 Ссылка на оплату", url=payment_url)],
+            _support_row(support_url),
+        ]
+    )
+
+
+def pending_payment_keyboard(
+    apartment_id: int, *, signer: TokenSigner, support_url: str
+) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="⏳ Чек проверяется",
+                    callback_data=f"view:{signer.sign_id('view', apartment_id)}",
                 )
             ],
             _support_row(support_url),
