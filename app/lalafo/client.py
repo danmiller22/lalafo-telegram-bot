@@ -9,6 +9,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 
+from app.config import LALAFO_DISTRICT_FILTERS
 from app.lalafo.parser import parse_detail_page, parse_search_data
 
 logger = logging.getLogger(__name__)
@@ -155,6 +156,13 @@ class LalafoClient:
             (item for item in room_ids.items() if item[0] in path_parts)
         ):
             params.append((f"parameters[69][{index}]", value))
+        district_ids = [
+            district_id
+            for alias, district_id in LALAFO_DISTRICT_FILTERS
+            if alias in path_parts
+        ]
+        for index, district_id in enumerate(district_ids):
+            params.append((f"parameters[357][{index}]", district_id))
         if "bez-podseleniya" in path_parts:
             params.append(("parameters[946][0]", "81537"))
         if offerer == "owner":
