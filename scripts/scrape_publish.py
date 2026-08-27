@@ -164,7 +164,9 @@ async def run() -> int:
         apartments = ApartmentRepository(sessions)
 
     async with LalafoClient(
-        timeout=settings.http_timeout_seconds, max_retries=settings.http_max_retries
+        timeout=settings.http_timeout_seconds,
+        max_retries=settings.http_max_retries,
+        proxy_url=settings.lalafo_proxy_url,
     ) as client:
         page_number = 1
         while len(candidates) < candidate_pool_limit:

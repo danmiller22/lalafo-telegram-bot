@@ -155,6 +155,7 @@ class Settings(BaseSettings):
     callback_secret: str = "change-me-in-production"
 
     lalafo_search_url: str = DEFAULT_SEARCH_URL
+    lalafo_proxy_url: str = ""
     lalafo_auto_reply_enabled: bool = False
     lalafo_login: str = ""
     lalafo_password: str = ""

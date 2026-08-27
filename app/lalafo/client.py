@@ -28,12 +28,19 @@ class LalafoNotFound(LalafoError):
 
 
 class LalafoClient:
-    def __init__(self, *, timeout: float = 25.0, max_retries: int = 3) -> None:
+    def __init__(
+        self,
+        *,
+        timeout: float = 25.0,
+        max_retries: int = 3,
+        proxy_url: str = "",
+    ) -> None:
         self.max_retries = max_retries
         self._user_hash = str(uuid.uuid4())
         self._client = httpx.AsyncClient(
             follow_redirects=True,
             timeout=httpx.Timeout(timeout),
+            proxy=proxy_url or None,
             headers={
                 "User-Agent": (
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
