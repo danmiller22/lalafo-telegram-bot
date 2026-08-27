@@ -7,6 +7,30 @@ from typing import Any
 
 import httpx
 
+ALLOWED_IMAGE_TYPES = {
+    "image/jpeg": ".jpg",
+    "image/pjpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+}
+
+
+def image_upload_metadata(content: bytes, advertised_type: str) -> tuple[str, str]:
+    """Use byte signatures because image CDNs may advertise an unusable MIME type."""
+    if content.startswith(b"\xff\xd8\xff"):
+        content_type = "image/jpeg"
+    elif content.startswith(b"\x89PNG\r\n\x1a\n"):
+        content_type = "image/png"
+    elif content.startswith(b"RIFF") and content[8:12] == b"WEBP":
+        content_type = "image/webp"
+    else:
+        content_type = advertised_type.split(";", 1)[0].strip().casefold()
+    if content_type not in ALLOWED_IMAGE_TYPES:
+        raise ManagedAdsContractError(
+            f"Source image has unsupported content type: {content_type or 'unknown'}"
+        )
+    return f"apartment{ALLOWED_IMAGE_TYPES[content_type]}", content_type
+
 
 class ManagedAdsError(RuntimeError):
     pass
@@ -42,7 +66,8 @@ class LalafoManagedAdsClient:
             timeout=httpx.Timeout(timeout),
         )
         self._images = httpx.AsyncClient(
-            follow_redirects=True, timeout=httpx.Timeout(timeout)
+            follow_redirects=True, timeout=httpx.Timeout(timeout),
+            headers={"Accept": "image/jpeg,image/png,image/webp"},
         )
         self.session: ManagedSession | None = None
 
@@ -133,6 +158,9 @@ class LalafoManagedAdsClient:
         try:
             source = await self._images.get(source_url)
             source.raise_for_status()
+            filename, content_type = image_upload_metadata(
+                source.content, source.headers.get("content-type", "")
+            )
             response = await self._http.post(
                 "/api/swoole-upload/v3/images/upload",
                 headers={
@@ -141,8 +169,7 @@ class LalafoManagedAdsClient:
                 },
                 data={"ad_id": str(temp_id)},
                 files={"image_file": (
-                    "apartment.jpg", source.content,
-                    source.headers.get("content-type", "image/jpeg"),
+                    filename, source.content, content_type,
                 )},
             )
         except httpx.HTTPError as exc:
