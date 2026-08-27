@@ -19,6 +19,7 @@ from app.lalafo.managed_ads import (
     LalafoManagedAdsClient,
     ManagedAdsAmbiguousResultError,
     ManagedAdsError,
+    publication_status,
 )
 from app.lalafo.models import LalafoAd
 from app.lalafo.parser import is_allowed
@@ -170,6 +171,7 @@ async def run() -> int:
                     business_date, requested_slot, apartment.id, ad.lalafo_id
                 )
                 try:
+                    changed = False
                     if (
                         row.managed_lalafo_ad_id is None
                         and row.lalafo_publication_status == "unknown"
@@ -192,6 +194,7 @@ async def run() -> int:
                                 lalafo_publication_status="draft_created",
                                 last_error=None,
                             )
+                            changed = True
                         payload = posting_payload(ad)
                         payload["id"] = temp_id
                         if row.lalafo_publication_status == "draft_created":
@@ -236,8 +239,25 @@ async def run() -> int:
                         row = await repo.patch(
                             row.id, managed_lalafo_ad_id=ad_id,
                             managed_lalafo_ad_url=f"https://lalafo.kg/bishkek/ads/id-{ad_id}",
-                            lalafo_publication_status="published", last_error=None,
+                            lalafo_publication_status="created", last_error=None,
                         )
+                        changed = True
+                    ad_id = int(row.managed_lalafo_ad_id)
+                    details = await managed.my_ad_details(ad_id)
+                    visible_status = publication_status(details)
+                    if visible_status != row.lalafo_publication_status:
+                        error = None
+                        if visible_status != "active":
+                            error = (
+                                "Lalafo created the ad but its owner status is "
+                                f"{visible_status}; paid activation is disabled"
+                            )
+                        row = await repo.patch(
+                            row.id,
+                            lalafo_publication_status=visible_status,
+                            last_error=error,
+                        )
+                        changed = True
                     if row.telegram_message_id is None:
                         message = await publisher.publish(apartment.id, ad)
                         await apartments.mark_published(
@@ -247,13 +267,20 @@ async def run() -> int:
                         row = await repo.patch(
                             row.id, telegram_message_id=message.message_id,
                             telegram_chat_id=settings.telegram_group_id,
-                            last_error=None,
                         )
-                    report.append(
-                        f"✅ {ad.district}, {ad.price} сом\n"
-                        f"Lalafo: {row.managed_lalafo_ad_url}\n"
-                        f"Telegram: сообщение {row.telegram_message_id}"
-                    )
+                        changed = True
+                    if changed:
+                        icon = "✅" if row.lalafo_publication_status == "active" else "⚠️"
+                        visibility = (
+                            "видно покупателям"
+                            if row.lalafo_publication_status == "active"
+                            else f"статус {row.lalafo_publication_status}; покупателям пока не видно"
+                        )
+                        report.append(
+                            f"{icon} {ad.district}, {ad.price} сом\n"
+                            f"Lalafo: {row.managed_lalafo_ad_url} — {visibility}\n"
+                            f"Telegram: сообщение {row.telegram_message_id}"
+                        )
                 except Exception as exc:
                     had_error = True
                     logger.exception(
@@ -341,7 +368,8 @@ async def run() -> int:
                             f"Зарезервированный рекламный бюджет: "
                             f"{await repo.daily_committed_budget(business_date)} сом"
                         )
-            await notify(report_bot, settings.admin_user_id, "\n".join(report))
+            if len(report) > 1:
+                await notify(report_bot, settings.admin_user_id, "\n".join(report))
             if had_error:
                 return 2
         except Exception as exc:

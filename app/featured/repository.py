@@ -271,9 +271,14 @@ class FeaturedRepository:
             return True
 
     async def previous_active(self, business_date: date) -> list[DailyFeaturedPublication]:
+        # A run close to midnight can cross the configured business-date
+        # boundary while an ad is still being published or promoted.  Never
+        # let the minute worker tear down a freshly created campaign.
+        safe_cutoff = datetime.now(timezone.utc) - timedelta(hours=20)
         async with self.sessions() as session:
             rows = await session.scalars(select(DailyFeaturedPublication).where(
                 DailyFeaturedPublication.business_date < business_date,
+                DailyFeaturedPublication.created_at <= safe_cutoff,
                 DailyFeaturedPublication.deactivated_at.is_(None),
                 DailyFeaturedPublication.managed_lalafo_ad_id.is_not(None),
             ))

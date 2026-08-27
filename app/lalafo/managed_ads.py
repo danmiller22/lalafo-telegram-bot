@@ -64,6 +64,42 @@ class ManagedAdsAmbiguousResultError(ManagedAdsError):
     """The request may have reached Lalafo, so blindly retrying is unsafe."""
 
 
+LALAFO_PUBLICATION_STATUSES = {
+    1: "moderation",
+    2: "active",
+    3: "rejected",
+    4: "banned",
+    7: "creating",
+    8: "deactivated",
+    11: "payment_waiting",
+}
+
+
+def publication_status(payload: dict[str, Any]) -> str:
+    """Return Lalafo's authoritative visibility state for an owned ad.
+
+    The web client currently uses numeric ``status_id`` values.  Some API
+    responses wrap the ad in ``data`` or ``ad``, so unwrap those shapes while
+    keeping an unknown response safe rather than assuming that it is public.
+    """
+    current: Any = payload
+    for _ in range(3):
+        if not isinstance(current, dict):
+            return "unknown"
+        if "status_id" in current:
+            try:
+                return LALAFO_PUBLICATION_STATUSES.get(
+                    int(current["status_id"]), "unknown"
+                )
+            except (TypeError, ValueError):
+                return "unknown"
+        nested = current.get("data") or current.get("ad")
+        if nested is current:
+            break
+        current = nested
+    return "unknown"
+
+
 @dataclass(slots=True)
 class ManagedSession:
     profile_id: int
@@ -220,6 +256,12 @@ class LalafoManagedAdsClient:
             "POST",
             f"/api/catalog/v32/posting-ads/temp/{temp_id}/publish?expand=available_campaign_types",
             json={}, ambiguous_result=True,
+        )
+
+    async def my_ad_details(self, ad_id: int) -> dict[str, Any]:
+        """Read the owner-visible status used by Lalafo's own edit page."""
+        return await self._json(
+            "GET", f"/api/catalog/v3/feed/my-ad-details/{ad_id}"
         )
 
     async def wallet_balances(self) -> dict[str, Any]:
