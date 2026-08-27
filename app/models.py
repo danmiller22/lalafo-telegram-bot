@@ -137,8 +137,8 @@ class DailyFeaturedPublication(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     business_date: Mapped[date] = mapped_column(Date, nullable=False)
     slot: Mapped[int] = mapped_column(Integer, nullable=False)
-    source_apartment_id: Mapped[int] = mapped_column(
-        ForeignKey("apartments.id"), nullable=False, index=True
+    source_apartment_id: Mapped[int | None] = mapped_column(
+        ForeignKey("apartments.id"), nullable=True, index=True
     )
     source_lalafo_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
     managed_lalafo_ad_id: Mapped[int | None] = mapped_column(BigInteger)
@@ -178,6 +178,7 @@ class FeaturedCandidate(Base):
     )
     source_lalafo_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     source_url: Mapped[str] = mapped_column(Text, nullable=False)
+    source_payload: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
     rank: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="suggested")
     selected_slot: Mapped[int | None] = mapped_column(Integer)
@@ -185,6 +186,16 @@ class FeaturedCandidate(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow
     )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow
+    )
+
+
+class FeaturedReviewState(Base):
+    __tablename__ = "featured_review_state"
+
+    key: Mapped[str] = mapped_column(String(50), primary_key=True)
+    last_update_id: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow
     )

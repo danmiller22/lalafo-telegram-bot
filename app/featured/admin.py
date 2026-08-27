@@ -11,7 +11,6 @@ from app.config import Settings
 from app.featured.repository import FeaturedRepository
 from app.lalafo.client import LalafoClient
 from app.lalafo.parser import is_allowed
-from app.payments.repository import ApartmentRepository
 
 router = Router(name="featured-admin")
 LALAFO_URL = re.compile(r"https?://(?:www\.)?lalafo\.kg/\S+", re.IGNORECASE)
@@ -55,7 +54,7 @@ async def select_featured(
 @router.message(F.chat.type == "private", F.text.contains("lalafo.kg/"))
 async def accept_custom_lalafo_link(
     message: Message, bot: Bot, settings: Settings,
-    featured: FeaturedRepository, apartments: ApartmentRepository,
+    featured: FeaturedRepository,
 ) -> None:
     if not _is_admin(message.from_user.id if message.from_user else None, settings):
         return
@@ -78,11 +77,10 @@ async def accept_custom_lalafo_link(
         if not allowed or not ad.district or not ad.phone or not ad.photo_urls:
             await message.answer(f"Не могу принять эту квартиру: {reason or 'неполные данные' }.")
             return
-        apartment = await apartments.upsert_discovered(ad)
         business_date = datetime.now(ZoneInfo(settings.featured_timezone)).date()
         candidate = await featured.add_candidate(
-            business_date, apartment_id=apartment.id, lalafo_id=ad.lalafo_id,
-            source_url=ad.source_url, rank=0,
+            business_date, apartment_id=None, lalafo_id=ad.lalafo_id,
+            source_url=ad.source_url, source_payload=ad.model_dump(mode="json"), rank=0,
         )
         outcome, selected = await featured.select_candidate(
             candidate.id, limit=settings.featured_count

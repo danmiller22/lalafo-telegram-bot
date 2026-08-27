@@ -7,7 +7,7 @@ from typing import AsyncIterator
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models import DailyFeaturedPublication, FeaturedCandidate
+from app.models import DailyFeaturedPublication, FeaturedCandidate, FeaturedReviewState
 
 LOCK_ID = 731_205_001
 
@@ -46,8 +46,8 @@ class FeaturedRepository:
             return list(rows)
 
     async def add_candidate(
-        self, business_date: date, *, apartment_id: int, lalafo_id: int,
-        source_url: str, rank: int,
+        self, business_date: date, *, apartment_id: int | None, lalafo_id: int,
+        source_url: str, source_payload: dict[str, object], rank: int,
     ) -> FeaturedCandidate:
         async with self.sessions.begin() as session:
             row = await session.scalar(select(FeaturedCandidate).where(
@@ -57,11 +57,21 @@ class FeaturedRepository:
             if row is None:
                 row = FeaturedCandidate(
                     business_date=business_date, source_apartment_id=apartment_id,
-                    source_lalafo_id=lalafo_id, source_url=source_url, rank=rank,
+                    source_lalafo_id=lalafo_id, source_url=source_url,
+                    source_payload=source_payload, rank=rank,
                 )
                 session.add(row)
                 await session.flush()
             return row
+
+    async def bind_candidate_apartment(
+        self, candidate_id: int, apartment_id: int
+    ) -> None:
+        async with self.sessions.begin() as session:
+            candidate = await session.get(FeaturedCandidate, candidate_id)
+            if candidate is None:
+                raise LookupError("Featured candidate not found")
+            candidate.source_apartment_id = apartment_id
 
     async def suggested_candidates(self, business_date: date) -> list[FeaturedCandidate]:
         async with self.sessions() as session:
@@ -103,6 +113,19 @@ class FeaturedRepository:
             candidate = await session.get(FeaturedCandidate, candidate_id)
             if candidate is not None:
                 candidate.telegram_message_id = message_id
+
+    async def review_cursor(self) -> int:
+        async with self.sessions() as session:
+            state = await session.get(FeaturedReviewState, "telegram")
+            return state.last_update_id if state is not None else 0
+
+    async def advance_review_cursor(self, update_id: int) -> None:
+        async with self.sessions.begin() as session:
+            state = await session.get(FeaturedReviewState, "telegram", with_for_update=True)
+            if state is None:
+                session.add(FeaturedReviewState(key="telegram", last_update_id=update_id))
+            elif update_id > state.last_update_id:
+                state.last_update_id = update_id
 
     async def recent_source_ids(self, business_date: date, days: int) -> set[int]:
         cutoff = business_date - timedelta(days=max(days, 0))

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -27,7 +26,6 @@ def configure(monkeypatch: pytest.MonkeyPatch) -> None:
     web._bot_runtime = None
     web._keyboard_sync_task = None
     web._lalafo_auto_responder = None
-    web._featured_review_runtime = None
     yield
     get_settings.cache_clear()
 
@@ -42,7 +40,6 @@ async def test_health_and_authentication() -> None:
             "status": "ok",
             "bot": "disabled",
             "lalafo_auto_reply": "disabled",
-            "featured_review_bot": "disabled",
         }
         assert (await client.post("/run")).status_code == 401
         response = await client.get(
@@ -114,31 +111,6 @@ async def test_telegram_webhook_requires_secret_and_dispatches_update(
     assert denied.status_code == 401
     assert accepted.status_code == 200
     feed_update.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_featured_webhook_is_isolated_from_main_bot(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    callback_secret = "c" * 32
-    monkeypatch.setenv("FEATURED_REVIEW_ENABLED", "true")
-    monkeypatch.setenv("CALLBACK_SECRET", callback_secret)
-    get_settings.cache_clear()
-    featured_feed = AsyncMock()
-    web._featured_review_runtime = SimpleNamespace(
-        bot=object(), dispatcher=SimpleNamespace(feed_update=featured_feed),
-        workflow_data={"marker": "featured"},
-    )
-    secret = hashlib.sha256(f"{callback_secret}:featured-review".encode()).hexdigest()
-    transport = httpx.ASGITransport(app=web.app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.post(
-            "/telegram/featured-webhook", json={"update_id": 3},
-            headers={"X-Telegram-Bot-Api-Secret-Token": secret},
-        )
-    assert response.status_code == 200
-    featured_feed.assert_awaited_once()
-    assert web._bot_runtime is None
 
 
 @pytest.mark.asyncio

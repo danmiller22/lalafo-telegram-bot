@@ -11,7 +11,6 @@ from app.config import get_settings
 from app.database import create_engine_and_session, init_db
 from app.featured import admin
 from app.featured.repository import FeaturedRepository
-from app.payments.repository import ApartmentRepository
 
 
 @dataclass(slots=True)
@@ -38,6 +37,5 @@ async def create_featured_review_runtime() -> FeaturedReviewRuntime:
         workflow_data={
             "settings": settings,
             "featured": FeaturedRepository(sessions),
-            "apartments": ApartmentRepository(sessions),
         },
     )

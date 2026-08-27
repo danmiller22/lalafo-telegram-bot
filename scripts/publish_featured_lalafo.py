@@ -104,12 +104,15 @@ async def run() -> int:
             return 0
         selected: list[LalafoAd] = []
         for candidate in approved[: settings.featured_count]:
-            apartment = await apartments.get(candidate.source_apartment_id)
-            if apartment is None:
-                logger.error("Approved apartment id=%s is missing", candidate.source_apartment_id)
-                await engine.dispose()
-                return 2
-            selected.append(apartment_to_ad(apartment))
+            if candidate.source_apartment_id is not None:
+                apartment = await apartments.get(candidate.source_apartment_id)
+                if apartment is not None:
+                    selected.append(apartment_to_ad(apartment))
+                    continue
+            ad = LalafoAd.model_validate(candidate.source_payload)
+            apartment = await apartments.upsert_discovered(ad)
+            await repo.bind_candidate_apartment(candidate.id, apartment.id)
+            selected.append(ad)
         if settings.dry_run:
             for slot, ad in enumerate(selected, 1):
                 logger.info("DRY approved slot=%d id=%s url=%s\n%s", slot, ad.lalafo_id, ad.source_url, build_description(ad))

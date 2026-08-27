@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import logging
 import secrets
 from contextlib import suppress
@@ -15,7 +14,6 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from app.bot.main import BotRuntime, create_runtime
 from app.config import get_settings
 from app.lalafo.auto_reply import LalafoAutoResponder
-from app.featured.bot import FeaturedReviewRuntime, create_featured_review_runtime
 from app.security import TokenSigner
 from app.telegram.keyboards import paid_keyboard
 
@@ -27,7 +25,6 @@ _scraper_task: asyncio.Task[None] | None = None
 _bot_runtime: BotRuntime | None = None
 _keyboard_sync_task: asyncio.Task[None] | None = None
 _lalafo_auto_responder: LalafoAutoResponder | None = None
-_featured_review_runtime: FeaturedReviewRuntime | None = None
 _run_state: dict[str, Any] = {
     "running": False,
     "last_started_at": None,
@@ -86,7 +83,7 @@ async def _sync_outdated_keyboards() -> None:
 
 @app.on_event("startup")
 async def startup() -> None:
-    global _bot_runtime, _keyboard_sync_task, _lalafo_auto_responder, _featured_review_runtime
+    global _bot_runtime, _keyboard_sync_task, _lalafo_auto_responder
     settings = get_settings()
     logging.basicConfig(
         level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -114,26 +111,11 @@ async def startup() -> None:
         )
         _lalafo_auto_responder.start()
         logger.info("Lalafo cloud auto-reply supervisor enabled")
-    if settings.featured_review_enabled:
-        _featured_review_runtime = await create_featured_review_runtime()
-        review_secret = hashlib.sha256(
-            f"{settings.require_callback_secret()}:featured-review".encode()
-        ).hexdigest()
-        review_url = f"{settings.require_public_base_url()}/telegram/featured-webhook"
-        await _featured_review_runtime.bot.set_webhook(
-            review_url, secret_token=review_secret,
-            allowed_updates=_featured_review_runtime.dispatcher.resolve_used_update_types(),
-            drop_pending_updates=False,
-        )
-        logger.info("Isolated featured-review Telegram webhook enabled")
 
 
 @app.on_event("shutdown")
 async def shutdown() -> None:
-    global _bot_runtime, _keyboard_sync_task, _lalafo_auto_responder, _featured_review_runtime
-    if _featured_review_runtime is not None:
-        await _featured_review_runtime.close()
-        _featured_review_runtime = None
+    global _bot_runtime, _keyboard_sync_task, _lalafo_auto_responder
     if _lalafo_auto_responder is not None:
         await _lalafo_auto_responder.close()
         _lalafo_auto_responder = None
@@ -167,9 +149,6 @@ async def health() -> JSONResponse:
             "status": "ok",
             "bot": "running" if settings.run_bot else "disabled",
             "lalafo_auto_reply": auto_reply,
-            "featured_review_bot": (
-                "running" if _featured_review_runtime is not None else "disabled"
-            ),
         }
     )
 
@@ -194,27 +173,6 @@ async def telegram_webhook(
         update,
         **runtime.workflow_data,
     )
-    return Response(status_code=status.HTTP_200_OK)
-
-
-@app.post("/telegram/featured-webhook", include_in_schema=False)
-async def featured_telegram_webhook(
-    request: Request,
-    x_telegram_bot_api_secret_token: str | None = Header(default=None),
-) -> Response:
-    settings = get_settings()
-    runtime = _featured_review_runtime
-    if not settings.featured_review_enabled or runtime is None:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
-    expected = hashlib.sha256(
-        f"{settings.require_callback_secret()}:featured-review".encode()
-    ).hexdigest()
-    if not x_telegram_bot_api_secret_token or not secrets.compare_digest(
-        x_telegram_bot_api_secret_token, expected
-    ):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
-    update = Update.model_validate(await request.json(), context={"bot": runtime.bot})
-    await runtime.dispatcher.feed_update(runtime.bot, update, **runtime.workflow_data)
     return Response(status_code=status.HTTP_200_OK)
 
 

@@ -12,7 +12,6 @@ from app.config import get_settings
 from app.database import create_engine_and_session, init_db
 from app.featured.repository import FeaturedRepository
 from app.featured.selection import build_description, select_featured
-from app.payments.repository import ApartmentRepository
 from scripts.publish_featured_lalafo import discover
 
 
@@ -35,7 +34,6 @@ async def run() -> int:
         return 0
     engine, sessions = create_engine_and_session(settings.database_url)
     await init_db(engine)
-    apartments = ApartmentRepository(sessions)
     repo = FeaturedRepository(sessions)
     recent = await repo.recent_source_ids(business_date, settings.featured_cooldown_days)
     candidates = select_featured(
@@ -51,10 +49,10 @@ async def run() -> int:
             "Если ничего не подходит — отправьте мне ссылку Lalafo.",
         )
         for rank, ad in enumerate(candidates, 1):
-            apartment = await apartments.upsert_discovered(ad)
             candidate = await repo.add_candidate(
-                business_date, apartment_id=apartment.id, lalafo_id=ad.lalafo_id,
-                source_url=ad.source_url, rank=rank,
+                business_date, apartment_id=None, lalafo_id=ad.lalafo_id,
+                source_url=ad.source_url,
+                source_payload=ad.model_dump(mode="json"), rank=rank,
             )
             if candidate.telegram_message_id is not None:
                 continue
