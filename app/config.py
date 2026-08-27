@@ -163,7 +163,7 @@ class Settings(BaseSettings):
     min_price: int = 8_000
     max_price: int = 35_000
     rooms: str = "studio,1,2"
-    max_new_posts_per_run: int = 60
+    max_new_posts_per_run: int = 80
     max_search_pages: int = 50
     preferred_districts_only: bool = False
     max_photos_per_apartment: int = 5
@@ -198,7 +198,7 @@ class Settings(BaseSettings):
 
     @property
     def effective_post_limit(self) -> int:
-        return 1 if self.test_mode else max(60, self.max_new_posts_per_run)
+        return 1 if self.test_mode else max(80, self.max_new_posts_per_run)
 
     @property
     def allowed_rooms(self) -> tuple[str, ...]:

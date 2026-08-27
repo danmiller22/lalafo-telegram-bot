@@ -64,7 +64,7 @@ CENTRAL_DISTRICT_TERMS = (
 )
 SOURCE_MAX_PRICE = 35_000
 SOURCE_MAX_SEARCH_PAGES = 50
-PREFERRED_BATCH_SHARE = 0.65
+PREFERRED_BATCH_SHARE = 0.70
 MAX_CANDIDATE_POOL = 300
 
 
@@ -106,7 +106,7 @@ def candidate_quality(ad: LalafoAd) -> tuple[int, bool, bool, bool, int, int, bo
 
 
 def select_publish_batch(candidates: list[LalafoAd], limit: int) -> list[LalafoAd]:
-    """Build a batch targeting 65% requested districts when supply allows it."""
+    """Build a batch targeting 70% requested districts when supply allows it."""
     if limit <= 0 or not candidates:
         return []
     preferred = sorted(
