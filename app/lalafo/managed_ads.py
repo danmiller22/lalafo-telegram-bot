@@ -1,0 +1,154 @@
+from __future__ import annotations
+
+import hashlib
+import uuid
+from dataclasses import dataclass
+from typing import Any
+
+import httpx
+
+
+class ManagedAdsError(RuntimeError):
+    pass
+
+
+class ManagedAdsAuthenticationError(ManagedAdsError):
+    pass
+
+
+class ManagedAdsContractError(ManagedAdsError):
+    pass
+
+
+@dataclass(slots=True)
+class ManagedSession:
+    profile_id: int
+    token: str
+    access_token: str
+
+
+class LalafoManagedAdsClient:
+    """Dedicated authenticated session that deliberately exposes no chat routes."""
+
+    def __init__(self, *, timeout: float = 25.0) -> None:
+        self._user_hash = str(uuid.uuid4())
+        self._fingerprint = hashlib.sha256(uuid.uuid4().bytes).hexdigest()
+        self._http = httpx.AsyncClient(
+            base_url="https://lalafo.kg", follow_redirects=True,
+            timeout=httpx.Timeout(timeout),
+        )
+        self._images = httpx.AsyncClient(
+            follow_redirects=True, timeout=httpx.Timeout(timeout)
+        )
+        self.session: ManagedSession | None = None
+
+    def _headers(self, token: str = "", *, json: bool = True) -> dict[str, str]:
+        headers = {
+            "device": "pc", "language": "ru_RU", "country-id": "12",
+            "request-id": f"react-client-{uuid.uuid4()}",
+            "Authorization": f"Bearer {token}" if token else "",
+            "user-hash": self._user_hash,
+            "device-fingerprint": self._fingerprint,
+            "User-Agent": "Mozilla/5.0 AppleWebKit/537.36 Chrome/140 Safari/537.36",
+        }
+        if json:
+            headers["content-type"] = "application/json"
+        return headers
+
+    def _token(self) -> str:
+        if self.session is None:
+            raise ManagedAdsAuthenticationError("Managed Lalafo session is not initialized")
+        return self.session.token
+
+    async def _json(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
+        response = await self._http.request(
+            method, path, headers=self._headers(self._token()), **kwargs
+        )
+        if response.status_code == 401:
+            raise ManagedAdsAuthenticationError("Lalafo session expired")
+        if response.status_code in {403, 429}:
+            raise ManagedAdsError(f"Lalafo rejected request with HTTP {response.status_code}")
+        if response.is_error:
+            raise ManagedAdsError(f"Lalafo request failed with HTTP {response.status_code}")
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise ManagedAdsContractError("Lalafo returned an unexpected response shape")
+        return payload
+
+    async def login(self, login: str, password: str) -> ManagedSession:
+        field = "email" if "@" in login else "mobile"
+        response = await self._http.post(
+            "/api/auth/login", headers=self._headers(),
+            json={field: login, "password": password},
+        )
+        if response.status_code in {401, 403, 422}:
+            raise ManagedAdsAuthenticationError(f"Lalafo login rejected with HTTP {response.status_code}")
+        response.raise_for_status()
+        payload = response.json()
+        try:
+            self.session = ManagedSession(
+                profile_id=int(payload["id"]), token=str(payload["token"]),
+                access_token=str(payload["access_token"]),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ManagedAdsAuthenticationError("Lalafo login response is incomplete") from exc
+        self._user_hash = str(payload.get("user_hash") or self._user_hash)
+        return self.session
+
+    async def create_temp(self) -> dict[str, Any]:
+        return await self._json("POST", "/api/catalog/v32/posting-ads/temp")
+
+    async def update_temp(self, temp_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        return await self._json("PUT", f"/api/catalog/v32/posting-ads/temp/{temp_id}", json=payload)
+
+    async def upload_image(self, temp_id: int, source_url: str) -> dict[str, Any]:
+        source = await self._images.get(source_url)
+        source.raise_for_status()
+        response = await self._http.post(
+            "/api/swoole-upload/v3/images/upload",
+            headers=self._headers(self._token(), json=False),
+            data={"ad_id": str(temp_id)},
+            files={"image_file": ("apartment.jpg", source.content, source.headers.get("content-type", "image/jpeg"))},
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise ManagedAdsContractError("Image upload response is invalid")
+        return payload
+
+    async def publish_temp(self, temp_id: int) -> dict[str, Any]:
+        return await self._json("POST", f"/api/catalog/v32/posting-ads/temp/{temp_id}/publish?expand=available_campaign_types", json={})
+
+    async def wallet_balances(self) -> dict[str, Any]:
+        return await self._json("GET", "/api/wallet/v3/accounts/all-balances")
+
+    async def campaign_stats(self, ad_id: int) -> dict[str, Any]:
+        return await self._json("GET", f"/api/campaign/v3/campaign-stats/get-by-ad/{ad_id}")
+
+    async def campaign_params(self, ad_id: int) -> dict[str, Any]:
+        return await self._json(
+            "GET", f"/api/campaign/v3/campaign-params/ad/{ad_id}?&expand=products"
+        )
+
+    async def available_sum(self, amount: int, currency: str = "KGS") -> dict[str, Any]:
+        return await self._json(
+            "GET", f"/api/wallet/v3/accounts/available-sum/{amount}/currency/{currency}"
+        )
+
+    async def cancel_campaign(self, campaign_id: str) -> dict[str, Any]:
+        return await self._json("POST", f"/api/campaign/v3/campaigns/cancel/{campaign_id}", json={})
+
+    async def deactivate(self, ad_ids: list[int]) -> dict[str, Any]:
+        return await self._json("POST", "/api/catalog/v3/feed/deactivate-set", json={"ad_ids": ad_ids})
+
+    async def start_campaign(
+        self, ad_id: int, price_id: int, flow_id: str | None = None
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST", "/api/payment/v3/purchases/pay-campaign-daily",
+            json={"ad_id": ad_id, "price_id": price_id, "flow_id": flow_id},
+        )
+
+    async def close(self) -> None:
+        await self._http.aclose()
+        await self._images.aclose()

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -122,3 +123,68 @@ class WantedAd(Base):
     rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     rejected_by: Mapped[int | None] = mapped_column(BigInteger)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class DailyFeaturedPublication(Base):
+    __tablename__ = "daily_featured_publications"
+    __table_args__ = (
+        UniqueConstraint("business_date", "slot", name="uq_featured_business_slot"),
+        UniqueConstraint("managed_lalafo_ad_id", name="uq_featured_managed_ad"),
+        Index("ix_featured_business_date", "business_date"),
+        Index("ix_featured_campaign_status", "campaign_status"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    business_date: Mapped[date] = mapped_column(Date, nullable=False)
+    slot: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_apartment_id: Mapped[int] = mapped_column(
+        ForeignKey("apartments.id"), nullable=False, index=True
+    )
+    source_lalafo_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    managed_lalafo_ad_id: Mapped[int | None] = mapped_column(BigInteger)
+    managed_lalafo_ad_url: Mapped[str | None] = mapped_column(Text)
+    campaign_id: Mapped[str | None] = mapped_column(String(100))
+    campaign_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="not_started"
+    )
+    campaign_daily_budget: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    lalafo_publication_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="reserved"
+    )
+    telegram_message_id: Mapped[int | None] = mapped_column(BigInteger)
+    telegram_chat_id: Mapped[int | None] = mapped_column(BigInteger)
+    last_telegram_repeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deactivated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow
+    )
+
+
+class FeaturedCandidate(Base):
+    __tablename__ = "featured_candidates"
+    __table_args__ = (
+        UniqueConstraint("business_date", "source_lalafo_id", name="uq_featured_candidate_source"),
+        Index("ix_featured_candidate_date_status", "business_date", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    business_date: Mapped[date] = mapped_column(Date, nullable=False)
+    source_apartment_id: Mapped[int] = mapped_column(
+        ForeignKey("apartments.id"), nullable=False, index=True
+    )
+    source_lalafo_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    source_url: Mapped[str] = mapped_column(Text, nullable=False)
+    rank: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="suggested")
+    selected_slot: Mapped[int | None] = mapped_column(Integer)
+    telegram_message_id: Mapped[int | None] = mapped_column(BigInteger)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow
+    )
