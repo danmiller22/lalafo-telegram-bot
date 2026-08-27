@@ -16,7 +16,7 @@ global_job_config:
     - name: FEATURED_LALAFO_ENABLED
       value: "true"
     - name: FEATURED_PUBLISH_APPROVED_ENABLED
-      value: "false"
+      value: "true"
     - name: FEATURED_AUTOPROMOTE_ENABLED
       value: "false"
     - name: LOG_LEVEL
