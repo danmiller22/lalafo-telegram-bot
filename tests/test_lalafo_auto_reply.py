@@ -4,7 +4,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.lalafo.auto_reply import AUTO_REPLY_TEXT, LalafoAutoResponder, LalafoSession
+from app.lalafo.auto_reply import (
+    AUTO_REPLY_TEXT,
+    LalafoAutoResponder,
+    LalafoChatRateLimitError,
+    LalafoSession,
+)
 
 
 class FakeSocket:
@@ -84,6 +89,22 @@ async def test_does_not_duplicate_reply_for_same_incoming_message() -> None:
     assert await responder.scan_once() == 1
     assert await responder.scan_once() == 0
     client.send_reply.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_rate_limited_message_is_retried_on_the_next_scan() -> None:
+    client = FakeClient([chat(message_id=43, origin=200)])
+    client.send_reply.side_effect = [LalafoChatRateLimitError(), None]
+    responder = LalafoAutoResponder(
+        login="ignored",
+        password="ignored",
+        client=client,  # type: ignore[arg-type]
+        socket=FakeSocket(),  # type: ignore[arg-type]
+    )
+
+    assert await responder.scan_once() == 0
+    assert await responder.scan_once() == 1
+    assert client.send_reply.await_count == 2
 
 
 def test_fixed_text_matches_requested_message() -> None:

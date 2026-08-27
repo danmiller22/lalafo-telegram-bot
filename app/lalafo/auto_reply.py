@@ -32,6 +32,10 @@ class LalafoChatAuthenticationError(LalafoChatError):
     pass
 
 
+class LalafoChatRateLimitError(LalafoChatError):
+    """Lalafo temporarily refused a message because of its send rate limit."""
+
+
 @dataclass(slots=True)
 class LalafoSession:
     profile_id: int
@@ -179,6 +183,8 @@ class LalafoChatClient:
         )
         if response.status_code == 401:
             raise LalafoChatAuthenticationError("Lalafo session expired")
+        if response.status_code == 429:
+            raise LalafoChatRateLimitError("Lalafo message rate limit reached")
         response.raise_for_status()
 
     async def close(self) -> None:
@@ -300,6 +306,7 @@ class LalafoAutoResponder:
             for key, handled_at in self._handled.items()
             if now - handled_at < 86400
         }
+        consecutive_rate_limits = 0
         for chat in chats:
             bottom = chat.get("bottom")
             if not isinstance(bottom, dict):
@@ -313,7 +320,20 @@ class LalafoAutoResponder:
             key = self._message_key(chat)
             if not key or key in self._handled:
                 continue
-            await self._client.send_reply(chat, AUTO_REPLY_TEXT, self._socket_id())
+            try:
+                await self._client.send_reply(chat, AUTO_REPLY_TEXT, self._socket_id())
+            except LalafoChatRateLimitError:
+                # Do not remember this message: the next one-minute cloud run must
+                # retry it.  Continue briefly so one problematic chat cannot block
+                # every other customer, but stop after a global limit is evident.
+                consecutive_rate_limits += 1
+                logger.warning(
+                    "Lalafo rate-limited an automatic reply; it will be retried"
+                )
+                if consecutive_rate_limits >= 3:
+                    break
+                continue
+            consecutive_rate_limits = 0
             self._handled[key] = now
             self.reply_count += 1
             sent += 1
