@@ -2,8 +2,6 @@ name: Publish approved featured apartments
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "15,45 * * * *"
 
 permissions:
   contents: read
