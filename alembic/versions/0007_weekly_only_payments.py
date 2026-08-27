@@ -11,20 +11,20 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.alter_column(
-        "payment_requests",
-        "plan",
-        existing_type=sa.String(length=16),
-        server_default="week",
-        existing_nullable=False,
-    )
+    with op.batch_alter_table("payment_requests") as batch_op:
+        batch_op.alter_column(
+            "plan",
+            existing_type=sa.String(length=16),
+            server_default="week",
+            existing_nullable=False,
+        )
 
 
 def downgrade() -> None:
-    op.alter_column(
-        "payment_requests",
-        "plan",
-        existing_type=sa.String(length=16),
-        server_default="single",
-        existing_nullable=False,
-    )
+    with op.batch_alter_table("payment_requests") as batch_op:
+        batch_op.alter_column(
+            "plan",
+            existing_type=sa.String(length=16),
+            server_default="single",
+            existing_nullable=False,
+        )
