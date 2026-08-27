@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.config import DEFAULT_SEARCH_URL
-from app.lalafo.client import LalafoClient, LalafoError
+from app.lalafo.client import LalafoAccessError, LalafoClient, LalafoError
 
 
 SEARCH_URL = (
@@ -53,6 +53,27 @@ def test_search_params_can_target_each_offerer_independently(offerer, expected):
         value for key, value in params.items() if key.startswith("parameters[2149]")
     ]
     assert offerer_values == [expected]
+
+
+@pytest.mark.asyncio
+async def test_search_retries_without_long_district_filter_after_access_error():
+    client = LalafoClient()
+    client._get_json = AsyncMock(
+        side_effect=[
+            LalafoAccessError("blocked long query"),
+            {"items": [], "_meta": {"total_count": 0, "page_count": 1}},
+        ]
+    )
+    try:
+        await client.search(DEFAULT_SEARCH_URL, page=1)
+    finally:
+        await client.close()
+
+    first_url, second_url = [call.args[0] for call in client._get_json.await_args_list]
+    assert "parameters%5B357%5D" in first_url
+    assert "parameters%5B357%5D" not in second_url
+    assert "parameters%5B69%5D" in second_url
+    assert "price%5Bto%5D=35000" in second_url
 
 
 def detail_html(ad_id: int, phone: str) -> str:

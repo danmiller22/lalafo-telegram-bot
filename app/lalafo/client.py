@@ -186,16 +186,40 @@ class LalafoClient:
         self, search_url: str, page: int = 1, offerer: str | None = None
     ):
         parts = urlsplit(search_url)
+        search_params = self._search_params(search_url, page, offerer)
         api_url = urlunsplit(
             (
                 parts.scheme,
                 parts.netloc,
                 "/api/search/v3/feed/search",
-                urlencode(self._search_params(search_url, page, offerer)),
+                urlencode(search_params),
                 "",
             )
         )
-        data = await self._get_json(api_url)
+        try:
+            data = await self._get_json(api_url)
+        except LalafoAccessError:
+            compact_params = [
+                (key, value)
+                for key, value in search_params
+                if not key.startswith("parameters[357][")
+            ]
+            if len(compact_params) == len(search_params):
+                raise
+            logger.warning(
+                "Lalafo rejected the long district-filter request; retrying the same "
+                "Bishkek room and price search without district query parameters"
+            )
+            compact_api_url = urlunsplit(
+                (
+                    parts.scheme,
+                    parts.netloc,
+                    "/api/search/v3/feed/search",
+                    urlencode(compact_params),
+                    "",
+                )
+            )
+            data = await self._get_json(compact_api_url)
         return parse_search_data(data, base_url=f"{parts.scheme}://{parts.netloc}")
 
     async def detail(self, detail_url: str):
