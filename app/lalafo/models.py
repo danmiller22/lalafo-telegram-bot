@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -39,5 +40,8 @@ class LalafoAd(BaseModel):
     category_id: int
     no_subletting: bool
     owner_listing: bool
+    source_title: str = ""
+    source_description: str = ""
+    source_params: list[dict[str, Any]] = Field(default_factory=list)
     source_created_at: datetime | None = None
     source_updated_at: datetime | None = None

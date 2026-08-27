@@ -1,0 +1,38 @@
+version: v1.0
+name: Featured review bot updates
+
+agent:
+  machine:
+    type: f1-standard-2
+    os_image: ubuntu2404
+
+execution_time_limit:
+  minutes: 5
+
+global_job_config:
+  env_vars:
+    - name: FEATURED_REVIEW_ENABLED
+      value: "true"
+    - name: FEATURED_LALAFO_ENABLED
+      value: "true"
+    - name: FEATURED_PUBLISH_APPROVED_ENABLED
+      value: "false"
+    - name: FEATURED_AUTOPROMOTE_ENABLED
+      value: "false"
+    - name: LOG_LEVEL
+      value: "INFO"
+
+blocks:
+  - name: Process isolated review commands
+    task:
+      secrets:
+        - name: lalafo-production
+        - name: featured-review
+      jobs:
+        - name: Read buttons and admin links
+          commands:
+            - checkout
+            - sem-version python 3.12
+            - python -m pip install --disable-pip-version-check --quiet -r requirements.txt
+            - alembic upgrade head
+            - python -m scripts.process_featured_review_updates

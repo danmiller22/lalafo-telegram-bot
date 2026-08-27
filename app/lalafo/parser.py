@@ -278,6 +278,9 @@ def parse_detail_data(raw: dict[str, Any], *, source_url: str) -> LalafoAd:
         category_id=int(raw.get("category_id") or 0),
         no_subletting=_is_without_subletting(raw, params),
         owner_listing=offerer == "собственник" and not realtor_service,
+        source_title=str(raw.get("title") or "").strip(),
+        source_description=str(raw.get("description") or "").strip(),
+        source_params=[dict(item) for item in raw.get("params") or [] if isinstance(item, dict)],
         source_created_at=_timestamp(raw.get("created_time")),
         source_updated_at=_timestamp(raw.get("updated_time")),
     )

@@ -60,8 +60,32 @@ async def test_admin_selection_is_limited_to_two(repositories) -> None:
     assert (await repo.select_candidate(candidate_ids[0]))[0] == "selected"
     assert (await repo.select_candidate(candidate_ids[1]))[0] == "selected"
     assert (await repo.select_candidate(candidate_ids[2]))[0] == "full"
+    assert (await repo.approve_candidate(candidate_ids[0]))[0] == "approved"
+    assert (await repo.approve_candidate(candidate_ids[1]))[0] == "approved"
     selected = await repo.selected_candidates(date(2026, 8, 27))
     assert [row.selected_slot for row in selected] == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_custom_link_replaces_second_automatic_choice(repositories) -> None:
+    _, _, sessions = repositories
+    repo = FeaturedRepository(sessions)
+    candidate_ids = []
+    for number in range(3):
+        row = await repo.add_candidate(
+            date(2026, 8, 27), apartment_id=None, lalafo_id=9200 + number,
+            source_url=f"https://source/{number}",
+            source_payload={"lalafo_id": 9200 + number}, rank=number + 1,
+        )
+        candidate_ids.append(row.id)
+    assert (await repo.select_candidate(candidate_ids[0]))[0] == "selected"
+    assert (await repo.select_candidate(candidate_ids[1]))[0] == "selected"
+    outcome, custom = await repo.select_custom_candidate(candidate_ids[2])
+    assert outcome == "replaced"
+    assert custom is not None and custom.selected_slot == 2
+    assert (await repo.approve_candidate(candidate_ids[2]))[0] == "approved"
+    selected = await repo.selected_candidates(date(2026, 8, 27))
+    assert [row.id for row in selected] == [candidate_ids[2]]
 
 
 @pytest.mark.asyncio

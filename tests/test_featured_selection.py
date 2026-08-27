@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from app.featured.posting import has_conflicting_params, posting_payload
+from app.featured.posting import has_conflicting_params, posting_payload, posting_preview
 from app.featured.selection import select_featured
 from app.lalafo.models import LalafoAd
 
@@ -45,7 +45,20 @@ def test_recent_source_is_excluded() -> None:
 
 
 def test_payload_has_no_conflicting_params() -> None:
-    payload = posting_payload(ad(1, district="ЦУМ", price=20_000, phone="1"))
+    source = ad(1, district="10 мкр", price=20_000, phone="1")
+    source.deposit = 15_000
+    payload = posting_payload(source)
     assert not has_conflicting_params(payload)
     assert "phone" not in payload
     assert "source_url" not in payload
+    assert payload["hide_phone"] is True
+    assert payload["hide_chat"] is False
+    params = {item["id"]: item["value"] for item in payload["params"]}
+    assert params[357] == 30227
+    assert params[947] == 15_000
+    assert len(params[948]) == 15
+    assert len(params[949]) == 15
+    preview = posting_preview(source)
+    assert "только чат Lalafo" in preview
+    assert "Депозит: 15 000 сом" in preview
+    assert "Фотографий: 5" in preview

@@ -173,8 +173,8 @@ class FeaturedCandidate(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     business_date: Mapped[date] = mapped_column(Date, nullable=False)
-    source_apartment_id: Mapped[int] = mapped_column(
-        ForeignKey("apartments.id"), nullable=False, index=True
+    source_apartment_id: Mapped[int | None] = mapped_column(
+        ForeignKey("apartments.id"), nullable=True, index=True
     )
     source_lalafo_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     source_url: Mapped[str] = mapped_column(Text, nullable=False)

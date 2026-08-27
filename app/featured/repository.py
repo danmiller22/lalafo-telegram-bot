@@ -62,6 +62,12 @@ class FeaturedRepository:
                 )
                 session.add(row)
                 await session.flush()
+            elif rank == 0:
+                # A link explicitly supplied by the admin is authoritative and
+                # refreshes an earlier automatically discovered snapshot.
+                row.source_url = source_url
+                row.source_payload = source_payload
+                row.rank = 0
             return row
 
     async def bind_candidate_apartment(
@@ -85,12 +91,12 @@ class FeaturedRepository:
             candidate = await session.get(FeaturedCandidate, candidate_id, with_for_update=True)
             if candidate is None:
                 return "missing", None
-            if candidate.status == "selected":
+            if candidate.status in {"selected", "approved"}:
                 return "already_selected", candidate
             selected = list(await session.scalars(
                 select(FeaturedCandidate).where(
                     FeaturedCandidate.business_date == candidate.business_date,
-                    FeaturedCandidate.status == "selected",
+                    FeaturedCandidate.status.in_(("selected", "approved")),
                 ).with_for_update()
             ))
             if len(selected) >= limit:
@@ -100,11 +106,68 @@ class FeaturedRepository:
             candidate.selected_slot = next(slot for slot in range(1, limit + 1) if slot not in used)
             return "selected", candidate
 
+    async def select_custom_candidate(
+        self, candidate_id: int, *, limit: int = 2
+    ) -> tuple[str, FeaturedCandidate | None]:
+        """Always reserve a slot for an admin-supplied link.
+
+        If both slots are occupied, the last slot is replaced. Explicit admin
+        choices therefore take priority over the automatic shortlist.
+        """
+        async with self.sessions.begin() as session:
+            candidate = await session.get(FeaturedCandidate, candidate_id, with_for_update=True)
+            if candidate is None:
+                return "missing", None
+            if candidate.status in {"selected", "approved"}:
+                return "already_selected", candidate
+            selected = list(await session.scalars(
+                select(FeaturedCandidate).where(
+                    FeaturedCandidate.business_date == candidate.business_date,
+                    FeaturedCandidate.status.in_(("selected", "approved")),
+                ).order_by(FeaturedCandidate.selected_slot).with_for_update()
+            ))
+            if len(selected) < limit:
+                used = {item.selected_slot for item in selected}
+                slot = next(value for value in range(1, limit + 1) if value not in used)
+                outcome = "selected"
+            else:
+                replaced = selected[-1]
+                slot = replaced.selected_slot or limit
+                replaced.status = "replaced"
+                replaced.selected_slot = None
+                outcome = "replaced"
+            candidate.status = "selected"
+            candidate.selected_slot = slot
+            return outcome, candidate
+
+    async def approve_candidate(self, candidate_id: int) -> tuple[str, FeaturedCandidate | None]:
+        async with self.sessions.begin() as session:
+            candidate = await session.get(FeaturedCandidate, candidate_id, with_for_update=True)
+            if candidate is None:
+                return "missing", None
+            if candidate.status == "approved":
+                return "already_approved", candidate
+            if candidate.status != "selected":
+                return "not_selected", candidate
+            candidate.status = "approved"
+            return "approved", candidate
+
+    async def reject_candidate(self, candidate_id: int) -> tuple[str, FeaturedCandidate | None]:
+        async with self.sessions.begin() as session:
+            candidate = await session.get(FeaturedCandidate, candidate_id, with_for_update=True)
+            if candidate is None:
+                return "missing", None
+            if candidate.status not in {"selected", "approved"}:
+                return "not_selected", candidate
+            candidate.status = "rejected"
+            candidate.selected_slot = None
+            return "rejected", candidate
+
     async def selected_candidates(self, business_date: date) -> list[FeaturedCandidate]:
         async with self.sessions() as session:
             rows = await session.scalars(select(FeaturedCandidate).where(
                 FeaturedCandidate.business_date == business_date,
-                FeaturedCandidate.status == "selected",
+                FeaturedCandidate.status == "approved",
             ).order_by(FeaturedCandidate.selected_slot))
             return list(rows)
 
