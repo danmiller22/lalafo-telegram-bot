@@ -5,6 +5,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from aiogram import Bot, F, Router
+from aiogram.filters import CommandStart
 from aiogram.types import CallbackQuery, Message
 
 from app.config import Settings
@@ -18,6 +19,17 @@ LALAFO_URL = re.compile(r"https?://(?:www\.)?lalafo\.kg/\S+", re.IGNORECASE)
 
 def _is_admin(user_id: int | None, settings: Settings) -> bool:
     return bool(user_id and settings.admin_user_id and user_id == settings.admin_user_id)
+
+
+@router.message(CommandStart(), F.chat.type == "private")
+async def review_start(message: Message, settings: Settings) -> None:
+    if not _is_admin(message.from_user.id if message.from_user else None, settings):
+        return
+    await message.answer(
+        "✅ Бот отбора квартир готов.\n\n"
+        "Каждое утро он пришлёт лучшие варианты до 30 000 сом. "
+        "Выберите ровно две квартиры или отправьте ему ссылку Lalafo."
+    )
 
 
 @router.callback_query(F.data.startswith("featured:select:"))
