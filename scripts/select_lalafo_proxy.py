@@ -28,6 +28,7 @@ HEADERS = {
     "country-id": "12",
     "content-type": "application/json",
 }
+TARGET_PROXY_COUNT = 4
 
 
 async def _works(proxy_url: str) -> str | None:
@@ -81,13 +82,18 @@ async def run() -> int:
         print("No free proxies were returned", file=sys.stderr)
         return 2
 
+    selected: list[str] = []
     for offset in range(0, len(proxies), 25):
         results = await asyncio.gather(
             *(_works(proxy) for proxy in proxies[offset : offset + 25])
         )
-        if selected := next((result for result in results if result), None):
-            print(f"LALAFO_PROXY_URL={selected}")
+        selected.extend(result for result in results if result)
+        if len(selected) >= TARGET_PROXY_COUNT:
+            print(f"LALAFO_PROXY_URL={','.join(selected[:TARGET_PROXY_COUNT])}")
             return 0
+    if selected:
+        print(f"LALAFO_PROXY_URL={','.join(selected)}")
+        return 0
     print("No working Lalafo proxy was found", file=sys.stderr)
     return 2
 

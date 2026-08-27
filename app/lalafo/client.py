@@ -37,26 +37,46 @@ class LalafoClient:
     ) -> None:
         self.max_retries = max_retries
         self._user_hash = str(uuid.uuid4())
-        self._client = httpx.AsyncClient(
+        self._timeout = timeout
+        self._proxy_urls = [
+            value.strip()
+            for value in re.split(r"[,\n]+", proxy_url)
+            if value.strip()
+        ]
+        self._proxy_index = 0
+        self._headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140 Safari/537.36"
+            ),
+            "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.7",
+            "Accept": "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
+            # Required request context used by Lalafo's own web client.
+            "device": "pc",
+            "language": "ru_RU",
+            "country-id": "12",
+            "user-hash": self._user_hash,
+            "content-type": "application/json",
+            "X-Cache-Bypass": "yes",
+        }
+        self._client = self._make_client()
+
+    def _make_client(self) -> httpx.AsyncClient:
+        proxy_url = self._proxy_urls[self._proxy_index] if self._proxy_urls else None
+        return httpx.AsyncClient(
             follow_redirects=True,
-            timeout=httpx.Timeout(timeout),
-            proxy=proxy_url or None,
-            headers={
-                "User-Agent": (
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140 Safari/537.36"
-                ),
-                "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.7",
-                "Accept": "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
-                # Required request context used by Lalafo's own web client.
-                "device": "pc",
-                "language": "ru_RU",
-                "country-id": "12",
-                "user-hash": self._user_hash,
-                "content-type": "application/json",
-                "X-Cache-Bypass": "yes",
-            },
+            timeout=httpx.Timeout(self._timeout),
+            proxy=proxy_url,
+            headers=self._headers,
         )
+
+    async def _rotate_proxy(self) -> None:
+        if len(self._proxy_urls) < 2:
+            return
+        await self._client.aclose()
+        self._proxy_index = (self._proxy_index + 1) % len(self._proxy_urls)
+        self._client = self._make_client()
+        logger.warning("Rotated to another verified Lalafo proxy")
 
     async def __aenter__(self) -> "LalafoClient":
         return self
@@ -80,6 +100,7 @@ class LalafoClient:
                             f"Lalafo returned HTTP {response.status_code}; access was not bypassed"
                         )
                     retry_after = float(response.headers.get("Retry-After", 0) or 0)
+                    await self._rotate_proxy()
                     await asyncio.sleep(max(retry_after, 2**attempt))
                     continue
                 if response.status_code in (404, 410):
@@ -97,10 +118,11 @@ class LalafoClient:
                 raise
             except LalafoAccessError:
                 raise
-            except (httpx.TimeoutException, httpx.NetworkError, httpx.HTTPStatusError) as exc:
+            except (httpx.TransportError, httpx.HTTPStatusError) as exc:
                 last_error = exc
                 if attempt >= self.max_retries:
                     break
+                await self._rotate_proxy()
                 await asyncio.sleep(2**attempt)
         raise LalafoError(f"Lalafo request failed after retries: {type(last_error).__name__}")
 
@@ -121,6 +143,7 @@ class LalafoClient:
                             f"Lalafo returned HTTP {response.status_code}; access was not bypassed"
                         )
                     retry_after = float(response.headers.get("Retry-After", 0) or 0)
+                    await self._rotate_proxy()
                     await asyncio.sleep(max(retry_after, 2**attempt))
                     continue
                 if response.status_code in (404, 410):
@@ -133,10 +156,11 @@ class LalafoClient:
                 return response.text
             except (LalafoNotFound, LalafoAccessError):
                 raise
-            except (httpx.TimeoutException, httpx.NetworkError, httpx.HTTPStatusError) as exc:
+            except (httpx.TransportError, httpx.HTTPStatusError) as exc:
                 last_error = exc
                 if attempt >= self.max_retries:
                     break
+                await self._rotate_proxy()
                 await asyncio.sleep(2**attempt)
         raise LalafoError(f"Lalafo request failed after retries: {type(last_error).__name__}")
 
