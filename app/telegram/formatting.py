@@ -42,13 +42,18 @@ def user_label(request: PaymentRequest) -> str:
 
 def format_admin_card(request: PaymentRequest) -> str:
     apartment = request.apartment
+    payment_line = (
+        f"💰 Оплата: {plan_price(request.plan)} сом"
+        if request.plan == "week"
+        else "💰 Архивный тариф отключён"
+    )
     lines = [
         "💳 Проверка оплаты",
         "",
         f"🏠 Квартира #{apartment.id}",
         f"👤 {user_label(request)}",
         f"💳 Тариф: {plan_label(request.plan)}",
-        f"💰 Оплата: {plan_price(request.plan)} сом",
+        payment_line,
         "🧾 Чек прикреплён клиентом",
     ]
     if apartment.district:
@@ -58,12 +63,17 @@ def format_admin_card(request: PaymentRequest) -> str:
 
 
 def format_admin_decision(request: PaymentRequest, approved: bool) -> str:
+    plan_line = (
+        f"💳 {plan_label(request.plan)} · {plan_price(request.plan)} сом"
+        if request.plan == "week"
+        else "💳 Архивный тариф отключён"
+    )
     return "\n".join(
         [
             "✅ Оплата подтверждена" if approved else "❌ Оплата отклонена",
             "",
             f"🏠 Квартира #{request.apartment.id}",
             f"👤 {user_label(request)}",
-            f"💳 {plan_label(request.plan)} · {plan_price(request.plan)} сом",
+            plan_line,
         ]
     )

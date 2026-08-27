@@ -10,7 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from app.lalafo.models import PHONE_SOURCE_VERSION, LalafoAd
 from app.models import Apartment, PaymentRequest
-from app.payment_plans import SINGLE_PLAN, WEEK_PLAN, expires_at_for
+from app.payment_plans import WEEK_PLAN, expires_at_for
 from app.state import ad_fingerprint
 from app.telegram.keyboards import APARTMENT_KEYBOARD_VERSION
 
@@ -197,8 +197,10 @@ class PaymentRepository:
         apartment_id: int,
         username: str | None,
         first_name: str | None,
-        plan: str = SINGLE_PLAN,
+        plan: str = WEEK_PLAN,
     ) -> PaymentSubmission:
+        if plan != WEEK_PLAN:
+            raise ValueError("Only weekly access is available")
         try:
             return await self._submit_once(
                 user_id=user_id,
@@ -249,12 +251,6 @@ class PaymentRepository:
                 )
                 session.add(request)
                 outcome = "created"
-            elif (
-                request.status == "approved"
-                and request.plan == SINGLE_PLAN
-                and plan == SINGLE_PLAN
-            ):
-                outcome = "approved"
             elif request.status == "pending":
                 outcome = "pending"
             elif request.status == "awaiting_receipt" and request.plan == plan:

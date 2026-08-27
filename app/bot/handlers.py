@@ -10,7 +10,7 @@ from aiogram.types import CallbackQuery, Message
 from app.bot.callbacks import CONTACT_PREFIX, PAID_PREFIX, PLAN_PREFIX, VIEW_PREFIX
 from app.config import Settings
 from app.payments.repository import PaymentRepository
-from app.payment_plans import SINGLE_PLAN, SINGLE_PRICE, WEEK_PLAN, WEEK_PRICE, plan_label
+from app.payment_plans import WEEK_PLAN, WEEK_PRICE, plan_label
 from app.payments.service import PaymentService
 from app.security import TokenSigner
 from app.telegram.formatting import format_admin_card, format_apartment
@@ -80,26 +80,24 @@ async def start_handler(
             text = (
                 "🧾 Жду чек об оплате.\n\n"
                 f"{apartment_text}\n\n"
-                "Оплатите выбранный тариф и отправьте сюда фото или файл чека."
+                "Оплатите недельный доступ и отправьте сюда фото или файл чека."
             )
         elif result.status == "rejected":
             text = (
                 "❌ Оплата не подтверждена.\n\n"
                 f"{apartment_text}\n\n"
-                "Выберите тариф, оплатите и отправьте новый чек."
+                "Оформите недельный доступ, оплатите и отправьте новый чек."
             )
         else:
             text = (
-                "🔐 Доступ к номеру собственника\n\n"
+                "🔐 Доступ к номерам собственников\n\n"
                 f"{apartment_text}\n\n"
-                f"Один номер — {SINGLE_PRICE} сом.\n"
                 f"Все номера на 7 дней — {WEEK_PRICE} сом.\n"
-                "Выберите тариф ниже."
+                "Оформите недельный доступ ниже."
             )
         reply_markup = (
             receipt_payment_keyboard(
                 apartment_id,
-                current_plan=result.plan or SINGLE_PLAN,
                 signer=signer,
                 payment_url=settings.finik_payment_url,
                 support_url=settings.support_url,
@@ -138,11 +136,11 @@ async def plan_handler(
     bot: Bot,
 ) -> None:
     parts = (callback.data or "").split(":", 2)
-    if len(parts) != 3 or parts[1] not in {"s", "w"}:
+    if len(parts) != 3 or parts[1] != "w":
         await callback.answer("Недействительная кнопка.", show_alert=True)
         return
-    plan = SINGLE_PLAN if parts[1] == "s" else WEEK_PLAN
-    purpose = "plan-single" if plan == SINGLE_PLAN else "plan-week"
+    plan = WEEK_PLAN
+    purpose = "plan-week"
     apartment_id = signer.verify_id(purpose, parts[2])
     if apartment_id is None:
         await callback.answer("Недействительная кнопка.", show_alert=True)
@@ -175,9 +173,8 @@ async def plan_handler(
     if submission.outcome == "approved":
         await callback.answer("✅ Этот номер уже доступен вам.", show_alert=True)
         return
-    amount = SINGLE_PRICE if plan == SINGLE_PLAN else WEEK_PRICE
     text = (
-        f"💳 {plan_label(plan)} — {amount} сом\n\n"
+        f"💳 {plan_label(plan)} — {WEEK_PRICE} сом\n\n"
         "1. Откройте ссылку на оплату.\n"
         "2. Оплатите указанную сумму.\n"
         "3. Отправьте в этот чат фото или файл чека.\n\n"
@@ -189,7 +186,6 @@ async def plan_handler(
             text,
             reply_markup=receipt_payment_keyboard(
                 apartment_id,
-                current_plan=plan,
                 signer=signer,
                 payment_url=settings.finik_payment_url,
                 support_url=settings.support_url,
@@ -222,7 +218,7 @@ async def receipt_handler(
     if request is None:
         await message.answer(
             "Сначала откройте нужную квартиру, нажмите «Посмотреть номер» "
-            "и выберите тариф."
+            "и оформите недельный доступ."
         )
         return
     await message.answer(
@@ -399,7 +395,6 @@ async def view_contact_handler(
             await callback.message.edit_reply_markup(
                 reply_markup=receipt_payment_keyboard(
                     apartment_id,
-                    current_plan=result.plan or SINGLE_PLAN,
                     signer=signer,
                     payment_url=settings.finik_payment_url,
                     support_url=settings.support_url,
@@ -433,7 +428,7 @@ async def view_contact_handler(
         await callback.answer("Квартира больше недоступна.", show_alert=True)
         return
     await callback.answer(
-        "Выберите тариф и после оплаты отправьте чек боту.",
+        "Оформите недельный доступ и после оплаты отправьте чек боту.",
         show_alert=True,
     )
     if callback.message:
@@ -522,7 +517,6 @@ async def paid_handler(
             await callback.message.edit_reply_markup(
                 reply_markup=receipt_payment_keyboard(
                     apartment_id,
-                    current_plan=result.plan or SINGLE_PLAN,
                     signer=signer,
                     payment_url=settings.finik_payment_url,
                     support_url=settings.support_url,
@@ -533,7 +527,7 @@ async def paid_handler(
         await callback.answer("Квартира больше недоступна.", show_alert=True)
         return
     await callback.answer(
-        "Выберите тариф, оплатите и отправьте чек в этот чат.",
+        "Оформите недельный доступ, оплатите и отправьте чек в этот чат.",
         show_alert=True,
     )
     if callback.message:

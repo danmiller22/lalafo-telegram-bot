@@ -3,7 +3,7 @@ from __future__ import annotations
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from app.security import TokenSigner
-from app.payment_plans import SINGLE_PRICE, WEEK_PRICE
+from app.payment_plans import WEEK_PRICE
 
 
 APARTMENT_KEYBOARD_VERSION = 6
@@ -74,14 +74,6 @@ def private_payment_keyboard(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text=f"🔐 Один номер — {SINGLE_PRICE} сом",
-                    callback_data=(
-                        f"plan:s:{signer.sign_id('plan-single', apartment_id)}"
-                    ),
-                )
-            ],
-            [
-                InlineKeyboardButton(
                     text=f"⭐ Неделя доступа — {WEEK_PRICE} сом",
                     callback_data=f"plan:w:{signer.sign_id('plan-week', apartment_id)}",
                 )
@@ -94,21 +86,10 @@ def private_payment_keyboard(
 def receipt_payment_keyboard(
     apartment_id: int,
     *,
-    current_plan: str,
     signer: TokenSigner,
     payment_url: str,
     support_url: str,
 ) -> InlineKeyboardMarkup:
-    if current_plan == "week":
-        switch_button = InlineKeyboardButton(
-            text=f"🔐 Выбрать один номер — {SINGLE_PRICE} сом",
-            callback_data=f"plan:s:{signer.sign_id('plan-single', apartment_id)}",
-        )
-    else:
-        switch_button = InlineKeyboardButton(
-            text=f"⭐ Выбрать неделю — {WEEK_PRICE} сом",
-            callback_data=f"plan:w:{signer.sign_id('plan-week', apartment_id)}",
-        )
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="💳 Ссылка на оплату", url=payment_url)],
@@ -117,7 +98,6 @@ def receipt_payment_keyboard(
                     text="✅ Я оплатил(а)", callback_data="receipt:send"
                 )
             ],
-            [switch_button],
             _support_row(support_url),
         ]
     )

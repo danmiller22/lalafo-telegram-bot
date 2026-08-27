@@ -74,7 +74,7 @@ class PaymentRequest(Base):
     )
     username: Mapped[str | None] = mapped_column(String(64))
     first_name: Mapped[str | None] = mapped_column(String(255))
-    plan: Mapped[str] = mapped_column(String(16), nullable=False, default="single")
+    plan: Mapped[str] = mapped_column(String(16), nullable=False, default="week")
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
     receipt_file_id: Mapped[str | None] = mapped_column(String(255))
     receipt_file_type: Mapped[str | None] = mapped_column(String(16))

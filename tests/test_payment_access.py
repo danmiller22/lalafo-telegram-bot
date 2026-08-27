@@ -5,7 +5,7 @@ from sqlalchemy import update
 
 from app.payments.service import PaymentService
 from app.models import PaymentRequest
-from app.payment_plans import SINGLE_PLAN, WEEK_PLAN
+from app.payment_plans import WEEK_PLAN
 from app.lalafo.models import PHONE_SOURCE_VERSION
 from app.telegram.keyboards import APARTMENT_KEYBOARD_VERSION
 from tests.helpers import make_ad
@@ -24,7 +24,7 @@ async def test_payment_state_machine(repositories, service):
         apartment_id=apartment.id,
         username="buyer",
         first_name="Buyer",
-        plan=SINGLE_PLAN,
+        plan=WEEK_PLAN,
     )
     assert first.outcome == "created"
     duplicate = await service.begin_payment(
@@ -32,7 +32,7 @@ async def test_payment_state_machine(repositories, service):
         apartment_id=apartment.id,
         username="buyer",
         first_name="Buyer",
-        plan=SINGLE_PLAN,
+        plan=WEEK_PLAN,
     )
     assert duplicate.outcome == "awaiting_receipt"
     assert (await service.contact_status(100, apartment.id)).status == "awaiting_receipt"
@@ -48,15 +48,7 @@ async def test_payment_state_machine(repositories, service):
     approved = await service.contact_status(100, apartment.id)
     assert approved.status == "approved"
     assert approved.apartment.phone == "+996555123456"
-    assert (
-        await service.begin_payment(
-            user_id=100,
-            apartment_id=apartment.id,
-            username=None,
-            first_name="Buyer",
-            plan=SINGLE_PLAN,
-        )
-    ).outcome == "approved"
+    assert approved.access_expires_at is not None
 
 
 @pytest.mark.asyncio
@@ -68,7 +60,7 @@ async def test_rejection_allows_resubmission(repositories, service):
         apartment_id=apartment.id,
         username=None,
         first_name="No username",
-        plan=SINGLE_PLAN,
+        plan=WEEK_PLAN,
     )
     await service.submit_receipt(user_id=200, file_id="receipt", file_type="document")
     assert await service.decide(submission.request.id, approve=False, actor_id=999) == "rejected"
@@ -78,7 +70,7 @@ async def test_rejection_allows_resubmission(repositories, service):
         apartment_id=apartment.id,
         username=None,
         first_name="No username",
-        plan=SINGLE_PLAN,
+        plan=WEEK_PLAN,
     )
     assert retried.outcome == "created"
     assert retried.request.id == submission.request.id
@@ -96,7 +88,7 @@ async def test_missing_or_inactive_apartment_denies_access(repositories, service
             apartment_id=apartment.id,
             username=None,
             first_name="User",
-            plan=SINGLE_PLAN,
+            plan=WEEK_PLAN,
         )
 
 
@@ -109,7 +101,7 @@ async def test_admin_notification_claim_is_atomic_and_retryable(repositories, se
         apartment_id=apartment.id,
         username="buyer",
         first_name="Buyer",
-        plan=SINGLE_PLAN,
+        plan=WEEK_PLAN,
     )
     await service.submit_receipt(user_id=300, file_id="receipt", file_type="photo")
 
@@ -124,6 +116,21 @@ async def test_admin_notification_claim_is_atomic_and_retryable(repositories, se
     request = await payments.get_request(submission.request.id)
     assert request is not None
     assert request.admin_message_id == 98765
+
+
+@pytest.mark.asyncio
+async def test_single_number_plan_is_not_available(repositories, service):
+    apartments, _, _ = repositories
+    apartment = await apartments.upsert_discovered(make_ad(lalafo_id=445))
+
+    with pytest.raises(ValueError, match="Only weekly access"):
+        await service.begin_payment(
+            user_id=301,
+            apartment_id=apartment.id,
+            username=None,
+            first_name="Buyer",
+            plan="single",
+        )
 
 
 @pytest.mark.asyncio
