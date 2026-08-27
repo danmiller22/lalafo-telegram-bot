@@ -141,6 +141,7 @@ class DailyFeaturedPublication(Base):
         ForeignKey("apartments.id"), nullable=True, index=True
     )
     source_lalafo_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    managed_lalafo_temp_id: Mapped[int | None] = mapped_column(BigInteger)
     managed_lalafo_ad_id: Mapped[int | None] = mapped_column(BigInteger)
     managed_lalafo_ad_url: Mapped[str | None] = mapped_column(Text)
     campaign_id: Mapped[str | None] = mapped_column(String(100))
@@ -148,6 +149,9 @@ class DailyFeaturedPublication(Base):
         String(32), nullable=False, default="not_started"
     )
     campaign_daily_budget: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    managed_lalafo_uploaded_photos: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
     lalafo_publication_status: Mapped[str] = mapped_column(
         String(32), nullable=False, default="reserved"
     )

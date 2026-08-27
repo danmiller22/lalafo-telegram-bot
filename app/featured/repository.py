@@ -152,6 +152,20 @@ class FeaturedRepository:
             candidate.status = "approved"
             return "approved", candidate
 
+    async def approve_custom_candidates(self, business_date: date) -> int:
+        """Approve admin-supplied links, including links queued before auto-publish."""
+        async with self.sessions.begin() as session:
+            rows = list(await session.scalars(
+                select(FeaturedCandidate).where(
+                    FeaturedCandidate.business_date == business_date,
+                    FeaturedCandidate.rank == 0,
+                    FeaturedCandidate.status == "selected",
+                ).with_for_update()
+            ))
+            for row in rows:
+                row.status = "approved"
+            return len(rows)
+
     async def reject_candidate(self, candidate_id: int) -> tuple[str, FeaturedCandidate | None]:
         async with self.sessions.begin() as session:
             candidate = await session.get(FeaturedCandidate, candidate_id, with_for_update=True)
@@ -203,8 +217,20 @@ class FeaturedRepository:
         async with self.sessions.begin() as session:
             existing = await session.scalar(select(DailyFeaturedPublication).where(
                 DailyFeaturedPublication.business_date == business_date,
+                DailyFeaturedPublication.source_lalafo_id == lalafo_id,
+            ).with_for_update())
+            if existing is not None:
+                return existing
+            rows = list(await session.scalars(select(DailyFeaturedPublication).where(
+                DailyFeaturedPublication.business_date == business_date,
+            ).with_for_update()))
+            occupied = {row.slot for row in rows}
+            if slot in occupied:
+                slot = max(occupied, default=0) + 1
+            existing = await session.scalar(select(DailyFeaturedPublication).where(
+                DailyFeaturedPublication.business_date == business_date,
                 DailyFeaturedPublication.slot == slot,
-            ))
+            ).with_for_update())
             if existing is not None:
                 return existing
             row = DailyFeaturedPublication(
@@ -255,6 +281,7 @@ class FeaturedRepository:
 
     async def patch(self, row_id: int, **values: object) -> DailyFeaturedPublication:
         allowed = {
+            "managed_lalafo_temp_id", "managed_lalafo_uploaded_photos",
             "managed_lalafo_ad_id", "managed_lalafo_ad_url", "campaign_id",
             "campaign_status", "campaign_daily_budget", "lalafo_publication_status",
             "telegram_message_id", "telegram_chat_id", "deactivated_at", "last_error",

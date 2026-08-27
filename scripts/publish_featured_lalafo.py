@@ -15,9 +15,14 @@ from app.featured.repository import FeaturedRepository
 from app.featured.selection import build_description, select_featured
 from app.featured.telegram import apartment_to_ad
 from app.lalafo.client import LalafoClient
-from app.lalafo.managed_ads import LalafoManagedAdsClient, ManagedAdsError
+from app.lalafo.managed_ads import (
+    LalafoManagedAdsClient,
+    ManagedAdsAmbiguousResultError,
+    ManagedAdsError,
+)
 from app.lalafo.models import LalafoAd
 from app.lalafo.parser import is_allowed
+from app.models import FeaturedCandidate
 from app.payments.repository import ApartmentRepository
 from app.security import TokenSigner
 from app.telegram.publisher import TelegramPublisher
@@ -71,7 +76,10 @@ def extract_id(payload: dict, *keys: str) -> int | None:
 
 async def notify(bot: Bot | None, admin_id: int, text: str) -> None:
     if bot is not None and admin_id:
-        await bot.send_message(admin_id, text[:4000])
+        try:
+            await bot.send_message(admin_id, text[:4000])
+        except Exception:
+            logger.exception("Could not send featured publication report")
 
 
 async def run() -> int:
@@ -94,31 +102,39 @@ async def run() -> int:
             logger.info("Another daily featured run owns the lock; no-op")
             await engine.dispose()
             return 0
+        auto_approved = await repo.approve_custom_candidates(business_date)
+        if auto_approved:
+            logger.info("Auto-approved admin links queued before immediate mode: %d", auto_approved)
         approved = await repo.selected_candidates(business_date)
-        if len(approved) < settings.featured_count:
-            logger.info(
-                "Waiting for admin selection: %d/%d approved",
-                len(approved), settings.featured_count,
-            )
+        if not approved:
+            logger.info("No approved featured apartments; no-op")
             await engine.dispose()
             return 0
-        selected: list[LalafoAd] = []
+        selected: list[tuple[FeaturedCandidate, LalafoAd]] = []
         for candidate in approved[: settings.featured_count]:
             if candidate.source_apartment_id is not None:
                 apartment = await apartments.get(candidate.source_apartment_id)
                 if apartment is not None:
-                    selected.append(apartment_to_ad(apartment))
+                    selected.append((candidate, apartment_to_ad(apartment)))
                     continue
             ad = LalafoAd.model_validate(candidate.source_payload)
             apartment = await apartments.upsert_discovered(ad)
             await repo.bind_candidate_apartment(candidate.id, apartment.id)
-            selected.append(ad)
+            selected.append((candidate, ad))
         if settings.dry_run:
-            for slot, ad in enumerate(selected, 1):
-                logger.info("DRY approved slot=%d id=%s url=%s\n%s", slot, ad.lalafo_id, ad.source_url, build_description(ad))
+            for candidate, ad in selected:
+                logger.info(
+                    "DRY approved slot=%d id=%s url=%s\n%s",
+                    candidate.selected_slot, ad.lalafo_id, ad.source_url,
+                    build_description(ad),
+                )
             await engine.dispose()
             return 0
         bot = Bot(token=settings.require_bot_token())
+        report_bot = (
+            Bot(token=settings.featured_review_bot_token)
+            if settings.featured_review_bot_token else bot
+        )
         publisher = TelegramPublisher(
             bot, chat_id=settings.telegram_group_id,
             signer=TokenSigner(settings.require_callback_secret()),
@@ -146,42 +162,110 @@ async def run() -> int:
                     await repo.patch(
                         old.id, last_error="Could not verify previous campaign deactivation"
                     )
-            for slot, ad in enumerate(selected, 1):
+            had_error = False
+            for candidate, ad in selected:
+                requested_slot = candidate.selected_slot or 1
                 apartment = await apartments.upsert_discovered(ad)
-                row = await repo.reserve(business_date, slot, apartment.id, ad.lalafo_id)
-                if row.managed_lalafo_ad_id is None:
-                    temp = await managed.create_temp()
-                    temp_id = extract_id(temp, "id", "ad", "data")
-                    if temp_id is None:
-                        raise ManagedAdsError("Temporary ad response has no id")
-                    payload = posting_payload(ad)
-                    payload["id"] = temp_id
-                    await managed.update_temp(temp_id, payload)
-                    for photo in ad.photo_urls[: settings.featured_max_photos]:
-                        await managed.upload_image(temp_id, photo)
-                    published = await managed.publish_temp(temp_id)
-                    ad_id = extract_id(published, "id", "ad", "data")
-                    if ad_id is None:
-                        raise ManagedAdsError("Published ad response has no id")
-                    row = await repo.patch(
-                        row.id, managed_lalafo_ad_id=ad_id,
-                        managed_lalafo_ad_url=f"https://lalafo.kg/bishkek/ads/id-{ad_id}",
-                        lalafo_publication_status="published",
-                    )
-                if row.telegram_message_id is None:
-                    message = await publisher.publish(apartment.id, ad)
-                    await apartments.mark_published(
-                        apartment.id, chat_id=settings.telegram_group_id,
-                        message_id=message.message_id,
-                    )
-                    row = await repo.patch(
-                        row.id, telegram_message_id=message.message_id,
-                        telegram_chat_id=settings.telegram_group_id,
-                    )
-                report.append(
-                    f"{slot}. {ad.district}, {ad.price} сом, "
-                    f"Lalafo {row.managed_lalafo_ad_id}, TG {row.telegram_message_id}"
+                row = await repo.reserve(
+                    business_date, requested_slot, apartment.id, ad.lalafo_id
                 )
+                try:
+                    if (
+                        row.managed_lalafo_ad_id is None
+                        and row.lalafo_publication_status == "unknown"
+                    ):
+                        had_error = True
+                        report.append(
+                            f"⚠️ {ad.district}: результат прошлой публикации неизвестен; "
+                            "автоповтор заблокирован, чтобы не создать дубль"
+                        )
+                        continue
+                    if row.managed_lalafo_ad_id is None:
+                        temp_id = row.managed_lalafo_temp_id
+                        if temp_id is None:
+                            temp = await managed.create_temp()
+                            temp_id = extract_id(temp, "id", "ad", "data")
+                            if temp_id is None:
+                                raise ManagedAdsError("Temporary ad response has no id")
+                            row = await repo.patch(
+                                row.id, managed_lalafo_temp_id=temp_id,
+                                lalafo_publication_status="draft_created",
+                                last_error=None,
+                            )
+                        payload = posting_payload(ad)
+                        payload["id"] = temp_id
+                        if row.lalafo_publication_status == "draft_created":
+                            await managed.update_temp(temp_id, payload)
+                            row = await repo.patch(
+                                row.id, lalafo_publication_status="draft_filled",
+                                last_error=None,
+                            )
+                        photos = ad.photo_urls[: settings.featured_max_photos]
+                        for photo in photos[row.managed_lalafo_uploaded_photos:]:
+                            await managed.upload_image(temp_id, photo)
+                            row = await repo.patch(
+                                row.id,
+                                managed_lalafo_uploaded_photos=(
+                                    row.managed_lalafo_uploaded_photos + 1
+                                ),
+                                last_error=None,
+                            )
+                        row = await repo.patch(
+                            row.id, lalafo_publication_status="draft_ready",
+                            last_error=None,
+                        )
+                        try:
+                            published = await managed.publish_temp(temp_id)
+                        except ManagedAdsAmbiguousResultError as exc:
+                            await repo.patch(
+                                row.id, lalafo_publication_status="unknown",
+                                last_error=(
+                                    "Publish outcome unknown: " + type(exc).__name__
+                                ),
+                            )
+                            raise
+                        ad_id = extract_id(published, "id", "ad", "data")
+                        if ad_id is None:
+                            await repo.patch(
+                                row.id, lalafo_publication_status="unknown",
+                                last_error="Publish response has no verifiable ad id",
+                            )
+                            raise ManagedAdsAmbiguousResultError(
+                                "Published ad response has no id"
+                            )
+                        row = await repo.patch(
+                            row.id, managed_lalafo_ad_id=ad_id,
+                            managed_lalafo_ad_url=f"https://lalafo.kg/bishkek/ads/id-{ad_id}",
+                            lalafo_publication_status="published", last_error=None,
+                        )
+                    if row.telegram_message_id is None:
+                        message = await publisher.publish(apartment.id, ad)
+                        await apartments.mark_published(
+                            apartment.id, chat_id=settings.telegram_group_id,
+                            message_id=message.message_id,
+                        )
+                        row = await repo.patch(
+                            row.id, telegram_message_id=message.message_id,
+                            telegram_chat_id=settings.telegram_group_id,
+                            last_error=None,
+                        )
+                    report.append(
+                        f"✅ {ad.district}, {ad.price} сом\n"
+                        f"Lalafo: {row.managed_lalafo_ad_url}\n"
+                        f"Telegram: сообщение {row.telegram_message_id}"
+                    )
+                except Exception as exc:
+                    had_error = True
+                    logger.exception(
+                        "Featured source id=%s failed safely", ad.lalafo_id
+                    )
+                    if row.lalafo_publication_status != "unknown":
+                        await repo.patch(
+                            row.id, last_error=type(exc).__name__
+                        )
+                    report.append(
+                        f"❌ {ad.district}, {ad.price} сом: {type(exc).__name__}"
+                    )
             committed = await repo.daily_committed_budget(business_date)
             if settings.featured_autopromote_enabled:
                 if promotion_blocked or committed >= settings.featured_max_daily_budget:
@@ -257,14 +341,21 @@ async def run() -> int:
                             f"Зарезервированный рекламный бюджет: "
                             f"{await repo.daily_committed_budget(business_date)} сом"
                         )
-            await notify(bot, settings.admin_user_id, "\n".join(report))
+            await notify(report_bot, settings.admin_user_id, "\n".join(report))
+            if had_error:
+                return 2
         except Exception as exc:
             logger.exception("Daily featured run failed safely")
-            await notify(bot, settings.admin_user_id, f"Ошибка избранных квартир: {type(exc).__name__}")
+            await notify(
+                report_bot, settings.admin_user_id,
+                f"Ошибка избранных квартир: {type(exc).__name__}",
+            )
             return 2
         finally:
             await managed.close()
             await bot.session.close()
+            if report_bot is not bot:
+                await report_bot.session.close()
             await engine.dispose()
     return 0
 

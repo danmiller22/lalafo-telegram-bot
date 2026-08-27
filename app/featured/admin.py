@@ -36,10 +36,12 @@ def _preview_keyboard(candidate_id: int) -> InlineKeyboardMarkup:
     ])
 
 
-async def _send_preview(message: Message, candidate_id: int, ad: LalafoAd) -> None:
+async def _send_preview(
+    message: Message, candidate_id: int, ad: LalafoAd, *, confirm: bool = True
+) -> None:
     await message.answer(
         posting_preview(ad), parse_mode="HTML",
-        reply_markup=_preview_keyboard(candidate_id),
+        reply_markup=_preview_keyboard(candidate_id) if confirm else None,
     )
 
 
@@ -78,13 +80,17 @@ async def select_featured(
     }
     await callback.answer(messages[outcome], show_alert=outcome in {"full", "missing"})
     if outcome == "selected" and callback.message:
+        approval, candidate = await featured.approve_candidate(candidate.id)
+        if approval not in {"approved", "already_approved"} or candidate is None:
+            await callback.message.answer("Не удалось утвердить квартиру для публикации.")
+            return
         await callback.message.edit_reply_markup(reply_markup=None)
         ad = LalafoAd.model_validate(candidate.source_payload)
         await callback.message.answer(
             f"✅ Выбран вариант {candidate.selected_slot}/{settings.featured_count}. "
-            "Черновик Lalafo подготовлен. Проверьте его ниже."
+            "Черновик Lalafo подготовлен и отправлен на публикацию."
         )
-        await _send_preview(callback.message, candidate.id, ad)
+        await _send_preview(callback.message, candidate.id, ad, confirm=False)
 
 
 @router.callback_query(F.data.startswith("featured:approve:"))
@@ -172,12 +178,16 @@ async def accept_custom_lalafo_link(
             candidate.id, limit=settings.featured_count
         )
         if outcome in {"selected", "replaced", "already_selected"}:
+            approval, selected = await featured.approve_candidate(selected.id)
+            if approval not in {"approved", "already_approved"}:
+                await message.answer("Не удалось утвердить квартиру для публикации.")
+                return
             await message.answer(
                 f"✅ Ссылка принята. Квартира выбрана как вариант "
                 f"{selected.selected_slot}/{settings.featured_count}. "
                 + ("Предыдущий вариант в этом слоте заменён. " if outcome == "replaced" else "")
-                + "Все поля Lalafo заполнены в черновике."
+                + "Все поля Lalafo заполнены. Публикую сейчас."
             )
-            await _send_preview(message, selected.id, ad)
+            await _send_preview(message, selected.id, ad, confirm=False)
     except Exception as exc:
         await message.answer(f"Не удалось проверить ссылку: {type(exc).__name__}.")

@@ -33,6 +33,46 @@ async def test_reservation_is_idempotent(repositories) -> None:
 
 
 @pytest.mark.asyncio
+async def test_reservation_keeps_different_source_when_slot_is_occupied(repositories) -> None:
+    _, _, sessions = repositories
+    apartment_ids: list[int] = []
+    async with sessions.begin() as session:
+        for number in range(2):
+            apartment = Apartment(
+                lalafo_id=9050 + number,
+                source_url=f"https://source/{number}",
+                phone=f"+99670000001{number}", fingerprint=f"slot-{number}",
+                price=20000, rooms="1", district="ЦУМ", city="Бишкек",
+                photo_urls=["https://img"],
+            )
+            session.add(apartment)
+            await session.flush()
+            apartment_ids.append(apartment.id)
+    repo = FeaturedRepository(sessions)
+    first = await repo.reserve(date(2026, 8, 27), 1, apartment_ids[0], 9050)
+    second = await repo.reserve(date(2026, 8, 27), 1, apartment_ids[1], 9051)
+    duplicate = await repo.reserve(date(2026, 8, 27), 2, apartment_ids[1], 9051)
+    assert (first.slot, second.slot) == (1, 2)
+    assert duplicate.id == second.id
+
+
+@pytest.mark.asyncio
+async def test_queued_custom_link_is_auto_approved(repositories) -> None:
+    _, _, sessions = repositories
+    repo = FeaturedRepository(sessions)
+    candidate = await repo.add_candidate(
+        date(2026, 8, 27), apartment_id=None, lalafo_id=9060,
+        source_url="https://source/custom",
+        source_payload={"lalafo_id": 9060}, rank=0,
+    )
+    assert (await repo.select_custom_candidate(candidate.id))[0] == "selected"
+    assert await repo.approve_custom_candidates(date(2026, 8, 27)) == 1
+    assert await repo.approve_custom_candidates(date(2026, 8, 27)) == 0
+    selected = await repo.selected_candidates(date(2026, 8, 27))
+    assert [row.id for row in selected] == [candidate.id]
+
+
+@pytest.mark.asyncio
 async def test_admin_selection_is_limited_to_two(repositories) -> None:
     _, _, sessions = repositories
     repo = FeaturedRepository(sessions)

@@ -20,6 +20,10 @@ class ManagedAdsContractError(ManagedAdsError):
     pass
 
 
+class ManagedAdsAmbiguousResultError(ManagedAdsError):
+    """The request may have reached Lalafo, so blindly retrying is unsafe."""
+
+
 @dataclass(slots=True)
 class ManagedSession:
     profile_id: int
@@ -60,19 +64,43 @@ class LalafoManagedAdsClient:
             raise ManagedAdsAuthenticationError("Managed Lalafo session is not initialized")
         return self.session.token
 
-    async def _json(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
-        response = await self._http.request(
-            method, path, headers=self._headers(self._token()), **kwargs
-        )
+    async def _json(
+        self, method: str, path: str, *, ambiguous_result: bool = False,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        try:
+            response = await self._http.request(
+                method, path, headers=self._headers(self._token()), **kwargs
+            )
+        except httpx.RequestError as exc:
+            error_type = (
+                ManagedAdsAmbiguousResultError if ambiguous_result else ManagedAdsError
+            )
+            raise error_type("Lalafo request did not return a response") from exc
         if response.status_code == 401:
             raise ManagedAdsAuthenticationError("Lalafo session expired")
         if response.status_code in {403, 429}:
             raise ManagedAdsError(f"Lalafo rejected request with HTTP {response.status_code}")
+        if response.status_code >= 500 and ambiguous_result:
+            raise ManagedAdsAmbiguousResultError(
+                f"Lalafo returned HTTP {response.status_code} after a mutating request"
+            )
         if response.is_error:
             raise ManagedAdsError(f"Lalafo request failed with HTTP {response.status_code}")
-        payload = response.json()
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            error_type = (
+                ManagedAdsAmbiguousResultError
+                if ambiguous_result else ManagedAdsContractError
+            )
+            raise error_type("Lalafo response is not JSON") from exc
         if not isinstance(payload, dict):
-            raise ManagedAdsContractError("Lalafo returned an unexpected response shape")
+            error_type = (
+                ManagedAdsAmbiguousResultError
+                if ambiguous_result else ManagedAdsContractError
+            )
+            raise error_type("Lalafo returned an unexpected response shape")
         return payload
 
     async def login(self, login: str, password: str) -> ManagedSession:
@@ -102,22 +130,44 @@ class LalafoManagedAdsClient:
         return await self._json("PUT", f"/api/catalog/v32/posting-ads/temp/{temp_id}", json=payload)
 
     async def upload_image(self, temp_id: int, source_url: str) -> dict[str, Any]:
-        source = await self._images.get(source_url)
-        source.raise_for_status()
-        response = await self._http.post(
-            "/api/swoole-upload/v3/images/upload",
-            headers=self._headers(self._token(), json=False),
-            data={"ad_id": str(temp_id)},
-            files={"image_file": ("apartment.jpg", source.content, source.headers.get("content-type", "image/jpeg"))},
-        )
-        response.raise_for_status()
-        payload = response.json()
+        try:
+            source = await self._images.get(source_url)
+            source.raise_for_status()
+            response = await self._http.post(
+                "/api/swoole-upload/v3/images/upload",
+                headers=self._headers(self._token(), json=False),
+                data={"ad_id": str(temp_id)},
+                files={"image_file": (
+                    "apartment.jpg", source.content,
+                    source.headers.get("content-type", "image/jpeg"),
+                )},
+            )
+        except httpx.HTTPError as exc:
+            raise ManagedAdsError("Could not download or upload a Lalafo image") from exc
+        if response.status_code == 401:
+            raise ManagedAdsAuthenticationError("Lalafo session expired during image upload")
+        if response.status_code in {403, 429}:
+            raise ManagedAdsError(
+                f"Lalafo rejected image upload with HTTP {response.status_code}"
+            )
+        if response.is_error:
+            raise ManagedAdsError(
+                f"Lalafo image upload failed with HTTP {response.status_code}"
+            )
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise ManagedAdsContractError("Image upload response is not JSON") from exc
         if not isinstance(payload, dict):
             raise ManagedAdsContractError("Image upload response is invalid")
         return payload
 
     async def publish_temp(self, temp_id: int) -> dict[str, Any]:
-        return await self._json("POST", f"/api/catalog/v32/posting-ads/temp/{temp_id}/publish?expand=available_campaign_types", json={})
+        return await self._json(
+            "POST",
+            f"/api/catalog/v32/posting-ads/temp/{temp_id}/publish?expand=available_campaign_types",
+            json={}, ambiguous_result=True,
+        )
 
     async def wallet_balances(self) -> dict[str, Any]:
         return await self._json("GET", "/api/wallet/v3/accounts/all-balances")
