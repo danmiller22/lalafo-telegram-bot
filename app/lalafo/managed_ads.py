@@ -135,7 +135,10 @@ class LalafoManagedAdsClient:
             source.raise_for_status()
             response = await self._http.post(
                 "/api/swoole-upload/v3/images/upload",
-                headers=self._headers(self._token(), json=False),
+                headers={
+                    **self._headers(self._token(), json=False),
+                    "X-Cache-Bypass": "yes",
+                },
                 data={"ad_id": str(temp_id)},
                 files={"image_file": (
                     "apartment.jpg", source.content,
@@ -151,8 +154,9 @@ class LalafoManagedAdsClient:
                 f"Lalafo rejected image upload with HTTP {response.status_code}"
             )
         if response.is_error:
+            detail = response.text.strip().replace("\n", " ")[:500]
             raise ManagedAdsError(
-                f"Lalafo image upload failed with HTTP {response.status_code}"
+                f"Lalafo image upload failed with HTTP {response.status_code}: {detail}"
             )
         try:
             payload = response.json()
