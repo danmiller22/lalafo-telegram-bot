@@ -58,7 +58,18 @@ def test_payload_has_no_conflicting_params() -> None:
     assert params[947] == 15_000
     assert len(params[948]) == 15
     assert len(params[949]) == 15
+    assert len(params[878]) == 9
+    assert len(params[870]) == 5
     preview = posting_preview(source)
     assert "только чат Lalafo" in preview
     assert "Депозит: 15 000 сом" in preview
     assert "Фотографий: 5" in preview
+
+
+def test_payload_uses_one_month_rent_when_source_deposit_is_missing() -> None:
+    source = ad(1, district="ЦУМ", price=27_000, phone="1")
+    source.deposit = None
+    payload = posting_payload(source)
+    params = {item["id"]: item["value"] for item in payload["params"]}
+    assert params[947] == 27_000
+    assert "Депозит: 27 000 сом" in payload["description"]

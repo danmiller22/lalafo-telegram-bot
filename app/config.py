@@ -192,6 +192,7 @@ class Settings(BaseSettings):
     featured_max_photos: int = 10
     featured_require_repost_permission: bool = True
     featured_review_enabled: bool = False
+    featured_auto_select_enabled: bool = False
     featured_review_bot_token: str = ""
 
     database_url: str = "sqlite:///data/bot.db"

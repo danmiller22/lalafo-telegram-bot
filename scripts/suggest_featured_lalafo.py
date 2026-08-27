@@ -43,29 +43,54 @@ async def run() -> int:
     )
     bot = Bot(token=settings.require_featured_review_bot_token())
     try:
+        mode_text = (
+            "Бот сам выберет две лучшие квартиры и сразу запустит публикацию."
+            if settings.featured_auto_select_enabled
+            else "Выберите две квартиры. Если ничего не подходит — отправьте мне ссылку Lalafo."
+        )
         await bot.send_message(
             settings.admin_user_id,
-            f"🏠 Подборка на {business_date}. Выберите две квартиры. "
-            "Если ничего не подходит — отправьте мне ссылку Lalafo.",
+            f"🏠 Подборка на {business_date}. {mode_text}",
         )
+        auto_selected = 0
         for rank, ad in enumerate(candidates, 1):
             candidate = await repo.add_candidate(
                 business_date, apartment_id=None, lalafo_id=ad.lalafo_id,
                 source_url=ad.source_url,
                 source_payload=ad.model_dump(mode="json"), rank=rank,
             )
+            automatically_selected = False
+            if settings.featured_auto_select_enabled and rank <= settings.featured_count:
+                outcome, selected = await repo.select_candidate(
+                    candidate.id, limit=settings.featured_count
+                )
+                if outcome in {"selected", "already_selected"} and selected is not None:
+                    approval, _ = await repo.approve_candidate(selected.id)
+                    automatically_selected = approval in {"approved", "already_approved"}
+                    if automatically_selected:
+                        auto_selected += 1
             if candidate.telegram_message_id is not None:
                 continue
-            sent = await bot.send_message(
-                settings.admin_user_id,
-                f"{rank}. {build_description(ad)}\n\n🔗 {ad.source_url}",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(
+            keyboard = None
+            if not settings.featured_auto_select_enabled:
+                keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(
                     text="✅ Выбрать эту квартиру",
                     callback_data=f"featured:select:{candidate.id}",
-                )]]),
+                )]])
+            prefix = "🤖 Выбрано автоматически\n" if automatically_selected else ""
+            sent = await bot.send_message(
+                settings.admin_user_id,
+                f"{prefix}{rank}. {build_description(ad)}\n\n🔗 {ad.source_url}",
+                reply_markup=keyboard,
                 disable_web_page_preview=False,
             )
             await repo.mark_candidate_message(candidate.id, sent.message_id)
+        if settings.featured_auto_select_enabled:
+            await bot.send_message(
+                settings.admin_user_id,
+                f"✅ Автоматически подготовлено к публикации: {auto_selected} из "
+                f"{settings.featured_count}.",
+            )
     finally:
         await bot.session.close()
         await engine.dispose()

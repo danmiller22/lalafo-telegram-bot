@@ -16,9 +16,11 @@ global_job_config:
     - name: FEATURED_REVIEW_ENABLED
       value: "true"
     - name: FEATURED_PUBLISH_APPROVED_ENABLED
-      value: "false"
+      value: "true"
     - name: FEATURED_AUTOPROMOTE_ENABLED
-      value: "false"
+      value: "true"
+    - name: FEATURED_AUTO_SELECT_ENABLED
+      value: "true"
     - name: DRY_RUN
       value: "false"
 
@@ -37,3 +39,4 @@ blocks:
             - python -m pip install -r requirements.txt
             - alembic upgrade head
             - python -m scripts.suggest_featured_lalafo
+            - python -m scripts.publish_featured_lalafo

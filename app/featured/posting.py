@@ -28,10 +28,14 @@ AMENITY_VALUES = [
     30773, 30770, 28811, 30769, 28675, 27634, 30774,
 ]
 EXTRA_VALUES = [
-    53235, 53238, 29584, 53236, 29573, 81541, 29588, 53237,
-    29578, 29585, 81543, 81542,
+    53235, 53238, 29584, 53236, 29573, 29588, 53237, 29578, 81543,
 ]
-COMMUNICATION_VALUES = [29532, 29535, 52860, 29533]
+COMMUNICATION_VALUES = [29532, 52859, 29535, 52860, 29533]
+
+
+def deposit_amount(ad: LalafoAd) -> int:
+    """Use the source deposit, or one monthly rent when it is unspecified."""
+    return int(ad.deposit or ad.price)
 
 
 def short_description(ad: LalafoAd) -> str:
@@ -46,8 +50,8 @@ def short_description(ad: LalafoAd) -> str:
         f"💰 {ad.price:,} сом".replace(",", " "),
         f"🚪 {'Без подселения' if ad.no_subletting else 'С подселением'}",
     ]
-    if ad.deposit:
-        lines.append(f"🔐 Депозит: {ad.deposit:,} сом".replace(",", " "))
+    deposit = deposit_amount(ad)
+    lines.append(f"🔐 Депозит: {deposit:,} сом".replace(",", " "))
     lines.append("🛋 Полностью меблирована, все условия")
     return "\n".join(lines)
 
@@ -77,8 +81,7 @@ def posting_payload(ad: LalafoAd) -> dict[str, Any]:
     )
     if district_value:
         params.append({"id": DISTRICT_PARAM_ID, "value": district_value})
-    if ad.deposit:
-        params.append({"id": 947, "value": ad.deposit})
+    params.append({"id": 947, "value": deposit_amount(ad)})
     return {
         "category_id": 2044,
         "city_id": 103184,
@@ -103,7 +106,7 @@ def posting_preview(ad: LalafoAd) -> str:
         "🔑 Услуга: Выдача контактов/адреса собственника",
         "🛋 Мебель: полностью",
         "📺 Техника: все доступные пункты",
-        "✨ Удобства и условия: все доступные пункты",
+        "✨ Удобства и условия: полный совместимый набор без противоречий",
         "📅 Срок: от 1 месяца / 3 месяцев / 6 месяцев / 1 года",
         "💬 Связь: <b>только чат Lalafo</b>; телефон скрыт",
         f"📷 Фотографий: {len(ad.photo_urls)}",
