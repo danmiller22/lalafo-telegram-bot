@@ -180,7 +180,7 @@ class LalafoManagedAdsClient:
             upload_content = clean_jpeg_for_upload(source.content)
             filename, content_type = "apartment.jpeg", "image/jpeg"
             response = await self._http.post(
-                "/api/swoole-upload/v3/images/upload",
+                "/api/upload/swoole-upload/v3/images/upload",
                 headers={
                     **self._headers(self._token(), json=False),
                     "X-Cache-Bypass": "yes",
