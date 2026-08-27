@@ -1,15 +1,15 @@
 """Track resumable Lalafo draft progress.
 
-Revision ID: 0010
-Revises: 0009
+Revision ID: 0010_featured_draft
+Revises: 0009_featured_review
 """
 
 from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0010"
-down_revision = "0009"
+revision = "0010_featured_draft"
+down_revision = "0009_featured_review"
 branch_labels = None
 depends_on = None
 
