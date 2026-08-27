@@ -36,6 +36,15 @@ def _start_payload(message: Message) -> str:
     return parts[1].strip() if len(parts) == 2 else ""
 
 
+async def _show_main_menu(message: Message, settings: Settings) -> None:
+    await message.answer(
+        "🏠 Сервис аренды квартир\n\n"
+        "Здесь можно получить контакт собственника из группы или разместить "
+        "собственную заявку «Ищу квартиру».",
+        reply_markup=main_menu_keyboard(settings.support_url),
+    )
+
+
 @router.message(CommandStart())
 async def start_handler(
     message: Message,
@@ -51,9 +60,12 @@ async def start_handler(
         return
     await state.clear()
     if payload.startswith("pay_"):
-        apartment_id = signer.verify_start_id("payment-link", payload[4:])
+        payment_token = payload[4:]
+        apartment_id = signer.verify_start_id("payment-link", payment_token)
         if apartment_id is None:
-            await message.answer("Ссылка недействительна. Вернитесь к карточке квартиры.")
+            apartment_id = signer.decode_public_start_id(payment_token)
+        if apartment_id is None:
+            await _show_main_menu(message, settings)
             return
         result = await service.contact_status(message.from_user.id, apartment_id)
         if result.status == "approved" and result.apartment:
@@ -119,12 +131,7 @@ async def start_handler(
         )
         await message.answer(text, reply_markup=reply_markup)
         return
-    await message.answer(
-        "🏠 Сервис аренды квартир\n\n"
-        "Здесь можно получить контакт собственника из группы или разместить "
-        "собственную заявку «Ищу квартиру».",
-        reply_markup=main_menu_keyboard(settings.support_url),
-    )
+    await _show_main_menu(message, settings)
 
 
 @router.callback_query(F.data.startswith(PLAN_PREFIX))

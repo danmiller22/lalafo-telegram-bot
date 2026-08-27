@@ -61,6 +61,58 @@ async def test_plain_start_shows_wanted_ad_button():
 
 
 @pytest.mark.asyncio
+async def test_apartment_start_link_survives_cloud_signer_mismatch():
+    publishing_signer = TokenSigner("publishing-worker-secret")
+    bot_signer = TokenSigner("different-runtime-secret")
+    payment_token = publishing_signer.sign_start_id("payment-link", 152)
+    service = SimpleNamespace(
+        contact_status=AsyncMock(
+            return_value=SimpleNamespace(status="new", apartment=None)
+        )
+    )
+    message = SimpleNamespace(
+        text=f"/start pay_{payment_token}",
+        from_user=SimpleNamespace(id=100),
+        answer=AsyncMock(),
+    )
+    state = SimpleNamespace(clear=AsyncMock())
+
+    await start_handler(
+        message,
+        service=service,
+        signer=bot_signer,
+        settings=Settings(),
+        bot=object(),
+        state=state,
+    )
+
+    service.contact_status.assert_awaited_once_with(100, 152)
+    assert "Доступ к номерам собственников" in message.answer.await_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_malformed_apartment_start_link_falls_back_to_main_menu():
+    message = SimpleNamespace(
+        text="/start pay_bad!-token",
+        from_user=SimpleNamespace(id=100),
+        answer=AsyncMock(),
+    )
+    state = SimpleNamespace(clear=AsyncMock())
+
+    await start_handler(
+        message,
+        service=None,
+        signer=TokenSigner("a-very-long-test-secret"),
+        settings=Settings(),
+        bot=object(),
+        state=state,
+    )
+
+    assert "Сервис аренды квартир" in message.answer.await_args.args[0]
+    assert "Ссылка недействительна" not in message.answer.await_args.args[0]
+
+
+@pytest.mark.asyncio
 async def test_wanted_deep_link_starts_form_immediately():
     message = SimpleNamespace(
         text="/start want",
