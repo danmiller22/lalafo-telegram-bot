@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from io import BytesIO
+
 import pytest
+from PIL import Image
 
 from app.lalafo.managed_ads import (
     ManagedAdsContractError,
+    clean_jpeg_for_upload,
     image_upload_metadata,
 )
 
@@ -23,3 +27,14 @@ def test_image_upload_metadata_uses_file_signature(content, advertised, expected
 def test_image_upload_metadata_rejects_truly_unsupported_image() -> None:
     with pytest.raises(ManagedAdsContractError):
         image_upload_metadata(b"avif bytes", "image/avif")
+
+
+def test_clean_jpeg_for_upload_reencodes_to_canonical_rgb_jpeg() -> None:
+    source = BytesIO()
+    Image.new("RGBA", (4, 3), (20, 40, 60, 128)).save(source, format="PNG")
+    result = clean_jpeg_for_upload(source.getvalue())
+    assert result.startswith(b"\xff\xd8\xff")
+    with Image.open(BytesIO(result)) as decoded:
+        assert decoded.format == "JPEG"
+        assert decoded.mode == "RGB"
+        assert decoded.size == (4, 3)

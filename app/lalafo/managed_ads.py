@@ -3,9 +3,11 @@ from __future__ import annotations
 import hashlib
 import uuid
 from dataclasses import dataclass
+from io import BytesIO
 from typing import Any
 
 import httpx
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 ALLOWED_IMAGE_TYPES = {
     "image/jpeg": ".jpeg",
@@ -30,6 +32,20 @@ def image_upload_metadata(content: bytes, advertised_type: str) -> tuple[str, st
             f"Source image has unsupported content type: {content_type or 'unknown'}"
         )
     return f"apartment{ALLOWED_IMAGE_TYPES[content_type]}", content_type
+
+
+def clean_jpeg_for_upload(content: bytes) -> bytes:
+    """Re-encode source photos so Lalafo receives a canonical, EXIF-free JPEG."""
+    try:
+        with Image.open(BytesIO(content)) as source:
+            image = ImageOps.exif_transpose(source)
+            if image.mode != "RGB":
+                image = image.convert("RGB")
+            output = BytesIO()
+            image.save(output, format="JPEG", quality=90, optimize=True)
+            return output.getvalue()
+    except (UnidentifiedImageError, OSError, ValueError) as exc:
+        raise ManagedAdsContractError("Source image cannot be decoded") from exc
 
 
 class ManagedAdsError(RuntimeError):
@@ -161,6 +177,8 @@ class LalafoManagedAdsClient:
             filename, content_type = image_upload_metadata(
                 source.content, source.headers.get("content-type", "")
             )
+            upload_content = clean_jpeg_for_upload(source.content)
+            filename, content_type = "apartment.jpeg", "image/jpeg"
             response = await self._http.post(
                 "/api/swoole-upload/v3/images/upload",
                 headers={
@@ -170,7 +188,7 @@ class LalafoManagedAdsClient:
                 # Keep the same multipart field order as the current Lalafo
                 # web client: the file first, followed by the draft id.
                 files=[
-                    ("image_file", (filename, source.content, content_type)),
+                    ("image_file", (filename, upload_content, content_type)),
                     ("ad_id", (None, str(temp_id))),
                 ],
             )
@@ -186,8 +204,8 @@ class LalafoManagedAdsClient:
             detail = response.text.strip().replace("\n", " ")[:500]
             raise ManagedAdsError(
                 f"Lalafo image upload failed with HTTP {response.status_code}: {detail}; "
-                f"sent={content_type}, name={filename}, size={len(source.content)}, "
-                f"magic={source.content[:16].hex()}"
+                f"sent={content_type}, name={filename}, size={len(upload_content)}, "
+                f"magic={upload_content[:16].hex()}"
             )
         try:
             payload = response.json()
