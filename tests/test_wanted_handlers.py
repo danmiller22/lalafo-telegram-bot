@@ -30,7 +30,7 @@ def make_ad(**overrides):
 
 
 def test_wanted_payment_has_its_own_100_som_finik_link():
-    settings = Settings(finik_payment_url="https://qr.finik.kg/weekly-700")
+    settings = Settings(finik_payment_url="https://qr.finik.kg/weekly-500")
     assert settings.wanted_finik_payment_url != settings.finik_payment_url
     assert "540510000" in settings.wanted_finik_payment_url
 

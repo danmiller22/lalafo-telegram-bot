@@ -143,7 +143,9 @@ class Settings(BaseSettings):
     admin_username: str = "maxkgz2"
     support_url: str = "https://t.me/maxkgz2"
     finik_payment_url: str = (
-        "https://qr.finik.kg/e4a0a0da-51b8-42f5-8537-aa4c9403aad6"
+        "https://qr.finik.kg/#00020101021232810011qr.finik.kg0114averspay-items1"
+        "032f51f3d85c0da4eeab638f8ed65f0a3831202121302125204482953034175405"
+        "500005908Finik-QR6304e37c"
     )
     wanted_finik_payment_url: str = (
         "https://qr.finik.kg/#00020101021232810011qr.finik.kg0114averspay-items1"

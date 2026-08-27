@@ -49,5 +49,5 @@ async def test_receipt_is_forwarded_to_admin_with_payer_and_plan():
     assert args.args[:2] == (999, "large")
     assert "@buyer (ID 555)" in args.kwargs["caption"]
     assert "Доступ на неделю" in args.kwargs["caption"]
-    assert "700 сом" in args.kwargs["caption"]
+    assert "500 сом" in args.kwargs["caption"]
     payments.finish_admin_notification.assert_awaited_once_with(17, 99)
