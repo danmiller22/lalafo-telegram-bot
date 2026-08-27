@@ -1,0 +1,43 @@
+name: Daily featured Lalafo apartments
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Select and preview without publishing or spending
+        required: true
+        type: boolean
+        default: true
+  schedule:
+    - cron: "0 23 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daily-featured-lalafo
+  cancel-in-progress: false
+
+jobs:
+  featured:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      FEATURED_REVIEW_BOT_TOKEN: ${{ secrets.FEATURED_REVIEW_BOT_TOKEN }}
+      ADMIN_USER_ID: ${{ secrets.ADMIN_USER_ID }}
+      CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      LALAFO_LOGIN: ${{ secrets.LALAFO_LOGIN }}
+      LALAFO_PASSWORD: ${{ secrets.LALAFO_PASSWORD }}
+      FEATURED_LALAFO_ENABLED: ${{ vars.FEATURED_LALAFO_ENABLED || 'false' }}
+      DRY_RUN: ${{ inputs.dry_run || 'false' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - run: alembic upgrade head
+      - name: Send admin a safe shortlist without publishing
+        run: python -m scripts.suggest_featured_lalafo
