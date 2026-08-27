@@ -2,8 +2,6 @@ name: Process featured review bot choices
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "*/5 * * * *"
 
 permissions:
   contents: read
