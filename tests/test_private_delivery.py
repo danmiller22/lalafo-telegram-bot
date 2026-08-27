@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from aiogram.types import URLInputFile
 
 from app.telegram.private_delivery import format_private_contact, send_private_contact
 
@@ -52,7 +53,8 @@ async def test_private_contact_repeats_storefront_album_before_contact_card():
     )
 
     media = bot.send_media_group.await_args.args[1]
-    assert [item.media for item in media] == apartment.photo_urls[:5]
+    assert all(isinstance(item.media, URLInputFile) for item in media)
+    assert [item.media.url for item in media] == apartment.photo_urls[:5]
     bot.send_photo.assert_not_awaited()
     bot.send_message.assert_awaited_once()
     assert "+996 555 123 456" in bot.send_message.await_args.args[1]

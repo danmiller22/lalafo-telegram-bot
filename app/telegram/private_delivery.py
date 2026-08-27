@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 
 from aiogram import Bot
-from aiogram.types import InputMediaPhoto
+from aiogram.types import InputMediaPhoto, URLInputFile
 
 from app.lalafo.phone import display_phone
 from app.models import Apartment
@@ -41,7 +41,7 @@ async def send_private_contact(
         try:
             await bot.send_photo(
                 user_id,
-                photo_urls[0],
+                URLInputFile(photo_urls[0], timeout=25),
                 caption=text,
                 reply_markup=reply_markup,
             )
@@ -55,7 +55,10 @@ async def send_private_contact(
         try:
             await bot.send_media_group(
                 user_id,
-                [InputMediaPhoto(media=url) for url in photo_urls],
+                [
+                    InputMediaPhoto(media=URLInputFile(url, timeout=25))
+                    for url in photo_urls
+                ],
             )
         except Exception as exc:
             logger.warning(
@@ -63,7 +66,9 @@ async def send_private_contact(
                 type(exc).__name__,
             )
             try:
-                await bot.send_photo(user_id, photo_urls[0])
+                await bot.send_photo(
+                    user_id, URLInputFile(photo_urls[0], timeout=25)
+                )
             except Exception as photo_exc:
                 logger.warning(
                     "Could not deliver private apartment main photo: %s",

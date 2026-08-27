@@ -5,7 +5,7 @@ import logging
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramNetworkError, TelegramRetryAfter
-from aiogram.types import InputMediaPhoto, Message
+from aiogram.types import InputMediaPhoto, Message, URLInputFile
 
 from app.lalafo.models import LalafoAd
 from app.security import TokenSigner
@@ -59,10 +59,16 @@ class TelegramPublisher:
         try:
             if len(urls) == 1:
                 album_messages = [
-                    await self._retry(self.bot.send_photo, chat_id=self.chat_id, photo=urls[0])
+                    await self._retry(
+                        self.bot.send_photo,
+                        chat_id=self.chat_id,
+                        photo=URLInputFile(urls[0], timeout=25),
+                    )
                 ]
             else:
-                media = [InputMediaPhoto(media=url) for url in urls]
+                media = [
+                    InputMediaPhoto(media=URLInputFile(url, timeout=25)) for url in urls
+                ]
                 album_messages = list(
                     await self._retry(self.bot.send_media_group, chat_id=self.chat_id, media=media)
                 )
@@ -70,7 +76,9 @@ class TelegramPublisher:
             logger.warning("Full album failed; retrying with main photo: %s", type(album_error).__name__)
             try:
                 main_photo = await self._retry(
-                    self.bot.send_photo, chat_id=self.chat_id, photo=urls[0]
+                    self.bot.send_photo,
+                    chat_id=self.chat_id,
+                    photo=URLInputFile(urls[0], timeout=25),
                 )
                 album_messages = [main_photo]
             except Exception as exc:
