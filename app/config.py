@@ -127,7 +127,7 @@ DEFAULT_SEARCH_URL = (
     "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
     "dolgosrochnaya-arenda-kvartir/1-bedroom/2-bedrooms/studio/"
     + "/".join(alias for alias, _ in LALAFO_DISTRICT_FILTERS)
-    + "?price[to]=40000"
+    + "?price[to]=35000"
 )
 
 
@@ -145,6 +145,11 @@ class Settings(BaseSettings):
     finik_payment_url: str = (
         "https://qr.finik.kg/e4a0a0da-51b8-42f5-8537-aa4c9403aad6"
     )
+    wanted_finik_payment_url: str = (
+        "https://qr.finik.kg/#00020101021232810011qr.finik.kg0114averspay-items1"
+        "032946f1ce95e414d5b965a9e8574a95f361202121302125204482953034175405"
+        "100005908Finik-QR63042d14"
+    )
     callback_secret: str = "change-me-in-production"
 
     lalafo_search_url: str = DEFAULT_SEARCH_URL
@@ -154,7 +159,7 @@ class Settings(BaseSettings):
     lalafo_auto_reply_poll_seconds: float = 10.0
     city: str = "Бишкек"
     min_price: int = 8_000
-    max_price: int = 40_000
+    max_price: int = 35_000
     rooms: str = "studio,1,2"
     max_new_posts_per_run: int = 60
     max_search_pages: int = 50

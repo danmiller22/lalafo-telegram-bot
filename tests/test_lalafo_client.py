@@ -40,7 +40,7 @@ def test_default_search_uses_all_selected_districts():
     assert len(district_values) == 113
     assert district_values[0] == "30232"
     assert district_values[-1] == "56412"
-    assert params["price[to]"] == "40000"
+    assert params["price[to]"] == "35000"
 
 
 @pytest.mark.parametrize(

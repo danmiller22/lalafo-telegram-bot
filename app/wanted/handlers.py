@@ -239,7 +239,7 @@ async def wanted_create(
             reply_markup=wanted_payment_keyboard(
                 ad.id,
                 signer=signer,
-                payment_url=settings.finik_payment_url,
+                payment_url=settings.wanted_finik_payment_url,
                 support_url=settings.support_url,
             ),
         )
@@ -279,7 +279,7 @@ async def wanted_paid(
                 reply_markup=wanted_payment_keyboard(
                     ad.id,
                     signer=signer,
-                    payment_url=settings.finik_payment_url,
+                    payment_url=settings.wanted_finik_payment_url,
                     support_url=settings.support_url,
                     pending=True,
                 )
@@ -328,7 +328,7 @@ async def my_wanted_ads(
             keyboard = wanted_payment_keyboard(
                 ad.id,
                 signer=signer,
-                payment_url=settings.finik_payment_url,
+                payment_url=settings.wanted_finik_payment_url,
                 support_url=settings.support_url,
                 pending=ad.status == "pending",
             )

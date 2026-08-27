@@ -61,7 +61,7 @@ async def wanted_admin_callback(
                 reply_markup=wanted_payment_keyboard(
                     ad.id,
                     signer=signer,
-                    payment_url=settings.finik_payment_url,
+                    payment_url=settings.wanted_finik_payment_url,
                     support_url=settings.support_url,
                 ),
             )
