@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
@@ -44,6 +44,25 @@ class ApartmentRepository:
                 select(Apartment.lalafo_id).where(
                     Apartment.lalafo_id.in_(lalafo_ids),
                     Apartment.publication_status == "published",
+                )
+            )
+            return set(result.all())
+
+    async def repostable_lalafo_ids(
+        self, lalafo_ids: list[int], *, after_hours: float
+    ) -> set[int]:
+        """Return published ads whose latest group card is old enough to rotate in again."""
+        if not lalafo_ids:
+            return set()
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=max(0.0, after_hours))
+        async with self.sessions() as session:
+            result = await session.scalars(
+                select(Apartment.lalafo_id).where(
+                    Apartment.lalafo_id.in_(lalafo_ids),
+                    Apartment.publication_status == "published",
+                    Apartment.active.is_(True),
+                    Apartment.published_at.is_not(None),
+                    Apartment.published_at <= cutoff,
                 )
             )
             return set(result.all())

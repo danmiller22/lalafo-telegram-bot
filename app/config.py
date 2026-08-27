@@ -165,6 +165,7 @@ class Settings(BaseSettings):
     max_price: int = 35_000
     rooms: str = "studio,1,2"
     max_new_posts_per_run: int = 80
+    repost_after_hours: float = 2.0
     max_search_pages: int = 50
     preferred_districts_only: bool = False
     max_photos_per_apartment: int = 5

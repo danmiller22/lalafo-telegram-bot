@@ -139,6 +139,7 @@ async def run() -> int:
     candidate_pool_limit = max(limit, min(limit * 5, MAX_CANDIDATE_POOL))
     candidates = []
     candidate_phones: set[str] = set()
+    repost_candidate_ids: set[int] = set()
 
     engine = None
     apartments = None
@@ -192,12 +193,21 @@ async def run() -> int:
                 if apartments is not None
                 else set()
             )
+            repostable_ids = (
+                await apartments.repostable_lalafo_ids(
+                    [item.lalafo_id for item in page.items],
+                    after_hours=settings.repost_after_hours,
+                )
+                if apartments is not None
+                else set()
+            )
             for search_ad in page.items:
                 if len(candidates) >= candidate_pool_limit:
                     break
-                if state.contains(search_ad.lalafo_id):
+                is_repost = search_ad.lalafo_id in repostable_ids
+                if state.contains(search_ad.lalafo_id) and not is_repost:
                     continue
-                if search_ad.lalafo_id in published_ids:
+                if search_ad.lalafo_id in published_ids and not is_repost:
                     continue
                 if search_ad.currency and search_ad.currency.upper() != "KGS":
                     continue
@@ -237,9 +247,13 @@ async def run() -> int:
                 if not settings.allow_no_deposit and ad.deposit is None:
                     logger.info("Skipping ad id=%s reason=deposit", ad.lalafo_id)
                     continue
-                if state.contains(ad.lalafo_id, ad_fingerprint(ad)):
+                if state.contains(ad.lalafo_id, ad_fingerprint(ad)) and not is_repost:
                     continue
-                if apartments is not None and await apartments.is_duplicate(ad):
+                if (
+                    apartments is not None
+                    and await apartments.is_duplicate(ad)
+                    and not is_repost
+                ):
                     logger.info("Skipping DB duplicate id=%s", ad.lalafo_id)
                     continue
                 if ad.phone in candidate_phones:
@@ -247,6 +261,8 @@ async def run() -> int:
                     continue
                 candidates.append(ad)
                 candidate_phones.add(ad.phone)
+                if is_repost:
+                    repost_candidate_ids.add(ad.lalafo_id)
             if page_number >= min(
                 page.page_count,
                 settings.max_search_pages,
@@ -256,6 +272,7 @@ async def run() -> int:
             page_number += 1
 
     candidates = select_publish_batch(candidates, limit)
+    repost_candidate_ids.intersection_update(ad.lalafo_id for ad in candidates)
     preferred_count = sum(is_preferred_district(ad.district) for ad in candidates)
     preferred_percent = round(preferred_count * 100 / len(candidates)) if candidates else 0
     logger.info(
@@ -310,7 +327,10 @@ async def run() -> int:
     published = 0
     try:
         for ad in candidates:
-            if await apartments.is_duplicate(ad):
+            if (
+                await apartments.is_duplicate(ad)
+                and ad.lalafo_id not in repost_candidate_ids
+            ):
                 logger.info("Skipping DB duplicate id=%s", ad.lalafo_id)
                 continue
             apartment = await apartments.upsert_discovered(ad)

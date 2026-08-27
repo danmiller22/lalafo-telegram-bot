@@ -182,3 +182,5 @@ async def test_published_apartment_blocks_id_and_fingerprint_duplicates(reposito
         make_ad(lalafo_id=557, price=30000, district="Другой район")
     ) is True
     assert await apartments.published_lalafo_ids([555, 999]) == {555}
+    assert await apartments.repostable_lalafo_ids([555, 999], after_hours=0) == {555}
+    assert await apartments.repostable_lalafo_ids([555, 999], after_hours=24) == set()
