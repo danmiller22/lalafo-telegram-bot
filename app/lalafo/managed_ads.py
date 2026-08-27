@@ -8,8 +8,8 @@ from typing import Any
 import httpx
 
 ALLOWED_IMAGE_TYPES = {
-    "image/jpeg": ".jpg",
-    "image/pjpeg": ".jpg",
+    "image/jpeg": ".jpeg",
+    "image/pjpeg": ".jpeg",
     "image/png": ".png",
     "image/webp": ".webp",
 }
@@ -167,10 +167,12 @@ class LalafoManagedAdsClient:
                     **self._headers(self._token(), json=False),
                     "X-Cache-Bypass": "yes",
                 },
-                data={"ad_id": str(temp_id)},
-                files={"image_file": (
-                    filename, source.content, content_type,
-                )},
+                # Keep the same multipart field order as the current Lalafo
+                # web client: the file first, followed by the draft id.
+                files=[
+                    ("image_file", (filename, source.content, content_type)),
+                    ("ad_id", (None, str(temp_id))),
+                ],
             )
         except httpx.HTTPError as exc:
             raise ManagedAdsError("Could not download or upload a Lalafo image") from exc
@@ -183,7 +185,9 @@ class LalafoManagedAdsClient:
         if response.is_error:
             detail = response.text.strip().replace("\n", " ")[:500]
             raise ManagedAdsError(
-                f"Lalafo image upload failed with HTTP {response.status_code}: {detail}"
+                f"Lalafo image upload failed with HTTP {response.status_code}: {detail}; "
+                f"sent={content_type}, name={filename}, size={len(source.content)}, "
+                f"magic={source.content[:16].hex()}"
             )
         try:
             payload = response.json()

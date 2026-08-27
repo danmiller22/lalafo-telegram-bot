@@ -11,7 +11,7 @@ from app.lalafo.managed_ads import (
 @pytest.mark.parametrize(
     ("content", "advertised", "expected"),
     [
-        (b"\xff\xd8\xffdata", "application/octet-stream", ("apartment.jpg", "image/jpeg")),
+        (b"\xff\xd8\xffdata", "application/octet-stream", ("apartment.jpeg", "image/jpeg")),
         (b"\x89PNG\r\n\x1a\ndata", "binary/octet-stream", ("apartment.png", "image/png")),
         (b"RIFF0000WEBPdata", "image/avif", ("apartment.webp", "image/webp")),
     ],
