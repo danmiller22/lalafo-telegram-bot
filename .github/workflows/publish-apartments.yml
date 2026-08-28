@@ -1,6 +1,11 @@
 name: Publish apartments to Telegram
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - "scripts/**"
   workflow_dispatch:
     inputs:
       force_publish:
@@ -86,6 +91,7 @@ jobs:
         run: >-
           python -m scripts.notify_admin
           "⚠️ Автопубликация квартир не восстановилась после повторных попыток."
+
 
 
 
