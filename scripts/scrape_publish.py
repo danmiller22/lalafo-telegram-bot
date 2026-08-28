@@ -294,7 +294,7 @@ async def run() -> int:
     logger.info("Eligible photo-prioritized apartments selected: %d", len(candidates))
     for ad in candidates:
         logger.info(
-            "DRY candidate id=%s rooms=%s city=%s district=%s price=%s deposit=%s photos=%s phone=%s",
+            "Candidate id=%s rooms=%s city=%s district=%s price=%s deposit=%s photos=%s phone=%s",
             ad.lalafo_id,
             ad.rooms,
             ad.city,
@@ -334,6 +334,7 @@ async def run() -> int:
         max_photos=settings.max_photos_per_apartment,
     )
     published = 0
+    publish_failures = 0
     try:
         for ad in candidates:
             if (
@@ -347,10 +348,26 @@ async def run() -> int:
                 message = await publisher.publish(apartment.id, ad)
             except TelegramPublishError as exc:
                 logger.error("Publish failed for id=%s: %s", ad.lalafo_id, exc)
+                publish_failures += 1
                 continue
-            await apartments.mark_published(
-                apartment.id, chat_id=settings.telegram_group_id, message_id=message.message_id
-            )
+            for attempt in range(5):
+                try:
+                    await apartments.mark_published(
+                        apartment.id,
+                        chat_id=settings.telegram_group_id,
+                        message_id=message.message_id,
+                    )
+                    break
+                except Exception:
+                    if attempt == 4:
+                        raise
+                    wait_seconds = 2**attempt
+                    logger.warning(
+                        "Database acknowledgement failed for id=%s; retrying in %ds",
+                        ad.lalafo_id,
+                        wait_seconds,
+                    )
+                    await asyncio.sleep(wait_seconds)
             state.add(ad, telegram_message_id=message.message_id)
             published += 1
     finally:
@@ -360,6 +377,18 @@ async def run() -> int:
         state.prune(settings.state_retention_days)
         state.save()
     logger.info("Published apartments: %d", published)
+    if candidates and published == 0 and publish_failures:
+        logger.error(
+            "All %d Telegram publications failed; requesting a full-cycle retry",
+            publish_failures,
+        )
+        return 2
+    if publish_failures:
+        logger.warning(
+            "Partial Telegram delivery: published=%d failed=%d; failed cards remain retryable",
+            published,
+            publish_failures,
+        )
     return 0
 
 

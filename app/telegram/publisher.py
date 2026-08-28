@@ -4,7 +4,7 @@ import asyncio
 import logging
 
 from aiogram import Bot
-from aiogram.exceptions import TelegramNetworkError, TelegramRetryAfter
+from aiogram.exceptions import TelegramNetworkError, TelegramRetryAfter, TelegramServerError
 from aiogram.types import InputMediaPhoto, Message, URLInputFile
 
 from app.lalafo.models import LalafoAd
@@ -38,15 +38,15 @@ class TelegramPublisher:
         self.max_photos = max(1, min(max_photos, 10))
 
     async def _retry(self, method, *args, **kwargs):
-        for attempt in range(4):
+        for attempt in range(5):
             try:
                 return await method(*args, **kwargs)
             except TelegramRetryAfter as exc:
-                if attempt == 3:
+                if attempt == 4:
                     raise
                 await asyncio.sleep(float(exc.retry_after) + 0.5)
-            except TelegramNetworkError:
-                if attempt == 3:
+            except (TelegramNetworkError, TelegramServerError):
+                if attempt == 4:
                     raise
                 await asyncio.sleep(2**attempt)
         raise TelegramPublishError("Telegram retry loop ended unexpectedly")
