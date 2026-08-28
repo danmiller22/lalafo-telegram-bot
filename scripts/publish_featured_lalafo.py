@@ -362,8 +362,6 @@ async def run(*, manual_request: bool = False) -> int:
             if settings.featured_autopromote_enabled or manual_request:
                 if promotion_blocked or committed >= settings.featured_max_daily_budget:
                     report.append("Реклама заблокирована защитой бюджета/старой кампании")
-                elif len(await repo.for_date(business_date)) < settings.featured_count:
-                    report.append("Реклама не запущена: создано менее двух объявлений")
                 else:
                     balances = await managed.wallet_balances()
                     balance = available_balance(balances)
