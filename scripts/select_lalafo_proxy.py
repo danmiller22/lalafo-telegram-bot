@@ -28,7 +28,7 @@ HEADERS = {
     "country-id": "12",
     "content-type": "application/json",
 }
-TARGET_PROXY_COUNT = 4
+TARGET_PROXY_COUNT = 1
 
 
 async def _works(proxy_url: str) -> str | None:
