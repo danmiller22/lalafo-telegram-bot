@@ -2,6 +2,12 @@ name: Publish apartments to Telegram
 
 on:
   workflow_dispatch:
+    inputs:
+      force_publish:
+        description: Publish even when fresh cards already exist
+        required: true
+        type: boolean
+        default: true
   schedule:
     # Primary two-hour window (Bishkek remains on UTC+6 year-round).
     - cron: "0 */2 * * *"
@@ -30,7 +36,7 @@ jobs:
       TEST_MODE: "false"
       MAX_NEW_POSTS_PER_RUN: "80"
       ALLOW_NO_DISTRICT: "false"
-      FORCE_PUBLISH: ${{ github.event_name == 'workflow_dispatch' }}
+      FORCE_PUBLISH: ${{ github.event_name == 'workflow_dispatch' && inputs.force_publish }}
       PUBLISH_RECENT_WINDOW_MINUTES: "100"
       PUBLISH_MAX_ATTEMPTS: "3"
       LOG_LEVEL: INFO
@@ -80,4 +86,5 @@ jobs:
         run: >-
           python -m scripts.notify_admin
           "⚠️ Автопубликация квартир не восстановилась после повторных попыток."
+
 
