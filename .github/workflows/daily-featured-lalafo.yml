@@ -1,16 +1,7 @@
-name: Daily featured Lalafo apartments
+name: Retired automatic featured shortlist
 
 on:
-  schedule:
-    # 23:00 UTC is 05:00 in Bishkek (UTC+6).
-    - cron: "0 23 * * *"
   workflow_dispatch:
-    inputs:
-      dry_run:
-        description: Select and preview without publishing or spending
-        required: true
-        type: boolean
-        default: true
 
 permissions:
   contents: read
@@ -20,35 +11,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  featured:
+  manual-only-notice:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      FEATURED_REVIEW_BOT_TOKEN: ${{ secrets.FEATURED_REVIEW_BOT_TOKEN }}
-      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      TELEGRAM_GROUP_ID: "-1004389602150"
-      ADMIN_USER_ID: ${{ secrets.ADMIN_USER_ID }}
-      CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      LALAFO_LOGIN: ${{ secrets.LALAFO_LOGIN }}
-      LALAFO_PASSWORD: ${{ secrets.LALAFO_PASSWORD }}
-      FEATURED_LALAFO_ENABLED: "true"
-      FEATURED_REVIEW_ENABLED: "true"
-      FEATURED_PUBLISH_APPROVED_ENABLED: "true"
-      FEATURED_AUTOPROMOTE_ENABLED: "true"
-      FEATURED_AUTO_SELECT_ENABLED: "true"
-      DRY_RUN: ${{ inputs.dry_run || 'false' }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-          cache: pip
-      - run: python -m pip install -r requirements.txt
-      - name: Select a working Lalafo proxy
-        run: python -m scripts.select_lalafo_proxy >> "$GITHUB_ENV"
-      - run: alembic upgrade head
-      - name: Send the 05:00 shortlist and select the two best apartments
-        run: python -m scripts.suggest_featured_lalafo
-      - name: Publish the selected apartments to Lalafo and Telegram
-        run: python -m scripts.publish_featured_lalafo
+      - run: echo "Automatic recommendations are disabled; use the manual Telegram bot"
