@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import httpx
@@ -169,3 +171,18 @@ async def test_login_retries_phone_in_browser_normalized_format() -> None:
     assert client._http.post.await_count == 2
     assert client._http.post.await_args_list[0].kwargs["json"]["mobile"] == "+996 600-003-060"
     assert client._http.post.await_args_list[1].kwargs["json"]["mobile"] == "996600003060"
+
+
+def test_health_requires_live_task_and_recent_progress() -> None:
+    responder = LalafoAutoResponder(
+        login="ignored",
+        password="ignored",
+        client=FakeClient([]),  # type: ignore[arg-type]
+        socket=FakeSocket(),  # type: ignore[arg-type]
+    )
+    responder._task = SimpleNamespace(done=lambda: False)  # type: ignore[assignment]
+    responder.started_at = datetime.now(UTC)
+    assert responder.is_healthy(stale_after_seconds=180)
+
+    responder.last_scan_at = datetime.now(UTC) - timedelta(seconds=181)
+    assert not responder.is_healthy(stale_after_seconds=180)

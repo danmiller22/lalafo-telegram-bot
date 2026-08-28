@@ -25,6 +25,8 @@ _scraper_task: asyncio.Task[None] | None = None
 _bot_runtime: BotRuntime | None = None
 _keyboard_sync_task: asyncio.Task[None] | None = None
 _lalafo_auto_responder: LalafoAutoResponder | None = None
+_lalafo_watchdog_task: asyncio.Task[None] | None = None
+_lalafo_restart_lock = asyncio.Lock()
 _run_state: dict[str, Any] = {
     "running": False,
     "last_started_at": None,
@@ -81,9 +83,61 @@ async def _sync_outdated_keyboards() -> None:
         logger.exception("Hosted apartment keyboard sync failed")
 
 
+def _build_lalafo_auto_responder() -> LalafoAutoResponder:
+    settings = get_settings()
+    login, password = settings.require_lalafo_auto_reply_credentials()
+    return LalafoAutoResponder(
+        login=login,
+        password=password,
+        poll_seconds=settings.lalafo_auto_reply_poll_seconds,
+    )
+
+
+async def _restart_lalafo_auto_responder(reason: str) -> None:
+    """Restart only the Lalafo worker without touching Telegram or payments."""
+    global _lalafo_auto_responder
+    async with _lalafo_restart_lock:
+        current = _lalafo_auto_responder
+        settings = get_settings()
+        if current is not None and current.is_healthy(
+            stale_after_seconds=settings.lalafo_auto_reply_stale_seconds
+        ):
+            return
+        logger.error("Restarting Lalafo auto-reply worker: %s", reason)
+        if current is not None:
+            try:
+                await asyncio.wait_for(current.close(), timeout=20.0)
+            except TimeoutError:
+                logger.error("Timed out while stopping stale Lalafo auto-reply worker")
+            except Exception:
+                logger.exception("Could not stop stale Lalafo auto-reply worker cleanly")
+        replacement = _build_lalafo_auto_responder()
+        replacement.start()
+        _lalafo_auto_responder = replacement
+
+
+async def _watch_lalafo_auto_responder() -> None:
+    settings = get_settings()
+    interval = max(10.0, settings.lalafo_auto_reply_watchdog_seconds)
+    stale_after = max(60.0, settings.lalafo_auto_reply_stale_seconds)
+    while True:
+        try:
+            await asyncio.sleep(interval)
+            responder = _lalafo_auto_responder
+            if responder is None:
+                await _restart_lalafo_auto_responder("worker is missing")
+            elif not responder.is_healthy(stale_after_seconds=stale_after):
+                await _restart_lalafo_auto_responder("worker is stopped or stale")
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # The watchdog itself must survive a failed restart and try again.
+            logger.exception("Lalafo auto-reply watchdog cycle failed")
+
+
 @app.on_event("startup")
 async def startup() -> None:
-    global _bot_runtime, _keyboard_sync_task, _lalafo_auto_responder
+    global _bot_runtime, _keyboard_sync_task, _lalafo_auto_responder, _lalafo_watchdog_task
     settings = get_settings()
     logging.basicConfig(
         level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -103,19 +157,20 @@ async def startup() -> None:
         logger.info("Telegram webhook enabled at %s", webhook_url)
         _keyboard_sync_task = asyncio.create_task(_sync_outdated_keyboards())
     if settings.lalafo_auto_reply_enabled:
-        login, password = settings.require_lalafo_auto_reply_credentials()
-        _lalafo_auto_responder = LalafoAutoResponder(
-            login=login,
-            password=password,
-            poll_seconds=settings.lalafo_auto_reply_poll_seconds,
-        )
+        _lalafo_auto_responder = _build_lalafo_auto_responder()
         _lalafo_auto_responder.start()
+        _lalafo_watchdog_task = asyncio.create_task(_watch_lalafo_auto_responder())
         logger.info("Lalafo cloud auto-reply supervisor enabled")
 
 
 @app.on_event("shutdown")
 async def shutdown() -> None:
-    global _bot_runtime, _keyboard_sync_task, _lalafo_auto_responder
+    global _bot_runtime, _keyboard_sync_task, _lalafo_auto_responder, _lalafo_watchdog_task
+    if _lalafo_watchdog_task is not None and not _lalafo_watchdog_task.done():
+        _lalafo_watchdog_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await _lalafo_watchdog_task
+    _lalafo_watchdog_task = None
     if _lalafo_auto_responder is not None:
         await _lalafo_auto_responder.close()
         _lalafo_auto_responder = None
@@ -139,11 +194,25 @@ async def health() -> JSONResponse:
         )
     auto_reply: dict[str, Any] | str = "disabled"
     if settings.lalafo_auto_reply_enabled:
+        responder = _lalafo_auto_responder
         auto_reply = (
-            _lalafo_auto_responder.status()
-            if _lalafo_auto_responder is not None
+            responder.status(
+                stale_after_seconds=settings.lalafo_auto_reply_stale_seconds
+            )
+            if responder is not None
             else {"state": "stopped"}
         )
+        if responder is None or not responder.is_healthy(
+            stale_after_seconds=settings.lalafo_auto_reply_stale_seconds
+        ):
+            return JSONResponse(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                content={
+                    "status": "error",
+                    "bot": "running" if settings.run_bot else "disabled",
+                    "lalafo_auto_reply": auto_reply,
+                },
+            )
     return JSONResponse(
         content={
             "status": "ok",

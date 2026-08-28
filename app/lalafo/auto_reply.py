@@ -347,6 +347,8 @@ class LalafoAutoResponder:
         self.running = False
         self.last_error: str | None = None
         self.last_scan_at: datetime | None = None
+        self.started_at: datetime | None = None
+        self.consecutive_failures = 0
         self.reply_count = 0
         self._socket.on("message", self._on_socket_message)
         self._socket.on("disconnect", self._on_disconnect)
@@ -362,16 +364,36 @@ class LalafoAutoResponder:
     def task_running(self) -> bool:
         return self._task is not None and not self._task.done()
 
-    def status(self) -> dict[str, Any]:
+    def status(self, *, stale_after_seconds: float = 180.0) -> dict[str, Any]:
+        healthy = self.is_healthy(stale_after_seconds=stale_after_seconds)
         return {
-            "state": "running" if self.running else "starting",
+            "state": (
+                "running"
+                if self.running and healthy
+                else "recovering"
+                if self.task_running
+                else "stopped"
+            ),
+            "task_running": self.task_running,
             "last_scan_at": self.last_scan_at.isoformat() if self.last_scan_at else None,
             "reply_count": self.reply_count,
             "last_error": self.last_error,
+            "consecutive_failures": self.consecutive_failures,
         }
+
+    def is_healthy(self, *, stale_after_seconds: float = 180.0) -> bool:
+        """Return whether the supervisor is alive and has made recent progress."""
+        if not self.task_running:
+            return False
+        reference = self.last_scan_at or self.started_at
+        if reference is None:
+            return False
+        age = (datetime.now(UTC) - reference).total_seconds()
+        return age <= max(30.0, stale_after_seconds)
 
     def start(self) -> None:
         if not self.task_running:
+            self.started_at = datetime.now(UTC)
             self._task = asyncio.create_task(self._supervise())
 
     async def close(self) -> None:
@@ -488,12 +510,14 @@ class LalafoAutoResponder:
                     await self._connect()
                 await self.scan_once()
                 backoff = 5.0
+                self.consecutive_failures = 0
                 await self._wait_for_wake()
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 self.running = False
                 self.last_error = type(exc).__name__
+                self.consecutive_failures += 1
                 logger.exception("Lalafo auto-reply cycle failed")
                 with suppress(Exception):
                     await self._socket.disconnect()

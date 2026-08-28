@@ -26,6 +26,7 @@ def configure(monkeypatch: pytest.MonkeyPatch) -> None:
     web._bot_runtime = None
     web._keyboard_sync_task = None
     web._lalafo_auto_responder = None
+    web._lalafo_watchdog_task = None
     yield
     get_settings.cache_clear()
 
@@ -84,6 +85,48 @@ async def test_health_fails_when_enabled_bot_is_not_running(
         response = await client.get("/health")
     assert response.status_code == 503
     assert response.json() == {"status": "error", "bot": "stopped"}
+
+
+@pytest.mark.asyncio
+async def test_health_fails_when_auto_reply_is_stale(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LALAFO_AUTO_REPLY_ENABLED", "true")
+    get_settings.cache_clear()
+    web._lalafo_auto_responder = SimpleNamespace(
+        status=lambda **_: {"state": "recovering"},
+        is_healthy=lambda **_: False,
+    )
+    transport = httpx.ASGITransport(app=web.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/health")
+    assert response.status_code == 503
+    assert response.json()["lalafo_auto_reply"] == {"state": "recovering"}
+
+
+@pytest.mark.asyncio
+async def test_restart_replaces_only_unhealthy_auto_reply_worker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    old = SimpleNamespace(
+        is_healthy=lambda **_: False,
+        close=AsyncMock(),
+    )
+    started = False
+
+    def start() -> None:
+        nonlocal started
+        started = True
+
+    replacement = SimpleNamespace(start=start)
+    web._lalafo_auto_responder = old
+    monkeypatch.setattr(web, "_build_lalafo_auto_responder", lambda: replacement)
+
+    await web._restart_lalafo_auto_responder("test")
+
+    old.close.assert_awaited_once()
+    assert web._lalafo_auto_responder is replacement
+    assert started
 
 
 @pytest.mark.asyncio

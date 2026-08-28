@@ -160,6 +160,8 @@ class Settings(BaseSettings):
     lalafo_login: str = ""
     lalafo_password: str = ""
     lalafo_auto_reply_poll_seconds: float = 10.0
+    lalafo_auto_reply_watchdog_seconds: float = 30.0
+    lalafo_auto_reply_stale_seconds: float = 180.0
     city: str = "Бишкек"
     min_price: int = 8_000
     max_price: int = 35_000
