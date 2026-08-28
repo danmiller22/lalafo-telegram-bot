@@ -4,7 +4,12 @@ import asyncio
 import logging
 
 from aiogram import Bot
-from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
+from aiogram.exceptions import (
+    TelegramBadRequest,
+    TelegramNetworkError,
+    TelegramRetryAfter,
+    TelegramServerError,
+)
 from sqlalchemy import select, update
 
 from app.config import get_settings
@@ -111,6 +116,16 @@ async def run() -> int:
                         exc,
                     )
                     break
+                except (TelegramNetworkError, TelegramServerError) as exc:
+                    if attempt == 4:
+                        failed += 1
+                        logger.warning(
+                            "Could not update legacy keyboard id=%s after network retries: %s",
+                            apartment.id,
+                            type(exc).__name__,
+                        )
+                        break
+                    await asyncio.sleep(min(8.0, 2**attempt))
         synced_ids = [
             apartment.id
             for apartment in apartments
@@ -130,8 +145,9 @@ async def run() -> int:
             skipped,
             failed,
         )
-        if apartments and updated == 0 and unchanged == 0 and skipped == 0:
-            return 1
+        # This is maintenance for historical messages. New apartment delivery
+        # has already succeeded, so stale legacy cards must never make the
+        # publication workflow look failed.
         return 0
     finally:
         await bot.session.close()
@@ -139,7 +155,16 @@ async def run() -> int:
 
 
 def main() -> None:
-    raise SystemExit(asyncio.run(run()))
+    try:
+        raise SystemExit(asyncio.run(run()))
+    except SystemExit:
+        raise
+    except Exception as exc:
+        logging.basicConfig(level=logging.INFO)
+        logger.exception(
+            "Legacy keyboard maintenance failed safely: %s", type(exc).__name__
+        )
+        raise SystemExit(0)
 
 
 if __name__ == "__main__":
