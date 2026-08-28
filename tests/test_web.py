@@ -190,6 +190,7 @@ async def test_hosted_scheduler_runs_due_check_without_forcing_duplicates(
         force=False,
         window_minutes=120,
         max_attempts=3,
+        wait_for_active_lease=False,
     )
     assert publication_status.await_count == 2
     assert schedule_status.await_count == 2

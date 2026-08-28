@@ -229,6 +229,7 @@ async def _execute_due_apartment_cycle() -> int:
                 force=False,
                 window_minutes=settings.hosted_apartment_publish_interval_minutes,
                 max_attempts=3,
+                wait_for_active_lease=False,
             )
             after_schedule = await publication_schedule_status(
                 window_minutes=settings.hosted_apartment_publish_interval_minutes

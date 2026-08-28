@@ -104,6 +104,7 @@ async def run(
     force: bool | None = None,
     window_minutes: int | None = None,
     max_attempts: int | None = None,
+    wait_for_active_lease: bool | None = None,
 ) -> int:
     logging.basicConfig(
         level=logging.INFO,
@@ -120,6 +121,14 @@ async def run(
         if max_attempts is None
         else max(1, min(5, max_attempts))
     )
+    wait_for_active_lease = (
+        _truthy(os.getenv("PUBLISH_WAIT_FOR_ACTIVE_LEASE", "true"))
+        if wait_for_active_lease is None
+        else wait_for_active_lease
+    )
+    follower_wait_seconds = max(
+        0, min(900, int(os.getenv("PUBLISH_FOLLOWER_WAIT_SECONDS", "600")))
+    )
     settings = get_settings()
     engine, sessions = create_engine_and_session(settings.database_url)
     try:
@@ -133,6 +142,31 @@ async def run(
     except Exception:
         await engine.dispose()
         raise
+    if claim is None and wait_for_active_lease and follower_wait_seconds:
+        deadline = asyncio.get_running_loop().time() + follower_wait_seconds
+        while asyncio.get_running_loop().time() < deadline:
+            snapshot = await schedule_snapshot(
+                sessions, interval_minutes=window_minutes
+            )
+            if snapshot.status == "succeeded" and not snapshot.due:
+                logger.info("The active publisher completed successfully; follower exits")
+                await engine.dispose()
+                return 0
+            if snapshot.due and not snapshot.lease_active:
+                claim = await claim_publication(
+                    sessions,
+                    force=False,
+                    interval_minutes=window_minutes,
+                    lease_seconds=settings.apartment_publication_lease_seconds,
+                )
+                if claim is not None:
+                    logger.warning(
+                        "The previous publisher failed; follower claimed cycle token=%s",
+                        claim.token[:8],
+                    )
+                    break
+            await asyncio.sleep(20)
+
     if claim is None:
         try:
             snapshot = await schedule_snapshot(
