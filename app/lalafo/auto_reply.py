@@ -102,11 +102,26 @@ class LalafoChatClient:
 
     async def login(self, login: str, password: str) -> LalafoSession:
         field = "email" if "@" in login else "mobile"
-        response = await self._http.post(
-            "/api/auth/login",
-            headers=self._headers(bypass_cache=True),
-            json={field: login, "password": password},
-        )
+        login_candidates = [login]
+        if field == "mobile":
+            # The current Lalafo form strips phone punctuation before sending the
+            # login request.  Older stored credentials may still contain a leading
+            # plus or spaces, so retry the exact browser representation as well.
+            digits = "".join(character for character in login if character.isdigit())
+            for candidate in (digits, f"+{digits}" if digits else ""):
+                if candidate and candidate not in login_candidates:
+                    login_candidates.append(candidate)
+
+        response: httpx.Response | None = None
+        for candidate in login_candidates:
+            response = await self._http.post(
+                "/api/auth/login",
+                headers=self._headers(bypass_cache=True),
+                json={field: candidate, "password": password},
+            )
+            if response.status_code not in {401, 403, 422}:
+                break
+        assert response is not None
         if response.status_code in {401, 403, 422}:
             raise LalafoChatAuthenticationError(
                 f"Lalafo login rejected with HTTP {response.status_code}"

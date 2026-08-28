@@ -142,3 +142,30 @@ async def test_send_retries_link_free_reply_after_forbidden() -> None:
     assert second["json"]["message"]["payload"] == AUTO_REPLY_FALLBACK_TEXT
     assert len(first["headers"]["device-fingerprint"]) == 32
     assert first["headers"]["Referer"] == "https://lalafo.kg/account/chats"
+
+
+@pytest.mark.asyncio
+async def test_login_retries_phone_in_browser_normalized_format() -> None:
+    client = LalafoChatClient()
+    client._http = AsyncMock()  # type: ignore[assignment]
+    request = httpx.Request("POST", "https://lalafo.kg/api/auth/login")
+    client._http.post.side_effect = [
+        httpx.Response(403, request=request),
+        httpx.Response(
+            200,
+            request=request,
+            json={
+                "id": 100,
+                "token": "token",
+                "access_token": "access",
+                "user_hash": "hash",
+            },
+        ),
+    ]
+
+    session = await client.login("+996 600-003-060", "secret")
+
+    assert session.profile_id == 100
+    assert client._http.post.await_count == 2
+    assert client._http.post.await_args_list[0].kwargs["json"]["mobile"] == "+996 600-003-060"
+    assert client._http.post.await_args_list[1].kwargs["json"]["mobile"] == "996600003060"
