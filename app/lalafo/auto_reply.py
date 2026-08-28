@@ -28,6 +28,11 @@ https://t.me/arendabishkek3"""
 # authenticated account.  In that case the customer must still receive a
 # useful answer instead of being left without any response.
 AUTO_REPLY_FALLBACK_TEXT = "Здравствуйте! 👋 Да, квартира ещё актуальна."
+PROXY_LIST_URL = "https://api.proxyscrape.com/v4/free-proxy-list/get"
+PROXY_CHECK_URL = (
+    "https://lalafo.kg/api/search/v3/feed/search?expand=url&per-page=1&"
+    "category_id=2044&page=1&city_id=103184"
+)
 
 
 class LalafoChatError(RuntimeError):
@@ -58,15 +63,68 @@ class LalafoChatClient:
     """Client for the authenticated chat routes used by lalafo.kg itself."""
 
     def __init__(self, *, timeout: float = 25.0) -> None:
+        self._timeout = timeout
         self._user_hash = str(uuid.uuid4())
         # The current web client sends a 32-character browser fingerprint.
         self._fingerprint = uuid.uuid4().hex
-        self._http = httpx.AsyncClient(
-            base_url="https://lalafo.kg",
-            follow_redirects=True,
-            timeout=httpx.Timeout(timeout),
-        )
+        self._http = self._make_http()
         self.session: LalafoSession | None = None
+
+    def _make_http(self, proxy_url: str | None = None) -> httpx.AsyncClient:
+        return httpx.AsyncClient(
+            base_url="https://lalafo.kg",
+            proxy=proxy_url,
+            follow_redirects=True,
+            timeout=httpx.Timeout(self._timeout),
+        )
+
+    async def _use_proxy(self, proxy_url: str) -> None:
+        await self._http.aclose()
+        self._http = self._make_http(proxy_url)
+
+    async def _working_proxies(self) -> list[str]:
+        params = {
+            "request": "display_proxies",
+            "protocol": "http",
+            "proxy_format": "protocolipport",
+            "format": "text",
+            "ssl": "yes",
+            "anonymity": "elite,anonymous",
+            "timeout": "5000",
+            "limit": "100",
+        }
+        try:
+            async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
+                response = await client.get(PROXY_LIST_URL, params=params)
+                response.raise_for_status()
+        except httpx.HTTPError:
+            return []
+        proxies = [line.strip() for line in response.text.splitlines() if line.strip()]
+
+        async def works(proxy_url: str) -> str | None:
+            try:
+                async with httpx.AsyncClient(
+                    proxy=proxy_url,
+                    follow_redirects=True,
+                    timeout=httpx.Timeout(7.0),
+                ) as client:
+                    check = await client.get(
+                        PROXY_CHECK_URL,
+                        headers=self._headers(bypass_cache=True),
+                    )
+                return proxy_url if check.status_code == 200 else None
+            except httpx.HTTPError:
+                return None
+
+        selected: list[str] = []
+        for offset in range(0, min(len(proxies), 100), 20):
+            results = await asyncio.gather(
+                *(works(proxy) for proxy in proxies[offset : offset + 20])
+            )
+            selected.extend(result for result in results if result)
+            if len(selected) >= 4:
+                break
+        return selected[:4]
 
     def _headers(
         self, *, token: str = "", socket_id: str = "", bypass_cache: bool = False
@@ -112,16 +170,34 @@ class LalafoChatClient:
                 if candidate and candidate not in login_candidates:
                     login_candidates.append(candidate)
 
-        response: httpx.Response | None = None
-        for candidate in login_candidates:
-            response = await self._http.post(
-                "/api/auth/login",
-                headers=self._headers(bypass_cache=True),
-                json={field: candidate, "password": password},
-            )
-            if response.status_code not in {401, 403, 422}:
-                break
-        assert response is not None
+        async def attempt() -> httpx.Response | None:
+            last_response: httpx.Response | None = None
+            for candidate in login_candidates:
+                try:
+                    last_response = await self._http.post(
+                        "/api/auth/login",
+                        headers=self._headers(bypass_cache=True),
+                        json={field: candidate, "password": password},
+                    )
+                except httpx.RequestError:
+                    return None
+                if last_response.status_code not in {401, 403, 422}:
+                    return last_response
+            return last_response
+
+        response = await attempt()
+        if response is None or response.status_code in {401, 403, 422}:
+            # Datacenter addresses are intermittently blocked by Lalafo.  When
+            # that happens, select a working HTTPS tunnel in the cloud and retry;
+            # the password remains protected by end-to-end TLS to lalafo.kg.
+            for proxy_url in await self._working_proxies():
+                await self._use_proxy(proxy_url)
+                response = await attempt()
+                if response is not None and response.status_code not in {401, 403, 422}:
+                    logger.info("Lalafo login recovered through a verified proxy")
+                    break
+        if response is None:
+            raise LalafoChatAuthenticationError("Lalafo login endpoint is unavailable")
         if response.status_code in {401, 403, 422}:
             raise LalafoChatAuthenticationError(
                 f"Lalafo login rejected with HTTP {response.status_code}"
