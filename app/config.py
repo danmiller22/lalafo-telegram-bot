@@ -125,9 +125,9 @@ LALAFO_DISTRICT_FILTERS = (
 
 DEFAULT_SEARCH_URL = (
     "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
-    "dolgosrochnaya-arenda-kvartir/1-bedroom/2-bedrooms/studio/"
+    "dolgosrochnaya-arenda-kvartir/1-bedroom/studio/"
     + "/".join(alias for alias, _ in LALAFO_DISTRICT_FILTERS)
-    + "?price[from]=15000&price[to]=35000"
+    + "?price[from]=18000&price[to]=35000"
 )
 
 
@@ -154,7 +154,6 @@ class Settings(BaseSettings):
     )
     callback_secret: str = "change-me-in-production"
 
-    lalafo_search_url: str = DEFAULT_SEARCH_URL
     lalafo_proxy_url: str = ""
     lalafo_auto_reply_enabled: bool = False
     lalafo_login: str = ""
@@ -173,12 +172,12 @@ class Settings(BaseSettings):
     apartment_publication_lease_seconds: int = 300
     apartment_publication_heartbeat_seconds: float = 60.0
     city: str = "Бишкек"
-    min_price: int = 15_000
+    min_price: int = 18_000
     max_price: int = 35_000
-    rooms: str = "studio,1,2"
-    max_new_posts_per_run: int = 80
+    rooms: str = "studio,1"
+    max_new_posts_per_run: int = 50
     repost_after_hours: float = 2.0
-    max_search_pages: int = 50
+    max_search_pages: int = 15
     preferred_districts_only: bool = False
     max_photos_per_apartment: int = 5
     only_with_photos: bool = True
@@ -232,7 +231,7 @@ class Settings(BaseSettings):
 
     @property
     def effective_post_limit(self) -> int:
-        return 1 if self.test_mode else max(80, self.max_new_posts_per_run)
+        return 1 if self.test_mode else max(1, self.max_new_posts_per_run)
 
     @property
     def allowed_rooms(self) -> tuple[str, ...]:

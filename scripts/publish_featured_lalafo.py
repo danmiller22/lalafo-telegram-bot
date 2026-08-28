@@ -29,7 +29,9 @@ from app.security import TokenSigner
 from app.telegram.publisher import TelegramPublisher
 
 logger = logging.getLogger(__name__)
-SOURCE_MIN_PRICE = 15_000
+SOURCE_MIN_PRICE = 18_000
+SOURCE_ALLOWED_ROOMS = ("studio", "1")
+SOURCE_MAX_SEARCH_PAGES = 6
 
 
 async def discover(settings) -> list[LalafoAd]:
@@ -39,7 +41,9 @@ async def discover(settings) -> list[LalafoAd]:
         max_retries=settings.http_max_retries,
         proxy_url=settings.lalafo_proxy_url,
     ) as client:
-        for page_number in range(1, min(settings.max_search_pages, 10) + 1):
+        for page_number in range(
+            1, min(settings.max_search_pages, SOURCE_MAX_SEARCH_PAGES) + 1
+        ):
             page = await client.search(DEFAULT_SEARCH_URL, page=page_number)
             if not page.items:
                 break
@@ -59,7 +63,7 @@ async def discover(settings) -> list[LalafoAd]:
                     continue
                 allowed, _ = is_allowed(
                     ad, city=settings.city, max_price=settings.featured_max_price,
-                    rooms=settings.allowed_rooms,
+                    rooms=SOURCE_ALLOWED_ROOMS,
                 )
                 if (
                     allowed

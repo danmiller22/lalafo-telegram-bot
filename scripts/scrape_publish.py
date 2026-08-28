@@ -64,11 +64,13 @@ CENTRAL_DISTRICT_TERMS = (
     "западный автовокзал",
     "политех",
 )
-SOURCE_MIN_PRICE = 15_000
+SOURCE_MIN_PRICE = 18_000
 SOURCE_MAX_PRICE = 35_000
-SOURCE_MAX_SEARCH_PAGES = 50
+SOURCE_ALLOWED_ROOMS = ("studio", "1")
+SOURCE_MAX_POSTS_PER_RUN = 50
+SOURCE_MAX_SEARCH_PAGES = 15
 PREFERRED_BATCH_SHARE = 0.70
-MAX_CANDIDATE_POOL = 200
+MAX_CANDIDATE_POOL = 120
 
 
 async def fetch_detail_batch(
@@ -174,8 +176,8 @@ async def run() -> int:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
     state = PostedState.load(settings.posted_state_path)
-    limit = settings.effective_post_limit
-    candidate_pool_limit = max(limit, min(limit * 5, MAX_CANDIDATE_POOL))
+    limit = min(settings.effective_post_limit, SOURCE_MAX_POSTS_PER_RUN)
+    candidate_pool_limit = max(limit, min(limit * 3, MAX_CANDIDATE_POOL))
     candidates = []
     candidate_phones: set[str] = set()
     repost_candidate_ids: set[int] = set()
@@ -289,7 +291,7 @@ async def run() -> int:
                     ad,
                     city=settings.city,
                     max_price=SOURCE_MAX_PRICE,
-                    rooms=settings.allowed_rooms,
+                    rooms=SOURCE_ALLOWED_ROOMS,
                 )
                 if not allowed:
                     logger.info("Skipping ad id=%s reason=%s", ad.lalafo_id, reason)
