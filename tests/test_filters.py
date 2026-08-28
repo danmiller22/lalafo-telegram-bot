@@ -37,7 +37,7 @@ def test_allowed_and_format_has_no_source_or_description():
     text = format_apartment(ad)
     assert text == (
         "🏠 2-комнатная квартира\n📍 7 мкр\n🏙 Бишкек\n"
-        "💰 35 000 сом\n🚪 Без подселения\n🔐 Депозит: 20 000 сом"
+        "💰 35 000 сом\n🔐 Депозит: 20 000 сом"
     )
     assert "lalafo" not in text.lower()
     assert ad.phone not in text
@@ -53,14 +53,14 @@ def test_agency_listing_is_allowed_but_not_identified_on_card():
 
 def test_missing_district_and_optional_deposit_are_omitted():
     text = format_apartment(make_ad(district=None, deposit=None, rooms="studio"))
-    assert text == "🏠 Студия\n🏙 Бишкек\n💰 35 000 сом\n🚪 Без подселения"
+    assert text == "🏠 Студия\n🏙 Бишкек\n💰 35 000 сом"
 
 
-def test_subletting_listing_is_allowed_and_labeled():
+def test_subletting_listing_is_allowed_but_not_labeled():
     ad = make_ad(no_subletting=False)
 
     assert is_allowed(ad, city="Бишкек", max_price=40000, rooms=("studio", "1", "2"))[0]
-    assert "👥 С подселением" in format_apartment(ad)
+    assert "подсел" not in format_apartment(ad).casefold()
 
 
 def test_subletting_candidate_supply_is_halved_deterministically():

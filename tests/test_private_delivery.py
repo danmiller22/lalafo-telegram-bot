@@ -58,4 +58,4 @@ async def test_private_contact_repeats_storefront_album_before_contact_card():
     bot.send_photo.assert_not_awaited()
     bot.send_message.assert_awaited_once()
     assert "+996 555 123 456" in bot.send_message.await_args.args[1]
-    assert "👥 С подселением" in bot.send_message.await_args.args[1]
+    assert "подсел" not in bot.send_message.await_args.args[1].casefold()

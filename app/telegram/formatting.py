@@ -23,7 +23,6 @@ def format_apartment(ad: LalafoAd | Apartment) -> str:
         lines.append(f"📍 {ad.district}")
     lines.append(f"🏙 {ad.city}")
     lines.append(f"💰 {format_money(ad.price)} сом")
-    lines.append("🚪 Без подселения" if ad.no_subletting else "👥 С подселением")
     if ad.deposit is not None:
         lines.append(f"🔐 Депозит: {format_money(ad.deposit)} сом")
     return "\n".join(lines)

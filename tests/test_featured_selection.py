@@ -77,6 +77,7 @@ def test_payload_selects_every_option_and_leaves_deposit_empty() -> None:
     assert "только чат Lalafo" in preview
     assert "Депозит: поле оставлено пустым" in preview
     assert "Депозит:" not in payload["description"]
+    assert "подсел" not in payload["description"].casefold()
     assert "Фотографий: 5" in preview
 
 

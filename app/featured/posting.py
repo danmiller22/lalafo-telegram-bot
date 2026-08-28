@@ -44,7 +44,6 @@ def short_description(ad: LalafoAd) -> str:
         *([f"📍 {ad.district}"] if ad.district else []),
         "🏙 Бишкек",
         f"💰 {ad.price:,} сом".replace(",", " "),
-        f"🚪 {'Без подселения' if ad.no_subletting else 'С подселением'}",
     ]
     lines.append("🛋 Полностью меблирована, все условия")
     return "\n".join(lines)

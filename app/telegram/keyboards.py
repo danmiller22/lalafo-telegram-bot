@@ -6,7 +6,7 @@ from app.security import TokenSigner
 from app.payment_plans import WEEK_PRICE
 
 
-APARTMENT_KEYBOARD_VERSION = 6
+APARTMENT_KEYBOARD_VERSION = 7
 
 
 def _support_row(support_url: str) -> list[InlineKeyboardButton]:

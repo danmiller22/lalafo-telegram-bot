@@ -70,11 +70,10 @@ def select_featured(
 
 
 def build_description(ad: LalafoAd) -> str:
-    subletting = "Без подселения" if ad.no_subletting else "С подселением"
     rooms = {"studio": "Студия", "1": "1-комнатная квартира", "2": "2-комнатная квартира"}.get(
         ad.rooms.casefold(), ad.rooms
     )
     return "\n".join((
         f"🏠 {rooms}", f"📍 {ad.district}", "🏙 Бишкек",
-        f"💰 {ad.price:,} сом".replace(",", " "), f"🚪 {subletting}",
+        f"💰 {ad.price:,} сом".replace(",", " "),
     ))
