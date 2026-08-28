@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import hashlib
 import logging
 import time
@@ -23,6 +24,11 @@ AUTO_REPLY_TEXT = """Здравствуйте! 👋
 👉 Telegram:
 https://t.me/arendabishkek3"""
 
+# Lalafo can reject repeated external links with HTTP 403 even for an
+# authenticated account.  In that case the customer must still receive a
+# useful answer instead of being left without any response.
+AUTO_REPLY_FALLBACK_TEXT = "Здравствуйте! 👋 Да, квартира ещё актуальна."
+
 
 class LalafoChatError(RuntimeError):
     pass
@@ -34,6 +40,10 @@ class LalafoChatAuthenticationError(LalafoChatError):
 
 class LalafoChatRateLimitError(LalafoChatError):
     """Lalafo temporarily refused a message because of its send rate limit."""
+
+
+class LalafoChatRejectedError(LalafoChatError):
+    """Lalafo rejected both the full reply and its link-free fallback."""
 
 
 @dataclass(slots=True)
@@ -49,7 +59,8 @@ class LalafoChatClient:
 
     def __init__(self, *, timeout: float = 25.0) -> None:
         self._user_hash = str(uuid.uuid4())
-        self._fingerprint = hashlib.sha256(uuid.uuid4().bytes).hexdigest()
+        # The current web client sends a 32-character browser fingerprint.
+        self._fingerprint = uuid.uuid4().hex
         self._http = httpx.AsyncClient(
             base_url="https://lalafo.kg",
             follow_redirects=True,
@@ -69,9 +80,18 @@ class LalafoChatClient:
             "user-hash": self._user_hash,
             "content-type": "application/json",
             "device-fingerprint": self._fingerprint,
+            "Accept": "application/json, text/plain, */*",
+            "Referer": "https://lalafo.kg/account/chats",
+            "sec-ch-ua": (
+                '"Not=A?Brand";v="99", "Google Chrome";v="151", '
+                '"Chromium";v="151"'
+            ),
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-platform": '"Windows"',
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140 Safari/537.36"
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/151.0.0.0 Safari/537.36"
             ),
         }
         if socket_id:
@@ -118,7 +138,7 @@ class LalafoChatClient:
     async def chats(self) -> list[dict[str, Any]]:
         session = self.require_session()
         response = await self._http.post(
-            "/api/chat/v4/chat-update/get-paginated",
+            "/api/chat/v4/chat-update/get-paginated?sort=byNewest",
             headers=self._headers(token=session.token, bypass_cache=True),
             json={
                 "syncTime": 0,
@@ -159,10 +179,7 @@ class LalafoChatClient:
             }
         bottom = chat.get("bottom") or {}
         created = int(time.time())
-        response = await self._http.post(
-            "/api/chat/v4/message/send",
-            headers=self._headers(token=session.token, socket_id=socket_id),
-            json={
+        payload = {
                 "feedType": 1 if feed_type == 2 else feed_type,
                 "feedId": feed_id,
                 "message": {
@@ -179,12 +196,33 @@ class LalafoChatClient:
                 "seen": int(bottom.get("created") or created),
                 "ref": "Message",
                 "ack": str(uuid.uuid4()),
-            },
+            }
+        headers = self._headers(token=session.token, socket_id=socket_id)
+        response = await self._http.post(
+            "/api/chat/v4/message/send", headers=headers, json=payload
         )
+        if response.status_code == 403 and message != AUTO_REPLY_FALLBACK_TEXT:
+            detail = response.text.replace("\n", " ")[:300]
+            logger.warning(
+                "Lalafo rejected the Telegram invitation; retrying a link-free "
+                "reply: %s",
+                detail or "HTTP 403",
+            )
+            fallback_payload = copy.deepcopy(payload)
+            fallback_payload["message"]["payload"] = AUTO_REPLY_FALLBACK_TEXT
+            fallback_payload["ack"] = str(uuid.uuid4())
+            response = await self._http.post(
+                "/api/chat/v4/message/send", headers=headers, json=fallback_payload
+            )
         if response.status_code == 401:
             raise LalafoChatAuthenticationError("Lalafo session expired")
         if response.status_code == 429:
             raise LalafoChatRateLimitError("Lalafo message rate limit reached")
+        if response.status_code == 403:
+            detail = response.text.replace("\n", " ")[:300]
+            raise LalafoChatRejectedError(
+                f"Lalafo rejected an authenticated reply: {detail or 'HTTP 403'}"
+            )
         response.raise_for_status()
 
     async def close(self) -> None:
@@ -322,14 +360,12 @@ class LalafoAutoResponder:
                 continue
             try:
                 await self._client.send_reply(chat, AUTO_REPLY_TEXT, self._socket_id())
-            except LalafoChatRateLimitError:
+            except (LalafoChatRateLimitError, LalafoChatRejectedError) as exc:
                 # Do not remember this message: the next one-minute cloud run must
                 # retry it.  Continue briefly so one problematic chat cannot block
                 # every other customer, but stop after a global limit is evident.
                 consecutive_rate_limits += 1
-                logger.warning(
-                    "Lalafo rate-limited an automatic reply; it will be retried"
-                )
+                logger.warning("Automatic reply deferred: %s", type(exc).__name__)
                 if consecutive_rate_limits >= 3:
                     break
                 continue

@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock
 
+import httpx
 import pytest
 
 from app.lalafo.auto_reply import (
+    AUTO_REPLY_FALLBACK_TEXT,
     AUTO_REPLY_TEXT,
     LalafoAutoResponder,
+    LalafoChatClient,
     LalafoChatRateLimitError,
     LalafoSession,
 )
@@ -116,3 +119,26 @@ def test_fixed_text_matches_requested_message() -> None:
         "👉 Telegram:\n"
         "https://t.me/arendabishkek3"
     )
+
+
+@pytest.mark.asyncio
+async def test_send_retries_link_free_reply_after_forbidden() -> None:
+    client = LalafoChatClient()
+    client.session = LalafoSession(100, "token", "access", "hash")
+    client._user_hash = "hash"
+    client._http = AsyncMock()  # type: ignore[assignment]
+    request = httpx.Request("POST", "https://lalafo.kg/api/chat/v4/message/send")
+    client._http.post.side_effect = [
+        httpx.Response(403, request=request, text="external link rejected"),
+        httpx.Response(200, request=request, json={"ok": True}),
+    ]
+
+    await client.send_reply(chat(message_id=50, origin=200), AUTO_REPLY_TEXT, "sid")
+
+    assert client._http.post.await_count == 2
+    first = client._http.post.await_args_list[0].kwargs
+    second = client._http.post.await_args_list[1].kwargs
+    assert first["json"]["message"]["payload"] == AUTO_REPLY_TEXT
+    assert second["json"]["message"]["payload"] == AUTO_REPLY_FALLBACK_TEXT
+    assert len(first["headers"]["device-fingerprint"]) == 32
+    assert first["headers"]["Referer"] == "https://lalafo.kg/account/chats"

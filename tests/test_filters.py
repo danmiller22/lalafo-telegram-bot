@@ -2,6 +2,7 @@ import pytest
 
 from app.lalafo.parser import is_allowed
 from app.telegram.formatting import format_apartment, format_public_apartment
+from app.lalafo.subletting import halve_subletting_candidates
 from scripts.scrape_publish import (
     candidate_quality,
     is_central_district,
@@ -60,6 +61,25 @@ def test_subletting_listing_is_allowed_and_labeled():
 
     assert is_allowed(ad, city="Бишкек", max_price=40000, rooms=("studio", "1", "2"))[0]
     assert "👥 С подселением" in format_apartment(ad)
+
+
+def test_subletting_candidate_supply_is_halved_deterministically():
+    whole = [
+        make_ad(lalafo_id=100 + index, no_subletting=True)
+        for index in range(3)
+    ]
+    shared = [
+        make_ad(lalafo_id=200 + index, no_subletting=False)
+        for index in range(6)
+    ]
+
+    reduced = halve_subletting_candidates(list(reversed(whole + shared)))
+
+    assert sum(ad.no_subletting for ad in reduced) == 3
+    assert sum(not ad.no_subletting for ad in reduced) == 3
+    assert {ad.lalafo_id for ad in reduced if not ad.no_subletting} == {
+        200, 202, 204
+    }
 
 
 def test_public_card_has_short_bot_promotion():

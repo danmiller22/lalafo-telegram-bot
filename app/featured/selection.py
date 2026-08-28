@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from app.lalafo.models import LalafoAd
+from app.lalafo.subletting import halve_subletting_candidates
 
 PRIORITY_TERMS = (
     "цум", "гум", "дордой плаза", "филармони", "бишкек парк",
@@ -54,6 +55,7 @@ def select_featured(
         and ad.price <= max_price
         and bool(ad.district and ad.phone and ad.photo_urls)
     ]
+    eligible = halve_subletting_candidates(eligible)
     eligible.sort(key=lambda ad: quality_key(ad, priority_price), reverse=True)
     selected: list[LalafoAd] = []
     phones: set[str] = set()

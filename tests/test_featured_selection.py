@@ -44,6 +44,19 @@ def test_recent_source_is_excluded() -> None:
     assert [item.lalafo_id for item in result] == [2]
 
 
+def test_featured_selection_halves_subletting_supply() -> None:
+    candidates = [
+        ad(index, district="ЦУМ", price=20_000 + index, phone=str(index))
+        for index in range(10, 16)
+    ]
+    for item in candidates:
+        item.no_subletting = False
+
+    result = select_featured(candidates, count=10)
+
+    assert {item.lalafo_id for item in result} == {10, 12, 14}
+
+
 def test_payload_selects_every_option_and_leaves_deposit_empty() -> None:
     source = ad(1, district="10 мкр", price=20_000, phone="1")
     source.deposit = 15_000

@@ -10,6 +10,7 @@ from app.lalafo.client import LalafoClient, LalafoError, LalafoNotFound
 from app.lalafo.models import LalafoAd
 from app.lalafo.parser import LalafoParseError, is_allowed
 from app.lalafo.phone import mask_phone
+from app.lalafo.subletting import halve_subletting_candidates
 from app.state import PostedState, ad_fingerprint
 from app.telegram.formatting import format_apartment
 
@@ -271,6 +272,14 @@ async def run() -> int:
                 break
             page_number += 1
 
+    shared_before = sum(not ad.no_subletting for ad in candidates)
+    candidates = halve_subletting_candidates(candidates)
+    shared_after = sum(not ad.no_subletting for ad in candidates)
+    logger.info(
+        "Subletting candidate reduction: %d -> %d (target: 50%% fewer)",
+        shared_before,
+        shared_after,
+    )
     candidates = select_publish_batch(candidates, limit)
     repost_candidate_ids.intersection_update(ad.lalafo_id for ad in candidates)
     preferred_count = sum(is_preferred_district(ad.district) for ad in candidates)
