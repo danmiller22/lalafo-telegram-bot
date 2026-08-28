@@ -62,7 +62,7 @@ class Apartment(Base):
 
 
 class ApartmentPublicationSchedule(Base):
-    """Single shared clock and lease for the two-hour apartment publisher."""
+    """Single shared clock and lease for the three-hour apartment publisher."""
 
     __tablename__ = "apartment_publication_schedule"
 

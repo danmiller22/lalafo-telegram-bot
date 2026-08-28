@@ -8,6 +8,7 @@ from scripts.scrape_publish import (
     is_central_district,
     is_preferred_district,
     select_publish_batch,
+    select_publish_batch_with_reposts,
 )
 from tests.helpers import make_ad
 
@@ -162,3 +163,32 @@ def test_publish_batch_fills_available_space_when_one_group_is_small():
 
     assert len(selected) == 8
     assert preferred[0] in selected
+
+
+def test_publish_batch_caps_three_hour_repeats_at_five():
+    candidates = [
+        make_ad(
+            lalafo_id=index,
+            district="ЦУМ" if index % 2 else "Джал",
+            phone=f"+996555{index:06d}",
+        )
+        for index in range(1, 61)
+    ]
+    repost_ids = set(range(51, 61))
+
+    selected = select_publish_batch_with_reposts(candidates, repost_ids, 40)
+
+    assert len(selected) == 40
+    assert len({ad.lalafo_id for ad in selected} & repost_ids) == 5
+
+
+def test_publish_batch_uses_fresh_cards_when_repeats_are_unavailable():
+    candidates = [
+        make_ad(lalafo_id=index, phone=f"+996700{index:06d}")
+        for index in range(1, 46)
+    ]
+
+    selected = select_publish_batch_with_reposts(candidates, {45}, 40)
+
+    assert len(selected) == 40
+    assert sum(ad.lalafo_id == 45 for ad in selected) == 1

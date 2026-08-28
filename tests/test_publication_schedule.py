@@ -15,7 +15,7 @@ async def test_shared_schedule_allows_only_one_active_publisher(repositories) ->
     first = await claim_publication(
         sessions,
         force=False,
-        interval_minutes=120,
+        interval_minutes=180,
         lease_seconds=300,
     )
     assert first is not None
@@ -23,7 +23,7 @@ async def test_shared_schedule_allows_only_one_active_publisher(repositories) ->
     overlapping = await claim_publication(
         sessions,
         force=True,
-        interval_minutes=120,
+        interval_minutes=180,
         lease_seconds=300,
     )
     assert overlapping is None
@@ -32,18 +32,18 @@ async def test_shared_schedule_allows_only_one_active_publisher(repositories) ->
         sessions,
         token=first.token,
         success=True,
-        published_count=80,
+        published_count=40,
         error=None,
     )
-    snapshot = await schedule_snapshot(sessions, interval_minutes=120)
+    snapshot = await schedule_snapshot(sessions, interval_minutes=180)
     assert snapshot.status == "succeeded"
-    assert snapshot.last_published_count == 80
+    assert snapshot.last_published_count == 40
     assert not snapshot.due
 
     too_early = await claim_publication(
         sessions,
         force=False,
-        interval_minutes=120,
+        interval_minutes=180,
         lease_seconds=300,
     )
     assert too_early is None

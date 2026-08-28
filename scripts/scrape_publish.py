@@ -67,8 +67,10 @@ CENTRAL_DISTRICT_TERMS = (
 SOURCE_MIN_PRICE = 18_000
 SOURCE_MAX_PRICE = 35_000
 SOURCE_ALLOWED_ROOMS = ("studio", "1")
-SOURCE_MAX_POSTS_PER_RUN = 50
+SOURCE_MAX_POSTS_PER_RUN = 40
 SOURCE_MAX_SEARCH_PAGES = 15
+SOURCE_REPOST_AFTER_HOURS = 3.0
+MAX_REPOSTS_PER_RUN = 5
 PREFERRED_BATCH_SHARE = 0.70
 MAX_CANDIDATE_POOL = 120
 
@@ -169,6 +171,31 @@ def select_publish_batch(candidates: list[LalafoAd], limit: int) -> list[LalafoA
     return sorted(selected, key=candidate_quality, reverse=True)
 
 
+def select_publish_batch_with_reposts(
+    candidates: list[LalafoAd],
+    repost_candidate_ids: set[int],
+    limit: int,
+) -> list[LalafoAd]:
+    """Reserve at most five batch slots for eligible three-hour repeats."""
+    if limit <= 0 or not candidates:
+        return []
+    fresh = [ad for ad in candidates if ad.lalafo_id not in repost_candidate_ids]
+    repeats = [ad for ad in candidates if ad.lalafo_id in repost_candidate_ids]
+    repeat_limit = min(MAX_REPOSTS_PER_RUN, len(repeats), limit)
+    fresh_limit = min(len(fresh), limit - repeat_limit)
+    selected = select_publish_batch(fresh, fresh_limit)
+    selected.extend(select_publish_batch(repeats, repeat_limit))
+
+    # If fewer repeats exist, use every remaining slot for a fresh card.
+    if len(selected) < limit and len(selected) < len(candidates):
+        selected_ids = {ad.lalafo_id for ad in selected}
+        remaining_fresh = [ad for ad in fresh if ad.lalafo_id not in selected_ids]
+        selected.extend(
+            select_publish_batch(remaining_fresh, limit - len(selected))
+        )
+    return sorted(selected, key=candidate_quality, reverse=True)
+
+
 async def run() -> int:
     settings = get_settings()
     logging.basicConfig(
@@ -250,7 +277,7 @@ async def run() -> int:
             repostable_ids = (
                 await apartments.repostable_lalafo_ids(
                     [item.lalafo_id for item in page.items],
-                    after_hours=settings.repost_after_hours,
+                    after_hours=SOURCE_REPOST_AFTER_HOURS,
                 )
                 if apartments is not None
                 else set()
@@ -333,7 +360,11 @@ async def run() -> int:
         shared_before,
         shared_after,
     )
-    candidates = select_publish_batch(candidates, limit)
+    candidates = select_publish_batch_with_reposts(
+        candidates,
+        repost_candidate_ids,
+        limit,
+    )
     repost_candidate_ids.intersection_update(ad.lalafo_id for ad in candidates)
     preferred_count = sum(is_preferred_district(ad.district) for ad in candidates)
     preferred_percent = round(preferred_count * 100 / len(candidates)) if candidates else 0

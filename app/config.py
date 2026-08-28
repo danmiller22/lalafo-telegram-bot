@@ -130,6 +130,8 @@ DEFAULT_SEARCH_URL = (
     + "?price[from]=18000&price[to]=35000"
 )
 
+APARTMENT_PUBLISH_INTERVAL_MINUTES = 180
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -163,7 +165,9 @@ class Settings(BaseSettings):
     lalafo_auto_reply_stale_seconds: float = 180.0
     hosted_apartment_scheduler_enabled: bool = True
     hosted_apartment_scheduler_check_seconds: float = 60.0
-    hosted_apartment_publish_interval_minutes: int = 120
+    # Fixed product schedule. Keeping this outside environment-controlled
+    # settings prevents a stale cloud variable from restoring the old cadence.
+    hosted_apartment_publish_interval_minutes: int = APARTMENT_PUBLISH_INTERVAL_MINUTES
     apartment_detail_concurrency: int = 6
     # Keep each public album adjacent to its card. Speed comes from direct
     # Telegram URL fetches and concurrent Lalafo detail collection.
@@ -175,8 +179,7 @@ class Settings(BaseSettings):
     min_price: int = 18_000
     max_price: int = 35_000
     rooms: str = "studio,1"
-    max_new_posts_per_run: int = 50
-    repost_after_hours: float = 2.0
+    max_new_posts_per_run: int = 40
     max_search_pages: int = 15
     preferred_districts_only: bool = False
     max_photos_per_apartment: int = 5
@@ -223,6 +226,12 @@ class Settings(BaseSettings):
     @classmethod
     def empty_admin_id(cls, value: object) -> object:
         return 0 if value in (None, "") else value
+
+    @field_validator("hosted_apartment_publish_interval_minutes", mode="before")
+    @classmethod
+    def fixed_apartment_publish_interval(cls, value: object) -> int:
+        del value
+        return APARTMENT_PUBLISH_INTERVAL_MINUTES
 
     @field_validator("telegram_bot_username", "admin_username", mode="before")
     @classmethod
