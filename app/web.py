@@ -81,55 +81,61 @@ def _trigger_featured_manual_publish() -> None:
         event.set()
 
 
+async def _execute_featured_manual_publish() -> None:
+    _featured_publish_state.update(
+        state="running",
+        running=True,
+        last_started_at=_now(),
+        last_finished_at=None,
+        last_error=None,
+    )
+    exit_code = 1
+    try:
+        from scripts.publish_featured_lalafo import run as publish_featured
+
+        for attempt in range(1, 4):
+            try:
+                exit_code = await publish_featured(manual_request=True)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                exit_code = 1
+                _featured_publish_state["last_error"] = type(exc).__name__
+                logger.exception(
+                    "Manual featured publication attempt %d failed", attempt
+                )
+            if exit_code == 0:
+                break
+            if attempt < 3:
+                await asyncio.sleep(10 * attempt)
+        _featured_publish_state.update(
+            state="ready" if exit_code == 0 else "recovering",
+            last_exit_code=exit_code,
+            last_error=(
+                None
+                if exit_code == 0
+                else _featured_publish_state["last_error"]
+                or f"ExitCode{exit_code}"
+            ),
+        )
+    finally:
+        _featured_publish_state.update(
+            running=False,
+            last_finished_at=_now(),
+        )
+
+
 async def _run_featured_manual_publisher() -> None:
-    """Publish only admin-supplied links, independently from other workers."""
+    """Serialize manual advertising with the resource-heavy apartment cycle."""
     while True:
         event = _featured_publish_event
         if event is None:
             return
         await event.wait()
         event.clear()
-        _featured_publish_state.update(
-            state="running",
-            running=True,
-            last_started_at=_now(),
-            last_finished_at=None,
-            last_error=None,
-        )
-        exit_code = 1
-        try:
-            from scripts.publish_featured_lalafo import run as publish_featured
-
-            for attempt in range(1, 4):
-                try:
-                    exit_code = await publish_featured(manual_request=True)
-                except asyncio.CancelledError:
-                    raise
-                except Exception as exc:
-                    exit_code = 1
-                    _featured_publish_state["last_error"] = type(exc).__name__
-                    logger.exception(
-                        "Manual featured publication attempt %d failed", attempt
-                    )
-                if exit_code == 0:
-                    break
-                if attempt < 3:
-                    await asyncio.sleep(10 * attempt)
-            _featured_publish_state.update(
-                state="ready" if exit_code == 0 else "recovering",
-                last_exit_code=exit_code,
-                last_error=(
-                    None
-                    if exit_code == 0
-                    else _featured_publish_state["last_error"]
-                    or f"ExitCode{exit_code}"
-                ),
-            )
-        finally:
-            _featured_publish_state.update(
-                running=False,
-                last_finished_at=_now(),
-            )
+        _featured_publish_state.update(state="queued", last_error=None)
+        async with _run_lock:
+            await _execute_featured_manual_publish()
 
 
 async def _execute_scraper() -> int:

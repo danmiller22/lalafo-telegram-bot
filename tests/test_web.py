@@ -299,6 +299,36 @@ async def test_manual_featured_worker_runs_only_manual_publication(
 
 
 @pytest.mark.asyncio
+async def test_manual_featured_worker_waits_for_apartment_cycle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import scripts.publish_featured_lalafo
+
+    publish = AsyncMock(return_value=0)
+    monkeypatch.setattr(scripts.publish_featured_lalafo, "run", publish)
+    web._featured_publish_event = asyncio.Event()
+    await web._run_lock.acquire()
+    task = asyncio.create_task(web._run_featured_manual_publisher())
+    try:
+        web._trigger_featured_manual_publish()
+        await asyncio.sleep(0)
+        assert web._featured_publish_state["state"] == "queued"
+        publish.assert_not_awaited()
+        web._run_lock.release()
+        for _ in range(20):
+            if publish.await_count:
+                break
+            await asyncio.sleep(0)
+        publish.assert_awaited_once_with(manual_request=True)
+    finally:
+        if web._run_lock.locked():
+            web._run_lock.release()
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+
+
+@pytest.mark.asyncio
 async def test_payment_redirect_replaces_button_and_opens_finik(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
