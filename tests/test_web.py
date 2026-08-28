@@ -33,6 +33,8 @@ def configure(monkeypatch: pytest.MonkeyPatch) -> None:
         last_check_at=None,
         last_exit_code=None,
         last_error=None,
+        recent_published_count=None,
+        latest_published_at=None,
     )
     yield
     get_settings.cache_clear()
@@ -145,17 +147,25 @@ async def test_hosted_scheduler_runs_due_check_without_forcing_duplicates(
 
     select_proxies = AsyncMock()
     run_if_due = AsyncMock(return_value=0)
+    publication_status = AsyncMock(side_effect=[(0, None), (5, None)])
     monkeypatch.setattr(web, "_select_hosted_lalafo_proxies", select_proxies)
     monkeypatch.setattr(scripts.publish_if_due, "run", run_if_due)
+    monkeypatch.setattr(
+        scripts.publish_if_due,
+        "publication_window_status",
+        publication_status,
+    )
 
     assert await web._execute_due_apartment_cycle() == 0
 
     select_proxies.assert_awaited_once()
     run_if_due.assert_awaited_once_with(
-        force=False,
+        force=True,
         window_minutes=120,
         max_attempts=3,
     )
+    assert publication_status.await_count == 2
+    assert web._apartment_scheduler_state["recent_published_count"] == 5
     assert web._apartment_scheduler_state["last_exit_code"] == 0
     assert web._apartment_scheduler_state["running_cycle"] is False
 

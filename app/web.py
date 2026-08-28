@@ -39,6 +39,8 @@ _apartment_scheduler_state: dict[str, Any] = {
     "last_check_at": None,
     "last_exit_code": None,
     "last_error": None,
+    "recent_published_count": None,
+    "latest_published_at": None,
 }
 
 
@@ -178,13 +180,45 @@ async def _execute_due_apartment_cycle() -> int:
             last_exit_code=None,
         )
         try:
+            from scripts.publish_if_due import publication_window_status
             from scripts.publish_if_due import run as run_if_due
+
+            recent_count, latest_published_at = await publication_window_status(
+                window_minutes=settings.hosted_apartment_publish_interval_minutes
+            )
+            _apartment_scheduler_state.update(
+                recent_published_count=recent_count,
+                latest_published_at=(
+                    latest_published_at.isoformat() if latest_published_at else None
+                ),
+            )
+            if recent_count:
+                _apartment_scheduler_state["last_exit_code"] = 0
+                _run_state["last_exit_code"] = 0
+                logger.info(
+                    "Hosted scheduler skipped: %d cards were published in the last %d minutes",
+                    recent_count,
+                    settings.hosted_apartment_publish_interval_minutes,
+                )
+                return 0
 
             await _select_hosted_lalafo_proxies()
             exit_code = await run_if_due(
-                force=False,
+                force=True,
                 window_minutes=settings.hosted_apartment_publish_interval_minutes,
                 max_attempts=3,
+            )
+            after_count, after_latest = await publication_window_status(
+                window_minutes=settings.hosted_apartment_publish_interval_minutes
+            )
+            _apartment_scheduler_state.update(
+                recent_published_count=after_count,
+                latest_published_at=after_latest.isoformat() if after_latest else None,
+                last_error=(
+                    "NoApartmentsPublished"
+                    if exit_code == 0 and after_count == 0
+                    else None
+                ),
             )
             _apartment_scheduler_state["last_exit_code"] = exit_code
             _run_state["last_exit_code"] = exit_code

@@ -25,12 +25,19 @@ def should_publish(*, force: bool, recent_count: int) -> bool:
 
 
 async def recent_published_count(*, window_minutes: int) -> int:
+    count, _ = await publication_window_status(window_minutes=window_minutes)
+    return count
+
+
+async def publication_window_status(
+    *, window_minutes: int
+) -> tuple[int, datetime | None]:
     settings = get_settings()
     engine, sessions = create_engine_and_session(settings.database_url)
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=max(1, window_minutes))
     try:
         async with sessions() as session:
-            result = await session.scalar(
+            recent_count_query = (
                 select(func.count())
                 .select_from(Apartment)
                 .where(
@@ -38,8 +45,21 @@ async def recent_published_count(*, window_minutes: int) -> int:
                     Apartment.published_at.is_not(None),
                     Apartment.published_at >= cutoff,
                 )
+                .scalar_subquery()
             )
-            return int(result or 0)
+            latest_query = (
+                select(func.max(Apartment.published_at))
+                .where(
+                    Apartment.publication_status == "published",
+                    Apartment.published_at.is_not(None),
+                )
+                .scalar_subquery()
+            )
+            result = await session.execute(
+                select(recent_count_query, latest_query)
+            )
+            count, latest = result.one()
+            return int(count or 0), latest
     finally:
         await engine.dispose()
 
