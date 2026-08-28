@@ -148,14 +148,16 @@ async def emit_event_notifications(
             await repo.patch(row.id, deactivated_notified_at=now)
 
 
-async def run() -> int:
+async def run(*, manual_request: bool = False) -> int:
     settings = get_settings()
     logging.basicConfig(
         level=getattr(logging, settings.log_level.upper(), logging.INFO),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
-    if not settings.dry_run and not settings.featured_publish_approved_enabled:
-        logger.info("Approved featured publication disabled; no-op")
+    if not manual_request:
+        logger.info(
+            "Featured publication is manual-link-only; scheduled invocation is a no-op"
+        )
         return 0
     started = datetime.now(timezone.utc)
     business_date = started.astimezone(ZoneInfo(settings.featured_timezone)).date()
@@ -171,7 +173,10 @@ async def run() -> int:
         auto_approved = await repo.approve_custom_candidates(business_date)
         if auto_approved:
             logger.info("Auto-approved admin links queued before immediate mode: %d", auto_approved)
-        approved = await repo.selected_candidates(business_date)
+        approved = await repo.selected_candidates(
+            business_date,
+            manual_only=True,
+        )
         if not approved:
             logger.info("No approved featured apartments; no-op")
             await engine.dispose()
@@ -354,7 +359,7 @@ async def run() -> int:
                         f"❌ {ad.district}, {ad.price} сом: {type(exc).__name__}"
                     )
             committed = await repo.daily_committed_budget(business_date)
-            if settings.featured_autopromote_enabled:
+            if settings.featured_autopromote_enabled or manual_request:
                 if promotion_blocked or committed >= settings.featured_max_daily_budget:
                     report.append("Реклама заблокирована защитой бюджета/старой кампании")
                 elif len(await repo.for_date(business_date)) < settings.featured_count:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -25,7 +25,9 @@ class FeaturedReviewRuntime:
         await self.engine.dispose()
 
 
-async def create_featured_review_runtime() -> FeaturedReviewRuntime:
+async def create_featured_review_runtime(
+    *, publish_trigger: Callable[[], None] | None = None
+) -> FeaturedReviewRuntime:
     settings = get_settings()
     engine, sessions = create_engine_and_session(settings.database_url)
     await init_db(engine)
@@ -37,5 +39,6 @@ async def create_featured_review_runtime() -> FeaturedReviewRuntime:
         workflow_data={
             "settings": settings,
             "featured": FeaturedRepository(sessions),
+            "publish_trigger": publish_trigger,
         },
     )

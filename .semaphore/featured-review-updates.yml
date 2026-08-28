@@ -23,17 +23,9 @@ global_job_config:
       value: "INFO"
 
 blocks:
-  - name: Process isolated review commands
+  - name: Manual-link webhook mode
     task:
-      secrets:
-        - name: lalafo-production
-        - name: featured-review
       jobs:
-        - name: Read buttons and admin links
+        - name: Legacy polling retired
           commands:
-            - checkout
-            - sem-version python 3.12
-            - python -m pip install --disable-pip-version-check --quiet -r requirements.txt
-            - alembic upgrade head
-            - python -m scripts.process_featured_review_updates
-            - python -m scripts.publish_featured_lalafo
+            - echo "Telegram webhook handles manual Lalafo links immediately"

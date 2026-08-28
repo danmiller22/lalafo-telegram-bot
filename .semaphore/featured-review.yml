@@ -25,18 +25,9 @@ global_job_config:
       value: "false"
 
 blocks:
-  - name: Send isolated review shortlist
+  - name: Manual-link mode notice
     task:
-      secrets:
-        - name: lalafo-production
-        - name: featured-review
       jobs:
-        - name: Find candidates and ask the admin
+        - name: Automatic shortlist retired
           commands:
-            - checkout
-            - sem-version python 3.12
-            - python --version
-            - python -m pip install -r requirements.txt
-            - alembic upgrade head
-            - python -m scripts.suggest_featured_lalafo
-            - python -m scripts.publish_featured_lalafo
+            - echo "Manual-link webhook mode; no automatic recommendations"

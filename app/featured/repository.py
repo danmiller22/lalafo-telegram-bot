@@ -120,9 +120,20 @@ class FeaturedRepository:
                 return "missing", None
             if candidate.status in {"selected", "approved"}:
                 return "already_selected", candidate
+            automatic = list(await session.scalars(
+                select(FeaturedCandidate).where(
+                    FeaturedCandidate.business_date == candidate.business_date,
+                    FeaturedCandidate.rank > 0,
+                    FeaturedCandidate.status.in_(("selected", "approved")),
+                ).with_for_update()
+            ))
+            for old in automatic:
+                old.status = "replaced"
+                old.selected_slot = None
             selected = list(await session.scalars(
                 select(FeaturedCandidate).where(
                     FeaturedCandidate.business_date == candidate.business_date,
+                    FeaturedCandidate.rank == 0,
                     FeaturedCandidate.status.in_(("selected", "approved")),
                 ).order_by(FeaturedCandidate.selected_slot).with_for_update()
             ))
@@ -177,12 +188,17 @@ class FeaturedRepository:
             candidate.selected_slot = None
             return "rejected", candidate
 
-    async def selected_candidates(self, business_date: date) -> list[FeaturedCandidate]:
+    async def selected_candidates(
+        self, business_date: date, *, manual_only: bool = False
+    ) -> list[FeaturedCandidate]:
         async with self.sessions() as session:
-            rows = await session.scalars(select(FeaturedCandidate).where(
+            query = select(FeaturedCandidate).where(
                 FeaturedCandidate.business_date == business_date,
                 FeaturedCandidate.status == "approved",
-            ).order_by(FeaturedCandidate.selected_slot))
+            )
+            if manual_only:
+                query = query.where(FeaturedCandidate.rank == 0)
+            rows = await session.scalars(query.order_by(FeaturedCandidate.selected_slot))
             return list(rows)
 
     async def mark_candidate_message(self, candidate_id: int, message_id: int) -> None:

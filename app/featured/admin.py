@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from typing import Callable
 from zoneinfo import ZoneInfo
 
 from aiogram import Bot, F, Router
@@ -50,47 +51,25 @@ async def review_start(message: Message, settings: Settings) -> None:
     if not _is_admin(message.from_user.id if message.from_user else None, settings):
         return
     await message.answer(
-        "✅ Бот отбора квартир готов.\n\n"
-        "Каждое утро он пришлёт лучшие варианты до 30 000 сом. "
-        "Выберите ровно две квартиры или отправьте ему ссылку Lalafo."
+        "✅ Бот ручной рекламы готов.\n\n"
+        "Отправьте ссылку на квартиру с Lalafo. Автоматических подборок "
+        "и утренних рекомендаций больше нет."
     )
 
 
 @router.callback_query(F.data.startswith("featured:select:"))
 async def select_featured(
     callback: CallbackQuery, settings: Settings,
-    featured: FeaturedRepository,
 ) -> None:
     if not _is_admin(callback.from_user.id, settings):
         await callback.answer("Недоступно", show_alert=True)
         return
-    try:
-        candidate_id = int((callback.data or "").rsplit(":", 1)[1])
-    except (IndexError, ValueError):
-        await callback.answer("Некорректный вариант", show_alert=True)
-        return
-    outcome, candidate = await featured.select_candidate(
-        candidate_id, limit=settings.featured_count
+    await callback.answer(
+        "Автоподбор отключён. Отправьте боту ссылку Lalafo.",
+        show_alert=True,
     )
-    messages = {
-        "selected": "Выбрано. Квартира добавлена в очередь.",
-        "already_selected": "Эта квартира уже выбрана.",
-        "full": "Уже выбраны две квартиры на сегодня.",
-        "missing": "Вариант больше недоступен.",
-    }
-    await callback.answer(messages[outcome], show_alert=outcome in {"full", "missing"})
-    if outcome == "selected" and callback.message:
-        approval, candidate = await featured.approve_candidate(candidate.id)
-        if approval not in {"approved", "already_approved"} or candidate is None:
-            await callback.message.answer("Не удалось утвердить квартиру для публикации.")
-            return
+    if callback.message:
         await callback.message.edit_reply_markup(reply_markup=None)
-        ad = LalafoAd.model_validate(candidate.source_payload)
-        await callback.message.answer(
-            f"✅ Выбран вариант {candidate.selected_slot}/{settings.featured_count}. "
-            "Черновик Lalafo подготовлен и отправлен на публикацию."
-        )
-        await _send_preview(callback.message, candidate.id, ad, confirm=False)
 
 
 @router.callback_query(F.data.startswith("featured:approve:"))
@@ -147,6 +126,7 @@ async def reject_featured(
 async def accept_custom_lalafo_link(
     message: Message, bot: Bot, settings: Settings,
     featured: FeaturedRepository,
+    publish_trigger: Callable[[], None] | None = None,
 ) -> None:
     if not _is_admin(message.from_user.id if message.from_user else None, settings):
         return
@@ -163,11 +143,15 @@ async def accept_custom_lalafo_link(
         ) as client:
             ad = await client.detail(url)
         allowed, reason = is_allowed(
-            ad, city=settings.city, max_price=settings.featured_max_price,
-            rooms=settings.allowed_rooms,
+            ad,
+            city=settings.city,
+            max_price=max(settings.featured_max_price, ad.price),
+            rooms=(ad.rooms,),
         )
-        if not allowed or not ad.district or not ad.phone or not ad.photo_urls:
-            await message.answer(f"Не могу принять эту квартиру: {reason or 'неполные данные' }.")
+        if not allowed or not ad.phone or not ad.photo_urls:
+            await message.answer(
+                f"Не могу принять эту квартиру: {reason or 'неполные данные'}."
+            )
             return
         business_date = datetime.now(ZoneInfo(settings.featured_timezone)).date()
         candidate = await featured.add_candidate(
@@ -182,12 +166,28 @@ async def accept_custom_lalafo_link(
             if approval not in {"approved", "already_approved"}:
                 await message.answer("Не удалось утвердить квартиру для публикации.")
                 return
+            if publish_trigger is not None:
+                publish_trigger()
             await message.answer(
                 f"✅ Ссылка принята. Квартира выбрана как вариант "
                 f"{selected.selected_slot}/{settings.featured_count}. "
                 + ("Предыдущий вариант в этом слоте заменён. " if outcome == "replaced" else "")
-                + "Все поля Lalafo заполнены. Публикую сейчас."
+                + (
+                    "Запускаю публикацию и рекламу сейчас."
+                    if publish_trigger is not None
+                    else "Квартира поставлена в очередь публикации."
+                )
             )
             await _send_preview(message, selected.id, ad, confirm=False)
     except Exception as exc:
         await message.answer(f"Не удалось проверить ссылку: {type(exc).__name__}.")
+
+
+@router.message(F.chat.type == "private")
+async def manual_link_help(message: Message, settings: Settings) -> None:
+    if not _is_admin(message.from_user.id if message.from_user else None, settings):
+        return
+    await message.answer(
+        "Пришлите ссылку на нужную квартиру с lalafo.kg. "
+        "Бот не подбирает варианты самостоятельно."
+    )

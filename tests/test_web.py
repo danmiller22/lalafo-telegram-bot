@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -28,6 +29,17 @@ def configure(monkeypatch: pytest.MonkeyPatch) -> None:
     web._lalafo_auto_responder = None
     web._lalafo_watchdog_task = None
     web._apartment_scheduler_task = None
+    web._featured_review_runtime = None
+    web._featured_publish_event = None
+    web._featured_publish_task = None
+    web._featured_publish_state.update(
+        state="disabled",
+        running=False,
+        last_started_at=None,
+        last_finished_at=None,
+        last_exit_code=None,
+        last_error=None,
+    )
     web._apartment_scheduler_state.update(
         running_cycle=False,
         last_check_at=None,
@@ -55,6 +67,7 @@ async def test_health_and_authentication() -> None:
             "bot": "disabled",
             "lalafo_auto_reply": "disabled",
             "apartment_scheduler": "disabled",
+            "featured_review_bot": "disabled",
         }
         assert (await client.post("/run")).status_code == 401
         response = await client.get(
@@ -233,6 +246,56 @@ async def test_telegram_webhook_requires_secret_and_dispatches_update(
     assert denied.status_code == 401
     assert accepted.status_code == 200
     feed_update.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_featured_webhook_requires_secret_and_dispatches_update(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    webhook_secret = "f" * 32
+    monkeypatch.setenv("FEATURED_REVIEW_BOT_TOKEN", "123456:manual-bot-token")
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", webhook_secret)
+    get_settings.cache_clear()
+    feed_update = AsyncMock()
+    web._featured_review_runtime = SimpleNamespace(
+        bot=object(),
+        dispatcher=SimpleNamespace(feed_update=feed_update),
+        workflow_data={"marker": "featured"},
+    )
+    transport = httpx.ASGITransport(app=web.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        denied = await client.post("/featured/webhook", json={"update_id": 10})
+        accepted = await client.post(
+            "/featured/webhook",
+            json={"update_id": 11},
+            headers={"X-Telegram-Bot-Api-Secret-Token": webhook_secret},
+        )
+    assert denied.status_code == 401
+    assert accepted.status_code == 200
+    feed_update.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_manual_featured_worker_runs_only_manual_publication(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import scripts.publish_featured_lalafo
+
+    publish = AsyncMock(return_value=0)
+    monkeypatch.setattr(scripts.publish_featured_lalafo, "run", publish)
+    web._featured_publish_event = asyncio.Event()
+    task = asyncio.create_task(web._run_featured_manual_publisher())
+    try:
+        web._trigger_featured_manual_publish()
+        for _ in range(20):
+            if publish.await_count:
+                break
+            await asyncio.sleep(0)
+        publish.assert_awaited_once_with(manual_request=True)
+    finally:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
 
 
 @pytest.mark.asyncio
