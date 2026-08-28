@@ -14,11 +14,13 @@ on:
         type: boolean
         default: true
   schedule:
-    # Primary two-hour window (Bishkek remains on UTC+6 year-round).
-    - cron: "0 */2 * * *"
+    # Primary three-hour window (Bishkek remains on UTC+6 year-round).
+    - cron: "0 */3 * * *"
     # Independent recovery window. The due-check exits immediately when the
     # primary window already published successfully.
-    - cron: "30 */2 * * *"
+    - cron: "30 */3 * * *"
+    # A second recovery window catches a slow/failed primary infrastructure run.
+    - cron: "0 1-22/3 * * *"
 
 permissions:
   contents: read
@@ -39,10 +41,10 @@ jobs:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       DRY_RUN: "false"
       TEST_MODE: "false"
-      MAX_NEW_POSTS_PER_RUN: "80"
+      MAX_NEW_POSTS_PER_RUN: "40"
       ALLOW_NO_DISTRICT: "false"
       FORCE_PUBLISH: ${{ github.event_name == 'workflow_dispatch' && inputs.force_publish }}
-      PUBLISH_RECENT_WINDOW_MINUTES: "120"
+      PUBLISH_RECENT_WINDOW_MINUTES: "180"
       PUBLISH_MAX_ATTEMPTS: "3"
       LOG_LEVEL: INFO
     steps:
@@ -72,7 +74,7 @@ jobs:
             sleep $((attempt * 10))
           done
           exit 1
-      - name: Publish up to 80 apartments with full-cycle recovery
+      - name: Publish up to 40 apartments with full-cycle recovery
         run: python -m scripts.publish_if_due
       - name: Refresh buttons on published cards
         if: success()
