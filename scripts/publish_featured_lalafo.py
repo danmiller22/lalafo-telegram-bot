@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 from aiogram import Bot
 
-from app.config import get_settings
+from app.config import DEFAULT_SEARCH_URL, get_settings
 from app.database import create_engine_and_session, init_db
 from app.featured.posting import posting_payload
 from app.featured.campaigns import available_balance, campaign_identity, price_id_for_daily_budget
@@ -29,6 +29,7 @@ from app.security import TokenSigner
 from app.telegram.publisher import TelegramPublisher
 
 logger = logging.getLogger(__name__)
+SOURCE_MIN_PRICE = 15_000
 
 
 async def discover(settings) -> list[LalafoAd]:
@@ -39,13 +40,17 @@ async def discover(settings) -> list[LalafoAd]:
         proxy_url=settings.lalafo_proxy_url,
     ) as client:
         for page_number in range(1, min(settings.max_search_pages, 10) + 1):
-            page = await client.search(settings.lalafo_search_url, page=page_number)
+            page = await client.search(DEFAULT_SEARCH_URL, page=page_number)
             if not page.items:
                 break
             for item in page.items:
                 if len(candidates) >= max(40, settings.featured_max_candidates * 5):
                     return candidates
-                if item.price and item.price > settings.featured_max_price:
+                if item.price and not (
+                    max(settings.min_price, SOURCE_MIN_PRICE)
+                    <= item.price
+                    <= settings.featured_max_price
+                ):
                     continue
                 try:
                     ad = await client.detail(item.detail_url)
@@ -56,7 +61,13 @@ async def discover(settings) -> list[LalafoAd]:
                     ad, city=settings.city, max_price=settings.featured_max_price,
                     rooms=settings.allowed_rooms,
                 )
-                if allowed and ad.district and ad.phone and ad.photo_urls:
+                if (
+                    allowed
+                    and ad.price >= max(settings.min_price, SOURCE_MIN_PRICE)
+                    and ad.district
+                    and ad.phone
+                    and ad.photo_urls
+                ):
                     candidates.append(ad)
             if page_number >= page.page_count:
                 break

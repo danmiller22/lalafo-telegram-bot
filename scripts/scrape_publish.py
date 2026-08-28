@@ -64,6 +64,7 @@ CENTRAL_DISTRICT_TERMS = (
     "западный автовокзал",
     "политех",
 )
+SOURCE_MIN_PRICE = 15_000
 SOURCE_MAX_PRICE = 35_000
 SOURCE_MAX_SEARCH_PAGES = 50
 PREFERRED_BATCH_SHARE = 0.70
@@ -262,7 +263,9 @@ async def run() -> int:
                 if search_ad.currency and search_ad.currency.upper() != "KGS":
                     continue
                 if search_ad.price and not (
-                    settings.min_price <= search_ad.price <= SOURCE_MAX_PRICE
+                    max(settings.min_price, SOURCE_MIN_PRICE)
+                    <= search_ad.price
+                    <= SOURCE_MAX_PRICE
                 ):
                     continue
                 if settings.only_with_photos and not search_ad.photo_urls:
@@ -291,7 +294,7 @@ async def run() -> int:
                 if not allowed:
                     logger.info("Skipping ad id=%s reason=%s", ad.lalafo_id, reason)
                     continue
-                if ad.price < settings.min_price:
+                if ad.price < max(settings.min_price, SOURCE_MIN_PRICE):
                     logger.info("Skipping ad id=%s reason=min_price", ad.lalafo_id)
                     continue
                 if not settings.allow_no_district and not ad.district:

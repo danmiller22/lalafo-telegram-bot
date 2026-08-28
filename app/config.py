@@ -127,7 +127,7 @@ DEFAULT_SEARCH_URL = (
     "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
     "dolgosrochnaya-arenda-kvartir/1-bedroom/2-bedrooms/studio/"
     + "/".join(alias for alias, _ in LALAFO_DISTRICT_FILTERS)
-    + "?price[to]=35000"
+    + "?price[from]=15000&price[to]=35000"
 )
 
 
@@ -173,7 +173,7 @@ class Settings(BaseSettings):
     apartment_publication_lease_seconds: int = 300
     apartment_publication_heartbeat_seconds: float = 60.0
     city: str = "Бишкек"
-    min_price: int = 8_000
+    min_price: int = 15_000
     max_price: int = 35_000
     rooms: str = "studio,1,2"
     max_new_posts_per_run: int = 80
