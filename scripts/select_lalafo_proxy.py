@@ -63,7 +63,7 @@ async def _works(proxy_url: str) -> str | None:
         return None
 
 
-async def run() -> int:
+async def find_working_proxies() -> list[str]:
     params = {
         "request": "display_proxies",
         "protocol": "http",
@@ -79,8 +79,7 @@ async def run() -> int:
         response.raise_for_status()
     proxies = [line.strip() for line in response.text.splitlines() if line.strip()]
     if not proxies:
-        print("No free proxies were returned", file=sys.stderr)
-        return 2
+        return []
 
     selected: list[str] = []
     for offset in range(0, len(proxies), 25):
@@ -89,8 +88,12 @@ async def run() -> int:
         )
         selected.extend(result for result in results if result)
         if len(selected) >= TARGET_PROXY_COUNT:
-            print(f"LALAFO_PROXY_URL={','.join(selected[:TARGET_PROXY_COUNT])}")
-            return 0
+            return selected[:TARGET_PROXY_COUNT]
+    return selected[:TARGET_PROXY_COUNT]
+
+
+async def run() -> int:
+    selected = await find_working_proxies()
     if selected:
         print(f"LALAFO_PROXY_URL={','.join(selected)}")
         return 0

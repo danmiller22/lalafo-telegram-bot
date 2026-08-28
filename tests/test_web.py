@@ -27,6 +27,13 @@ def configure(monkeypatch: pytest.MonkeyPatch) -> None:
     web._keyboard_sync_task = None
     web._lalafo_auto_responder = None
     web._lalafo_watchdog_task = None
+    web._apartment_scheduler_task = None
+    web._apartment_scheduler_state.update(
+        running_cycle=False,
+        last_check_at=None,
+        last_exit_code=None,
+        last_error=None,
+    )
     yield
     get_settings.cache_clear()
 
@@ -41,6 +48,7 @@ async def test_health_and_authentication() -> None:
             "status": "ok",
             "bot": "disabled",
             "lalafo_auto_reply": "disabled",
+            "apartment_scheduler": "disabled",
         }
         assert (await client.post("/run")).status_code == 401
         response = await client.get(
@@ -127,6 +135,29 @@ async def test_restart_replaces_only_unhealthy_auto_reply_worker(
     old.close.assert_awaited_once()
     assert web._lalafo_auto_responder is replacement
     assert started
+
+
+@pytest.mark.asyncio
+async def test_hosted_scheduler_runs_due_check_without_forcing_duplicates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import scripts.publish_if_due
+
+    select_proxies = AsyncMock()
+    run_if_due = AsyncMock(return_value=0)
+    monkeypatch.setattr(web, "_select_hosted_lalafo_proxies", select_proxies)
+    monkeypatch.setattr(scripts.publish_if_due, "run", run_if_due)
+
+    assert await web._execute_due_apartment_cycle() == 0
+
+    select_proxies.assert_awaited_once()
+    run_if_due.assert_awaited_once_with(
+        force=False,
+        window_minutes=120,
+        max_attempts=3,
+    )
+    assert web._apartment_scheduler_state["last_exit_code"] == 0
+    assert web._apartment_scheduler_state["running_cycle"] is False
 
 
 @pytest.mark.asyncio

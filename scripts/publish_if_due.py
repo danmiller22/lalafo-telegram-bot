@@ -44,14 +44,27 @@ async def recent_published_count(*, window_minutes: int) -> int:
         await engine.dispose()
 
 
-async def run() -> int:
+async def run(
+    *,
+    force: bool | None = None,
+    window_minutes: int | None = None,
+    max_attempts: int | None = None,
+) -> int:
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
-    force = _truthy(os.getenv("FORCE_PUBLISH"))
-    window_minutes = max(1, int(os.getenv("PUBLISH_RECENT_WINDOW_MINUTES", "100")))
-    max_attempts = max(1, min(5, int(os.getenv("PUBLISH_MAX_ATTEMPTS", "3"))))
+    force = _truthy(os.getenv("FORCE_PUBLISH")) if force is None else force
+    window_minutes = (
+        max(1, int(os.getenv("PUBLISH_RECENT_WINDOW_MINUTES", "100")))
+        if window_minutes is None
+        else max(1, window_minutes)
+    )
+    max_attempts = (
+        max(1, min(5, int(os.getenv("PUBLISH_MAX_ATTEMPTS", "3"))))
+        if max_attempts is None
+        else max(1, min(5, max_attempts))
+    )
     recent_count = await recent_published_count(window_minutes=window_minutes)
     if not should_publish(force=force, recent_count=recent_count):
         logger.info(

@@ -27,11 +27,18 @@ _keyboard_sync_task: asyncio.Task[None] | None = None
 _lalafo_auto_responder: LalafoAutoResponder | None = None
 _lalafo_watchdog_task: asyncio.Task[None] | None = None
 _lalafo_restart_lock = asyncio.Lock()
+_apartment_scheduler_task: asyncio.Task[None] | None = None
 _run_state: dict[str, Any] = {
     "running": False,
     "last_started_at": None,
     "last_finished_at": None,
     "last_exit_code": None,
+}
+_apartment_scheduler_state: dict[str, Any] = {
+    "running_cycle": False,
+    "last_check_at": None,
+    "last_exit_code": None,
+    "last_error": None,
 }
 
 
@@ -135,9 +142,87 @@ async def _watch_lalafo_auto_responder() -> None:
             logger.exception("Lalafo auto-reply watchdog cycle failed")
 
 
+async def _select_hosted_lalafo_proxies() -> None:
+    """Refresh cloud proxies before a due publication without touching auto-reply."""
+    from scripts.select_lalafo_proxy import find_working_proxies
+
+    settings = get_settings()
+    for attempt in range(1, 4):
+        try:
+            selected = await find_working_proxies()
+        except Exception:
+            selected = []
+            logger.exception("Hosted proxy selection attempt %d failed", attempt)
+        if selected:
+            settings.lalafo_proxy_url = ",".join(selected)
+            logger.info("Hosted publisher selected %d verified proxies", len(selected))
+            return
+        if attempt < 3:
+            await asyncio.sleep(attempt * 10)
+    settings.lalafo_proxy_url = ""
+    logger.warning("Hosted publisher found no proxy; direct Lalafo route will be tried")
+
+
+async def _execute_due_apartment_cycle() -> int:
+    async with _run_lock:
+        settings = get_settings()
+        _apartment_scheduler_state.update(
+            running_cycle=True,
+            last_check_at=_now(),
+            last_error=None,
+        )
+        _run_state.update(
+            running=True,
+            last_started_at=_now(),
+            last_finished_at=None,
+            last_exit_code=None,
+        )
+        try:
+            from scripts.publish_if_due import run as run_if_due
+
+            await _select_hosted_lalafo_proxies()
+            exit_code = await run_if_due(
+                force=False,
+                window_minutes=settings.hosted_apartment_publish_interval_minutes,
+                max_attempts=3,
+            )
+            _apartment_scheduler_state["last_exit_code"] = exit_code
+            _run_state["last_exit_code"] = exit_code
+            return exit_code
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            _apartment_scheduler_state.update(
+                last_exit_code=1,
+                last_error=type(exc).__name__,
+            )
+            _run_state["last_exit_code"] = 1
+            logger.exception("Hosted two-hour apartment cycle failed")
+            return 1
+        finally:
+            _apartment_scheduler_state["running_cycle"] = False
+            _run_state.update(running=False, last_finished_at=_now())
+
+
+async def _run_hosted_apartment_scheduler() -> None:
+    settings = get_settings()
+    check_seconds = max(30.0, settings.hosted_apartment_scheduler_check_seconds)
+    while True:
+        try:
+            await _execute_due_apartment_cycle()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            # A failed cycle must never terminate the permanent scheduler.
+            _apartment_scheduler_state["last_error"] = type(exc).__name__
+            logger.exception("Hosted apartment scheduler recovered from a crash")
+        await asyncio.sleep(check_seconds)
+
+
 @app.on_event("startup")
 async def startup() -> None:
-    global _bot_runtime, _keyboard_sync_task, _lalafo_auto_responder, _lalafo_watchdog_task
+    global _bot_runtime, _keyboard_sync_task, _lalafo_auto_responder
+    global _lalafo_watchdog_task, _apartment_scheduler_task
     settings = get_settings()
     logging.basicConfig(
         level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -156,6 +241,11 @@ async def startup() -> None:
         )
         logger.info("Telegram webhook enabled at %s", webhook_url)
         _keyboard_sync_task = asyncio.create_task(_sync_outdated_keyboards())
+        if settings.hosted_apartment_scheduler_enabled:
+            _apartment_scheduler_task = asyncio.create_task(
+                _run_hosted_apartment_scheduler()
+            )
+            logger.info("Hosted two-hour apartment scheduler enabled")
     if settings.lalafo_auto_reply_enabled:
         _lalafo_auto_responder = _build_lalafo_auto_responder()
         _lalafo_auto_responder.start()
@@ -165,7 +255,13 @@ async def startup() -> None:
 
 @app.on_event("shutdown")
 async def shutdown() -> None:
-    global _bot_runtime, _keyboard_sync_task, _lalafo_auto_responder, _lalafo_watchdog_task
+    global _bot_runtime, _keyboard_sync_task, _lalafo_auto_responder
+    global _lalafo_watchdog_task, _apartment_scheduler_task
+    if _apartment_scheduler_task is not None and not _apartment_scheduler_task.done():
+        _apartment_scheduler_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await _apartment_scheduler_task
+    _apartment_scheduler_task = None
     if _lalafo_watchdog_task is not None and not _lalafo_watchdog_task.done():
         _lalafo_watchdog_task.cancel()
         with suppress(asyncio.CancelledError):
@@ -192,6 +288,19 @@ async def health() -> JSONResponse:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             content={"status": "error", "bot": "stopped"},
         )
+    if settings.run_bot and settings.hosted_apartment_scheduler_enabled:
+        if _apartment_scheduler_task is None or _apartment_scheduler_task.done():
+            return JSONResponse(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                content={
+                    "status": "error",
+                    "bot": "running",
+                    "apartment_scheduler": {
+                        "state": "stopped",
+                        **_apartment_scheduler_state,
+                    },
+                },
+            )
     auto_reply: dict[str, Any] | str = "disabled"
     if settings.lalafo_auto_reply_enabled:
         responder = _lalafo_auto_responder
@@ -218,6 +327,11 @@ async def health() -> JSONResponse:
             "status": "ok",
             "bot": "running" if settings.run_bot else "disabled",
             "lalafo_auto_reply": auto_reply,
+            "apartment_scheduler": (
+                {"state": "running", **_apartment_scheduler_state}
+                if settings.run_bot and settings.hosted_apartment_scheduler_enabled
+                else "disabled"
+            ),
         }
     )
 
