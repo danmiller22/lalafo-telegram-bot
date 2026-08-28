@@ -3,7 +3,11 @@ name: Publish apartments to Telegram
 on:
   workflow_dispatch:
   schedule:
+    # Primary two-hour window (Bishkek remains on UTC+6 year-round).
     - cron: "0 */2 * * *"
+    # Independent recovery window. The due-check exits immediately when the
+    # primary window already published successfully.
+    - cron: "30 */2 * * *"
 
 permissions:
   contents: read
@@ -15,7 +19,7 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_GROUP_ID: "-1004389602150"
@@ -26,6 +30,9 @@ jobs:
       TEST_MODE: "false"
       MAX_NEW_POSTS_PER_RUN: "80"
       ALLOW_NO_DISTRICT: "false"
+      FORCE_PUBLISH: ${{ github.event_name == 'workflow_dispatch' }}
+      PUBLISH_RECENT_WINDOW_MINUTES: "100"
+      PUBLISH_MAX_ATTEMPTS: "3"
       LOG_LEVEL: INFO
     steps:
       - uses: actions/checkout@v7
@@ -34,11 +41,43 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: python -m pip install -r requirements.txt
-      - name: Select a working Lalafo proxy
-        run: python -m scripts.select_lalafo_proxy >> "$GITHUB_ENV"
-      - run: alembic upgrade head
-      - name: Publish up to 80 new apartments
-        run: python -m scripts.scrape_publish
+      - name: Select working Lalafo proxies with recovery
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            if python -m scripts.select_lalafo_proxy > lalafo-proxy.env; then
+              cat lalafo-proxy.env >> "$GITHUB_ENV"
+              exit 0
+            fi
+            sleep $((attempt * 10))
+          done
+          echo "::warning::No verified proxy was available; trying the direct Lalafo route"
+          echo "LALAFO_PROXY_URL=" >> "$GITHUB_ENV"
+      - name: Upgrade database with retries
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            alembic upgrade head && exit 0
+            sleep $((attempt * 10))
+          done
+          exit 1
+      - name: Publish up to 80 apartments with full-cycle recovery
+        run: python -m scripts.publish_if_due
       - name: Refresh buttons on published cards
         if: success()
-        run: python -m scripts.sync_published_keyboards
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            python -m scripts.sync_published_keyboards && exit 0
+            sleep $((attempt * 10))
+          done
+          exit 1
+      - name: Notify administrator after final failure
+        if: failure()
+        continue-on-error: true
+        env:
+          GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: >-
+          python -m scripts.notify_admin
+          "⚠️ Автопубликация квартир не восстановилась после повторных попыток."
+
