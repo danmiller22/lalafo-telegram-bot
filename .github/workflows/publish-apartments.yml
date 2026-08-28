@@ -37,7 +37,7 @@ jobs:
       MAX_NEW_POSTS_PER_RUN: "80"
       ALLOW_NO_DISTRICT: "false"
       FORCE_PUBLISH: ${{ github.event_name == 'workflow_dispatch' && inputs.force_publish }}
-      PUBLISH_RECENT_WINDOW_MINUTES: "100"
+      PUBLISH_RECENT_WINDOW_MINUTES: "120"
       PUBLISH_MAX_ATTEMPTS: "3"
       LOG_LEVEL: INFO
     steps:
@@ -86,5 +86,6 @@ jobs:
         run: >-
           python -m scripts.notify_admin
           "⚠️ Автопубликация квартир не восстановилась после повторных попыток."
+
 
 
