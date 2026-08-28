@@ -89,6 +89,40 @@ class ApartmentRepository:
             )
             return result.first() is not None
 
+    async def duplicate_candidate_ids(self, ads: list[LalafoAd]) -> set[int]:
+        """Resolve all ID/fingerprint/contact duplicates in one database trip."""
+        if not ads:
+            return set()
+        fingerprints = {ad_fingerprint(ad) for ad in ads}
+        phones = {ad.phone for ad in ads if ad.phone}
+        lalafo_ids = {ad.lalafo_id for ad in ads}
+        async with self.sessions() as session:
+            rows = (
+                await session.execute(
+                    select(
+                        Apartment.lalafo_id,
+                        Apartment.fingerprint,
+                        Apartment.phone,
+                        Apartment.active,
+                    ).where(
+                        Apartment.publication_status == "published",
+                        (Apartment.lalafo_id.in_(lalafo_ids))
+                        | (Apartment.fingerprint.in_(fingerprints))
+                        | (Apartment.phone.in_(phones)),
+                    )
+                )
+            ).all()
+        duplicate_ids = {row.lalafo_id for row in rows if row.lalafo_id in lalafo_ids}
+        duplicate_fingerprints = {row.fingerprint for row in rows}
+        duplicate_phones = {row.phone for row in rows if row.active}
+        return {
+            ad.lalafo_id
+            for ad in ads
+            if ad.lalafo_id in duplicate_ids
+            or ad_fingerprint(ad) in duplicate_fingerprints
+            or ad.phone in duplicate_phones
+        }
+
     async def upsert_discovered(self, ad: LalafoAd) -> Apartment:
         fingerprint = ad_fingerprint(ad)
         async with self.sessions.begin() as session:

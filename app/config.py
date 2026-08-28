@@ -165,6 +165,13 @@ class Settings(BaseSettings):
     hosted_apartment_scheduler_enabled: bool = True
     hosted_apartment_scheduler_check_seconds: float = 60.0
     hosted_apartment_publish_interval_minutes: int = 120
+    apartment_detail_concurrency: int = 6
+    # Keep each public album adjacent to its card. Speed comes from direct
+    # Telegram URL fetches and concurrent Lalafo detail collection.
+    apartment_publish_concurrency: int = 1
+    apartment_cycle_timeout_seconds: float = 1_500.0
+    apartment_publication_lease_seconds: int = 300
+    apartment_publication_heartbeat_seconds: float = 60.0
     city: str = "Бишкек"
     min_price: int = 8_000
     max_price: int = 35_000

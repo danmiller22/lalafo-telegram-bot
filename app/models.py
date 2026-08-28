@@ -61,6 +61,27 @@ class Apartment(Base):
     payments: Mapped[list["PaymentRequest"]] = relationship(back_populates="apartment")
 
 
+class ApartmentPublicationSchedule(Base):
+    """Single shared clock and lease for the two-hour apartment publisher."""
+
+    __tablename__ = "apartment_publication_schedule"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="idle"
+    )
+    lease_token: Mapped[str | None] = mapped_column(String(64), unique=True)
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_published_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow
+    )
+
+
 class PaymentRequest(Base):
     __tablename__ = "payment_requests"
     __table_args__ = (

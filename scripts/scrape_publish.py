@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import AsyncExitStack
 import logging
 import math
 import re
 
 from app.config import DEFAULT_SEARCH_URL, get_settings
 from app.lalafo.client import LalafoClient, LalafoError, LalafoNotFound
-from app.lalafo.models import LalafoAd
+from app.lalafo.models import LalafoAd, SearchAd
 from app.lalafo.parser import LalafoParseError, is_allowed
 from app.lalafo.phone import mask_phone
 from app.lalafo.subletting import halve_subletting_candidates
@@ -67,6 +68,42 @@ SOURCE_MAX_PRICE = 35_000
 SOURCE_MAX_SEARCH_PAGES = 50
 PREFERRED_BATCH_SHARE = 0.70
 MAX_CANDIDATE_POOL = 200
+
+
+async def fetch_detail_batch(
+    search_ads: list[SearchAd],
+    clients: list[LalafoClient],
+) -> list[tuple[SearchAd, LalafoAd | None]]:
+    """Fetch details concurrently without sharing a rotating HTTP client."""
+    chunks = [search_ads[index :: len(clients)] for index in range(len(clients))]
+
+    async def worker(client: LalafoClient, items):
+        results = []
+        for search_ad in items:
+            try:
+                ad = await client.detail(search_ad.detail_url)
+            except LalafoNotFound:
+                logger.info("Skipping unavailable ad id=%s", search_ad.lalafo_id)
+                ad = None
+            except (LalafoError, LalafoParseError, ValueError) as exc:
+                logger.warning(
+                    "Skipping broken ad id=%s error=%s",
+                    search_ad.lalafo_id,
+                    type(exc).__name__,
+                )
+                ad = None
+            results.append((search_ad, ad))
+        return results
+
+    batches = await asyncio.gather(
+        *(worker(client, chunk) for client, chunk in zip(clients, chunks) if chunk)
+    )
+    by_id = {
+        search_ad.lalafo_id: (search_ad, ad)
+        for batch in batches
+        for search_ad, ad in batch
+    }
+    return [by_id[search_ad.lalafo_id] for search_ad in search_ads]
 
 
 def is_preferred_district(district: str | None) -> bool:
@@ -165,11 +202,24 @@ async def run() -> int:
             return 2
         apartments = ApartmentRepository(sessions)
 
-    async with LalafoClient(
-        timeout=settings.http_timeout_seconds,
-        max_retries=settings.http_max_retries,
-        proxy_url=settings.lalafo_proxy_url,
-    ) as client:
+    async with AsyncExitStack() as stack:
+        client = await stack.enter_async_context(
+            LalafoClient(
+                timeout=settings.http_timeout_seconds,
+                max_retries=settings.http_max_retries,
+                proxy_url=settings.lalafo_proxy_url,
+            )
+        )
+        detail_clients = [
+            await stack.enter_async_context(
+                LalafoClient(
+                    timeout=settings.http_timeout_seconds,
+                    max_retries=settings.http_max_retries,
+                    proxy_url=settings.lalafo_proxy_url,
+                )
+            )
+            for _ in range(max(1, min(12, settings.apartment_detail_concurrency)))
+        ]
         page_number = 1
         while len(candidates) < candidate_pool_limit:
             try:
@@ -202,9 +252,8 @@ async def run() -> int:
                 if apartments is not None
                 else set()
             )
+            detail_search_ads = []
             for search_ad in page.items:
-                if len(candidates) >= candidate_pool_limit:
-                    break
                 is_repost = search_ad.lalafo_id in repostable_ids
                 if state.contains(search_ad.lalafo_id) and not is_repost:
                     continue
@@ -218,18 +267,21 @@ async def run() -> int:
                     continue
                 if settings.only_with_photos and not search_ad.photo_urls:
                     continue
-                try:
-                    ad = await client.detail(search_ad.detail_url)
-                except LalafoNotFound:
-                    logger.info("Skipping unavailable ad id=%s", search_ad.lalafo_id)
+                detail_search_ads.append(search_ad)
+
+            details = await fetch_detail_batch(detail_search_ads, detail_clients)
+            parsed_ads = [ad for _, ad in details if ad is not None]
+            duplicate_ids = (
+                await apartments.duplicate_candidate_ids(parsed_ads)
+                if apartments is not None
+                else set()
+            )
+            for search_ad, ad in details:
+                if len(candidates) >= candidate_pool_limit:
+                    break
+                if ad is None:
                     continue
-                except (LalafoError, LalafoParseError, ValueError) as exc:
-                    logger.warning(
-                        "Skipping broken ad id=%s error=%s",
-                        search_ad.lalafo_id,
-                        type(exc).__name__,
-                    )
-                    continue
+                is_repost = search_ad.lalafo_id in repostable_ids
                 allowed, reason = is_allowed(
                     ad,
                     city=settings.city,
@@ -250,11 +302,7 @@ async def run() -> int:
                     continue
                 if state.contains(ad.lalafo_id, ad_fingerprint(ad)) and not is_repost:
                     continue
-                if (
-                    apartments is not None
-                    and await apartments.is_duplicate(ad)
-                    and not is_repost
-                ):
+                if ad.lalafo_id in duplicate_ids and not is_repost:
                     logger.info("Skipping DB duplicate id=%s", ad.lalafo_id)
                     continue
                 if ad.phone in candidate_phones:
@@ -335,21 +383,24 @@ async def run() -> int:
     )
     published = 0
     publish_failures = 0
-    try:
-        for ad in candidates:
+    publish_semaphore = asyncio.Semaphore(
+        max(1, min(5, settings.apartment_publish_concurrency))
+    )
+
+    async def publish_one(ad: LalafoAd) -> tuple[LalafoAd, int | None, bool]:
+        async with publish_semaphore:
             if (
                 await apartments.is_duplicate(ad)
                 and ad.lalafo_id not in repost_candidate_ids
             ):
                 logger.info("Skipping DB duplicate id=%s", ad.lalafo_id)
-                continue
+                return ad, None, False
             apartment = await apartments.upsert_discovered(ad)
             try:
                 message = await publisher.publish(apartment.id, ad)
             except TelegramPublishError as exc:
                 logger.error("Publish failed for id=%s: %s", ad.lalafo_id, exc)
-                publish_failures += 1
-                continue
+                return ad, None, True
             for attempt in range(5):
                 try:
                     await apartments.mark_published(
@@ -357,10 +408,14 @@ async def run() -> int:
                         chat_id=settings.telegram_group_id,
                         message_id=message.message_id,
                     )
-                    break
+                    return ad, message.message_id, False
                 except Exception:
                     if attempt == 4:
-                        raise
+                        logger.exception(
+                            "Database acknowledgement permanently failed for id=%s",
+                            ad.lalafo_id,
+                        )
+                        return ad, None, True
                     wait_seconds = 2**attempt
                     logger.warning(
                         "Database acknowledgement failed for id=%s; retrying in %ds",
@@ -368,8 +423,16 @@ async def run() -> int:
                         wait_seconds,
                     )
                     await asyncio.sleep(wait_seconds)
-            state.add(ad, telegram_message_id=message.message_id)
-            published += 1
+        return ad, None, True
+
+    try:
+        results = await asyncio.gather(*(publish_one(ad) for ad in candidates))
+        for ad, message_id, failed in results:
+            if failed:
+                publish_failures += 1
+            elif message_id is not None:
+                state.add(ad, telegram_message_id=message_id)
+                published += 1
     finally:
         await bot.session.close()
         await engine.dispose()

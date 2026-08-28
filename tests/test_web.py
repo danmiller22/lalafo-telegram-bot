@@ -35,6 +35,10 @@ def configure(monkeypatch: pytest.MonkeyPatch) -> None:
         last_error=None,
         recent_published_count=None,
         latest_published_at=None,
+        schedule_status=None,
+        schedule_due=None,
+        schedule_last_started_at=None,
+        schedule_last_completed_at=None,
     )
     yield
     get_settings.cache_clear()
@@ -148,6 +152,24 @@ async def test_hosted_scheduler_runs_due_check_without_forcing_duplicates(
     select_proxies = AsyncMock()
     run_if_due = AsyncMock(return_value=0)
     publication_status = AsyncMock(side_effect=[(0, None), (5, None)])
+    schedule_status = AsyncMock(
+        side_effect=[
+            SimpleNamespace(
+                status="idle",
+                due=True,
+                lease_active=False,
+                last_started_at=None,
+                last_completed_at=None,
+            ),
+            SimpleNamespace(
+                status="succeeded",
+                due=False,
+                lease_active=False,
+                last_started_at=None,
+                last_completed_at=None,
+            ),
+        ]
+    )
     monkeypatch.setattr(web, "_select_hosted_lalafo_proxies", select_proxies)
     monkeypatch.setattr(scripts.publish_if_due, "run", run_if_due)
     monkeypatch.setattr(
@@ -155,16 +177,22 @@ async def test_hosted_scheduler_runs_due_check_without_forcing_duplicates(
         "publication_window_status",
         publication_status,
     )
+    monkeypatch.setattr(
+        scripts.publish_if_due,
+        "publication_schedule_status",
+        schedule_status,
+    )
 
     assert await web._execute_due_apartment_cycle() == 0
 
     select_proxies.assert_awaited_once()
     run_if_due.assert_awaited_once_with(
-        force=True,
+        force=False,
         window_minutes=120,
         max_attempts=3,
     )
     assert publication_status.await_count == 2
+    assert schedule_status.await_count == 2
     assert web._apartment_scheduler_state["recent_published_count"] == 5
     assert web._apartment_scheduler_state["last_exit_code"] == 0
     assert web._apartment_scheduler_state["running_cycle"] is False

@@ -41,6 +41,10 @@ _apartment_scheduler_state: dict[str, Any] = {
     "last_error": None,
     "recent_published_count": None,
     "latest_published_at": None,
+    "schedule_status": None,
+    "schedule_due": None,
+    "schedule_last_started_at": None,
+    "schedule_last_completed_at": None,
 }
 
 
@@ -180,9 +184,13 @@ async def _execute_due_apartment_cycle() -> int:
             last_exit_code=None,
         )
         try:
+            from scripts.publish_if_due import publication_schedule_status
             from scripts.publish_if_due import publication_window_status
             from scripts.publish_if_due import run as run_if_due
 
+            schedule = await publication_schedule_status(
+                window_minutes=settings.hosted_apartment_publish_interval_minutes
+            )
             recent_count, latest_published_at = await publication_window_status(
                 window_minutes=settings.hosted_apartment_publish_interval_minutes
             )
@@ -191,22 +199,39 @@ async def _execute_due_apartment_cycle() -> int:
                 latest_published_at=(
                     latest_published_at.isoformat() if latest_published_at else None
                 ),
+                schedule_status=schedule.status,
+                schedule_due=schedule.due,
+                schedule_last_started_at=(
+                    schedule.last_started_at.isoformat()
+                    if schedule.last_started_at
+                    else None
+                ),
+                schedule_last_completed_at=(
+                    schedule.last_completed_at.isoformat()
+                    if schedule.last_completed_at
+                    else None
+                ),
             )
-            if recent_count:
+            if not schedule.due:
                 _apartment_scheduler_state["last_exit_code"] = 0
                 _run_state["last_exit_code"] = 0
                 logger.info(
-                    "Hosted scheduler skipped: %d cards were published in the last %d minutes",
-                    recent_count,
-                    settings.hosted_apartment_publish_interval_minutes,
+                    "Hosted scheduler skipped by shared clock: status=%s lease_active=%s "
+                    "last_started_at=%s",
+                    schedule.status,
+                    schedule.lease_active,
+                    schedule.last_started_at,
                 )
                 return 0
 
             await _select_hosted_lalafo_proxies()
             exit_code = await run_if_due(
-                force=True,
+                force=False,
                 window_minutes=settings.hosted_apartment_publish_interval_minutes,
                 max_attempts=3,
+            )
+            after_schedule = await publication_schedule_status(
+                window_minutes=settings.hosted_apartment_publish_interval_minutes
             )
             after_count, after_latest = await publication_window_status(
                 window_minutes=settings.hosted_apartment_publish_interval_minutes
@@ -214,6 +239,18 @@ async def _execute_due_apartment_cycle() -> int:
             _apartment_scheduler_state.update(
                 recent_published_count=after_count,
                 latest_published_at=after_latest.isoformat() if after_latest else None,
+                schedule_status=after_schedule.status,
+                schedule_due=after_schedule.due,
+                schedule_last_started_at=(
+                    after_schedule.last_started_at.isoformat()
+                    if after_schedule.last_started_at
+                    else None
+                ),
+                schedule_last_completed_at=(
+                    after_schedule.last_completed_at.isoformat()
+                    if after_schedule.last_completed_at
+                    else None
+                ),
                 last_error=(
                     "NoApartmentsPublished"
                     if exit_code == 0 and after_count == 0
