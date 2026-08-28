@@ -163,7 +163,7 @@ class Settings(BaseSettings):
     lalafo_auto_reply_watchdog_seconds: float = 30.0
     lalafo_auto_reply_stale_seconds: float = 180.0
     hosted_apartment_scheduler_enabled: bool = True
-    hosted_apartment_scheduler_check_seconds: float = 300.0
+    hosted_apartment_scheduler_check_seconds: float = 60.0
     hosted_apartment_publish_interval_minutes: int = 120
     city: str = "Бишкек"
     min_price: int = 8_000
