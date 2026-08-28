@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
 from app.featured.repository import FeaturedRepository
-from app.models import Apartment, PaymentRequest
+from app.models import Apartment, DailyFeaturedPublication, PaymentRequest
 
 
 @pytest.mark.asyncio
@@ -54,6 +54,49 @@ async def test_reservation_keeps_different_source_when_slot_is_occupied(reposito
     duplicate = await repo.reserve(date(2026, 8, 27), 2, apartment_ids[1], 9051)
     assert (first.slot, second.slot) == (1, 2)
     assert duplicate.id == second.id
+
+
+@pytest.mark.asyncio
+async def test_featured_lifecycle_notifications_are_one_time(repositories) -> None:
+    _, _, sessions = repositories
+    now = datetime.now(timezone.utc)
+    async with sessions.begin() as session:
+        apartment = Apartment(
+            lalafo_id=9070, source_url="https://source/events",
+            phone="+996700000070", fingerprint="events", price=25000,
+            rooms="1", district="ЦУМ", city="Бишкек",
+            photo_urls=["https://img"],
+        )
+        session.add(apartment)
+        await session.flush()
+        publication = DailyFeaturedPublication(
+            business_date=date(2026, 8, 27), slot=1,
+            source_apartment_id=apartment.id, source_lalafo_id=9070,
+            managed_lalafo_ad_id=115700070,
+            managed_lalafo_ad_url="https://lalafo.kg/bishkek/ads/id-115700070",
+            lalafo_publication_status="active", telegram_message_id=70070,
+            created_at=now - timedelta(hours=19),
+        )
+        session.add(publication)
+        await session.flush()
+        publication_id = publication.id
+
+    repo = FeaturedRepository(sessions)
+    assert [row.id for row in await repo.pending_new_notifications()] == [publication_id]
+    assert [row.id for row in await repo.expiring_soon(now)] == [publication_id]
+
+    await repo.patch(
+        publication_id, new_ad_notified_at=now, expiring_notified_at=now
+    )
+    assert await repo.pending_new_notifications() == []
+    assert await repo.expiring_soon(now) == []
+
+    await repo.patch(publication_id, deactivated_at=now)
+    assert [
+        row.id for row in await repo.pending_deactivation_notifications()
+    ] == [publication_id]
+    await repo.patch(publication_id, deactivated_notified_at=now)
+    assert await repo.pending_deactivation_notifications() == []
 
 
 @pytest.mark.asyncio

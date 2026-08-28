@@ -284,12 +284,56 @@ class FeaturedRepository:
             ))
             return list(rows)
 
+    async def expiring_soon(
+        self, now: datetime | None = None
+    ) -> list[DailyFeaturedPublication]:
+        """Return active ads in the two-hour window before the 20-hour cutoff."""
+        current = now or datetime.now(timezone.utc)
+        warning_cutoff = current - timedelta(hours=18)
+        deactivation_cutoff = current - timedelta(hours=20)
+        async with self.sessions() as session:
+            rows = await session.scalars(
+                select(DailyFeaturedPublication).where(
+                    DailyFeaturedPublication.created_at <= warning_cutoff,
+                    DailyFeaturedPublication.created_at > deactivation_cutoff,
+                    DailyFeaturedPublication.deactivated_at.is_(None),
+                    DailyFeaturedPublication.managed_lalafo_ad_id.is_not(None),
+                    DailyFeaturedPublication.expiring_notified_at.is_(None),
+                )
+            )
+            return list(rows)
+
+    async def pending_new_notifications(self) -> list[DailyFeaturedPublication]:
+        async with self.sessions() as session:
+            rows = await session.scalars(
+                select(DailyFeaturedPublication).where(
+                    DailyFeaturedPublication.new_ad_notified_at.is_(None),
+                    DailyFeaturedPublication.lalafo_publication_status == "active",
+                    DailyFeaturedPublication.managed_lalafo_ad_id.is_not(None),
+                    DailyFeaturedPublication.telegram_message_id.is_not(None),
+                )
+            )
+            return list(rows)
+
+    async def pending_deactivation_notifications(
+        self,
+    ) -> list[DailyFeaturedPublication]:
+        async with self.sessions() as session:
+            rows = await session.scalars(
+                select(DailyFeaturedPublication).where(
+                    DailyFeaturedPublication.deactivated_at.is_not(None),
+                    DailyFeaturedPublication.deactivated_notified_at.is_(None),
+                )
+            )
+            return list(rows)
+
     async def patch(self, row_id: int, **values: object) -> DailyFeaturedPublication:
         allowed = {
             "managed_lalafo_temp_id", "managed_lalafo_uploaded_photos",
             "managed_lalafo_ad_id", "managed_lalafo_ad_url", "campaign_id",
             "campaign_status", "campaign_daily_budget", "lalafo_publication_status",
             "telegram_message_id", "telegram_chat_id", "deactivated_at", "last_error",
+            "new_ad_notified_at", "expiring_notified_at", "deactivated_notified_at",
         }
         unknown = set(values) - allowed
         if unknown:

@@ -159,6 +159,9 @@ class DailyFeaturedPublication(Base):
     telegram_chat_id: Mapped[int | None] = mapped_column(BigInteger)
     last_telegram_repeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     deactivated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    new_ad_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expiring_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deactivated_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow

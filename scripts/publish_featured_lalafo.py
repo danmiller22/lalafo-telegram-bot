@@ -75,12 +75,62 @@ def extract_id(payload: dict, *keys: str) -> int | None:
     return None
 
 
-async def notify(bot: Bot | None, admin_id: int, text: str) -> None:
+async def notify(bot: Bot | None, admin_id: int, text: str) -> bool:
     if bot is not None and admin_id:
         try:
             await bot.send_message(admin_id, text[:4000])
+            return True
         except Exception:
             logger.exception("Could not send featured publication report")
+    return False
+
+
+async def emit_event_notifications(
+    repo: FeaturedRepository,
+    apartments: ApartmentRepository,
+    bot: Bot,
+    admin_id: int,
+) -> None:
+    """Send only durable, one-time lifecycle notifications."""
+    now = datetime.now(timezone.utc)
+
+    async def label(row) -> str:
+        apartment = (
+            await apartments.get(row.source_apartment_id)
+            if row.source_apartment_id is not None
+            else None
+        )
+        if apartment is None:
+            return f"объявление ID {row.managed_lalafo_ad_id}"
+        return f"{apartment.district or apartment.city}, {apartment.price} сом"
+
+    for row in await repo.pending_new_notifications():
+        message = (
+            f"🆕 Новая реклама опубликована\n"
+            f"🏠 {await label(row)}\n"
+            f"Lalafo: {row.managed_lalafo_ad_url}\n"
+            f"Telegram: сообщение {row.telegram_message_id}"
+        )
+        if await notify(bot, admin_id, message):
+            await repo.patch(row.id, new_ad_notified_at=now)
+
+    for row in await repo.expiring_soon(now):
+        message = (
+            f"⏳ До деактивации рекламы осталось около 2 часов\n"
+            f"🏠 {await label(row)}\n"
+            f"Lalafo: {row.managed_lalafo_ad_url}"
+        )
+        if await notify(bot, admin_id, message):
+            await repo.patch(row.id, expiring_notified_at=now)
+
+    for row in await repo.pending_deactivation_notifications():
+        message = (
+            f"⛔ Реклама деактивирована\n"
+            f"🏠 {await label(row)}\n"
+            f"Lalafo: {row.managed_lalafo_ad_url}"
+        )
+        if await notify(bot, admin_id, message):
+            await repo.patch(row.id, deactivated_notified_at=now)
 
 
 async def run() -> int:
@@ -143,7 +193,7 @@ async def run() -> int:
             max_photos=settings.featured_max_photos,
         )
         managed = LalafoManagedAdsClient(timeout=settings.http_timeout_seconds)
-        report = [f"Избранные квартиры — {business_date}"]
+        report: list[str] = []
         promotion_blocked = False
         try:
             login, password = settings.require_lalafo_auto_reply_credentials()
@@ -270,16 +320,11 @@ async def run() -> int:
                         )
                         changed = True
                     if changed:
-                        icon = "✅" if row.lalafo_publication_status == "active" else "⚠️"
-                        visibility = (
-                            "видно покупателям"
-                            if row.lalafo_publication_status == "active"
-                            else f"статус {row.lalafo_publication_status}; покупателям пока не видно"
-                        )
-                        report.append(
-                            f"{icon} {ad.district}, {ad.price} сом\n"
-                            f"Lalafo: {row.managed_lalafo_ad_url} — {visibility}\n"
-                            f"Telegram: сообщение {row.telegram_message_id}"
+                        logger.info(
+                            "Featured ad id=%s status=%s telegram_message=%s",
+                            row.managed_lalafo_ad_id,
+                            row.lalafo_publication_status,
+                            row.telegram_message_id,
                         )
                 except Exception as exc:
                     had_error = True
@@ -368,16 +413,15 @@ async def run() -> int:
                             f"Зарезервированный рекламный бюджет: "
                             f"{await repo.daily_committed_budget(business_date)} сом"
                         )
-            if len(report) > 1:
-                await notify(report_bot, settings.admin_user_id, "\n".join(report))
+            for line in report:
+                logger.info("Featured publication note: %s", line)
+            await emit_event_notifications(
+                repo, apartments, report_bot, settings.admin_user_id
+            )
             if had_error:
                 return 2
         except Exception as exc:
             logger.exception("Daily featured run failed safely")
-            await notify(
-                report_bot, settings.admin_user_id,
-                f"Ошибка избранных квартир: {type(exc).__name__}",
-            )
             return 2
         finally:
             await managed.close()
