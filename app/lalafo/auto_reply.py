@@ -33,6 +33,11 @@ PROXY_CHECK_URL = (
     "https://lalafo.kg/api/search/v3/feed/search?expand=url&per-page=1&"
     "category_id=2044&page=1&city_id=103184"
 )
+MAX_PROXY_CANDIDATES = 60
+PROXY_BATCH_SIZE = 10
+TARGET_WORKING_PROXIES = 2
+CONNECT_DEADLINE_SECONDS = 90.0
+SCAN_DEADLINE_SECONDS = 90.0
 
 
 class LalafoChatError(RuntimeError):
@@ -117,14 +122,21 @@ class LalafoChatClient:
                 return None
 
         selected: list[str] = []
-        for offset in range(0, min(len(proxies), 100), 20):
+        for offset in range(
+            0,
+            min(len(proxies), MAX_PROXY_CANDIDATES),
+            PROXY_BATCH_SIZE,
+        ):
             results = await asyncio.gather(
-                *(works(proxy) for proxy in proxies[offset : offset + 20])
+                *(
+                    works(proxy)
+                    for proxy in proxies[offset : offset + PROXY_BATCH_SIZE]
+                )
             )
             selected.extend(result for result in results if result)
-            if len(selected) >= 4:
+            if len(selected) >= TARGET_WORKING_PROXIES:
                 break
-        return selected[:4]
+        return selected[:TARGET_WORKING_PROXIES]
 
     def _headers(
         self, *, token: str = "", socket_id: str = "", bypass_cache: bool = False
@@ -499,8 +511,12 @@ class LalafoAutoResponder:
     async def run_once(self) -> int:
         """Connect, answer the latest incoming message in each chat, then return."""
         if not self._socket.connected:
-            await self._connect()
-        return await self.scan_once()
+            await asyncio.wait_for(
+                self._connect(), timeout=CONNECT_DEADLINE_SECONDS
+            )
+        return await asyncio.wait_for(
+            self.scan_once(), timeout=SCAN_DEADLINE_SECONDS
+        )
 
     async def _wait_for_wake(self) -> None:
         self._wake.clear()
@@ -514,8 +530,12 @@ class LalafoAutoResponder:
         while not self._stop.is_set():
             try:
                 if not self._socket.connected:
-                    await self._connect()
-                await self.scan_once()
+                    await asyncio.wait_for(
+                        self._connect(), timeout=CONNECT_DEADLINE_SECONDS
+                    )
+                await asyncio.wait_for(
+                    self.scan_once(), timeout=SCAN_DEADLINE_SECONDS
+                )
                 backoff = 5.0
                 self.consecutive_failures = 0
                 await self._wait_for_wake()

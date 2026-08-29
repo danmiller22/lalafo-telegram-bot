@@ -529,6 +529,9 @@ async def startup() -> None:
         level=getattr(logging, settings.log_level.upper(), logging.INFO),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+    # httpx logs every proxy probe at INFO. On the 0.1-vCPU free instance this
+    # noise can consume more CPU than the actual recovery work.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     settings.require_run_trigger_secret()
     if settings.run_bot:
         # Validate configuration synchronously, but do not wait for Telegram
