@@ -41,7 +41,7 @@ jobs:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       DRY_RUN: "false"
       TEST_MODE: "false"
-      MAX_NEW_POSTS_PER_RUN: "40"
+      MAX_NEW_POSTS_PER_RUN: "50"
       ALLOW_NO_DISTRICT: "false"
       FORCE_PUBLISH: ${{ github.event_name == 'workflow_dispatch' && inputs.force_publish }}
       PUBLISH_RECENT_WINDOW_MINUTES: "180"
@@ -74,7 +74,7 @@ jobs:
             sleep $((attempt * 10))
           done
           exit 1
-      - name: Publish up to 40 apartments with full-cycle recovery
+      - name: Publish up to 50 apartments with full-cycle recovery
         run: python -m scripts.publish_if_due
       - name: Refresh buttons on published cards
         if: success()
@@ -93,6 +93,7 @@ jobs:
         run: >-
           python -m scripts.notify_admin
           "⚠️ Автопубликация квартир не восстановилась после повторных попыток."
+
 
 
 
