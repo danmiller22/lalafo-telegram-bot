@@ -8,6 +8,7 @@ from contextlib import suppress
 from datetime import UTC, datetime
 from typing import Any
 
+import httpx
 from aiogram import Bot
 from aiogram.types import Update
 from fastapi import FastAPI, Header, HTTPException, Request, Response, status
@@ -32,6 +33,9 @@ _lalafo_auto_responder: LalafoAutoResponder | None = None
 _lalafo_watchdog_task: asyncio.Task[None] | None = None
 _lalafo_restart_lock = asyncio.Lock()
 _apartment_scheduler_task: asyncio.Task[None] | None = None
+_service_keepalive_task: asyncio.Task[None] | None = None
+_background_watchdog_task: asyncio.Task[None] | None = None
+_shutting_down = False
 _bot_setup_state: dict[str, Any] = {
     "state": "pending",
     "last_configured_at": None,
@@ -55,6 +59,18 @@ _apartment_scheduler_state: dict[str, Any] = {
     "schedule_last_started_at": None,
     "schedule_last_completed_at": None,
 }
+_service_keepalive_state: dict[str, Any] = {
+    "state": "pending",
+    "last_success_at": None,
+    "last_error": None,
+    "consecutive_failures": 0,
+}
+_background_watchdog_state: dict[str, Any] = {
+    "state": "pending",
+    "last_check_at": None,
+    "last_error": None,
+    "restart_count": 0,
+}
 
 
 def _now() -> str:
@@ -72,29 +88,40 @@ def _authorize(authorization: str | None) -> None:
         )
 
 
-async def _configure_main_bot() -> None:
-    """Keep Telegram setup off the application startup critical path."""
+async def _configure_main_bot_once() -> None:
+    """Apply the webhook/profile with a deadline outside startup."""
     settings = get_settings()
+    runtime = _bot_runtime
+    if runtime is None:
+        return
+    async with asyncio.timeout(30.0):
+        await runtime.bot.set_webhook(
+            settings.require_telegram_webhook_url(),
+            secret_token=settings.require_telegram_webhook_secret(),
+            allowed_updates=runtime.dispatcher.resolve_used_update_types(),
+            drop_pending_updates=False,
+        )
+        await configure_bot_profile(runtime)
+
+
+async def _configure_main_bot() -> None:
+    """Continuously repair Telegram configuration without blocking customers."""
     backoff = 2.0
     while True:
-        runtime = _bot_runtime
-        if runtime is None:
-            return
         try:
-            await runtime.bot.set_webhook(
-                settings.require_telegram_webhook_url(),
-                secret_token=settings.require_telegram_webhook_secret(),
-                allowed_updates=runtime.dispatcher.resolve_used_update_types(),
-                drop_pending_updates=False,
-            )
-            await configure_bot_profile(runtime)
+            if _bot_runtime is None:
+                return
+            await _configure_main_bot_once()
             _bot_setup_state.update(
                 state="ready",
                 last_configured_at=_now(),
                 last_error=None,
             )
             logger.info("Telegram webhook and commands are ready")
-            return
+            backoff = 2.0
+            # Re-assert the webhook periodically in case an external tool or an
+            # old deployment overwrites it. This call is idempotent.
+            await asyncio.sleep(6 * 60 * 60)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -105,6 +132,45 @@ async def _configure_main_bot() -> None:
             logger.exception("Telegram background setup failed; retrying")
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 60.0)
+
+
+async def _keep_service_awake() -> None:
+    """Generate minimal inbound traffic so Koyeb Free does not cold-sleep."""
+    settings = get_settings()
+    health_url = settings.require_public_base_url() + "/health"
+    interval = max(300.0, settings.service_keepalive_seconds)
+    retry_interval = min(60.0, interval)
+    timeout = max(3.0, settings.service_keepalive_timeout_seconds)
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(timeout),
+        follow_redirects=True,
+        headers={"User-Agent": "lalafo-payment-bot-keepalive/1"},
+    ) as client:
+        while True:
+            delay = interval
+            try:
+                response = await client.get(health_url)
+                response.raise_for_status()
+                _service_keepalive_state.update(
+                    state="running",
+                    last_success_at=_now(),
+                    last_error=None,
+                    consecutive_failures=0,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                failures = int(
+                    _service_keepalive_state.get("consecutive_failures") or 0
+                ) + 1
+                _service_keepalive_state.update(
+                    state="recovering",
+                    last_error=type(exc).__name__,
+                    consecutive_failures=failures,
+                )
+                logger.warning("Free-cloud keepalive failed: %s", type(exc).__name__)
+                delay = retry_interval
+            await asyncio.sleep(delay)
 
 
 async def _remove_legacy_featured_webhook() -> None:
@@ -350,12 +416,115 @@ async def _run_hosted_apartment_scheduler() -> None:
         await asyncio.sleep(check_seconds)
 
 
+def _task_stopped(task: asyncio.Task[None] | None) -> bool:
+    return task is None or task.done()
+
+
+def _task_error_name(task: asyncio.Task[None] | None) -> str | None:
+    if task is None or not task.done() or task.cancelled():
+        return None
+    try:
+        error = task.exception()
+    except asyncio.CancelledError:
+        return None
+    return type(error).__name__ if error is not None else "UnexpectedTaskExit"
+
+
+async def _repair_background_tasks_once() -> int:
+    """Restart only stopped workers; never replace the payment runtime."""
+    global _bot_setup_task, _lalafo_watchdog_task
+    global _apartment_scheduler_task, _service_keepalive_task
+    settings = get_settings()
+    if _shutting_down:
+        return 0
+    restarted = 0
+
+    if settings.run_bot and _task_stopped(_bot_setup_task):
+        logger.error(
+            "Restarting Telegram setup maintainer after %s",
+            _task_error_name(_bot_setup_task) or "stop",
+        )
+        _bot_setup_task = asyncio.create_task(
+            _configure_main_bot(), name="telegram-setup-maintainer"
+        )
+        restarted += 1
+
+    if (
+        settings.run_bot
+        and settings.hosted_apartment_scheduler_enabled
+        and _task_stopped(_apartment_scheduler_task)
+    ):
+        logger.error(
+            "Restarting apartment scheduler after %s",
+            _task_error_name(_apartment_scheduler_task) or "stop",
+        )
+        _apartment_scheduler_task = asyncio.create_task(
+            _run_hosted_apartment_scheduler(), name="apartment-scheduler"
+        )
+        restarted += 1
+
+    if settings.lalafo_auto_reply_enabled and _task_stopped(_lalafo_watchdog_task):
+        logger.error(
+            "Restarting Lalafo watchdog after %s",
+            _task_error_name(_lalafo_watchdog_task) or "stop",
+        )
+        _lalafo_watchdog_task = asyncio.create_task(
+            _watch_lalafo_auto_responder(), name="lalafo-auto-reply-watchdog"
+        )
+        restarted += 1
+
+    if (
+        settings.run_bot
+        and settings.service_keepalive_enabled
+        and _task_stopped(_service_keepalive_task)
+    ):
+        logger.error(
+            "Restarting free-cloud keepalive after %s",
+            _task_error_name(_service_keepalive_task) or "stop",
+        )
+        _service_keepalive_task = asyncio.create_task(
+            _keep_service_awake(), name="free-cloud-keepalive"
+        )
+        restarted += 1
+
+    if restarted:
+        _background_watchdog_state["restart_count"] = int(
+            _background_watchdog_state.get("restart_count") or 0
+        ) + restarted
+    return restarted
+
+
+async def _watch_background_tasks() -> None:
+    interval = max(10.0, get_settings().background_watchdog_seconds)
+    while True:
+        try:
+            await asyncio.sleep(interval)
+            await _repair_background_tasks_once()
+            _background_watchdog_state.update(
+                state="running",
+                last_check_at=_now(),
+                last_error=None,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            # This outer watchdog must itself survive every individual repair.
+            _background_watchdog_state.update(
+                state="recovering",
+                last_check_at=_now(),
+                last_error=type(exc).__name__,
+            )
+            logger.exception("Background watchdog cycle failed")
+
+
 @app.on_event("startup")
 async def startup() -> None:
     global _bot_runtime, _bot_setup_task, _legacy_featured_cleanup_task
     global _keyboard_sync_task, _lalafo_auto_responder
     global _lalafo_watchdog_task, _apartment_scheduler_task
+    global _service_keepalive_task, _background_watchdog_task, _shutting_down
     settings = get_settings()
+    _shutting_down = False
     logging.basicConfig(
         level=getattr(logging, settings.log_level.upper(), logging.INFO),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
@@ -368,23 +537,43 @@ async def startup() -> None:
         settings.require_telegram_webhook_secret()
         _bot_runtime = await create_runtime()
         _bot_setup_state.update(state="configuring", last_error=None)
-        _bot_setup_task = asyncio.create_task(_configure_main_bot())
+        _bot_setup_task = asyncio.create_task(
+            _configure_main_bot(), name="telegram-setup-maintainer"
+        )
         logger.info("Telegram runtime ready; network setup continues in background")
-        _keyboard_sync_task = asyncio.create_task(_sync_outdated_keyboards())
+        _keyboard_sync_task = asyncio.create_task(
+            _sync_outdated_keyboards(), name="keyboard-sync"
+        )
         if settings.hosted_apartment_scheduler_enabled:
             _apartment_scheduler_task = asyncio.create_task(
-                _run_hosted_apartment_scheduler()
+                _run_hosted_apartment_scheduler(), name="apartment-scheduler"
             )
             logger.info("Hosted three-hour apartment scheduler enabled")
+        if settings.service_keepalive_enabled:
+            _service_keepalive_state.update(
+                state="starting",
+                last_error=None,
+                consecutive_failures=0,
+            )
+            _service_keepalive_task = asyncio.create_task(
+                _keep_service_awake(), name="free-cloud-keepalive"
+            )
+            logger.info("Free-cloud keepalive enabled")
     if settings.lalafo_auto_reply_enabled:
         _lalafo_auto_responder = _build_lalafo_auto_responder()
         _lalafo_auto_responder.start()
-        _lalafo_watchdog_task = asyncio.create_task(_watch_lalafo_auto_responder())
+        _lalafo_watchdog_task = asyncio.create_task(
+            _watch_lalafo_auto_responder(), name="lalafo-auto-reply-watchdog"
+        )
         logger.info("Lalafo cloud auto-reply supervisor enabled")
     # One harmless cleanup call disconnects the old advertising bot.  No
     # advertising runtime, route, scheduler, or publisher is started anymore.
     _legacy_featured_cleanup_task = asyncio.create_task(
-        _remove_legacy_featured_webhook()
+        _remove_legacy_featured_webhook(), name="retired-advertising-bot-cleanup"
+    )
+    _background_watchdog_state.update(state="starting", last_error=None)
+    _background_watchdog_task = asyncio.create_task(
+        _watch_background_tasks(), name="background-task-watchdog"
     )
 
 
@@ -393,6 +582,18 @@ async def shutdown() -> None:
     global _bot_runtime, _bot_setup_task, _legacy_featured_cleanup_task
     global _keyboard_sync_task, _lalafo_auto_responder
     global _lalafo_watchdog_task, _apartment_scheduler_task
+    global _service_keepalive_task, _background_watchdog_task, _shutting_down
+    _shutting_down = True
+    if _background_watchdog_task is not None and not _background_watchdog_task.done():
+        _background_watchdog_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await _background_watchdog_task
+    _background_watchdog_task = None
+    if _service_keepalive_task is not None and not _service_keepalive_task.done():
+        _service_keepalive_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await _service_keepalive_task
+    _service_keepalive_task = None
     if _bot_setup_task is not None and not _bot_setup_task.done():
         _bot_setup_task.cancel()
         with suppress(asyncio.CancelledError):
@@ -460,6 +661,12 @@ async def health() -> JSONResponse:
             "telegram_setup": (
                 dict(_bot_setup_state) if settings.run_bot else "disabled"
             ),
+            "free_cloud_keepalive": (
+                dict(_service_keepalive_state)
+                if settings.run_bot and settings.service_keepalive_enabled
+                else "disabled"
+            ),
+            "background_watchdog": dict(_background_watchdog_state),
             "lalafo_auto_reply": auto_reply,
             "apartment_scheduler": (
                 {

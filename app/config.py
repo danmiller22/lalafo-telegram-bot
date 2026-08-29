@@ -165,6 +165,13 @@ class Settings(BaseSettings):
     lalafo_auto_reply_stale_seconds: float = 180.0
     hosted_apartment_scheduler_enabled: bool = True
     hosted_apartment_scheduler_check_seconds: float = 60.0
+    # The free Koyeb web instance sleeps after one hour without inbound HTTP
+    # traffic.  A small request through the public URL keeps the webhook and
+    # Lalafo responder warm without requiring a paid worker service.
+    service_keepalive_enabled: bool = True
+    service_keepalive_seconds: float = 900.0
+    service_keepalive_timeout_seconds: float = 15.0
+    background_watchdog_seconds: float = 30.0
     # Fixed product schedule. Keeping this outside environment-controlled
     # settings prevents a stale cloud variable from restoring the old cadence.
     hosted_apartment_publish_interval_minutes: int = APARTMENT_PUBLISH_INTERVAL_MINUTES

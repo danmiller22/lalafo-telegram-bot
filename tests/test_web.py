@@ -30,6 +30,9 @@ def configure(monkeypatch: pytest.MonkeyPatch) -> None:
     web._lalafo_auto_responder = None
     web._lalafo_watchdog_task = None
     web._apartment_scheduler_task = None
+    web._service_keepalive_task = None
+    web._background_watchdog_task = None
+    web._shutting_down = False
     web._bot_setup_state.update(
         state="pending",
         last_configured_at=None,
@@ -47,6 +50,18 @@ def configure(monkeypatch: pytest.MonkeyPatch) -> None:
         schedule_last_started_at=None,
         schedule_last_completed_at=None,
     )
+    web._service_keepalive_state.update(
+        state="pending",
+        last_success_at=None,
+        last_error=None,
+        consecutive_failures=0,
+    )
+    web._background_watchdog_state.update(
+        state="pending",
+        last_check_at=None,
+        last_error=None,
+        restart_count=0,
+    )
     yield
     get_settings.cache_clear()
 
@@ -61,6 +76,13 @@ async def test_health_and_authentication() -> None:
             "status": "ok",
             "bot": "disabled",
             "telegram_setup": "disabled",
+            "free_cloud_keepalive": "disabled",
+            "background_watchdog": {
+                "state": "pending",
+                "last_check_at": None,
+                "last_error": None,
+                "restart_count": 0,
+            },
             "lalafo_auto_reply": "disabled",
             "apartment_scheduler": "disabled",
         }
@@ -153,7 +175,7 @@ async def test_health_keeps_payment_bot_live_when_scheduler_is_recovering(
 
 
 @pytest.mark.asyncio
-async def test_telegram_network_setup_runs_outside_startup_path(
+async def test_telegram_network_setup_has_a_bounded_one_shot_operation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("RUN_BOT", "true")
@@ -169,11 +191,83 @@ async def test_telegram_network_setup_runs_outside_startup_path(
     web._bot_runtime = runtime  # type: ignore[assignment]
     monkeypatch.setattr(web, "configure_bot_profile", configure_profile)
 
-    await web._configure_main_bot()
+    await web._configure_main_bot_once()
 
     bot.set_webhook.assert_awaited_once()
     configure_profile.assert_awaited_once_with(runtime)
-    assert web._bot_setup_state["state"] == "ready"
+
+
+@pytest.mark.asyncio
+async def test_free_cloud_keepalive_uses_public_health_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        "TELEGRAM_WEBHOOK_URL", "https://service.example/telegram/webhook"
+    )
+    get_settings.cache_clear()
+    requested = asyncio.Event()
+    urls: list[str] = []
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+    class FakeClient:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args) -> None:
+            return None
+
+        async def get(self, url: str):
+            urls.append(url)
+            requested.set()
+            return FakeResponse()
+
+    monkeypatch.setattr(web.httpx, "AsyncClient", FakeClient)
+    task = asyncio.create_task(web._keep_service_awake())
+    await asyncio.wait_for(requested.wait(), timeout=1.0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert urls == ["https://service.example/health"]
+    assert web._service_keepalive_state["state"] == "running"
+    assert web._service_keepalive_state["consecutive_failures"] == 0
+
+
+@pytest.mark.asyncio
+async def test_background_watchdog_restarts_only_stopped_worker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("RUN_BOT", "true")
+    monkeypatch.setenv("SERVICE_KEEPALIVE_ENABLED", "false")
+    get_settings.cache_clear()
+    stop = asyncio.Event()
+
+    async def running_worker() -> None:
+        await stop.wait()
+
+    async def stopped_worker() -> None:
+        return None
+
+    bot_setup = asyncio.create_task(running_worker())
+    stopped_scheduler = asyncio.create_task(stopped_worker())
+    await stopped_scheduler
+    web._bot_setup_task = bot_setup
+    web._apartment_scheduler_task = stopped_scheduler
+    monkeypatch.setattr(web, "_run_hosted_apartment_scheduler", running_worker)
+
+    assert await web._repair_background_tasks_once() == 1
+    replacement = web._apartment_scheduler_task
+    assert replacement is not None and not replacement.done()
+    assert web._bot_setup_task is bot_setup
+
+    stop.set()
+    await asyncio.gather(bot_setup, replacement)
 
 
 @pytest.mark.asyncio
