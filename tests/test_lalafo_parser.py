@@ -255,6 +255,28 @@ def test_numbered_microdistrict_is_inferred_from_title():
     assert ad.district == "6 мкр"
 
 
+def test_named_vostok_5_is_not_truncated_to_generic_fifth_microdistrict():
+    ad = parse_detail_data(
+        {
+            "id": 57,
+            "category_id": 2044,
+            "mobile": "+996555123456",
+            "price": 28000,
+            "currency": "KGS",
+            "city": "Бишкек",
+            "title": "Сдается 1-комнатная квартира, Восток-5 мкр",
+            "params": [
+                {"name": "Количество комнат", "value": "1 комната"},
+                {"name": "Район Бишкека", "value": "Восток-5 мкр"},
+            ],
+            "images": [{"original_url": "https://img.example/16.jpg"}],
+        },
+        source_url="https://lalafo.kg/bishkek/ads/test-id-57",
+    )
+
+    assert ad.district == "Восток-5 мкр"
+
+
 def test_abbreviated_microdistrict_is_inferred_from_description():
     ad = parse_detail_data(
         {

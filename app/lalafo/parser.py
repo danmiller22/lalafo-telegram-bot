@@ -90,7 +90,7 @@ _DISTRICT_ALIASES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ),
     ("Дордой Плаза", ("дордой плаза",)),
     ("Филармония", ("филармония", "филармонии")),
-    ("Восток-5", ("восток 5",)),
+    ("Восток-5 мкр", ("восток 5",)),
     ("Аламедин-1", ("аламедин 1", "аламидин 1")),
     ("Кызыл Аскер", ("кызыл аскер",)),
     ("Арча-Бешик", ("арча бешик",)),
@@ -140,17 +140,21 @@ def _infer_district(raw: dict[str, Any], params: dict[str, Any]) -> str | None:
     listing_text = _normalized_listing_text(
         " ".join((str(raw.get("title") or ""), str(raw.get("description") or "")))
     )
+    # Prefer named landmarks and named microdistricts over the generic numeric
+    # matcher.  Otherwise a value such as "Восток-5 мкр" is truncated to the
+    # unrelated district label "5 мкр".
+    named_text = _normalized_listing_text(" ".join((explicit, listing_text)))
+    padded_named_text = f" {named_text} "
+    for canonical, aliases in _DISTRICT_ALIASES:
+        if any(f" {alias} " in padded_named_text for alias in aliases):
+            return canonical
+
     microdistrict = re.search(
         r"(?:^|\s)(\d{1,2})\s*(?:мкр(?:н|он)?|микрорайон(?:е|а)?)(?:\s|$)",
         listing_text,
     )
     if microdistrict:
         return f"{int(microdistrict.group(1))} мкр"
-
-    padded_text = f" {listing_text} "
-    for canonical, aliases in _DISTRICT_ALIASES:
-        if any(f" {alias} " in padded_text for alias in aliases):
-            return canonical
     return explicit or None
 
 
