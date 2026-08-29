@@ -141,7 +141,7 @@ Koyeb запускает `uvicorn app.web:app` и получает те же Tel
 - `LALAFO_LOGIN` и `LALAFO_PASSWORD` — только в защищённых secrets Koyeb;
 - `LALAFO_AUTO_REPLY_POLL_SECONDS=10`.
 
-При старте Koyeb сам регистрирует webhook в Telegram. Telegram повторяет доставку при временной недоступности сервиса, а входящий webhook будит scale-to-zero instance. `GET /health` возвращает `200` только после успешной инициализации payment bot. Scraper в Semaphore вызывает health endpoint после каждого успешного цикла.
+При старте Koyeb платёжный Telegram-бот становится готов принимать клиентские webhook сразу, а сетевое обновление webhook и меню команд завершается в фоне с автоматическими повторами. Telegram повторяет доставку при временной недоступности сервиса. `GET /health` отражает прежде всего готовность payment bot: временный сбой автоответчика Lalafo или планировщика квартир больше не перезапускает оплату и выдачу доступов. Scraper в Semaphore вызывает health endpoint после каждого успешного цикла.
 
 ## 7. Активация публикации
 

@@ -114,12 +114,19 @@ def wanted_admin_keyboard(ad_id: int, *, signer: TokenSigner) -> InlineKeyboardM
 
 
 def wanted_public_keyboard(ad: WantedAd, *, support_url: str) -> InlineKeyboardMarkup:
-    contact_url = (
-        f"https://t.me/{ad.username}" if ad.username else f"tg://user?id={ad.telegram_user_id}"
-    )
+    rows: list[list[InlineKeyboardButton]] = []
+    # Telegram rejects tg://user buttons when the customer restricts discovery
+    # by user id (BUTTON_USER_PRIVACY_RESTRICTED), which used to abort the whole
+    # publication.  The typed contact remains in the card, and a safe clickable
+    # button is added only when the customer has a public username.
+    if ad.username:
+        rows.append([
+            InlineKeyboardButton(
+                text="💬 Написать арендатору",
+                url=f"https://t.me/{ad.username}",
+            )
+        ])
+    rows.append([InlineKeyboardButton(text="🛟 Техподдержка", url=support_url)])
     return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="💬 Написать арендатору", url=contact_url)],
-            [InlineKeyboardButton(text="🛟 Техподдержка", url=support_url)],
-        ]
+        inline_keyboard=rows
     )

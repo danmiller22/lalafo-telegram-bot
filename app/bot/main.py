@@ -56,22 +56,25 @@ async def create_runtime() -> BotRuntime:
         "service": service,
         "wanted_ads": wanted_ads,
     }
-    try:
-        me = await bot.get_me()
-        await bot.set_my_commands(
-            [
-                BotCommand(command="start", description="Главное меню"),
-                BotCommand(command="want", description="Разместить «Ищу квартиру»"),
-                BotCommand(command="mywanted", description="Мои заявки"),
-                BotCommand(command="status", description="Проверить работу бота"),
-            ]
-        )
-        logging.getLogger(__name__).info("Bot initialized: @%s (id=%s)", me.username, me.id)
-    except Exception:
-        await bot.session.close()
-        await engine.dispose()
-        raise
     return BotRuntime(bot, dispatcher, engine, workflow_data)
+
+
+async def configure_bot_profile(runtime: BotRuntime) -> None:
+    """Apply non-critical Telegram metadata after the webhook is already usable.
+
+    Telegram profile calls occasionally take tens of seconds from a cloud IP.
+    They must never delay FastAPI readiness or customer messages.
+    """
+    me = await runtime.bot.get_me()
+    await runtime.bot.set_my_commands(
+        [
+            BotCommand(command="start", description="Главное меню"),
+            BotCommand(command="want", description="Разместить «Ищу квартиру»"),
+            BotCommand(command="mywanted", description="Мои заявки"),
+            BotCommand(command="status", description="Проверить работу бота"),
+        ]
+    )
+    logging.getLogger(__name__).info("Bot initialized: @%s (id=%s)", me.username, me.id)
 
 
 async def run() -> None:

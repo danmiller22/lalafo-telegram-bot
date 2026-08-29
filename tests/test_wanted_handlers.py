@@ -8,6 +8,7 @@ from app.config import Settings
 from app.security import TokenSigner
 from app.wanted.admin import wanted_admin_callback
 from app.wanted.handlers import wanted_command, wanted_paid
+from app.wanted.keyboards import wanted_public_keyboard
 
 
 def make_ad(**overrides):
@@ -58,6 +59,49 @@ async def test_plain_start_shows_wanted_ad_button():
     markup = message.answer.await_args.kwargs["reply_markup"]
     assert markup.inline_keyboard[0][0].text == "🔎 Разместить «Ищу квартиру»"
     assert markup.inline_keyboard[0][0].callback_data == "wanted:new"
+
+
+@pytest.mark.asyncio
+async def test_plain_start_sends_menu_before_state_cleanup():
+    order: list[str] = []
+
+    async def answer(*_args, **_kwargs) -> None:
+        order.append("answer")
+
+    async def clear() -> None:
+        order.append("clear")
+
+    message = SimpleNamespace(
+        text="/start",
+        from_user=SimpleNamespace(id=100),
+        answer=answer,
+    )
+    state = SimpleNamespace(clear=clear)
+
+    await start_handler(
+        message,
+        service=None,
+        signer=TokenSigner("a-very-long-test-secret"),
+        settings=Settings(),
+        bot=object(),
+        state=state,
+    )
+
+    assert order == ["answer", "clear"]
+
+
+def test_public_wanted_card_avoids_private_user_id_button() -> None:
+    without_username = wanted_public_keyboard(
+        make_ad(username=None), support_url="https://t.me/support"
+    )
+    assert [button.text for row in without_username.inline_keyboard for button in row] == [
+        "🛟 Техподдержка"
+    ]
+
+    with_username = wanted_public_keyboard(
+        make_ad(username="tenant"), support_url="https://t.me/support"
+    )
+    assert with_username.inline_keyboard[0][0].url == "https://t.me/tenant"
 
 
 @pytest.mark.asyncio

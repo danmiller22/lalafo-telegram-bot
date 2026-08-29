@@ -2,18 +2,19 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import secrets
 from contextlib import suppress
 from datetime import UTC, datetime
 from typing import Any
 
+from aiogram import Bot
 from aiogram.types import Update
 from fastapi import FastAPI, Header, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse
 
-from app.bot.main import BotRuntime, create_runtime
+from app.bot.main import BotRuntime, configure_bot_profile, create_runtime
 from app.config import get_settings
-from app.featured.bot import FeaturedReviewRuntime, create_featured_review_runtime
 from app.lalafo.auto_reply import LalafoAutoResponder
 from app.security import TokenSigner
 from app.telegram.keyboards import paid_keyboard
@@ -24,20 +25,16 @@ app = FastAPI(title="Lalafo Telegram service", docs_url=None, redoc_url=None)
 _run_lock = asyncio.Lock()
 _scraper_task: asyncio.Task[None] | None = None
 _bot_runtime: BotRuntime | None = None
+_bot_setup_task: asyncio.Task[None] | None = None
+_legacy_featured_cleanup_task: asyncio.Task[None] | None = None
 _keyboard_sync_task: asyncio.Task[None] | None = None
 _lalafo_auto_responder: LalafoAutoResponder | None = None
 _lalafo_watchdog_task: asyncio.Task[None] | None = None
 _lalafo_restart_lock = asyncio.Lock()
 _apartment_scheduler_task: asyncio.Task[None] | None = None
-_featured_review_runtime: FeaturedReviewRuntime | None = None
-_featured_publish_event: asyncio.Event | None = None
-_featured_publish_task: asyncio.Task[None] | None = None
-_featured_publish_state: dict[str, Any] = {
-    "state": "disabled",
-    "running": False,
-    "last_started_at": None,
-    "last_finished_at": None,
-    "last_exit_code": None,
+_bot_setup_state: dict[str, Any] = {
+    "state": "pending",
+    "last_configured_at": None,
     "last_error": None,
 }
 _run_state: dict[str, Any] = {
@@ -75,67 +72,54 @@ def _authorize(authorization: str | None) -> None:
         )
 
 
-def _trigger_featured_manual_publish() -> None:
-    event = _featured_publish_event
-    if event is not None:
-        event.set()
-
-
-async def _execute_featured_manual_publish() -> None:
-    _featured_publish_state.update(
-        state="running",
-        running=True,
-        last_started_at=_now(),
-        last_finished_at=None,
-        last_error=None,
-    )
-    exit_code = 1
-    try:
-        from scripts.publish_featured_lalafo import run as publish_featured
-
-        for attempt in range(1, 4):
-            try:
-                exit_code = await publish_featured(manual_request=True)
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                exit_code = 1
-                _featured_publish_state["last_error"] = type(exc).__name__
-                logger.exception(
-                    "Manual featured publication attempt %d failed", attempt
-                )
-            if exit_code == 0:
-                break
-            if attempt < 3:
-                await asyncio.sleep(10 * attempt)
-        _featured_publish_state.update(
-            state="ready" if exit_code == 0 else "recovering",
-            last_exit_code=exit_code,
-            last_error=(
-                None
-                if exit_code == 0
-                else _featured_publish_state["last_error"]
-                or f"ExitCode{exit_code}"
-            ),
-        )
-    finally:
-        _featured_publish_state.update(
-            running=False,
-            last_finished_at=_now(),
-        )
-
-
-async def _run_featured_manual_publisher() -> None:
-    """Serialize manual advertising with the resource-heavy apartment cycle."""
+async def _configure_main_bot() -> None:
+    """Keep Telegram setup off the application startup critical path."""
+    settings = get_settings()
+    backoff = 2.0
     while True:
-        event = _featured_publish_event
-        if event is None:
+        runtime = _bot_runtime
+        if runtime is None:
             return
-        await event.wait()
-        event.clear()
-        _featured_publish_state.update(state="queued", last_error=None)
-        async with _run_lock:
-            await _execute_featured_manual_publish()
+        try:
+            await runtime.bot.set_webhook(
+                settings.require_telegram_webhook_url(),
+                secret_token=settings.require_telegram_webhook_secret(),
+                allowed_updates=runtime.dispatcher.resolve_used_update_types(),
+                drop_pending_updates=False,
+            )
+            await configure_bot_profile(runtime)
+            _bot_setup_state.update(
+                state="ready",
+                last_configured_at=_now(),
+                last_error=None,
+            )
+            logger.info("Telegram webhook and commands are ready")
+            return
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            _bot_setup_state.update(
+                state="recovering",
+                last_error=type(exc).__name__,
+            )
+            logger.exception("Telegram background setup failed; retrying")
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, 60.0)
+
+
+async def _remove_legacy_featured_webhook() -> None:
+    """Disconnect the retired advertising bot without delaying the main bot."""
+    token = os.environ.get("FEATURED_REVIEW_BOT_TOKEN", "").strip()
+    if not token:
+        return
+    bot = Bot(token=token)
+    try:
+        await bot.delete_webhook(drop_pending_updates=True)
+        logger.info("Retired Lalafo advertising bot webhook removed")
+    except Exception:
+        logger.exception("Could not remove retired advertising bot webhook")
+    finally:
+        await bot.session.close()
 
 
 async def _execute_scraper() -> int:
@@ -368,10 +352,9 @@ async def _run_hosted_apartment_scheduler() -> None:
 
 @app.on_event("startup")
 async def startup() -> None:
-    global _bot_runtime, _keyboard_sync_task, _lalafo_auto_responder
+    global _bot_runtime, _bot_setup_task, _legacy_featured_cleanup_task
+    global _keyboard_sync_task, _lalafo_auto_responder
     global _lalafo_watchdog_task, _apartment_scheduler_task
-    global _featured_review_runtime, _featured_publish_event
-    global _featured_publish_task
     settings = get_settings()
     logging.basicConfig(
         level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -379,16 +362,14 @@ async def startup() -> None:
     )
     settings.require_run_trigger_secret()
     if settings.run_bot:
-        webhook_url = settings.require_telegram_webhook_url()
-        webhook_secret = settings.require_telegram_webhook_secret()
+        # Validate configuration synchronously, but do not wait for Telegram
+        # network calls before FastAPI starts accepting customer webhooks.
+        settings.require_telegram_webhook_url()
+        settings.require_telegram_webhook_secret()
         _bot_runtime = await create_runtime()
-        await _bot_runtime.bot.set_webhook(
-            webhook_url,
-            secret_token=webhook_secret,
-            allowed_updates=_bot_runtime.dispatcher.resolve_used_update_types(),
-            drop_pending_updates=False,
-        )
-        logger.info("Telegram webhook enabled at %s", webhook_url)
+        _bot_setup_state.update(state="configuring", last_error=None)
+        _bot_setup_task = asyncio.create_task(_configure_main_bot())
+        logger.info("Telegram runtime ready; network setup continues in background")
         _keyboard_sync_task = asyncio.create_task(_sync_outdated_keyboards())
         if settings.hosted_apartment_scheduler_enabled:
             _apartment_scheduler_task = asyncio.create_task(
@@ -400,56 +381,31 @@ async def startup() -> None:
         _lalafo_auto_responder.start()
         _lalafo_watchdog_task = asyncio.create_task(_watch_lalafo_auto_responder())
         logger.info("Lalafo cloud auto-reply supervisor enabled")
-    if settings.featured_review_bot_token:
-        try:
-            _featured_publish_event = asyncio.Event()
-            _featured_review_runtime = await create_featured_review_runtime(
-                publish_trigger=_trigger_featured_manual_publish
-            )
-            featured_webhook_url = (
-                settings.require_public_base_url() + "/featured/webhook"
-            )
-            await _featured_review_runtime.bot.set_webhook(
-                featured_webhook_url,
-                secret_token=settings.require_telegram_webhook_secret(),
-                allowed_updates=(
-                    _featured_review_runtime.dispatcher.resolve_used_update_types()
-                ),
-                drop_pending_updates=False,
-            )
-            _featured_publish_task = asyncio.create_task(
-                _run_featured_manual_publisher()
-            )
-            _featured_publish_state.update(state="ready", last_error=None)
-            # Recover links approved just before a deploy or restart.
-            _trigger_featured_manual_publish()
-            logger.info("Manual featured advertising webhook enabled")
-        except Exception as exc:
-            _featured_publish_state.update(
-                state="error",
-                running=False,
-                last_error=type(exc).__name__,
-            )
-            logger.exception(
-                "Manual featured bot setup failed without affecting other workers"
-            )
+    # One harmless cleanup call disconnects the old advertising bot.  No
+    # advertising runtime, route, scheduler, or publisher is started anymore.
+    _legacy_featured_cleanup_task = asyncio.create_task(
+        _remove_legacy_featured_webhook()
+    )
 
 
 @app.on_event("shutdown")
 async def shutdown() -> None:
-    global _bot_runtime, _keyboard_sync_task, _lalafo_auto_responder
+    global _bot_runtime, _bot_setup_task, _legacy_featured_cleanup_task
+    global _keyboard_sync_task, _lalafo_auto_responder
     global _lalafo_watchdog_task, _apartment_scheduler_task
-    global _featured_review_runtime, _featured_publish_event
-    global _featured_publish_task
-    if _featured_publish_task is not None and not _featured_publish_task.done():
-        _featured_publish_task.cancel()
+    if _bot_setup_task is not None and not _bot_setup_task.done():
+        _bot_setup_task.cancel()
         with suppress(asyncio.CancelledError):
-            await _featured_publish_task
-    _featured_publish_task = None
-    _featured_publish_event = None
-    if _featured_review_runtime is not None:
-        await _featured_review_runtime.close()
-    _featured_review_runtime = None
+            await _bot_setup_task
+    _bot_setup_task = None
+    if (
+        _legacy_featured_cleanup_task is not None
+        and not _legacy_featured_cleanup_task.done()
+    ):
+        _legacy_featured_cleanup_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await _legacy_featured_cleanup_task
+    _legacy_featured_cleanup_task = None
     if _apartment_scheduler_task is not None and not _apartment_scheduler_task.done():
         _apartment_scheduler_task.cancel()
         with suppress(asyncio.CancelledError):
@@ -481,19 +437,10 @@ async def health() -> JSONResponse:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             content={"status": "error", "bot": "stopped"},
         )
-    if settings.run_bot and settings.hosted_apartment_scheduler_enabled:
-        if _apartment_scheduler_task is None or _apartment_scheduler_task.done():
-            return JSONResponse(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                content={
-                    "status": "error",
-                    "bot": "running",
-                    "apartment_scheduler": {
-                        "state": "stopped",
-                        **_apartment_scheduler_state,
-                    },
-                },
-            )
+    scheduler_running = (
+        _apartment_scheduler_task is not None
+        and not _apartment_scheduler_task.done()
+    )
     auto_reply: dict[str, Any] | str = "disabled"
     if settings.lalafo_auto_reply_enabled:
         responder = _lalafo_auto_responder
@@ -504,57 +451,26 @@ async def health() -> JSONResponse:
             if responder is not None
             else {"state": "stopped"}
         )
-        if responder is None or not responder.is_healthy(
-            stale_after_seconds=settings.lalafo_auto_reply_stale_seconds
-        ):
-            return JSONResponse(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                content={
-                    "status": "error",
-                    "bot": "running" if settings.run_bot else "disabled",
-                    "lalafo_auto_reply": auto_reply,
-                },
-            )
+        # The watchdog repairs this auxiliary worker.  Never make Koyeb restart
+        # the customer/payment bot merely because Lalafo itself is unavailable.
     return JSONResponse(
         content={
             "status": "ok",
             "bot": "running" if settings.run_bot else "disabled",
+            "telegram_setup": (
+                dict(_bot_setup_state) if settings.run_bot else "disabled"
+            ),
             "lalafo_auto_reply": auto_reply,
             "apartment_scheduler": (
-                {"state": "running", **_apartment_scheduler_state}
+                {
+                    "state": "running" if scheduler_running else "recovering",
+                    **_apartment_scheduler_state,
+                }
                 if settings.run_bot and settings.hosted_apartment_scheduler_enabled
-                else "disabled"
-            ),
-            "featured_review_bot": (
-                dict(_featured_publish_state)
-                if settings.featured_review_bot_token
                 else "disabled"
             ),
         }
     )
-
-
-@app.post("/featured/webhook", include_in_schema=False)
-async def featured_review_webhook(
-    request: Request,
-    x_telegram_bot_api_secret_token: str | None = Header(default=None),
-) -> Response:
-    settings = get_settings()
-    runtime = _featured_review_runtime
-    if not settings.featured_review_bot_token or runtime is None:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
-    expected = settings.require_telegram_webhook_secret()
-    if not x_telegram_bot_api_secret_token or not secrets.compare_digest(
-        x_telegram_bot_api_secret_token, expected
-    ):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
-    update = Update.model_validate(await request.json(), context={"bot": runtime.bot})
-    await runtime.dispatcher.feed_update(
-        runtime.bot,
-        update,
-        **runtime.workflow_data,
-    )
-    return Response(status_code=status.HTTP_200_OK)
 
 
 @app.post("/telegram/webhook", include_in_schema=False)

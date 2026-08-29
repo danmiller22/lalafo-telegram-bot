@@ -13,6 +13,7 @@ from app.lalafo.auto_reply import (
     LalafoAutoResponder,
     LalafoChatClient,
     LalafoChatRateLimitError,
+    LalafoChatRejectedError,
     LalafoSession,
 )
 
@@ -110,6 +111,22 @@ async def test_rate_limited_message_is_retried_on_the_next_scan() -> None:
     assert await responder.scan_once() == 0
     assert await responder.scan_once() == 1
     assert client.send_reply.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_permanently_rejected_message_does_not_create_retry_storm() -> None:
+    client = FakeClient([chat(message_id=44, origin=200)])
+    client.send_reply.side_effect = LalafoChatRejectedError()
+    responder = LalafoAutoResponder(
+        login="ignored",
+        password="ignored",
+        client=client,  # type: ignore[arg-type]
+        socket=FakeSocket(),  # type: ignore[arg-type]
+    )
+
+    assert await responder.scan_once() == 0
+    assert await responder.scan_once() == 0
+    client.send_reply.assert_awaited_once()
 
 
 def test_fixed_text_matches_requested_message() -> None:

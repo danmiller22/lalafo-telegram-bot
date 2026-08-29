@@ -189,26 +189,6 @@ class Settings(BaseSettings):
     dry_run: bool = False
     test_mode: bool = False
 
-    # Isolated daily featured-ad automation. Both mutating switches are off by
-    # default so deploying the code cannot publish or spend money by itself.
-    featured_lalafo_enabled: bool = False
-    featured_publish_approved_enabled: bool = False
-    featured_autopromote_enabled: bool = False
-    featured_count: int = 2
-    featured_priority_price: int = 30_000
-    featured_max_price: int = 35_000
-    featured_daily_budget_per_ad: int = 200
-    featured_max_daily_budget: int = 400
-    featured_min_wallet_balance: int = 400
-    featured_cooldown_days: int = 7
-    featured_max_candidates: int = 10
-    featured_timezone: str = "Asia/Bishkek"
-    featured_max_photos: int = 10
-    featured_require_repost_permission: bool = True
-    featured_review_enabled: bool = False
-    featured_auto_select_enabled: bool = False
-    featured_review_bot_token: str = ""
-
     database_url: str = "sqlite:///data/bot.db"
     posted_state_path: Path = Path("data/posted_ads.json")
     state_retention_days: int = 90
@@ -250,11 +230,6 @@ class Settings(BaseSettings):
         if not self.telegram_bot_token:
             raise RuntimeError("TELEGRAM_BOT_TOKEN is required for this operation")
         return self.telegram_bot_token
-
-    def require_featured_review_bot_token(self) -> str:
-        if not self.featured_review_bot_token:
-            raise RuntimeError("FEATURED_REVIEW_BOT_TOKEN is required")
-        return self.featured_review_bot_token
 
     def require_lalafo_auto_reply_credentials(self) -> tuple[str, str]:
         if not self.lalafo_login or not self.lalafo_password:

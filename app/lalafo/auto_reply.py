@@ -473,10 +473,17 @@ class LalafoAutoResponder:
                 continue
             try:
                 await self._client.send_reply(chat, AUTO_REPLY_TEXT, self._socket_id())
-            except (LalafoChatRateLimitError, LalafoChatRejectedError) as exc:
-                # Do not remember this message: the next one-minute cloud run must
-                # retry it.  Continue briefly so one problematic chat cannot block
-                # every other customer, but stop after a global limit is evident.
+            except LalafoChatRejectedError:
+                # "You cannot send messages to this chat" is permanent for the
+                # current incoming message. Retrying it every ten seconds only
+                # burns CPU/network and can slow the customer-facing Telegram bot.
+                # A new customer message has a new key and will still be attempted.
+                self._handled[key] = now
+                logger.warning("Automatic reply skipped for a chat that forbids replies")
+                continue
+            except LalafoChatRateLimitError as exc:
+                # A rate limit is temporary, so leave this message pending for a
+                # later scan while protecting the rest of the queue.
                 consecutive_rate_limits += 1
                 logger.warning("Automatic reply deferred: %s", type(exc).__name__)
                 if consecutive_rate_limits >= 3:

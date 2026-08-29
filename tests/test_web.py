@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import suppress
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -25,19 +24,15 @@ def configure(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     web._scraper_task = None
     web._bot_runtime = None
+    web._bot_setup_task = None
+    web._legacy_featured_cleanup_task = None
     web._keyboard_sync_task = None
     web._lalafo_auto_responder = None
     web._lalafo_watchdog_task = None
     web._apartment_scheduler_task = None
-    web._featured_review_runtime = None
-    web._featured_publish_event = None
-    web._featured_publish_task = None
-    web._featured_publish_state.update(
-        state="disabled",
-        running=False,
-        last_started_at=None,
-        last_finished_at=None,
-        last_exit_code=None,
+    web._bot_setup_state.update(
+        state="pending",
+        last_configured_at=None,
         last_error=None,
     )
     web._apartment_scheduler_state.update(
@@ -65,9 +60,9 @@ async def test_health_and_authentication() -> None:
         assert health.json() == {
             "status": "ok",
             "bot": "disabled",
+            "telegram_setup": "disabled",
             "lalafo_auto_reply": "disabled",
             "apartment_scheduler": "disabled",
-            "featured_review_bot": "disabled",
         }
         assert (await client.post("/run")).status_code == 401
         response = await client.get(
@@ -124,7 +119,7 @@ async def test_health_fails_when_enabled_bot_is_not_running(
 
 
 @pytest.mark.asyncio
-async def test_health_fails_when_auto_reply_is_stale(
+async def test_health_keeps_main_service_live_when_auto_reply_is_stale(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("LALAFO_AUTO_REPLY_ENABLED", "true")
@@ -136,8 +131,49 @@ async def test_health_fails_when_auto_reply_is_stale(
     transport = httpx.ASGITransport(app=web.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get("/health")
-    assert response.status_code == 503
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
     assert response.json()["lalafo_auto_reply"] == {"state": "recovering"}
+
+
+@pytest.mark.asyncio
+async def test_health_keeps_payment_bot_live_when_scheduler_is_recovering(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("RUN_BOT", "true")
+    get_settings.cache_clear()
+    web._bot_runtime = object()  # type: ignore[assignment]
+    web._apartment_scheduler_task = None
+    transport = httpx.ASGITransport(app=web.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/health")
+    assert response.status_code == 200
+    assert response.json()["bot"] == "running"
+    assert response.json()["apartment_scheduler"]["state"] == "recovering"
+
+
+@pytest.mark.asyncio
+async def test_telegram_network_setup_runs_outside_startup_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("RUN_BOT", "true")
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_URL", "https://example.test/telegram/webhook")
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", "s" * 32)
+    get_settings.cache_clear()
+    bot = SimpleNamespace(set_webhook=AsyncMock())
+    runtime = SimpleNamespace(
+        bot=bot,
+        dispatcher=SimpleNamespace(resolve_used_update_types=lambda: ["message"]),
+    )
+    configure_profile = AsyncMock()
+    web._bot_runtime = runtime  # type: ignore[assignment]
+    monkeypatch.setattr(web, "configure_bot_profile", configure_profile)
+
+    await web._configure_main_bot()
+
+    bot.set_webhook.assert_awaited_once()
+    configure_profile.assert_awaited_once_with(runtime)
+    assert web._bot_setup_state["state"] == "ready"
 
 
 @pytest.mark.asyncio
@@ -249,83 +285,11 @@ async def test_telegram_webhook_requires_secret_and_dispatches_update(
 
 
 @pytest.mark.asyncio
-async def test_featured_webhook_requires_secret_and_dispatches_update(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    webhook_secret = "f" * 32
-    monkeypatch.setenv("FEATURED_REVIEW_BOT_TOKEN", "123456:manual-bot-token")
-    monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", webhook_secret)
-    get_settings.cache_clear()
-    feed_update = AsyncMock()
-    web._featured_review_runtime = SimpleNamespace(
-        bot=object(),
-        dispatcher=SimpleNamespace(feed_update=feed_update),
-        workflow_data={"marker": "featured"},
-    )
+async def test_retired_featured_webhook_is_gone() -> None:
     transport = httpx.ASGITransport(app=web.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        denied = await client.post("/featured/webhook", json={"update_id": 10})
-        accepted = await client.post(
-            "/featured/webhook",
-            json={"update_id": 11},
-            headers={"X-Telegram-Bot-Api-Secret-Token": webhook_secret},
-        )
-    assert denied.status_code == 401
-    assert accepted.status_code == 200
-    feed_update.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_manual_featured_worker_runs_only_manual_publication(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import scripts.publish_featured_lalafo
-
-    publish = AsyncMock(return_value=0)
-    monkeypatch.setattr(scripts.publish_featured_lalafo, "run", publish)
-    web._featured_publish_event = asyncio.Event()
-    task = asyncio.create_task(web._run_featured_manual_publisher())
-    try:
-        web._trigger_featured_manual_publish()
-        for _ in range(20):
-            if publish.await_count:
-                break
-            await asyncio.sleep(0)
-        publish.assert_awaited_once_with(manual_request=True)
-    finally:
-        task.cancel()
-        with suppress(asyncio.CancelledError):
-            await task
-
-
-@pytest.mark.asyncio
-async def test_manual_featured_worker_waits_for_apartment_cycle(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import scripts.publish_featured_lalafo
-
-    publish = AsyncMock(return_value=0)
-    monkeypatch.setattr(scripts.publish_featured_lalafo, "run", publish)
-    web._featured_publish_event = asyncio.Event()
-    await web._run_lock.acquire()
-    task = asyncio.create_task(web._run_featured_manual_publisher())
-    try:
-        web._trigger_featured_manual_publish()
-        await asyncio.sleep(0)
-        assert web._featured_publish_state["state"] == "queued"
-        publish.assert_not_awaited()
-        web._run_lock.release()
-        for _ in range(20):
-            if publish.await_count:
-                break
-            await asyncio.sleep(0)
-        publish.assert_awaited_once_with(manual_request=True)
-    finally:
-        if web._run_lock.locked():
-            web._run_lock.release()
-        task.cancel()
-        with suppress(asyncio.CancelledError):
-            await task
+        response = await client.post("/featured/webhook", json={"update_id": 10})
+    assert response.status_code == 404
 
 
 @pytest.mark.asyncio

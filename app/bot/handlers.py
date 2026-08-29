@@ -58,6 +58,13 @@ async def start_handler(
     if payload == "want":
         await begin_wanted_form(message, state)
         return
+    if not payload:
+        # A plain /start is the most common customer action.  Send the menu
+        # before doing even lightweight session cleanup so the visible response
+        # is never held behind unrelated state work.
+        await _show_main_menu(message, settings)
+        await state.clear()
+        return
     await state.clear()
     if payload.startswith("pay_"):
         payment_token = payload[4:]
