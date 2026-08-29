@@ -143,11 +143,13 @@ def _infer_district(raw: dict[str, Any], params: dict[str, Any]) -> str | None:
     # Prefer named landmarks and named microdistricts over the generic numeric
     # matcher.  Otherwise a value such as "Восток-5 мкр" is truncated to the
     # unrelated district label "5 мкр".
-    named_text = _normalized_listing_text(" ".join((explicit, listing_text)))
-    padded_named_text = f" {named_text} "
-    for canonical, aliases in _DISTRICT_ALIASES:
-        if any(f" {alias} " in padded_named_text for alias in aliases):
-            return canonical
+    # A landmark explicitly mentioned by the author is more specific than a
+    # broad Lalafo district parameter (for example Караван ТЦ vs Центр).
+    for named_text in (listing_text, _normalized_listing_text(explicit)):
+        padded_named_text = f" {named_text} "
+        for canonical, aliases in _DISTRICT_ALIASES:
+            if any(f" {alias} " in padded_named_text for alias in aliases):
+                return canonical
 
     microdistrict = re.search(
         r"(?:^|\s)(\d{1,2})\s*(?:мкр(?:н|он)?|микрорайон(?:е|а)?)(?:\s|$)",
