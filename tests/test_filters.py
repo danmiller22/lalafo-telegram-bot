@@ -8,6 +8,7 @@ from app.telegram.formatting import format_apartment, format_public_apartment
 from app.lalafo.subletting import halve_subletting_candidates
 from scripts.scrape_publish import (
     MAX_REPOSTS_PER_RUN,
+    SOURCE_ALLOWED_ROOMS,
     SOURCE_MAX_POSTS_PER_RUN,
     SOURCE_MAX_SEARCH_PAGES,
     SOURCE_REPOST_AFTER_HOURS,
@@ -25,6 +26,7 @@ from tests.helpers import make_ad
     [
         ({"price": 40001}, "price"),
         ({"currency": "USD"}, "wrong_currency"),
+        ({"rooms": "2"}, "rooms"),
         ({"rooms": "3"}, "rooms"),
         ({"city": "Ош"}, "wrong_city"),
         ({"photo_urls": []}, "photos"),
@@ -33,18 +35,23 @@ from tests.helpers import make_ad
 )
 def test_filters_reject(overrides, reason):
     allowed, actual = is_allowed(
-        make_ad(**overrides), city="Бишкек", max_price=40000, rooms=("studio", "1", "2")
+        make_ad(**{"rooms": "1", **overrides}),
+        city="Бишкек",
+        max_price=40000,
+        rooms=SOURCE_ALLOWED_ROOMS,
     )
     assert not allowed
     assert actual == reason
 
 
 def test_allowed_and_format_has_no_source_or_description():
-    ad = make_ad()
-    assert is_allowed(ad, city="Бишкек", max_price=40000, rooms=("studio", "1", "2"))[0]
+    ad = make_ad(rooms="1")
+    assert is_allowed(
+        ad, city="Бишкек", max_price=40000, rooms=SOURCE_ALLOWED_ROOMS
+    )[0]
     text = format_apartment(ad)
     assert text == (
-        "🏠 2-комнатная квартира\n📍 7 мкр\n🏙 Бишкек\n"
+        "🏠 1-комнатная квартира\n📍 7 мкр\n🏙 Бишкек\n"
         "💰 35 000 сом\n🔐 Депозит: 20 000 сом"
     )
     assert "lalafo" not in text.lower()
@@ -52,8 +59,10 @@ def test_allowed_and_format_has_no_source_or_description():
 
 
 def test_agency_listing_is_allowed_but_not_identified_on_card():
-    ad = make_ad(owner_listing=False)
-    assert is_allowed(ad, city="Бишкек", max_price=40000, rooms=("studio", "1", "2"))[0]
+    ad = make_ad(owner_listing=False, rooms="1")
+    assert is_allowed(
+        ad, city="Бишкек", max_price=40000, rooms=SOURCE_ALLOWED_ROOMS
+    )[0]
     text = format_apartment(ad)
     assert "риелтор" not in text.casefold()
     assert "собственник" not in text.casefold()
@@ -67,19 +76,23 @@ def test_missing_district_and_optional_deposit_are_omitted():
 def test_expanded_source_keeps_reposts_strictly_limited():
     settings = Settings(_env_file=None)
 
-    assert SOURCE_MAX_POSTS_PER_RUN == 40
+    assert SOURCE_ALLOWED_ROOMS == ("studio", "1")
+    assert SOURCE_MAX_POSTS_PER_RUN == 20
     assert SOURCE_MAX_SEARCH_PAGES == 24
-    assert MAX_REPOSTS_PER_RUN == 18
+    assert MAX_REPOSTS_PER_RUN == 20
     assert SOURCE_REPOST_AFTER_HOURS == 3.0
-    assert settings.max_new_posts_per_run == 40
+    assert settings.rooms == "studio,1"
+    assert settings.max_new_posts_per_run == 20
     assert settings.max_search_pages == 24
     assert settings.allow_no_district is True
 
 
 def test_subletting_listing_is_allowed_but_not_labeled():
-    ad = make_ad(no_subletting=False)
+    ad = make_ad(no_subletting=False, rooms="1")
 
-    assert is_allowed(ad, city="Бишкек", max_price=40000, rooms=("studio", "1", "2"))[0]
+    assert is_allowed(
+        ad, city="Бишкек", max_price=40000, rooms=SOURCE_ALLOWED_ROOMS
+    )[0]
     assert "подсел" not in format_apartment(ad).casefold()
 
 
@@ -267,7 +280,7 @@ def test_publish_batch_fills_shortage_with_oldest_reposts_first():
     assert not ({ad.lalafo_id for ad in repeats[:-15]} & selected_ids)
 
 
-def test_publish_batch_never_adds_more_than_eighteen_reposts():
+def test_publish_batch_never_adds_more_than_twenty_reposts():
     fresh = [
         make_ad(lalafo_id=index, phone=f"+996702{index:06d}")
         for index in range(1, 11)
@@ -284,5 +297,5 @@ def test_publish_batch_never_adds_more_than_eighteen_reposts():
 
     selected = select_publish_batch_with_reposts(fresh + repeats, repost_times, 40)
 
-    assert len(selected) == 28
-    assert len({ad.lalafo_id for ad in selected} & set(repost_times)) == 18
+    assert len(selected) == 30
+    assert len({ad.lalafo_id for ad in selected} & set(repost_times)) == 20

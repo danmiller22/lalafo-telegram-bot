@@ -13,7 +13,7 @@ PROXY_LIST_URL = "https://api.proxyscrape.com/v4/free-proxy-list/get"
 SEARCH_URL = (
     "https://lalafo.kg/api/search/v3/feed/search?expand=url&per-page=1&"
     "category_id=2044&page=1&city_id=103184&parameters%5B69%5D%5B0%5D=15496&"
-    "parameters%5B69%5D%5B1%5D=2773&parameters%5B69%5D%5B2%5D=2774&"
+    "parameters%5B69%5D%5B1%5D=2773&"
     "price%5Bto%5D=35000&with_feed_banner=true"
 )
 HEADERS = {

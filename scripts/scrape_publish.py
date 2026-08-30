@@ -67,14 +67,14 @@ CENTRAL_DISTRICT_TERMS = (
 )
 SOURCE_MIN_PRICE = 18_000
 SOURCE_MAX_PRICE = 35_000
-SOURCE_ALLOWED_ROOMS = ("studio", "1", "2")
-SOURCE_MAX_POSTS_PER_RUN = 40
+SOURCE_ALLOWED_ROOMS = ("studio", "1")
+SOURCE_MAX_POSTS_PER_RUN = 20
 SOURCE_MAX_SEARCH_PAGES = 24
 # A card becomes eligible after one publication interval, but selection below
 # always takes the oldest eligible cards first. With a large source pool this
 # rotates inventory instead of showing the same apartments every three hours.
 SOURCE_REPOST_AFTER_HOURS = 3.0
-MAX_REPOSTS_PER_RUN = 18
+MAX_REPOSTS_PER_RUN = 20
 CENTRAL_BATCH_SHARE = 0.60
 PREFERRED_BATCH_SHARE = 0.80
 MAX_CANDIDATE_POOL = 160
@@ -251,7 +251,7 @@ async def run() -> int:
     state = PostedState.load(settings.posted_state_path)
     # Product-level source limits deliberately ignore stale cloud overrides.
     # Test mode remains one-card-only, while production always has room for
-    # the requested forty-card batch.
+    # the requested twenty-card batch.
     limit = 1 if settings.test_mode else SOURCE_MAX_POSTS_PER_RUN
     candidate_pool_limit = max(limit, min(limit * 3, MAX_CANDIDATE_POOL))
     candidates = []
