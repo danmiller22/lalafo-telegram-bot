@@ -128,7 +128,7 @@ async def run() -> int:
                         apartment.id,
                         signer=signer,
                         bot_username=settings.telegram_bot_username,
-                        support_url=settings.support_url,
+                        support_url=settings.support_bot_url,
                     ),
                 )
                 if result == "edited":

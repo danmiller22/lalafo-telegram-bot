@@ -724,7 +724,7 @@ async def open_finik_payment(token: str) -> RedirectResponse:
             reply_markup=paid_keyboard(
                 apartment_id,
                 signer=signer,
-                support_url=settings.support_url,
+                support_url=settings.support_bot_url,
             ),
         )
     except Exception:

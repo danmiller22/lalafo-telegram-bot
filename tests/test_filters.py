@@ -244,7 +244,28 @@ def test_publish_batch_fills_shortage_with_oldest_reposts_first():
     selected = select_publish_batch_with_reposts(fresh + repeats, repost_times, 25)
     selected_ids = {ad.lalafo_id for ad in selected}
 
-    assert len(selected) == 25
+    assert len(selected) == 15
     assert {ad.lalafo_id for ad in fresh} <= selected_ids
-    assert {ad.lalafo_id for ad in repeats[-15:]} <= selected_ids
-    assert not ({ad.lalafo_id for ad in repeats[:15]} & selected_ids)
+    assert {ad.lalafo_id for ad in repeats[-5:]} <= selected_ids
+    assert not ({ad.lalafo_id for ad in repeats[:-5]} & selected_ids)
+
+
+def test_publish_batch_never_adds_more_than_five_reposts():
+    fresh = [
+        make_ad(lalafo_id=index, phone=f"+996702{index:06d}")
+        for index in range(1, 26)
+    ]
+    repeats = [
+        make_ad(lalafo_id=100 + index, phone=f"+996703{index:06d}")
+        for index in range(1, 21)
+    ]
+    now = datetime.now(timezone.utc)
+    repost_times = {
+        ad.lalafo_id: now - timedelta(days=2, minutes=index)
+        for index, ad in enumerate(repeats, start=1)
+    }
+
+    selected = select_publish_batch_with_reposts(fresh + repeats, repost_times, 30)
+
+    assert len(selected) == 30
+    assert len({ad.lalafo_id for ad in selected} & set(repost_times)) == 5

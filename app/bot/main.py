@@ -16,6 +16,8 @@ from app.database import create_engine_and_session, init_db
 from app.payments.repository import ApartmentRepository, PaymentRepository
 from app.payments.service import PaymentService
 from app.security import TokenSigner
+from app.support import handlers as support_handlers
+from app.support.repository import SupportTicketRepository
 from app.wanted import admin as wanted_admin
 from app.wanted import handlers as wanted_handlers
 from app.wanted.repository import WantedAdRepository
@@ -41,11 +43,13 @@ async def create_runtime() -> BotRuntime:
     apartments = ApartmentRepository(sessions)
     payments = PaymentRepository(sessions)
     wanted_ads = WantedAdRepository(sessions)
+    support_tickets = SupportTicketRepository(sessions)
     service = PaymentService(apartments, payments, admin_user_id=settings.admin_user_id)
     bot = Bot(token=settings.require_bot_token())
     dispatcher = Dispatcher(storage=MemoryStorage())
     dispatcher.include_router(wanted_admin.router)
     dispatcher.include_router(admin.router)
+    dispatcher.include_router(support_handlers.router)
     dispatcher.include_router(wanted_handlers.router)
     dispatcher.include_router(handlers.router)
     workflow_data = {
@@ -55,6 +59,7 @@ async def create_runtime() -> BotRuntime:
         "payments": payments,
         "service": service,
         "wanted_ads": wanted_ads,
+        "support_tickets": support_tickets,
     }
     return BotRuntime(bot, dispatcher, engine, workflow_data)
 
@@ -70,6 +75,7 @@ async def configure_bot_profile(runtime: BotRuntime) -> None:
         [
             BotCommand(command="start", description="Главное меню"),
             BotCommand(command="want", description="Разместить «Ищу квартиру»"),
+            BotCommand(command="support", description="Техподдержка"),
             BotCommand(command="mywanted", description="Мои заявки"),
             BotCommand(command="status", description="Проверить работу бота"),
         ]

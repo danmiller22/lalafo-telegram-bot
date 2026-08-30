@@ -56,7 +56,7 @@ async def wanted_cancel_command(
     message: Message, state: FSMContext, settings: Settings
 ) -> None:
     await state.clear()
-    await message.answer("Создание заявки отменено.", reply_markup=main_menu_keyboard(settings.support_url))
+    await message.answer("Создание заявки отменено.", reply_markup=main_menu_keyboard(settings.support_bot_url))
 
 
 @router.callback_query(F.data == "wanted:cancel")
@@ -68,7 +68,7 @@ async def wanted_cancel(
     if callback.message:
         await callback.message.edit_text(
             "Создание заявки отменено.",
-            reply_markup=main_menu_keyboard(settings.support_url),
+            reply_markup=main_menu_keyboard(settings.support_bot_url),
         )
 
 
@@ -240,7 +240,7 @@ async def wanted_create(
                 ad.id,
                 signer=signer,
                 payment_url=settings.wanted_finik_payment_url,
-                support_url=settings.support_url,
+                support_url=settings.support_bot_url,
             ),
         )
 
@@ -280,7 +280,7 @@ async def wanted_paid(
                     ad.id,
                     signer=signer,
                     payment_url=settings.wanted_finik_payment_url,
-                    support_url=settings.support_url,
+                    support_url=settings.support_bot_url,
                     pending=True,
                 )
             )
@@ -318,7 +318,7 @@ async def my_wanted_ads(
     }
     if not rows:
         await message.answer(
-            "У вас пока нет заявок.", reply_markup=main_menu_keyboard(settings.support_url)
+            "У вас пока нет заявок.", reply_markup=main_menu_keyboard(settings.support_bot_url)
         )
         return
     await message.answer("Ваши последние заявки:")
@@ -329,7 +329,7 @@ async def my_wanted_ads(
                 ad.id,
                 signer=signer,
                 payment_url=settings.wanted_finik_payment_url,
-                support_url=settings.support_url,
+                support_url=settings.support_bot_url,
                 pending=ad.status == "pending",
             )
         await message.answer(
@@ -339,5 +339,5 @@ async def my_wanted_ads(
         )
     await message.answer(
         "Чтобы разместить новую заявку, нажмите кнопку ниже.",
-        reply_markup=main_menu_keyboard(settings.support_url),
+        reply_markup=main_menu_keyboard(settings.support_bot_url),
     )

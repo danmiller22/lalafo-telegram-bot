@@ -113,6 +113,27 @@ class PaymentRequest(Base):
     apartment: Mapped[Apartment] = relationship(back_populates="payments")
 
 
+class SupportTicket(Base):
+    __tablename__ = "support_tickets"
+    __table_args__ = (
+        Index("ix_support_ticket_status_created", "status", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    telegram_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    username: Mapped[str | None] = mapped_column(String(64))
+    first_name: Mapped[str | None] = mapped_column(String(255))
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="open")
+    admin_message_id: Mapped[int | None] = mapped_column(BigInteger)
+    answer: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+    answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    answered_by: Mapped[int | None] = mapped_column(BigInteger)
+
+
 class WantedAd(Base):
     __tablename__ = "wanted_ads"
     __table_args__ = (Index("ix_wanted_ads_status_created", "status", "created_at"),)

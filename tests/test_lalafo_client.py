@@ -43,6 +43,7 @@ def test_default_search_uses_all_selected_districts():
     assert set(params[key] for key in params if key.startswith("parameters[69]")) == {
         "15496",
         "2773",
+        "2774",
     }
     assert params["price[from]"] == "18000"
     assert params["price[to]"] == "35000"

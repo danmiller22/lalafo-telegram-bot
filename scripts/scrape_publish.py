@@ -68,11 +68,11 @@ CENTRAL_DISTRICT_TERMS = (
 )
 SOURCE_MIN_PRICE = 18_000
 SOURCE_MAX_PRICE = 35_000
-SOURCE_ALLOWED_ROOMS = ("studio", "1")
-SOURCE_MAX_POSTS_PER_RUN = 25
+SOURCE_ALLOWED_ROOMS = ("studio", "1", "2")
+SOURCE_MAX_POSTS_PER_RUN = 30
 SOURCE_MAX_SEARCH_PAGES = 15
-SOURCE_REPOST_AFTER_HOURS = 12.0
-MAX_REPOSTS_PER_RUN = 25
+SOURCE_REPOST_AFTER_HOURS = 18.0
+MAX_REPOSTS_PER_RUN = 5
 CENTRAL_BATCH_SHARE = 0.60
 PREFERRED_BATCH_SHARE = 0.80
 MAX_CANDIDATE_POOL = 120
@@ -470,7 +470,7 @@ async def run() -> int:
         chat_id=settings.telegram_group_id,
         signer=signer,
         bot_username=settings.telegram_bot_username,
-        support_url=settings.support_url,
+        support_url=settings.support_bot_url,
         max_photos=settings.max_photos_per_apartment,
     )
     published = 0

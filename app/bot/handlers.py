@@ -13,6 +13,7 @@ from app.payments.repository import PaymentRepository
 from app.payment_plans import WEEK_PLAN, WEEK_PRICE, plan_label
 from app.payments.service import PaymentService
 from app.security import TokenSigner
+from app.support.handlers import begin_support
 from app.telegram.formatting import format_admin_card, format_apartment
 from app.telegram.keyboards import (
     admin_keyboard,
@@ -41,7 +42,7 @@ async def _show_main_menu(message: Message, settings: Settings) -> None:
         "🏠 Сервис аренды квартир\n\n"
         "Здесь можно получить контакт собственника из группы или разместить "
         "собственную заявку «Ищу квартиру».",
-        reply_markup=main_menu_keyboard(settings.support_url),
+        reply_markup=main_menu_keyboard(settings.support_bot_url),
     )
 
 
@@ -57,6 +58,9 @@ async def start_handler(
     payload = _start_payload(message)
     if payload == "want":
         await begin_wanted_form(message, state)
+        return
+    if payload == "support":
+        await begin_support(message, state)
         return
     if not payload:
         # A plain /start is the most common customer action.  Send the menu
@@ -80,7 +84,7 @@ async def start_handler(
                 bot,
                 user_id=message.from_user.id,
                 apartment=result.apartment,
-                support_url=settings.support_url,
+                support_url=settings.support_bot_url,
                 max_photos=settings.max_photos_per_apartment,
             )
             return
@@ -119,20 +123,20 @@ async def start_handler(
                 apartment_id,
                 signer=signer,
                 payment_url=settings.finik_payment_url,
-                support_url=settings.support_url,
+                support_url=settings.support_bot_url,
             )
             if result.status == "awaiting_receipt"
             else pending_payment_keyboard(
                 apartment_id,
                 signer=signer,
-                support_url=settings.support_url,
+                support_url=settings.support_bot_url,
             )
             if result.status == "pending"
             else private_payment_keyboard(
                 apartment_id,
                 signer=signer,
                 payment_url=settings.finik_payment_url,
-                support_url=settings.support_url,
+                support_url=settings.support_bot_url,
                 pending=result.status == "pending",
             )
         )
@@ -165,7 +169,7 @@ async def plan_handler(
             bot,
             user_id=callback.from_user.id,
             apartment=access.apartment,
-            support_url=settings.support_url,
+            support_url=settings.support_bot_url,
             max_photos=settings.max_photos_per_apartment,
         )
         await callback.answer("✅ Карточка с номером отправлена вам.")
@@ -202,7 +206,7 @@ async def plan_handler(
                 apartment_id,
                 signer=signer,
                 payment_url=settings.finik_payment_url,
-                support_url=settings.support_url,
+                support_url=settings.support_bot_url,
             ),
         )
 
@@ -310,7 +314,7 @@ async def contact_handler(
                     apartment_id,
                     signer=signer,
                     bot_username=settings.telegram_bot_username,
-                    support_url=settings.support_url,
+                    support_url=settings.support_bot_url,
                 )
             )
         return
@@ -323,7 +327,7 @@ async def contact_handler(
                         apartment_id,
                         signer=signer,
                         payment_url=settings.finik_payment_url,
-                        support_url=settings.support_url,
+                        support_url=settings.support_bot_url,
                     )
                 )
             except Exception:
@@ -339,7 +343,7 @@ async def contact_handler(
                 apartment_id,
                 signer=signer,
                 bot_username=settings.telegram_bot_username,
-                support_url=settings.support_url,
+                support_url=settings.support_bot_url,
             )
         )
         return
@@ -366,7 +370,7 @@ async def view_contact_handler(
                 bot,
                 user_id=callback.from_user.id,
                 apartment=result.apartment,
-                support_url=settings.support_url,
+                support_url=settings.support_bot_url,
                 max_photos=settings.max_photos_per_apartment,
             )
             await callback.answer("✅ Полная карточка отправлена вам в этот чат.")
@@ -388,14 +392,14 @@ async def view_contact_handler(
                     reply_markup = pending_payment_keyboard(
                         apartment_id,
                         signer=signer,
-                        support_url=settings.support_url,
+                        support_url=settings.support_bot_url,
                     )
                 else:
                     reply_markup = status_keyboard(
                         apartment_id,
                         signer=signer,
                         payment_url=settings.finik_payment_url,
-                        support_url=settings.support_url,
+                        support_url=settings.support_bot_url,
                     )
                 await callback.message.edit_reply_markup(reply_markup=reply_markup)
             except Exception:
@@ -411,7 +415,7 @@ async def view_contact_handler(
                     apartment_id,
                     signer=signer,
                     payment_url=settings.finik_payment_url,
-                    support_url=settings.support_url,
+                    support_url=settings.support_bot_url,
                 )
             )
         return
@@ -426,14 +430,14 @@ async def view_contact_handler(
                     apartment_id,
                     signer=signer,
                     payment_url=settings.finik_payment_url,
-                    support_url=settings.support_url,
+                    support_url=settings.support_bot_url,
                 )
                 if callback.message.chat.type == "private"
                 else apartment_keyboard(
                     apartment_id,
                     signer=signer,
                     bot_username=settings.telegram_bot_username,
-                    support_url=settings.support_url,
+                    support_url=settings.support_bot_url,
                 )
             )
             await callback.message.edit_reply_markup(reply_markup=reply_markup)
@@ -452,14 +456,14 @@ async def view_contact_handler(
                     apartment_id,
                     signer=signer,
                     payment_url=settings.finik_payment_url,
-                    support_url=settings.support_url,
+                    support_url=settings.support_bot_url,
                 )
                 if callback.message.chat.type == "private"
                 else apartment_keyboard(
                     apartment_id,
                     signer=signer,
                     bot_username=settings.telegram_bot_username,
-                    support_url=settings.support_url,
+                    support_url=settings.support_bot_url,
                 )
             )
             await callback.message.edit_reply_markup(reply_markup=reply_markup)
@@ -488,7 +492,7 @@ async def paid_handler(
                 bot,
                 user_id=callback.from_user.id,
                 apartment=result.apartment,
-                support_url=settings.support_url,
+                support_url=settings.support_bot_url,
                 max_photos=settings.max_photos_per_apartment,
             )
             await callback.answer("✅ Полная карточка отправлена вам в этот чат.")
@@ -509,14 +513,14 @@ async def paid_handler(
                     reply_markup = pending_payment_keyboard(
                         apartment_id,
                         signer=signer,
-                        support_url=settings.support_url,
+                        support_url=settings.support_bot_url,
                     )
                 else:
                     reply_markup = status_keyboard(
                         apartment_id,
                         signer=signer,
                         payment_url=settings.finik_payment_url,
-                        support_url=settings.support_url,
+                        support_url=settings.support_bot_url,
                     )
                 await callback.message.edit_reply_markup(reply_markup=reply_markup)
             except Exception:
@@ -533,7 +537,7 @@ async def paid_handler(
                     apartment_id,
                     signer=signer,
                     payment_url=settings.finik_payment_url,
-                    support_url=settings.support_url,
+                    support_url=settings.support_bot_url,
                 )
             )
         return
@@ -551,7 +555,7 @@ async def paid_handler(
                     apartment_id,
                     signer=signer,
                     payment_url=settings.finik_payment_url,
-                    support_url=settings.support_url,
+                    support_url=settings.support_bot_url,
                 )
             )
         except Exception:

@@ -139,7 +139,7 @@ async def admin_callback(
                 bot,
                 user_id=request.telegram_user_id,
                 apartment=apartment,
-                support_url=settings.support_url,
+                support_url=settings.support_bot_url,
                 max_photos=settings.max_photos_per_apartment,
             )
         except Exception:
@@ -160,7 +160,7 @@ async def admin_callback(
                     apartment.id,
                     signer=signer,
                     payment_url=settings.finik_payment_url,
-                    support_url=settings.support_url,
+                    support_url=settings.support_bot_url,
                 ),
             )
         except Exception:

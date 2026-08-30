@@ -62,7 +62,7 @@ async def wanted_admin_callback(
                     ad.id,
                     signer=signer,
                     payment_url=settings.wanted_finik_payment_url,
-                    support_url=settings.support_url,
+                    support_url=settings.support_bot_url,
                 ),
             )
         except Exception:
@@ -74,7 +74,7 @@ async def wanted_admin_callback(
         published = await bot.send_message(
             settings.telegram_group_id,
             format_wanted_public(ad),
-            reply_markup=wanted_public_keyboard(ad, support_url=settings.support_url),
+            reply_markup=wanted_public_keyboard(ad, support_url=settings.support_bot_url),
         )
     except Exception:
         await wanted_ads.release_publication(ad.id)
