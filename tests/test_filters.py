@@ -2,10 +2,14 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from app.config import Settings
 from app.lalafo.parser import is_allowed
 from app.telegram.formatting import format_apartment, format_public_apartment
 from app.lalafo.subletting import halve_subletting_candidates
 from scripts.scrape_publish import (
+    MAX_REPOSTS_PER_RUN,
+    SOURCE_MAX_POSTS_PER_RUN,
+    SOURCE_MAX_SEARCH_PAGES,
     candidate_quality,
     is_central_district,
     is_preferred_district,
@@ -57,6 +61,17 @@ def test_agency_listing_is_allowed_but_not_identified_on_card():
 def test_missing_district_and_optional_deposit_are_omitted():
     text = format_apartment(make_ad(district=None, deposit=None, rooms="studio"))
     assert text == "🏠 Студия\n🏙 Бишкек\n💰 35 000 сом"
+
+
+def test_expanded_source_keeps_reposts_strictly_limited():
+    settings = Settings(_env_file=None)
+
+    assert SOURCE_MAX_POSTS_PER_RUN == 40
+    assert SOURCE_MAX_SEARCH_PAGES == 24
+    assert MAX_REPOSTS_PER_RUN == 5
+    assert settings.max_new_posts_per_run == 40
+    assert settings.max_search_pages == 24
+    assert settings.allow_no_district is True
 
 
 def test_subletting_listing_is_allowed_but_not_labeled():

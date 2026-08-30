@@ -13,7 +13,6 @@ from app.lalafo.client import LalafoClient, LalafoError, LalafoNotFound
 from app.lalafo.models import LalafoAd, SearchAd
 from app.lalafo.parser import LalafoParseError, is_allowed
 from app.lalafo.phone import mask_phone
-from app.lalafo.subletting import halve_subletting_candidates
 from app.state import PostedState, ad_fingerprint
 from app.telegram.formatting import format_apartment
 
@@ -69,13 +68,13 @@ CENTRAL_DISTRICT_TERMS = (
 SOURCE_MIN_PRICE = 18_000
 SOURCE_MAX_PRICE = 35_000
 SOURCE_ALLOWED_ROOMS = ("studio", "1", "2")
-SOURCE_MAX_POSTS_PER_RUN = 30
-SOURCE_MAX_SEARCH_PAGES = 15
+SOURCE_MAX_POSTS_PER_RUN = 40
+SOURCE_MAX_SEARCH_PAGES = 24
 SOURCE_REPOST_AFTER_HOURS = 18.0
 MAX_REPOSTS_PER_RUN = 5
 CENTRAL_BATCH_SHARE = 0.60
 PREFERRED_BATCH_SHARE = 0.80
-MAX_CANDIDATE_POOL = 120
+MAX_CANDIDATE_POOL = 160
 
 
 async def fetch_detail_batch(
@@ -247,10 +246,12 @@ async def run() -> int:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
     state = PostedState.load(settings.posted_state_path)
-    limit = min(settings.effective_post_limit, SOURCE_MAX_POSTS_PER_RUN)
+    # Product-level source limits deliberately ignore stale cloud overrides.
+    # Test mode remains one-card-only, while production always has room for
+    # the requested forty-card batch.
+    limit = 1 if settings.test_mode else SOURCE_MAX_POSTS_PER_RUN
     candidate_pool_limit = max(limit, min(limit * 3, MAX_CANDIDATE_POOL))
     candidates = []
-    candidate_phones: set[str] = set()
     repost_candidate_ids: set[int] = set()
     repost_last_published_at: dict[int, datetime] = {}
 
@@ -373,9 +374,6 @@ async def run() -> int:
                 if ad.price < max(settings.min_price, SOURCE_MIN_PRICE):
                     logger.info("Skipping ad id=%s reason=min_price", ad.lalafo_id)
                     continue
-                if not settings.allow_no_district and not ad.district:
-                    logger.info("Skipping ad id=%s reason=district", ad.lalafo_id)
-                    continue
                 if not settings.allow_no_deposit and ad.deposit is None:
                     logger.info("Skipping ad id=%s reason=deposit", ad.lalafo_id)
                     continue
@@ -384,29 +382,16 @@ async def run() -> int:
                 if ad.lalafo_id in duplicate_ids and not is_repost:
                     logger.info("Skipping DB duplicate id=%s", ad.lalafo_id)
                     continue
-                if ad.phone in candidate_phones:
-                    logger.info("Skipping repeated contact id=%s", ad.lalafo_id)
-                    continue
                 candidates.append(ad)
-                candidate_phones.add(ad.phone)
                 if is_repost:
                     repost_candidate_ids.add(ad.lalafo_id)
             if page_number >= min(
                 page.page_count,
-                settings.max_search_pages,
                 SOURCE_MAX_SEARCH_PAGES,
             ):
                 break
             page_number += 1
 
-    shared_before = sum(not ad.no_subletting for ad in candidates)
-    candidates = halve_subletting_candidates(candidates)
-    shared_after = sum(not ad.no_subletting for ad in candidates)
-    logger.info(
-        "Subletting candidate reduction: %d -> %d (target: 50%% fewer)",
-        shared_before,
-        shared_after,
-    )
     candidates = select_publish_batch_with_reposts(
         candidates,
         repost_last_published_at,

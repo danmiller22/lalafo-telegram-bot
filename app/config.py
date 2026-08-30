@@ -186,13 +186,13 @@ class Settings(BaseSettings):
     min_price: int = 18_000
     max_price: int = 35_000
     rooms: str = "studio,1,2"
-    max_new_posts_per_run: int = 30
-    max_search_pages: int = 15
+    max_new_posts_per_run: int = 40
+    max_search_pages: int = 24
     preferred_districts_only: bool = False
     max_photos_per_apartment: int = 5
     only_with_photos: bool = True
     allow_no_deposit: bool = True
-    allow_no_district: bool = False
+    allow_no_district: bool = True
     dry_run: bool = False
     test_mode: bool = False
 
