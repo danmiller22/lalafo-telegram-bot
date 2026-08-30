@@ -70,7 +70,7 @@ def test_expanded_source_keeps_reposts_strictly_limited():
     assert SOURCE_MAX_POSTS_PER_RUN == 40
     assert SOURCE_MAX_SEARCH_PAGES == 24
     assert MAX_REPOSTS_PER_RUN == 18
-    assert SOURCE_REPOST_AFTER_HOURS == 18.0
+    assert SOURCE_REPOST_AFTER_HOURS == 3.0
     assert settings.max_new_posts_per_run == 40
     assert settings.max_search_pages == 24
     assert settings.allow_no_district is True

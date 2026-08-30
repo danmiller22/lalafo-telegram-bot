@@ -70,7 +70,10 @@ SOURCE_MAX_PRICE = 35_000
 SOURCE_ALLOWED_ROOMS = ("studio", "1", "2")
 SOURCE_MAX_POSTS_PER_RUN = 40
 SOURCE_MAX_SEARCH_PAGES = 24
-SOURCE_REPOST_AFTER_HOURS = 18.0
+# A card becomes eligible after one publication interval, but selection below
+# always takes the oldest eligible cards first. With a large source pool this
+# rotates inventory instead of showing the same apartments every three hours.
+SOURCE_REPOST_AFTER_HOURS = 3.0
 MAX_REPOSTS_PER_RUN = 18
 CENTRAL_BATCH_SHARE = 0.60
 PREFERRED_BATCH_SHARE = 0.80
