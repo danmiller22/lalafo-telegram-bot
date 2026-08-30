@@ -301,7 +301,19 @@ async def run() -> int:
             try:
                 page = await client.search(DEFAULT_SEARCH_URL, page=page_number)
             except (LalafoError, LalafoParseError) as exc:
-                logger.error("Search failed safely: %s", exc)
+                if candidates:
+                    logger.warning(
+                        "Search page %d failed after %d candidates; "
+                        "publishing the durable partial batch: %s",
+                        page_number,
+                        len(candidates),
+                        exc,
+                    )
+                    break
+                logger.error(
+                    "Search failed safely before candidates were collected: %s",
+                    exc,
+                )
                 if engine is not None:
                     await engine.dispose()
                 return 2
