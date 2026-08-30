@@ -189,6 +189,13 @@ def select_publish_batch(
     selected = central[:central_target]
     preferred_take = min(len(preferred), max(0, requested_target - len(selected)))
     selected.extend(preferred[:preferred_take])
+    central_extra_take = min(
+        len(central) - central_target,
+        max(0, requested_target - len(selected)),
+    )
+    selected.extend(
+        central[central_target : central_target + central_extra_take]
+    )
     selected.extend(other[: total - len(selected)])
     if len(selected) < total:
         selected_ids = {ad.lalafo_id for ad in selected}
@@ -406,8 +413,17 @@ async def run() -> int:
         limit,
     )
     repost_candidate_ids.intersection_update(ad.lalafo_id for ad in candidates)
+    central_count = sum(is_central_district(ad.district) for ad in candidates)
+    central_percent = round(central_count * 100 / len(candidates)) if candidates else 0
     preferred_count = sum(is_preferred_district(ad.district) for ad in candidates)
     preferred_percent = round(preferred_count * 100 / len(candidates)) if candidates else 0
+    logger.info(
+        "Central-district share: %d/%d (%d%%), target=%d%%",
+        central_count,
+        len(candidates),
+        central_percent,
+        round(CENTRAL_BATCH_SHARE * 100),
+    )
     logger.info(
         "Preferred-district share: %d/%d (%d%%), target=%d%%",
         preferred_count,
