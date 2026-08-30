@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 import pytest
 
 from app.lalafo.parser import is_allowed
@@ -139,7 +141,7 @@ def test_quality_puts_cheap_central_apartment_first():
     assert candidate_quality(central_bargain) > candidate_quality(cheap_outskirts)
 
 
-def test_publish_batch_targets_seventy_percent_requested_districts():
+def test_publish_batch_targets_eighty_percent_requested_districts():
     preferred = [
         make_ad(lalafo_id=index, district="ЦУМ", phone=f"+996555000{index:03d}")
         for index in range(1, 81)
@@ -152,7 +154,32 @@ def test_publish_batch_targets_seventy_percent_requested_districts():
     selected = select_publish_batch(preferred + other, 60)
 
     assert len(selected) == 60
-    assert sum(is_preferred_district(ad.district) for ad in selected) == 42
+    assert sum(is_preferred_district(ad.district) for ad in selected) == 48
+
+
+def test_publish_batch_targets_sixty_percent_central_districts():
+    central = [
+        make_ad(lalafo_id=index, district="ЦУМ", phone=f"+996555100{index:03d}")
+        for index in range(1, 31)
+    ]
+    preferred = [
+        make_ad(
+            lalafo_id=100 + index,
+            district="Восток-5 мкр",
+            phone=f"+996555200{index:03d}",
+        )
+        for index in range(1, 31)
+    ]
+    other = [
+        make_ad(lalafo_id=200 + index, district="Асанбай", phone=f"+996555300{index:03d}")
+        for index in range(1, 31)
+    ]
+
+    selected = select_publish_batch(central + preferred + other, 25)
+
+    assert len(selected) == 25
+    assert sum(is_central_district(ad.district) for ad in selected) == 15
+    assert sum(is_preferred_district(ad.district) for ad in selected) == 20
 
 
 def test_publish_batch_fills_available_space_when_one_group_is_small():
@@ -165,7 +192,7 @@ def test_publish_batch_fills_available_space_when_one_group_is_small():
     assert preferred[0] in selected
 
 
-def test_publish_batch_caps_three_hour_repeats_at_five():
+def test_publish_batch_uses_fresh_cards_before_any_reposts():
     candidates = [
         make_ad(
             lalafo_id=index,
@@ -174,12 +201,13 @@ def test_publish_batch_caps_three_hour_repeats_at_five():
         )
         for index in range(1, 61)
     ]
-    repost_ids = set(range(51, 61))
+    now = datetime.now(timezone.utc)
+    repost_times = {index: now - timedelta(hours=index) for index in range(51, 61)}
 
-    selected = select_publish_batch_with_reposts(candidates, repost_ids, 40)
+    selected = select_publish_batch_with_reposts(candidates, repost_times, 25)
 
-    assert len(selected) == 40
-    assert len({ad.lalafo_id for ad in selected} & repost_ids) == 5
+    assert len(selected) == 25
+    assert not ({ad.lalafo_id for ad in selected} & set(repost_times))
 
 
 def test_publish_batch_uses_fresh_cards_when_repeats_are_unavailable():
@@ -188,7 +216,35 @@ def test_publish_batch_uses_fresh_cards_when_repeats_are_unavailable():
         for index in range(1, 46)
     ]
 
-    selected = select_publish_batch_with_reposts(candidates, {45}, 40)
+    selected = select_publish_batch_with_reposts(
+        candidates,
+        {45: datetime.now(timezone.utc) - timedelta(days=1)},
+        25,
+    )
 
-    assert len(selected) == 40
-    assert sum(ad.lalafo_id == 45 for ad in selected) == 1
+    assert len(selected) == 25
+    assert sum(ad.lalafo_id == 45 for ad in selected) == 0
+
+
+def test_publish_batch_fills_shortage_with_oldest_reposts_first():
+    fresh = [
+        make_ad(lalafo_id=index, phone=f"+996700{index:06d}")
+        for index in range(1, 11)
+    ]
+    repeats = [
+        make_ad(lalafo_id=100 + index, phone=f"+996701{index:06d}")
+        for index in range(1, 31)
+    ]
+    now = datetime.now(timezone.utc)
+    repost_times = {
+        ad.lalafo_id: now - timedelta(hours=index)
+        for index, ad in enumerate(repeats, start=1)
+    }
+
+    selected = select_publish_batch_with_reposts(fresh + repeats, repost_times, 25)
+    selected_ids = {ad.lalafo_id for ad in selected}
+
+    assert len(selected) == 25
+    assert {ad.lalafo_id for ad in fresh} <= selected_ids
+    assert {ad.lalafo_id for ad in repeats[-15:]} <= selected_ids
+    assert not ({ad.lalafo_id for ad in repeats[:15]} & selected_ids)

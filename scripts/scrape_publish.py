@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import AsyncExitStack
+from datetime import datetime, timezone
 import logging
 import math
 import re
+from collections.abc import Callable, Mapping
 
 from app.config import DEFAULT_SEARCH_URL, get_settings
 from app.lalafo.client import LalafoClient, LalafoError, LalafoNotFound
@@ -67,11 +69,12 @@ CENTRAL_DISTRICT_TERMS = (
 SOURCE_MIN_PRICE = 18_000
 SOURCE_MAX_PRICE = 35_000
 SOURCE_ALLOWED_ROOMS = ("studio", "1")
-SOURCE_MAX_POSTS_PER_RUN = 50
+SOURCE_MAX_POSTS_PER_RUN = 25
 SOURCE_MAX_SEARCH_PAGES = 15
-SOURCE_REPOST_AFTER_HOURS = 3.0
-MAX_REPOSTS_PER_RUN = 5
-PREFERRED_BATCH_SHARE = 0.70
+SOURCE_REPOST_AFTER_HOURS = 12.0
+MAX_REPOSTS_PER_RUN = 25
+CENTRAL_BATCH_SHARE = 0.60
+PREFERRED_BATCH_SHARE = 0.80
 MAX_CANDIDATE_POOL = 120
 
 
@@ -148,50 +151,84 @@ def candidate_quality(ad: LalafoAd) -> tuple[int, bool, bool, bool, int, int, bo
     )
 
 
-def select_publish_batch(candidates: list[LalafoAd], limit: int) -> list[LalafoAd]:
-    """Build a batch targeting 70% requested districts when supply allows it."""
+def select_publish_batch(
+    candidates: list[LalafoAd],
+    limit: int,
+    *,
+    rank_key: Callable[[LalafoAd], tuple] = candidate_quality,
+) -> list[LalafoAd]:
+    """Build a diverse batch led by central and requested districts."""
     if limit <= 0 or not candidates:
         return []
+    central = sorted(
+        (ad for ad in candidates if is_central_district(ad.district)),
+        key=rank_key,
+        reverse=True,
+    )
     preferred = sorted(
-        (ad for ad in candidates if is_preferred_district(ad.district)),
-        key=candidate_quality,
+        (
+            ad
+            for ad in candidates
+            if is_preferred_district(ad.district)
+            and not is_central_district(ad.district)
+        ),
+        key=rank_key,
         reverse=True,
     )
     other = sorted(
         (ad for ad in candidates if not is_preferred_district(ad.district)),
-        key=candidate_quality,
+        key=rank_key,
         reverse=True,
     )
     total = min(limit, len(candidates))
-    preferred_target = min(len(preferred), math.ceil(total * PREFERRED_BATCH_SHARE))
-    selected = preferred[:preferred_target]
+    central_target = min(len(central), math.ceil(total * CENTRAL_BATCH_SHARE))
+    requested_target = min(
+        len(central) + len(preferred),
+        math.ceil(total * PREFERRED_BATCH_SHARE),
+    )
+    selected = central[:central_target]
+    preferred_take = min(len(preferred), max(0, requested_target - len(selected)))
+    selected.extend(preferred[:preferred_take])
     selected.extend(other[: total - len(selected)])
     if len(selected) < total:
-        selected.extend(preferred[preferred_target : preferred_target + total - len(selected)])
-    return sorted(selected, key=candidate_quality, reverse=True)
+        selected_ids = {ad.lalafo_id for ad in selected}
+        remaining = sorted(
+            (ad for ad in candidates if ad.lalafo_id not in selected_ids),
+            key=rank_key,
+            reverse=True,
+        )
+        selected.extend(remaining[: total - len(selected)])
+    return sorted(selected, key=rank_key, reverse=True)
 
 
 def select_publish_batch_with_reposts(
     candidates: list[LalafoAd],
-    repost_candidate_ids: set[int],
+    repost_last_published_at: Mapping[int, datetime],
     limit: int,
 ) -> list[LalafoAd]:
-    """Reserve at most five batch slots for eligible three-hour repeats."""
+    """Use fresh cards first, then fill gaps with the oldest eligible reposts."""
     if limit <= 0 or not candidates:
         return []
+    repost_candidate_ids = set(repost_last_published_at)
     fresh = [ad for ad in candidates if ad.lalafo_id not in repost_candidate_ids]
     repeats = [ad for ad in candidates if ad.lalafo_id in repost_candidate_ids]
-    repeat_limit = min(MAX_REPOSTS_PER_RUN, len(repeats), limit)
-    fresh_limit = min(len(fresh), limit - repeat_limit)
-    selected = select_publish_batch(fresh, fresh_limit)
-    selected.extend(select_publish_batch(repeats, repeat_limit))
+    selected = select_publish_batch(fresh, min(len(fresh), limit))
+    repeat_limit = min(
+        MAX_REPOSTS_PER_RUN,
+        len(repeats),
+        max(0, limit - len(selected)),
+    )
+    if repeat_limit:
+        far_future = datetime.max.replace(tzinfo=timezone.utc)
 
-    # If fewer repeats exist, use every remaining slot for a fresh card.
-    if len(selected) < limit and len(selected) < len(candidates):
-        selected_ids = {ad.lalafo_id for ad in selected}
-        remaining_fresh = [ad for ad in fresh if ad.lalafo_id not in selected_ids]
+        def oldest_first(ad: LalafoAd) -> tuple:
+            published_at = repost_last_published_at.get(ad.lalafo_id, far_future)
+            if published_at.tzinfo is None:
+                published_at = published_at.replace(tzinfo=timezone.utc)
+            return (-published_at.timestamp(), *candidate_quality(ad))
+
         selected.extend(
-            select_publish_batch(remaining_fresh, limit - len(selected))
+            select_publish_batch(repeats, repeat_limit, rank_key=oldest_first)
         )
     return sorted(selected, key=candidate_quality, reverse=True)
 
@@ -208,6 +245,7 @@ async def run() -> int:
     candidates = []
     candidate_phones: set[str] = set()
     repost_candidate_ids: set[int] = set()
+    repost_last_published_at: dict[int, datetime] = {}
 
     engine = None
     apartments = None
@@ -274,14 +312,16 @@ async def run() -> int:
                 if apartments is not None
                 else set()
             )
-            repostable_ids = (
-                await apartments.repostable_lalafo_ids(
+            repostable_publications = (
+                await apartments.repostable_lalafo_publications(
                     [item.lalafo_id for item in page.items],
                     after_hours=SOURCE_REPOST_AFTER_HOURS,
                 )
                 if apartments is not None
-                else set()
+                else {}
             )
+            repostable_ids = set(repostable_publications)
+            repost_last_published_at.update(repostable_publications)
             detail_search_ads = []
             for search_ad in page.items:
                 is_repost = search_ad.lalafo_id in repostable_ids
@@ -362,7 +402,7 @@ async def run() -> int:
     )
     candidates = select_publish_batch_with_reposts(
         candidates,
-        repost_candidate_ids,
+        repost_last_published_at,
         limit,
     )
     repost_candidate_ids.intersection_update(ad.lalafo_id for ad in candidates)

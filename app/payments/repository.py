@@ -52,20 +52,40 @@ class ApartmentRepository:
         self, lalafo_ids: list[int], *, after_hours: float
     ) -> set[int]:
         """Return published ads whose latest group card is old enough to rotate in again."""
+        return set(
+            await self.repostable_lalafo_publications(
+                lalafo_ids, after_hours=after_hours
+            )
+        )
+
+    async def repostable_lalafo_publications(
+        self, lalafo_ids: list[int], *, after_hours: float
+    ) -> dict[int, datetime]:
+        """Return eligible repost IDs with their last publication time.
+
+        The timestamps let the publisher choose the least recently shown cards
+        instead of repeating the same highest-scoring apartments every cycle.
+        """
         if not lalafo_ids:
-            return set()
+            return {}
         cutoff = datetime.now(timezone.utc) - timedelta(hours=max(0.0, after_hours))
         async with self.sessions() as session:
-            result = await session.scalars(
-                select(Apartment.lalafo_id).where(
-                    Apartment.lalafo_id.in_(lalafo_ids),
-                    Apartment.publication_status == "published",
-                    Apartment.active.is_(True),
-                    Apartment.published_at.is_not(None),
-                    Apartment.published_at <= cutoff,
+            rows = (
+                await session.execute(
+                    select(Apartment.lalafo_id, Apartment.published_at).where(
+                        Apartment.lalafo_id.in_(lalafo_ids),
+                        Apartment.publication_status == "published",
+                        Apartment.active.is_(True),
+                        Apartment.published_at.is_not(None),
+                        Apartment.published_at <= cutoff,
+                    )
                 )
-            )
-            return set(result.all())
+            ).all()
+            return {
+                int(lalafo_id): published_at
+                for lalafo_id, published_at in rows
+                if published_at is not None
+            }
 
     async def is_duplicate(self, ad: LalafoAd) -> bool:
         fingerprint = ad_fingerprint(ad)
