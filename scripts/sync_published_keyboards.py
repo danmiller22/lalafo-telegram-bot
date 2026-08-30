@@ -21,6 +21,7 @@ from app.telegram.keyboards import APARTMENT_KEYBOARD_VERSION, apartment_keyboar
 
 
 logger = logging.getLogger(__name__)
+SYNC_BATCH_SIZE = 40
 
 
 async def run() -> int:
@@ -47,6 +48,8 @@ async def run() -> int:
                             Apartment.telegram_message_id.is_not(None),
                             Apartment.keyboard_version < APARTMENT_KEYBOARD_VERSION,
                         )
+                        .order_by(Apartment.published_at.desc(), Apartment.id.desc())
+                        .limit(SYNC_BATCH_SIZE)
                     )
                 ).all()
             )
