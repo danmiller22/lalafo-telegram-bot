@@ -28,7 +28,10 @@ HEADERS = {
     "country-id": "12",
     "content-type": "application/json",
 }
-TARGET_PROXY_COUNT = 1
+# Keep several independently verified routes. Lalafo can accept the probe and
+# then rate-limit that IP on the real multi-page search; LalafoClient rotates
+# this comma-separated pool on 403/429 and transport failures.
+TARGET_PROXY_COUNT = 5
 
 
 async def _works(proxy_url: str) -> str | None:
