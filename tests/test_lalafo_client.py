@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.config import DEFAULT_SEARCH_URL
+from app.config import DEFAULT_SEARCH_URL, LALAFO_DISTRICT_FILTERS
 from app.lalafo.client import LalafoAccessError, LalafoClient, LalafoError
 
 
@@ -37,9 +37,7 @@ def test_default_search_uses_all_selected_districts():
     district_values = [
         value for key, value in params.items() if key.startswith("parameters[357][")
     ]
-    assert len(district_values) == 113
-    assert district_values[0] == "30232"
-    assert district_values[-1] == "56412"
+    assert district_values == [value for _, value in LALAFO_DISTRICT_FILTERS]
     assert set(params[key] for key in params if key.startswith("parameters[69]")) == {
         "15496",
         "2773",
