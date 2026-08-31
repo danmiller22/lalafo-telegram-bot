@@ -88,7 +88,11 @@ class LalafoChatClient:
             "content-type": "application/json",
             "device-fingerprint": self._fingerprint,
             "Accept": "application/json, text/plain, */*",
+            "Origin": "https://lalafo.kg",
             "Referer": "https://lalafo.kg/account/chats",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-origin",
             "sec-ch-ua": (
                 '"Not=A?Brand";v="99", "Google Chrome";v="151", '
                 '"Chromium";v="151"'
@@ -121,16 +125,45 @@ class LalafoChatClient:
 
         async def attempt() -> httpx.Response | None:
             last_response: httpx.Response | None = None
+            # Follow the same first-party flow as the website.  The initial
+            # navigation establishes Lalafo's ordinary session/WAF cookies;
+            # posting credentials from a completely empty cookie jar is often
+            # rejected even when the account credentials are correct.
+            try:
+                await self._http.get(
+                    "/login",
+                    headers={
+                        **self._headers(),
+                        "Accept": (
+                            "text/html,application/xhtml+xml,application/xml;"
+                            "q=0.9,image/avif,image/webp,*/*;q=0.8"
+                        ),
+                        "Referer": "https://lalafo.kg/",
+                        "Sec-Fetch-Dest": "document",
+                        "Sec-Fetch-Mode": "navigate",
+                        "Sec-Fetch-Site": "same-origin",
+                    },
+                )
+            except httpx.RequestError:
+                return None
             for candidate in login_candidates:
                 try:
+                    login_headers = self._headers()
+                    login_headers["Referer"] = "https://lalafo.kg/login"
                     last_response = await self._http.post(
                         "/api/auth/login",
-                        headers=self._headers(bypass_cache=True),
+                        headers=login_headers,
                         json={field: candidate, "password": password},
                     )
                 except httpx.RequestError:
                     return None
-                if last_response.status_code not in {401, 403, 422}:
+                # A 403 is a route/session refusal, not an alternate spelling
+                # of the phone number.  Stop immediately instead of making two
+                # more bot-like login attempts.  Only validation/auth failures
+                # may benefit from trying the normalized browser phone value.
+                if last_response.status_code == 403:
+                    return last_response
+                if last_response.status_code not in {401, 422}:
                     return last_response
             return last_response
 

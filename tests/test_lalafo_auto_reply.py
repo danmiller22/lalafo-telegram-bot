@@ -12,6 +12,7 @@ from app.lalafo.auto_reply import (
     MAX_REPLIES_PER_SCAN,
     MIN_POLL_SECONDS,
     LalafoAutoResponder,
+    LalafoChatAuthenticationError,
     LalafoChatClient,
     LalafoChatRateLimitError,
     LalafoChatRejectedError,
@@ -225,9 +226,30 @@ async def test_login_retries_phone_in_browser_normalized_format() -> None:
     session = await client.login("+996 600-003-060", "secret")
 
     assert session.profile_id == 100
+    client._http.get.assert_awaited_once()
     assert client._http.post.await_count == 2
     assert client._http.post.await_args_list[0].kwargs["json"]["mobile"] == "+996 600-003-060"
     assert client._http.post.await_args_list[1].kwargs["json"]["mobile"] == "996600003060"
+    assert client._http.post.await_args_list[0].kwargs["headers"]["Origin"] == (
+        "https://lalafo.kg"
+    )
+    assert client._http.post.await_args_list[0].kwargs["headers"]["Referer"] == (
+        "https://lalafo.kg/login"
+    )
+
+
+@pytest.mark.asyncio
+async def test_login_does_not_repeat_a_forbidden_cloud_route() -> None:
+    client = LalafoChatClient()
+    client._http = AsyncMock()  # type: ignore[assignment]
+    request = httpx.Request("POST", "https://lalafo.kg/api/auth/login")
+    client._http.post.return_value = httpx.Response(403, request=request)
+
+    with pytest.raises(LalafoChatAuthenticationError, match="HTTP 403"):
+        await client.login("+996 600-003-060", "secret")
+
+    client._http.get.assert_awaited_once()
+    client._http.post.assert_awaited_once()
 
 
 def test_health_requires_live_task_and_recent_progress() -> None:
