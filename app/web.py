@@ -227,6 +227,7 @@ def _build_lalafo_auto_responder() -> LalafoAutoResponder:
     return LalafoAutoResponder(
         login=login,
         password=password,
+        database_url=settings.database_url,
         poll_seconds=settings.lalafo_auto_reply_poll_seconds,
     )
 

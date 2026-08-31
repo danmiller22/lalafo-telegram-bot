@@ -248,3 +248,54 @@ class FeaturedReviewState(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow
     )
+
+
+class LalafoAutoReplyJob(Base):
+    __tablename__ = "lalafo_auto_reply_jobs"
+    __table_args__ = (
+        UniqueConstraint("ack", name="uq_lalafo_auto_reply_job_ack"),
+        Index(
+            "ix_lalafo_auto_reply_jobs_ready",
+            "status",
+            "next_attempt_at",
+            "source",
+            "inbound_time",
+        ),
+        Index(
+            "ix_lalafo_auto_reply_jobs_chat_order",
+            "chat_key",
+            "inbound_time",
+            "created_at",
+            "inbound_key",
+        ),
+    )
+
+    inbound_key: Mapped[str] = mapped_column(String(600), primary_key=True)
+    chat_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    inbound_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    inbound_time: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    ack: Mapped[str] = mapped_column(String(36), nullable=False)
+    source: Mapped[str] = mapped_column(String(16), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="queued")
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    next_attempt_at: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    needs_reconcile: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    first_attempt_at: Mapped[int | None] = mapped_column(BigInteger)
+    created_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    updated_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+
+class LalafoAutoReplyCursor(Base):
+    __tablename__ = "lalafo_auto_reply_cursors"
+
+    chat_key: Mapped[str] = mapped_column(String(512), primary_key=True)
+    message_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    message_time: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    updated_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+
+class LalafoAutoReplyMeta(Base):
+    __tablename__ = "lalafo_auto_reply_meta"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False)

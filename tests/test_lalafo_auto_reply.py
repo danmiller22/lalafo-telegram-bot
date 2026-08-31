@@ -1,277 +1,604 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+import asyncio
+import json
+import sys
+from collections import defaultdict
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import httpx
 import pytest
+import pytest_asyncio
 
-from app.lalafo.auto_reply import (
+try:
+    import socketio  # noqa: F401
+except ModuleNotFoundError:
+    # The checked-in test venv predates the Socket.IO dependency. Production
+    # and CI install requirements.txt; these unit tests exercise no real socket.
+    sys.modules["socketio"] = SimpleNamespace(AsyncClient=object)  # type: ignore[assignment]
+
+from app.database import create_engine_and_session, init_db
+from app.lalafo.auto_reply import AutoReplyScheduler, AutoReplySynchronizer
+from app.lalafo.auto_reply_store import AutoReplyStore
+from app.lalafo.chat_protocol import (
     AUTO_REPLY_TEXT,
-    MAX_REPLIES_PER_SCAN,
-    MIN_POLL_SECONDS,
-    LalafoAutoResponder,
-    LalafoChatAuthenticationError,
+    AutoReplyJob,
+    ChatRef,
+    ChatSnapshot,
+    FeedId,
     LalafoChatClient,
-    LalafoChatRateLimitError,
-    LalafoChatRejectedError,
-    LalafoSession,
+    LalafoGatewayError,
+    MessageMeta,
+    is_eligible_incoming,
+    make_chat_key,
+    normalize_chat_snapshot,
+    normalize_live_message,
+    socket_connection_id,
 )
 
 
-class FakeSocket:
-    connected = True
-
-    def on(self, *_: object, **__: object) -> None:
-        return None
-
-    def get_sid(self, namespace: str) -> str:
-        return "socket-1"
+OWNER_ID = "1000"
+CUSTOMER_ID = "2000"
+AD_ID = "3000"
 
 
-class FakeClient:
-    def __init__(self, chats: list[dict]) -> None:
-        self.session = LalafoSession(100, "token", "access", "hash")
-        self._chats = chats
-        self.send_reply = AsyncMock()
-
-    def require_session(self) -> LalafoSession:
-        return self.session
-
-    async def chats(self) -> list[dict]:
-        return self._chats
-
-    async def close(self) -> None:
-        return None
+@pytest_asyncio.fixture
+async def store():
+    engine, sessions = create_engine_and_session("sqlite:///:memory:")
+    await init_db(engine)
+    state = AutoReplyStore(sessions)
+    await state.initialize(1_700_000_000_000)
+    try:
+        yield state
+    finally:
+        await engine.dispose()
 
 
-def chat(*, message_id: int, origin: int, payload: str = "Любой вопрос") -> dict:
+def message(
+    message_id: str,
+    *,
+    origin: str = CUSTOMER_ID,
+    recipient: str = OWNER_ID,
+    message_type: int = 1,
+    kind: int = 1,
+    created: int = 1_700_000_002,
+    deleted: bool = False,
+    payload: str | None = "synthetic fixture",
+) -> MessageMeta:
+    return MessageMeta(
+        id=message_id,
+        origin_id=origin,
+        recipient_id=recipient,
+        type=message_type,
+        kind=kind,
+        created_at=created,
+        deleted=deleted,
+        payload=payload,
+    )
+
+
+def chat_ref(*, customer: str = CUSTOMER_ID, ad: str = AD_ID) -> ChatRef:
+    feed_id = FeedId(OWNER_ID, customer, ad)
+    return ChatRef(make_chat_key(1, feed_id), 1, feed_id, customer)
+
+
+def snapshot(
+    *,
+    unread: int,
+    bottom: MessageMeta | None,
+    seen: int = 1_700_000_000,
+    customer: str = CUSTOMER_ID,
+    ad: str = AD_ID,
+) -> ChatSnapshot:
+    chat = chat_ref(customer=customer, ad=ad)
+    return ChatSnapshot(
+        chat_key=chat.chat_key,
+        feed_type=chat.feed_type,
+        feed_id=chat.feed_id,
+        opponent_id=chat.opponent_id,
+        unread_count=unread,
+        seen_at=seen,
+        bottom=bottom,
+    )
+
+
+class FakeGateway:
+    def __init__(
+        self,
+        chats: list[ChatSnapshot] | None = None,
+        histories: dict[str, list[MessageMeta]] | None = None,
+    ) -> None:
+        self.chats = chats or []
+        self.histories = histories or {}
+        self.sent: list[AutoReplyJob] = []
+        self.reconciled = False
+
+    async def get_owner_id(self) -> str:
+        return OWNER_ID
+
+    async def list_chats(self) -> list[ChatSnapshot]:
+        return self.chats
+
+    async def retrieve_messages(
+        self, chat: ChatRef, start_id: str | None = None
+    ) -> list[MessageMeta]:
+        del start_id
+        return self.histories.get(chat.chat_key, [])
+
+    async def send_reply(self, job: AutoReplyJob) -> None:
+        self.sent.append(job)
+
+    async def reconcile_reply(self, job: AutoReplyJob) -> bool:
+        del job
+        return self.reconciled
+
+
+def live_payload(
+    message_id: str,
+    *,
+    message_type: int = 1,
+    kind: int = 1,
+    origin: int = 2000,
+    recipient: int = 1000,
+    feed_type: int = 1,
+) -> dict:
+    feed_id = {"userId1": 1000, "userId2": 2000}
+    if feed_type == 1:
+        feed_id["adId"] = 3000
     return {
-        "threadId": "thread-1",
-        "feedType": 1,
-        "ad": {"id": 99},
-        "opponent": {"id": 200},
-        "bottom": {
+        "ref": "MessageReceived",
+        "feedType": feed_type,
+        "feedId": feed_id,
+        "message": {
             "id": message_id,
+            "type": message_type,
+            "kind": kind,
             "origin": origin,
-            "created": 1_700_000_000,
-            "payload": payload,
+            "recipient": recipient,
+            "created": 1_700_000_002,
+            "payload": "synthetic fixture",
         },
     }
 
 
-@pytest.mark.asyncio
-async def test_replies_once_per_thread_with_safe_fixed_text() -> None:
-    client = FakeClient(
-        [
-            chat(message_id=1, origin=200, payload="Актуально?"),
-            chat(message_id=3, origin=100, payload="Already outgoing"),
-        ]
-    )
-    responder = LalafoAutoResponder(
-        login="ignored",
-        password="ignored",
-        client=client,  # type: ignore[arg-type]
-        socket=FakeSocket(),  # type: ignore[arg-type]
-    )
-
-    assert await responder.scan_once() == 1
-    assert client.send_reply.await_count == 1
-    for call in client.send_reply.await_args_list:
-        assert call.args[1] == AUTO_REPLY_TEXT
-        assert call.args[2] == "socket-1"
+async def wait_scheduler(scheduler: AutoReplyScheduler) -> None:
+    while scheduler._active_tasks:  # noqa: SLF001 - deterministic unit-test drain
+        await asyncio.gather(*list(scheduler._active_tasks))  # noqa: SLF001
 
 
-@pytest.mark.asyncio
-async def test_does_not_duplicate_reply_for_same_incoming_message() -> None:
-    client = FakeClient([chat(message_id=42, origin=200)])
-    responder = LalafoAutoResponder(
-        login="ignored",
-        password="ignored",
-        client=client,  # type: ignore[arg-type]
-        socket=FakeSocket(),  # type: ignore[arg-type]
-    )
-
-    assert await responder.scan_once() == 1
-    assert await responder.scan_once() == 0
-    client.send_reply.assert_awaited_once()
+def callbacks() -> tuple[AsyncMock, AsyncMock, list[str], list[bool]]:
+    sent = AsyncMock()
+    changed = AsyncMock()
+    halted: list[str] = []
+    offline: list[bool] = []
+    return sent, changed, halted, offline
 
 
-@pytest.mark.asyncio
-async def test_rate_limited_message_pauses_all_retries_for_an_hour() -> None:
-    client = FakeClient([chat(message_id=43, origin=200)])
-    client.send_reply.side_effect = [LalafoChatRateLimitError(), None]
-    responder = LalafoAutoResponder(
-        login="ignored",
-        password="ignored",
-        client=client,  # type: ignore[arg-type]
-        socket=FakeSocket(),  # type: ignore[arg-type]
-    )
-
-    assert await responder.scan_once() == 0
-    assert await responder.scan_once() == 0
-    client.send_reply.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_permanently_rejected_message_does_not_create_retry_storm() -> None:
-    client = FakeClient([chat(message_id=44, origin=200)])
-    client.send_reply.side_effect = LalafoChatRejectedError()
-    responder = LalafoAutoResponder(
-        login="ignored",
-        password="ignored",
-        client=client,  # type: ignore[arg-type]
-        socket=FakeSocket(),  # type: ignore[arg-type]
-    )
-
-    assert await responder.scan_once() == 0
-    assert await responder.scan_once() == 0
-    client.send_reply.assert_awaited_once()
-
-
-def test_fixed_text_matches_requested_message() -> None:
+def test_fixed_text_exactly_matches_requested_one_line_reply() -> None:
     assert AUTO_REPLY_TEXT == (
-        "Здравствуйте! 👋\n"
-        "Квартира актуальна.\n"
-        "Все актуальные варианты квартир собраны в нашем Telegram-канале. 🏠\n"
-        "Новые варианты добавляются регулярно.\n"
-        "📞 Там же можно получить контакт для связи.\n"
-        "👉 Telegram: https://t.me/arendabishkek3"
+        "Здравствуйте! 👋 Квартира актуальна. Все актуальные варианты квартир собраны "
+        "в нашем Telegram-канале.  🏠 Новые варианты добавляются регулярно. 📞 Там же "
+        "можно получить контакт для связи.  👉 Telegram: https://t.me/arendabishkek3"
     )
+    assert "\n" not in AUTO_REPLY_TEXT
 
 
-@pytest.mark.asyncio
-async def test_send_does_not_retry_a_forbidden_message() -> None:
-    client = LalafoChatClient()
-    client.session = LalafoSession(100, "token", "access", "hash")
-    client._user_hash = "hash"
-    client._http = AsyncMock()  # type: ignore[assignment]
-    request = httpx.Request("POST", "https://lalafo.kg/api/chat/v4/message/send")
-    client._http.post.return_value = httpx.Response(
-        403, request=request, text="message rejected"
+@pytest.mark.parametrize(
+    ("candidate", "eligible"),
+    [
+        (message("text"), True),
+        (message("prepared", message_type=3), True),
+        (message("media", kind=2), True),
+        (message("own", origin=OWNER_ID, recipient=CUSTOMER_ID), False),
+        (message("system", message_type=2), False),
+        (message("trigger", message_type=4), False),
+        (message("favourite", message_type=42), False),
+        (message("deleted", deleted=True), False),
+        (message("wrong-recipient", recipient="9999"), False),
+    ],
+)
+def test_filters_only_customer_text_prepared_and_media(
+    candidate: MessageMeta, eligible: bool
+) -> None:
+    assert is_eligible_incoming(candidate, OWNER_ID) is eligible
+
+
+def test_normalizes_ad_and_user_to_user_live_events() -> None:
+    ad_event = normalize_live_message(live_payload("ad"), OWNER_ID)
+    direct_event = normalize_live_message(
+        live_payload("direct", feed_type=3), OWNER_ID
     )
-
-    with pytest.raises(LalafoChatRejectedError):
-        await client.send_reply(chat(message_id=50, origin=200), AUTO_REPLY_TEXT, "sid")
-
-    assert client._http.post.await_count == 1
-    first = client._http.post.await_args_list[0].kwargs
-    assert first["json"]["message"]["payload"] == AUTO_REPLY_TEXT
-    assert len(first["headers"]["device-fingerprint"]) == 32
-    assert first["headers"]["Referer"] == "https://lalafo.kg/account/chats"
+    assert ad_event is not None and ad_event.chat.feed_type == 1
+    assert ad_event.chat.feed_id.ad_id == AD_ID
+    assert direct_event is not None and direct_event.chat.feed_type == 3
+    assert direct_event.chat.feed_id.ad_id is None
 
 
-@pytest.mark.asyncio
-async def test_thread_cooldown_blocks_a_second_new_message_in_same_chat() -> None:
-    client = FakeClient([chat(message_id=61, origin=200)])
-    responder = LalafoAutoResponder(
-        login="ignored",
-        password="ignored",
-        client=client,  # type: ignore[arg-type]
-        socket=FakeSocket(),  # type: ignore[arg-type]
-    )
-    assert await responder.scan_once() == 1
-    client._chats = [chat(message_id=62, origin=200)]
-    assert await responder.scan_once() == 0
-    client.send_reply.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_scan_has_a_hard_reply_batch_limit() -> None:
-    chats = []
-    for index in range(10):
-        item = chat(message_id=100 + index, origin=200)
-        item["threadId"] = f"thread-{index}"
-        item["opponent"] = {"id": 200 + index}
-        chats.append(item)
-    client = FakeClient(chats)
-    responder = LalafoAutoResponder(
-        login="ignored",
-        password="ignored",
-        client=client,  # type: ignore[arg-type]
-        socket=FakeSocket(),  # type: ignore[arg-type]
-    )
-    assert await responder.scan_once() == MAX_REPLIES_PER_SCAN
-    assert client.send_reply.await_count == MAX_REPLIES_PER_SCAN
-
-
-def test_poll_interval_is_never_below_ten_seconds() -> None:
-    responder = LalafoAutoResponder(
-        login="ignored",
-        password="ignored",
-        poll_seconds=1,
-        client=FakeClient([]),  # type: ignore[arg-type]
-        socket=FakeSocket(),  # type: ignore[arg-type]
-    )
-    assert responder._poll_seconds == 10.0
-
-
-@pytest.mark.asyncio
-async def test_login_retries_phone_in_browser_normalized_format() -> None:
-    client = LalafoChatClient()
-    client._http = AsyncMock()  # type: ignore[assignment]
-    request = httpx.Request("POST", "https://lalafo.kg/api/auth/login")
-    client._http.post.side_effect = [
-        httpx.Response(401, request=request),
-        httpx.Response(
-            200,
-            request=request,
-            json={
-                "id": 100,
-                "token": "token",
-                "access_token": "access",
-                "user_hash": "hash",
+def test_normalizes_chat_snapshot_without_storing_customer_content() -> None:
+    chat = normalize_chat_snapshot(
+        {
+            "feedType": 1,
+            "opponent": {"id": 2000},
+            "ad": {"id": 3000},
+            "unread": 1,
+            "seen": 1_700_000_000,
+            "bottom": {
+                "id": "incoming",
+                "type": 1,
+                "kind": 1,
+                "origin": 2000,
+                "recipient": 1000,
+                "created": 1_700_000_002,
+                "payload": "synthetic fixture",
             },
-        ),
-    ]
+        },
+        OWNER_ID,
+    )
+    assert chat is not None
+    assert chat.unread_count == 1
+    assert chat.bottom is not None and chat.bottom.id == "incoming"
 
-    session = await client.login("+996 600-003-060", "secret")
 
-    assert session.profile_id == 100
-    client._http.get.assert_awaited_once()
-    assert client._http.post.await_count == 2
-    assert client._http.post.await_args_list[0].kwargs["json"]["mobile"] == "+996 600-003-060"
-    assert client._http.post.await_args_list[1].kwargs["json"]["mobile"] == "996600003060"
-    assert client._http.post.await_args_list[0].kwargs["headers"]["Origin"] == (
-        "https://lalafo.kg"
+def test_reads_only_server_issued_socket_connection_id() -> None:
+    assert socket_connection_id({"ref": "SocketConnection", "socketId": "server-id"}) == (
+        "server-id"
     )
-    assert client._http.post.await_args_list[0].kwargs["headers"]["Referer"] == (
-        "https://lalafo.kg/login"
-    )
-    assert (
-        client._http.post.await_args_list[0].kwargs["headers"]["X-Cache-Bypass"]
-        == "yes"
-    )
+    assert socket_connection_id({"ref": "MessageReceived", "id": "message-id"}) is None
+    assert socket_connection_id(
+        {"ref": "SocketConnection", "data": {"socketId": "nested-server-id"}}
+    ) == "nested-server-id"
 
 
 @pytest.mark.asyncio
-async def test_login_does_not_repeat_a_forbidden_cloud_route() -> None:
-    client = LalafoChatClient()
-    client._http = AsyncMock()  # type: ignore[assignment]
-    request = httpx.Request("POST", "https://lalafo.kg/api/auth/login")
-    client._http.post.return_value = httpx.Response(403, request=request)
-
-    with pytest.raises(LalafoChatAuthenticationError, match="HTTP 403"):
-        await client.login("+996 600-003-060", "secret")
-
-    client._http.get.assert_awaited_once()
-    client._http.post.assert_awaited_once()
+async def test_store_deduplicates_each_inbound_message_id(store: AutoReplyStore) -> None:
+    chat = chat_ref()
+    assert await store.enqueue(chat.chat_key, message("same"), "live", 1000)
+    assert not await store.enqueue(chat.chat_key, message("same"), "live", 1001)
+    assert await store.enqueue(chat.chat_key, message("next"), "live", 1002)
+    jobs = await store.list_jobs()
+    assert [job.inbound_id for job in jobs] == ["same", "next"]
+    assert jobs[0].ack != jobs[1].ack
 
 
-def test_health_requires_live_task_and_recent_progress() -> None:
-    responder = LalafoAutoResponder(
-        login="ignored",
-        password="ignored",
-        client=FakeClient([]),  # type: ignore[arg-type]
-        socket=FakeSocket(),  # type: ignore[arg-type]
+@pytest.mark.asyncio
+async def test_restart_recovers_sending_job_for_reconciliation(
+    store: AutoReplyStore,
+) -> None:
+    chat = chat_ref()
+    await store.enqueue(chat.chat_key, message("interrupted"), "live", 1000)
+    candidate = (await store.list_ready_heads(1000))[0]
+    claimed = await store.claim(candidate.inbound_key, 1001)
+    assert claimed is not None and claimed.status == "sending"
+    assert await store.recover_interrupted(1002) == 1
+    recovered = await store.get_job(candidate.inbound_key)
+    assert recovered is not None
+    assert recovered.status == "retry_wait"
+    assert recovered.needs_reconcile
+
+
+@pytest.mark.asyncio
+async def test_initial_sync_queues_each_unread_message_but_not_read_history(
+    store: AutoReplyStore,
+) -> None:
+    chat = snapshot(unread=2, bottom=message("new-2", created=1_700_000_003))
+    history = [
+        message("old", created=1_699_999_999),
+        message("new-1", created=1_700_000_002),
+        message("new-2", created=1_700_000_003),
+    ]
+    gateway = FakeGateway([chat], {chat.chat_key: history})
+    synchronizer = AutoReplySynchronizer(
+        gateway=gateway,  # type: ignore[arg-type]
+        store=store,
+        on_enqueued=lambda: None,
     )
-    responder._task = SimpleNamespace(done=lambda: False)  # type: ignore[assignment]
-    responder.started_at = datetime.now(UTC)
-    assert responder.is_healthy(stale_after_seconds=180)
+    await synchronizer.initialize()
+    stats = await synchronizer.sync_after_connection()
+    jobs = await store.list_jobs()
+    assert stats["initial"] is True
+    assert stats["queued"] == 2
+    assert [job.inbound_id for job in jobs] == ["new-1", "new-2"]
 
-    responder.last_scan_at = datetime.now(UTC) - timedelta(seconds=181)
-    assert not responder.is_healthy(stale_after_seconds=180)
 
-    responder._authentication_retry_not_before = 10**20
-    assert responder.is_healthy(stale_after_seconds=180)
+@pytest.mark.asyncio
+async def test_live_events_buffered_during_initial_sync_are_not_lost(
+    store: AutoReplyStore,
+) -> None:
+    gateway = FakeGateway()
+    synchronizer = AutoReplySynchronizer(
+        gateway=gateway,  # type: ignore[arg-type]
+        store=store,
+        on_enqueued=lambda: None,
+    )
+    await synchronizer.initialize()
+    assert await synchronizer.handle_live(live_payload("during-sync"))
+    stats = await synchronizer.sync_after_connection()
+    jobs = await store.list_jobs()
+    assert stats["buffered"] == 1
+    assert [job.inbound_id for job in jobs] == ["during-sync"]
+
+
+@pytest.mark.asyncio
+async def test_incremental_sync_ignores_read_flag_and_uses_cursor(
+    store: AutoReplyStore,
+) -> None:
+    chat = snapshot(unread=0, bottom=message("cursor", created=1_700_000_001))
+    first_gateway = FakeGateway([chat], {chat.chat_key: [chat.bottom]})
+    first = AutoReplySynchronizer(
+        gateway=first_gateway,  # type: ignore[arg-type]
+        store=store,
+        on_enqueued=lambda: None,
+    )
+    await first.initialize()
+    await first.sync_after_connection()
+
+    newer = message("new-even-if-opened", created=1_700_000_002)
+    changed_chat = snapshot(unread=0, bottom=newer)
+    second_gateway = FakeGateway(
+        [changed_chat], {changed_chat.chat_key: [newer, chat.bottom]}
+    )
+    second = AutoReplySynchronizer(
+        gateway=second_gateway,  # type: ignore[arg-type]
+        store=store,
+        on_enqueued=lambda: None,
+    )
+    await second.initialize()
+    stats = await second.sync_after_connection()
+    jobs = await store.list_jobs()
+    assert stats["initial"] is False
+    assert [job.inbound_id for job in jobs] == ["new-even-if-opened"]
+
+
+@pytest.mark.asyncio
+async def test_duplicate_live_event_and_backlog_produce_one_job(
+    store: AutoReplyStore,
+) -> None:
+    incoming = message("deduplicated")
+    chat = snapshot(unread=1, bottom=incoming)
+    gateway = FakeGateway([chat], {chat.chat_key: [incoming]})
+    synchronizer = AutoReplySynchronizer(
+        gateway=gateway,  # type: ignore[arg-type]
+        store=store,
+        on_enqueued=lambda: None,
+    )
+    await synchronizer.initialize()
+    await synchronizer.handle_live(live_payload("deduplicated"))
+    await synchronizer.sync_after_connection()
+    assert len(await store.list_jobs()) == 1
+
+
+@pytest.mark.asyncio
+async def test_scheduler_sends_two_messages_in_same_chat_in_fifo_order(
+    store: AutoReplyStore,
+) -> None:
+    chat = chat_ref()
+    await store.enqueue(chat.chat_key, message("first", created=1), "live", 1)
+    await store.enqueue(chat.chat_key, message("second", created=2), "live", 2)
+    gateway = FakeGateway()
+    sent, changed, halted, offline = callbacks()
+    scheduler = AutoReplyScheduler(
+        store=store,
+        gateway=gateway,  # type: ignore[arg-type]
+        on_sent=sent,
+        on_state_changed=changed,
+        on_halted=halted.append,
+        on_offline=lambda: offline.append(True),
+    )
+    await scheduler.initialize()
+    scheduler.set_online(True)
+    await scheduler.pump()
+    await wait_scheduler(scheduler)
+    await scheduler.pump()
+    await wait_scheduler(scheduler)
+    assert [job.inbound_id for job in gateway.sent] == ["first", "second"]
+    assert sent.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_scheduler_reconciles_interrupted_send_without_resending(
+    store: AutoReplyStore,
+) -> None:
+    chat = chat_ref()
+    await store.enqueue(chat.chat_key, message("ambiguous"), "live", 1)
+    head = (await store.list_ready_heads(1))[0]
+    await store.claim(head.inbound_key, 2)
+    await store.recover_interrupted(3)
+    gateway = FakeGateway()
+    gateway.reconciled = True
+    sent, changed, halted, offline = callbacks()
+    scheduler = AutoReplyScheduler(
+        store=store,
+        gateway=gateway,  # type: ignore[arg-type]
+        on_sent=sent,
+        on_state_changed=changed,
+        on_halted=halted.append,
+        on_offline=lambda: offline.append(True),
+    )
+    await scheduler.initialize()
+    scheduler.set_online(True)
+    await scheduler.pump()
+    await wait_scheduler(scheduler)
+    assert gateway.sent == []
+    assert (await store.get_job(head.inbound_key)).status == "sent"  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_network_failure_is_retried_with_reconciliation(
+    store: AutoReplyStore,
+) -> None:
+    chat = chat_ref()
+    await store.enqueue(chat.chat_key, message("timeout"), "live", 1)
+    gateway = FakeGateway()
+
+    async def fail(_: AutoReplyJob) -> None:
+        raise LalafoGatewayError("network", ambiguous=True)
+
+    gateway.send_reply = fail  # type: ignore[method-assign]
+    sent, changed, halted, offline = callbacks()
+    scheduler = AutoReplyScheduler(
+        store=store,
+        gateway=gateway,  # type: ignore[arg-type]
+        on_sent=sent,
+        on_state_changed=changed,
+        on_halted=halted.append,
+        on_offline=lambda: offline.append(True),
+    )
+    await scheduler.initialize()
+    scheduler.set_online(True)
+    await scheduler.pump()
+    await wait_scheduler(scheduler)
+    job = (await store.list_jobs())[0]
+    assert job.status == "retry_wait"
+    assert job.needs_reconcile
+    assert job.attempts == 1
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_uses_retry_after(store: AutoReplyStore) -> None:
+    chat = chat_ref()
+    await store.enqueue(chat.chat_key, message("limited"), "live", 1)
+    gateway = FakeGateway()
+
+    async def fail(_: AutoReplyJob) -> None:
+        raise LalafoGatewayError("rate_limit", retry_after_ms=120_000)
+
+    gateway.send_reply = fail  # type: ignore[method-assign]
+    sent, changed, halted, offline = callbacks()
+    scheduler = AutoReplyScheduler(
+        store=store,
+        gateway=gateway,  # type: ignore[arg-type]
+        on_sent=sent,
+        on_state_changed=changed,
+        on_halted=halted.append,
+        on_offline=lambda: offline.append(True),
+    )
+    await scheduler.initialize()
+    scheduler.set_online(True)
+    before = int(__import__("time").time() * 1000)
+    await scheduler.pump()
+    await wait_scheduler(scheduler)
+    job = (await store.list_jobs())[0]
+    assert job.next_attempt_at >= before + 119_000
+
+
+@pytest.mark.asyncio
+async def test_security_challenge_halts_all_sending(store: AutoReplyStore) -> None:
+    chat = chat_ref()
+    await store.enqueue(chat.chat_key, message("challenge"), "live", 1)
+    gateway = FakeGateway()
+
+    async def fail(_: AutoReplyJob) -> None:
+        raise LalafoGatewayError("security_challenge", status=403)
+
+    gateway.send_reply = fail  # type: ignore[method-assign]
+    sent, changed, halted, offline = callbacks()
+    scheduler = AutoReplyScheduler(
+        store=store,
+        gateway=gateway,  # type: ignore[arg-type]
+        on_sent=sent,
+        on_state_changed=changed,
+        on_halted=halted.append,
+        on_offline=lambda: offline.append(True),
+    )
+    await scheduler.initialize()
+    scheduler.set_online(True)
+    await scheduler.pump()
+    await wait_scheduler(scheduler)
+    assert scheduler.halted
+    assert halted == ["security_challenge"]
+    assert await store.get_meta("sending_halted") == "1"
+
+
+@pytest.mark.asyncio
+async def test_client_uses_minimal_headers_server_socket_id_and_exact_text() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path == "/api/auth/login":
+            return httpx.Response(
+                200,
+                json={
+                    "id": 1000,
+                    "token": "rest-token",
+                    "access_token": "socket-token",
+                    "user_hash": "user-hash",
+                },
+            )
+        return httpx.Response(200, json={"ok": True})
+
+    http = httpx.AsyncClient(
+        base_url="https://lalafo.kg", transport=httpx.MockTransport(handler)
+    )
+    client = LalafoChatClient(
+        login="996000000000",
+        password="synthetic-secret",
+        fingerprint="f" * 32,
+        http=http,
+    )
+    await client.get_session()
+    client.set_socket_id("server-issued-id")
+    job = AutoReplyJob(
+        inbound_key="key",
+        chat_key=chat_ref().chat_key,
+        inbound_id="incoming",
+        inbound_time=1_700_000_002,
+        ack="00000000-0000-5000-8000-000000000001",
+        source="live",
+        status="sending",
+        attempts=1,
+        next_attempt_at=0,
+        needs_reconcile=False,
+        first_attempt_at=1,
+        created_at=1,
+        updated_at=1,
+    )
+    await client.send_reply(job)
+    await http.aclose()
+
+    login_request, send_request = requests
+    assert "origin" not in login_request.headers
+    assert "referer" not in login_request.headers
+    assert login_request.headers["device"] == "pc"
+    assert login_request.headers["device-fingerprint"] == "f" * 32
+    assert send_request.headers["socket-id"] == "server-issued-id"
+    body = json.loads(send_request.content)
+    assert body["message"]["payload"] == AUTO_REPLY_TEXT
+    assert body["ack"] == job.ack
+
+
+@pytest.mark.asyncio
+async def test_client_reauthenticates_once_after_401() -> None:
+    calls = defaultdict(int)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls[request.url.path] += 1
+        if request.url.path == "/api/auth/login":
+            number = calls[request.url.path]
+            return httpx.Response(
+                200,
+                json={
+                    "id": 1000,
+                    "token": f"rest-{number}",
+                    "access_token": f"socket-{number}",
+                    "user_hash": "hash",
+                },
+            )
+        if calls[request.url.path] == 1:
+            return httpx.Response(401, json={"error": "expired"})
+        return httpx.Response(200, json={"chatUpdates": []})
+
+    http = httpx.AsyncClient(
+        base_url="https://lalafo.kg", transport=httpx.MockTransport(handler)
+    )
+    client = LalafoChatClient(
+        login="996000000000",
+        password="synthetic-secret",
+        fingerprint="f" * 32,
+        http=http,
+    )
+    assert await client.list_chats() == []
+    await http.aclose()
+    assert calls["/api/auth/login"] == 2
+    assert calls["/api/chat/v4/chat-update/get-paginated"] == 2
