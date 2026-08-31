@@ -18,14 +18,16 @@ logger = logging.getLogger(__name__)
 
 AUTO_REPLY_TEXT = """Здравствуйте! 👋
 Квартира актуальна.
-Пожалуйста, задайте вопрос здесь, в чате Lalafo. Ответим по мере возможности."""
+Все актуальные варианты квартир собраны в нашем Telegram-канале. 🏠
+Новые варианты добавляются регулярно.
+📞 Там же можно получить контакт для связи.
+👉 Telegram: https://t.me/arendabishkek3"""
 
-# Conservative product limits.  Stale cloud variables cannot restore the old
-# ten-second, external-link-heavy behaviour that put the previous profile at
-# unnecessary moderation risk.
+# Fixed cadence and bounded batches prevent duplicate bursts when a cloud
+# instance reconnects after downtime while still letting a busy inbox drain.
 MIN_POLL_SECONDS = 60.0
-MAX_REPLIES_PER_SCAN = 3
-MAX_REPLIES_PER_DAY = 20
+MAX_REPLIES_PER_SCAN = 5
+MAX_REPLIES_PER_DAY = 100
 THREAD_COOLDOWN_SECONDS = 24 * 60 * 60
 RATE_LIMIT_COOLDOWN_SECONDS = 60 * 60
 AUTHENTICATION_COOLDOWN_SECONDS = 60 * 60
