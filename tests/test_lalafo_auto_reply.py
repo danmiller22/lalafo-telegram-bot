@@ -243,3 +243,6 @@ def test_health_requires_live_task_and_recent_progress() -> None:
 
     responder.last_scan_at = datetime.now(UTC) - timedelta(seconds=181)
     assert not responder.is_healthy(stale_after_seconds=180)
+
+    responder._authentication_retry_not_before = 10**20
+    assert responder.is_healthy(stale_after_seconds=180)

@@ -28,6 +28,7 @@ MAX_REPLIES_PER_SCAN = 3
 MAX_REPLIES_PER_DAY = 20
 THREAD_COOLDOWN_SECONDS = 24 * 60 * 60
 RATE_LIMIT_COOLDOWN_SECONDS = 60 * 60
+AUTHENTICATION_COOLDOWN_SECONDS = 60 * 60
 CONNECT_DEADLINE_SECONDS = 90.0
 SCAN_DEADLINE_SECONDS = 90.0
 
@@ -272,6 +273,7 @@ class LalafoAutoResponder:
         self._handled_threads: dict[str, float] = {}
         self._reply_times: list[float] = []
         self._rate_limited_until = 0.0
+        self._authentication_retry_not_before = 0.0
         self.running = False
         self.last_error: str | None = None
         self.last_scan_at: datetime | None = None
@@ -307,12 +309,20 @@ class LalafoAutoResponder:
             "reply_count": self.reply_count,
             "last_error": self.last_error,
             "consecutive_failures": self.consecutive_failures,
+            "authentication_retry_in_seconds": max(
+                0,
+                round(self._authentication_retry_not_before - time.monotonic()),
+            ),
         }
 
     def is_healthy(self, *, stale_after_seconds: float = 180.0) -> bool:
         """Return whether the supervisor is alive and has made recent progress."""
         if not self.task_running:
             return False
+        if time.monotonic() < self._authentication_retry_not_before:
+            # The task is deliberately quiet after rejected credentials.  The
+            # watchdog must not turn that safety pause into a rapid login loop.
+            return True
         reference = self.last_scan_at or self.started_at
         if reference is None:
             return False
@@ -491,6 +501,26 @@ class LalafoAutoResponder:
                 await self._wait_for_wake()
             except asyncio.CancelledError:
                 raise
+            except LalafoChatAuthenticationError as exc:
+                self.running = False
+                self.last_error = type(exc).__name__
+                self.consecutive_failures += 1
+                self._authentication_retry_not_before = (
+                    time.monotonic() + AUTHENTICATION_COOLDOWN_SECONDS
+                )
+                logger.error(
+                    "Lalafo authentication was rejected; pausing all login "
+                    "attempts for one hour"
+                )
+                with suppress(Exception):
+                    await self._socket.disconnect()
+                try:
+                    await asyncio.wait_for(
+                        self._stop.wait(), timeout=AUTHENTICATION_COOLDOWN_SECONDS
+                    )
+                except TimeoutError:
+                    pass
+                self._authentication_retry_not_before = 0.0
             except Exception as exc:
                 self.running = False
                 self.last_error = type(exc).__name__
