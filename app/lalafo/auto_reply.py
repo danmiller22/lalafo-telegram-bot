@@ -503,7 +503,12 @@ class LalafoAutoResponder:
                 raise
             except LalafoChatAuthenticationError as exc:
                 self.running = False
-                self.last_error = type(exc).__name__
+                # Expose only the sanitized HTTP/result reason in /health.  This
+                # never contains the configured login, password, or session
+                # tokens, but lets operators distinguish invalid credentials
+                # (401/422) from a rejected cloud route (403) without creating a
+                # rapid retry loop merely to inspect logs.
+                self.last_error = f"{type(exc).__name__}: {exc}"
                 self.consecutive_failures += 1
                 self._authentication_retry_not_before = (
                     time.monotonic() + AUTHENTICATION_COOLDOWN_SECONDS
