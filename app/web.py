@@ -464,7 +464,11 @@ async def _repair_background_tasks_once() -> int:
         )
         restarted += 1
 
-    if settings.lalafo_auto_reply_enabled and _task_stopped(_lalafo_watchdog_task):
+    if (
+        settings.lalafo_auto_reply_enabled
+        and settings.lalafo_auto_reply_web_enabled
+        and _task_stopped(_lalafo_watchdog_task)
+    ):
         logger.error(
             "Restarting Lalafo watchdog after %s",
             _task_error_name(_lalafo_watchdog_task) or "stop",
@@ -563,7 +567,7 @@ async def startup() -> None:
                 _keep_service_awake(), name="free-cloud-keepalive"
             )
             logger.info("Free-cloud keepalive enabled")
-    if settings.lalafo_auto_reply_enabled:
+    if settings.lalafo_auto_reply_enabled and settings.lalafo_auto_reply_web_enabled:
         _lalafo_auto_responder = _build_lalafo_auto_responder()
         _lalafo_auto_responder.start()
         _lalafo_watchdog_task = asyncio.create_task(
@@ -647,7 +651,7 @@ async def health() -> JSONResponse:
         and not _apartment_scheduler_task.done()
     )
     auto_reply: dict[str, Any] | str = "disabled"
-    if settings.lalafo_auto_reply_enabled:
+    if settings.lalafo_auto_reply_enabled and settings.lalafo_auto_reply_web_enabled:
         responder = _lalafo_auto_responder
         auto_reply = (
             responder.status(

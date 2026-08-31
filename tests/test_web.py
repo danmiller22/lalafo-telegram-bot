@@ -145,6 +145,7 @@ async def test_health_keeps_main_service_live_when_auto_reply_is_stale(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("LALAFO_AUTO_REPLY_ENABLED", "true")
+    monkeypatch.setenv("LALAFO_AUTO_REPLY_WEB_ENABLED", "true")
     get_settings.cache_clear()
     web._lalafo_auto_responder = SimpleNamespace(
         status=lambda **_: {"state": "recovering"},

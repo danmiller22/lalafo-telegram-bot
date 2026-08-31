@@ -113,6 +113,9 @@ class Settings(BaseSettings):
 
     lalafo_proxy_url: str = ""
     lalafo_auto_reply_enabled: bool = False
+    # Koyeb's shared egress is rejected by Lalafo. The realtime responder runs
+    # in its dedicated cloud workflow unless a web host explicitly opts in.
+    lalafo_auto_reply_web_enabled: bool = False
     lalafo_login: str = ""
     lalafo_password: str = ""
     lalafo_auto_reply_poll_seconds: float = 10.0
