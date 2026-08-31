@@ -1,5 +1,5 @@
 version: v1.0
-name: Lalafo automatic replies
+name: Lalafo auto-reply health check
 
 agent:
   machine:
@@ -7,17 +7,12 @@ agent:
     os_image: ubuntu2404
 
 execution_time_limit:
-  minutes: 5
+  minutes: 2
 
 blocks:
-  - name: Answer new Lalafo messages
+  - name: Verify the single hosted responder
     task:
-      secrets:
-        - name: lalafo-production
       jobs:
-        - name: Send the fixed Telegram invitation
+        - name: Do not start a second Lalafo login session
           commands:
-            - checkout
-            - sem-version python 3.12
-            - python -m pip install --disable-pip-version-check --quiet 'httpx>=0.28,<1' 'python-socketio[asyncio_client]>=5.13,<6'
-            - python -m scripts.lalafo_auto_reply_once
+            - curl --fail --silent --show-error --retry 3 --retry-delay 10 --max-time 20 https://statutory-mallissa-2danmiller-f1c1b08d.koyeb.app/health

@@ -8,8 +8,9 @@ import httpx
 import pytest
 
 from app.lalafo.auto_reply import (
-    AUTO_REPLY_FALLBACK_TEXT,
     AUTO_REPLY_TEXT,
+    MAX_REPLIES_PER_SCAN,
+    MIN_POLL_SECONDS,
     LalafoAutoResponder,
     LalafoChatClient,
     LalafoChatRateLimitError,
@@ -60,11 +61,10 @@ def chat(*, message_id: int, origin: int, payload: str = "Любой вопро�
 
 
 @pytest.mark.asyncio
-async def test_replies_with_exact_fixed_text_to_any_incoming_message() -> None:
+async def test_replies_once_per_thread_with_safe_fixed_text() -> None:
     client = FakeClient(
         [
             chat(message_id=1, origin=200, payload="Актуально?"),
-            chat(message_id=2, origin=200, payload="Какая цена?"),
             chat(message_id=3, origin=100, payload="Already outgoing"),
         ]
     )
@@ -75,8 +75,8 @@ async def test_replies_with_exact_fixed_text_to_any_incoming_message() -> None:
         socket=FakeSocket(),  # type: ignore[arg-type]
     )
 
-    assert await responder.scan_once() == 2
-    assert client.send_reply.await_count == 2
+    assert await responder.scan_once() == 1
+    assert client.send_reply.await_count == 1
     for call in client.send_reply.await_args_list:
         assert call.args[1] == AUTO_REPLY_TEXT
         assert call.args[2] == "socket-1"
@@ -98,7 +98,7 @@ async def test_does_not_duplicate_reply_for_same_incoming_message() -> None:
 
 
 @pytest.mark.asyncio
-async def test_rate_limited_message_is_retried_on_the_next_scan() -> None:
+async def test_rate_limited_message_pauses_all_retries_for_an_hour() -> None:
     client = FakeClient([chat(message_id=43, origin=200)])
     client.send_reply.side_effect = [LalafoChatRateLimitError(), None]
     responder = LalafoAutoResponder(
@@ -109,8 +109,8 @@ async def test_rate_limited_message_is_retried_on_the_next_scan() -> None:
     )
 
     assert await responder.scan_once() == 0
-    assert await responder.scan_once() == 1
-    assert client.send_reply.await_count == 2
+    assert await responder.scan_once() == 0
+    client.send_reply.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -132,35 +132,75 @@ async def test_permanently_rejected_message_does_not_create_retry_storm() -> Non
 def test_fixed_text_matches_requested_message() -> None:
     assert AUTO_REPLY_TEXT == (
         "Здравствуйте! 👋\n"
-        "Квартира актуальна. Все актуальные варианты квартир собраны в нашем Telegram-канале.\n"
-        "🏠 Новые варианты добавляются регулярно.\n"
-        "📞 Там же можно получить контакт для связи.\n"
-        "👉 Telegram:\n"
-        "https://t.me/arendabishkek3"
+        "Квартира актуальна.\n"
+        "Пожалуйста, задайте вопрос здесь, в чате Lalafo. Ответим по мере возможности."
     )
 
 
 @pytest.mark.asyncio
-async def test_send_retries_link_free_reply_after_forbidden() -> None:
+async def test_send_does_not_retry_a_forbidden_message() -> None:
     client = LalafoChatClient()
     client.session = LalafoSession(100, "token", "access", "hash")
     client._user_hash = "hash"
     client._http = AsyncMock()  # type: ignore[assignment]
     request = httpx.Request("POST", "https://lalafo.kg/api/chat/v4/message/send")
-    client._http.post.side_effect = [
-        httpx.Response(403, request=request, text="external link rejected"),
-        httpx.Response(200, request=request, json={"ok": True}),
-    ]
+    client._http.post.return_value = httpx.Response(
+        403, request=request, text="message rejected"
+    )
 
-    await client.send_reply(chat(message_id=50, origin=200), AUTO_REPLY_TEXT, "sid")
+    with pytest.raises(LalafoChatRejectedError):
+        await client.send_reply(chat(message_id=50, origin=200), AUTO_REPLY_TEXT, "sid")
 
-    assert client._http.post.await_count == 2
+    assert client._http.post.await_count == 1
     first = client._http.post.await_args_list[0].kwargs
-    second = client._http.post.await_args_list[1].kwargs
     assert first["json"]["message"]["payload"] == AUTO_REPLY_TEXT
-    assert second["json"]["message"]["payload"] == AUTO_REPLY_FALLBACK_TEXT
     assert len(first["headers"]["device-fingerprint"]) == 32
     assert first["headers"]["Referer"] == "https://lalafo.kg/account/chats"
+
+
+@pytest.mark.asyncio
+async def test_thread_cooldown_blocks_a_second_new_message_in_same_chat() -> None:
+    client = FakeClient([chat(message_id=61, origin=200)])
+    responder = LalafoAutoResponder(
+        login="ignored",
+        password="ignored",
+        client=client,  # type: ignore[arg-type]
+        socket=FakeSocket(),  # type: ignore[arg-type]
+    )
+    assert await responder.scan_once() == 1
+    client._chats = [chat(message_id=62, origin=200)]
+    assert await responder.scan_once() == 0
+    client.send_reply.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_scan_has_a_hard_reply_batch_limit() -> None:
+    chats = []
+    for index in range(10):
+        item = chat(message_id=100 + index, origin=200)
+        item["threadId"] = f"thread-{index}"
+        item["opponent"] = {"id": 200 + index}
+        chats.append(item)
+    client = FakeClient(chats)
+    responder = LalafoAutoResponder(
+        login="ignored",
+        password="ignored",
+        client=client,  # type: ignore[arg-type]
+        socket=FakeSocket(),  # type: ignore[arg-type]
+    )
+    assert await responder.scan_once() == MAX_REPLIES_PER_SCAN
+    assert client.send_reply.await_count == MAX_REPLIES_PER_SCAN
+
+
+def test_poll_interval_is_never_below_one_minute() -> None:
+    responder = LalafoAutoResponder(
+        login="ignored",
+        password="ignored",
+        poll_seconds=1,
+        client=FakeClient([]),  # type: ignore[arg-type]
+        socket=FakeSocket(),  # type: ignore[arg-type]
+    )
+    assert responder._poll_seconds == MIN_POLL_SECONDS
 
 
 @pytest.mark.asyncio

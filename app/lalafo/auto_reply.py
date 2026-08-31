@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import copy
 import hashlib
 import logging
 import time
@@ -18,24 +17,17 @@ import socketio
 logger = logging.getLogger(__name__)
 
 AUTO_REPLY_TEXT = """Здравствуйте! 👋
-Квартира актуальна. Все актуальные варианты квартир собраны в нашем Telegram-канале.
-🏠 Новые варианты добавляются регулярно.
-📞 Там же можно получить контакт для связи.
-👉 Telegram:
-https://t.me/arendabishkek3"""
+Квартира актуальна.
+Пожалуйста, задайте вопрос здесь, в чате Lalafo. Ответим по мере возможности."""
 
-# Lalafo can reject repeated external links with HTTP 403 even for an
-# authenticated account.  In that case the customer must still receive a
-# useful answer instead of being left without any response.
-AUTO_REPLY_FALLBACK_TEXT = "Здравствуйте! 👋 Да, квартира ещё актуальна."
-PROXY_LIST_URL = "https://api.proxyscrape.com/v4/free-proxy-list/get"
-PROXY_CHECK_URL = (
-    "https://lalafo.kg/api/search/v3/feed/search?expand=url&per-page=1&"
-    "category_id=2044&page=1&city_id=103184"
-)
-MAX_PROXY_CANDIDATES = 60
-PROXY_BATCH_SIZE = 10
-TARGET_WORKING_PROXIES = 2
+# Conservative product limits.  Stale cloud variables cannot restore the old
+# ten-second, external-link-heavy behaviour that put the previous profile at
+# unnecessary moderation risk.
+MIN_POLL_SECONDS = 60.0
+MAX_REPLIES_PER_SCAN = 3
+MAX_REPLIES_PER_DAY = 20
+THREAD_COOLDOWN_SECONDS = 24 * 60 * 60
+RATE_LIMIT_COOLDOWN_SECONDS = 60 * 60
 CONNECT_DEADLINE_SECONDS = 90.0
 SCAN_DEADLINE_SECONDS = 90.0
 
@@ -75,68 +67,12 @@ class LalafoChatClient:
         self._http = self._make_http()
         self.session: LalafoSession | None = None
 
-    def _make_http(self, proxy_url: str | None = None) -> httpx.AsyncClient:
+    def _make_http(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(
             base_url="https://lalafo.kg",
-            proxy=proxy_url,
             follow_redirects=True,
             timeout=httpx.Timeout(self._timeout),
         )
-
-    async def _use_proxy(self, proxy_url: str) -> None:
-        await self._http.aclose()
-        self._http = self._make_http(proxy_url)
-
-    async def _working_proxies(self) -> list[str]:
-        params = {
-            "request": "display_proxies",
-            "protocol": "http",
-            "proxy_format": "protocolipport",
-            "format": "text",
-            "ssl": "yes",
-            "anonymity": "elite,anonymous",
-            "timeout": "5000",
-            "limit": "100",
-        }
-        try:
-            async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
-                response = await client.get(PROXY_LIST_URL, params=params)
-                response.raise_for_status()
-        except httpx.HTTPError:
-            return []
-        proxies = [line.strip() for line in response.text.splitlines() if line.strip()]
-
-        async def works(proxy_url: str) -> str | None:
-            try:
-                async with httpx.AsyncClient(
-                    proxy=proxy_url,
-                    follow_redirects=True,
-                    timeout=httpx.Timeout(7.0),
-                ) as client:
-                    check = await client.get(
-                        PROXY_CHECK_URL,
-                        headers=self._headers(bypass_cache=True),
-                    )
-                return proxy_url if check.status_code == 200 else None
-            except httpx.HTTPError:
-                return None
-
-        selected: list[str] = []
-        for offset in range(
-            0,
-            min(len(proxies), MAX_PROXY_CANDIDATES),
-            PROXY_BATCH_SIZE,
-        ):
-            results = await asyncio.gather(
-                *(
-                    works(proxy)
-                    for proxy in proxies[offset : offset + PROXY_BATCH_SIZE]
-                )
-            )
-            selected.extend(result for result in results if result)
-            if len(selected) >= TARGET_WORKING_PROXIES:
-                break
-        return selected[:TARGET_WORKING_PROXIES]
 
     def _headers(
         self, *, token: str = "", socket_id: str = "", bypass_cache: bool = False
@@ -198,16 +134,6 @@ class LalafoChatClient:
             return last_response
 
         response = await attempt()
-        if response is None or response.status_code in {401, 403, 422}:
-            # Datacenter addresses are intermittently blocked by Lalafo.  When
-            # that happens, select a working HTTPS tunnel in the cloud and retry;
-            # the password remains protected by end-to-end TLS to lalafo.kg.
-            for proxy_url in await self._working_proxies():
-                await self._use_proxy(proxy_url)
-                response = await attempt()
-                if response is not None and response.status_code not in {401, 403, 422}:
-                    logger.info("Lalafo login recovered through a verified proxy")
-                    break
         if response is None:
             raise LalafoChatAuthenticationError("Lalafo login endpoint is unavailable")
         if response.status_code in {401, 403, 422}:
@@ -304,19 +230,6 @@ class LalafoChatClient:
         response = await self._http.post(
             "/api/chat/v4/message/send", headers=headers, json=payload
         )
-        if response.status_code == 403 and message != AUTO_REPLY_FALLBACK_TEXT:
-            detail = response.text.replace("\n", " ")[:300]
-            logger.warning(
-                "Lalafo rejected the Telegram invitation; retrying a link-free "
-                "reply: %s",
-                detail or "HTTP 403",
-            )
-            fallback_payload = copy.deepcopy(payload)
-            fallback_payload["message"]["payload"] = AUTO_REPLY_FALLBACK_TEXT
-            fallback_payload["ack"] = str(uuid.uuid4())
-            response = await self._http.post(
-                "/api/chat/v4/message/send", headers=headers, json=fallback_payload
-            )
         if response.status_code == 401:
             raise LalafoChatAuthenticationError("Lalafo session expired")
         if response.status_code == 429:
@@ -344,7 +257,7 @@ class LalafoAutoResponder:
     ) -> None:
         self._login = login
         self._password = password
-        self._poll_seconds = max(5.0, poll_seconds)
+        self._poll_seconds = max(MIN_POLL_SECONDS, poll_seconds)
         self._client = client or LalafoChatClient()
         self._socket = socket or socketio.AsyncClient(
             reconnection=True,
@@ -356,6 +269,9 @@ class LalafoAutoResponder:
         self._stop = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
         self._handled: dict[str, float] = {}
+        self._handled_threads: dict[str, float] = {}
+        self._reply_times: list[float] = []
+        self._rate_limited_until = 0.0
         self.running = False
         self.last_error: str | None = None
         self.last_scan_at: datetime | None = None
@@ -459,18 +375,44 @@ class LalafoAutoResponder:
         )
         return hashlib.sha256(payload.encode("utf-8")).hexdigest() if payload else None
 
+    @staticmethod
+    def _thread_key(chat: dict[str, Any]) -> str | None:
+        thread_id = chat.get("threadId")
+        if thread_id:
+            return str(thread_id)
+        opponent = chat.get("opponent") or {}
+        ad = chat.get("ad") or {}
+        values = (chat.get("feedType"), ad.get("id"), opponent.get("id"))
+        if not any(value is not None for value in values):
+            return None
+        return "|".join(str(value) for value in values)
+
     async def scan_once(self) -> int:
         session = self._client.require_session()
         chats = await self._client.chats()
         sent = 0
         now = time.monotonic()
+        if now < self._rate_limited_until:
+            self.last_scan_at = datetime.now(UTC)
+            return 0
         self._handled = {
             key: handled_at
             for key, handled_at in self._handled.items()
             if now - handled_at < 86400
         }
-        consecutive_rate_limits = 0
+        self._handled_threads = {
+            key: handled_at
+            for key, handled_at in self._handled_threads.items()
+            if now - handled_at < THREAD_COOLDOWN_SECONDS
+        }
+        self._reply_times = [
+            replied_at
+            for replied_at in self._reply_times
+            if now - replied_at < 86400
+        ]
         for chat in chats:
+            if sent >= MAX_REPLIES_PER_SCAN or len(self._reply_times) >= MAX_REPLIES_PER_DAY:
+                break
             bottom = chat.get("bottom")
             if not isinstance(bottom, dict):
                 continue
@@ -481,7 +423,13 @@ class LalafoAutoResponder:
             if origin == session.profile_id:
                 continue
             key = self._message_key(chat)
-            if not key or key in self._handled:
+            thread_key = self._thread_key(chat)
+            if (
+                not key
+                or key in self._handled
+                or not thread_key
+                or thread_key in self._handled_threads
+            ):
                 continue
             try:
                 await self._client.send_reply(chat, AUTO_REPLY_TEXT, self._socket_id())
@@ -494,15 +442,16 @@ class LalafoAutoResponder:
                 logger.warning("Automatic reply skipped for a chat that forbids replies")
                 continue
             except LalafoChatRateLimitError as exc:
-                # A rate limit is temporary, so leave this message pending for a
-                # later scan while protecting the rest of the queue.
-                consecutive_rate_limits += 1
-                logger.warning("Automatic reply deferred: %s", type(exc).__name__)
-                if consecutive_rate_limits >= 3:
-                    break
-                continue
-            consecutive_rate_limits = 0
+                # One rate-limit response stops all sends for an hour.  Retrying
+                # other chats immediately is exactly the burst pattern we avoid.
+                self._rate_limited_until = now + RATE_LIMIT_COOLDOWN_SECONDS
+                logger.warning(
+                    "Automatic replies paused for one hour: %s", type(exc).__name__
+                )
+                break
             self._handled[key] = now
+            self._handled_threads[thread_key] = now
+            self._reply_times.append(now)
             self.reply_count += 1
             sent += 1
         self.last_scan_at = datetime.now(UTC)
@@ -519,9 +468,10 @@ class LalafoAutoResponder:
         )
 
     async def _wait_for_wake(self) -> None:
-        self._wake.clear()
+        # Socket messages no longer trigger immediate repeated scans.  A fixed
+        # minimum interval is easier on Lalafo and avoids bot-like bursts.
         try:
-            await asyncio.wait_for(self._wake.wait(), timeout=self._poll_seconds)
+            await asyncio.wait_for(self._stop.wait(), timeout=self._poll_seconds)
         except TimeoutError:
             pass
 
