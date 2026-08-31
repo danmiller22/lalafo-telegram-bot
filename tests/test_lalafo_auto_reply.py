@@ -196,7 +196,7 @@ async def test_scan_has_a_hard_reply_batch_limit() -> None:
     assert client.send_reply.await_count == MAX_REPLIES_PER_SCAN
 
 
-def test_poll_interval_is_never_below_one_minute() -> None:
+def test_poll_interval_is_never_below_ten_seconds() -> None:
     responder = LalafoAutoResponder(
         login="ignored",
         password="ignored",
@@ -204,7 +204,7 @@ def test_poll_interval_is_never_below_one_minute() -> None:
         client=FakeClient([]),  # type: ignore[arg-type]
         socket=FakeSocket(),  # type: ignore[arg-type]
     )
-    assert responder._poll_seconds == MIN_POLL_SECONDS
+    assert responder._poll_seconds == 10.0
 
 
 @pytest.mark.asyncio

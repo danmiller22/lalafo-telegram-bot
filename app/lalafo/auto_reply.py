@@ -25,7 +25,7 @@ AUTO_REPLY_TEXT = """Здравствуйте! 👋
 
 # Fixed cadence and bounded batches prevent duplicate bursts when a cloud
 # instance reconnects after downtime while still letting a busy inbox drain.
-MIN_POLL_SECONDS = 60.0
+MIN_POLL_SECONDS = 10.0
 MAX_REPLIES_PER_SCAN = 5
 MAX_REPLIES_PER_DAY = 100
 THREAD_COOLDOWN_SECONDS = 24 * 60 * 60

@@ -115,7 +115,7 @@ class Settings(BaseSettings):
     lalafo_auto_reply_enabled: bool = False
     lalafo_login: str = ""
     lalafo_password: str = ""
-    lalafo_auto_reply_poll_seconds: float = 60.0
+    lalafo_auto_reply_poll_seconds: float = 10.0
     lalafo_auto_reply_watchdog_seconds: float = 30.0
     lalafo_auto_reply_stale_seconds: float = 180.0
     hosted_apartment_scheduler_enabled: bool = True
