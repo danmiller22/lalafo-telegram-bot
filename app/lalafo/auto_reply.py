@@ -150,7 +150,10 @@ class LalafoChatClient:
                 return None
             for candidate in login_candidates:
                 try:
-                    login_headers = self._headers()
+                    # Match Lalafo's first-party web client: its API requests,
+                    # including authentication, carry X-Cache-Bypass.  Without
+                    # it a valid cloud session can be rejected at the edge.
+                    login_headers = self._headers(bypass_cache=True)
                     login_headers["Referer"] = "https://lalafo.kg/login"
                     last_response = await self._http.post(
                         "/api/auth/login",

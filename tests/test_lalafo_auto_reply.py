@@ -213,7 +213,7 @@ async def test_login_retries_phone_in_browser_normalized_format() -> None:
     client._http = AsyncMock()  # type: ignore[assignment]
     request = httpx.Request("POST", "https://lalafo.kg/api/auth/login")
     client._http.post.side_effect = [
-        httpx.Response(403, request=request),
+        httpx.Response(401, request=request),
         httpx.Response(
             200,
             request=request,
@@ -238,6 +238,10 @@ async def test_login_retries_phone_in_browser_normalized_format() -> None:
     )
     assert client._http.post.await_args_list[0].kwargs["headers"]["Referer"] == (
         "https://lalafo.kg/login"
+    )
+    assert (
+        client._http.post.await_args_list[0].kwargs["headers"]["X-Cache-Bypass"]
+        == "yes"
     )
 
 
