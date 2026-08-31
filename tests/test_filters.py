@@ -2,11 +2,12 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from app.config import Settings
+from app.config import DEFAULT_SEARCH_URL, Settings
 from app.lalafo.parser import is_allowed
 from app.telegram.formatting import format_apartment, format_public_apartment
 from app.lalafo.subletting import halve_subletting_candidates
 from scripts.scrape_publish import (
+    CURATED_ROTATION_SPECS,
     MAX_REPOSTS_PER_RUN,
     SOURCE_ALLOWED_ROOMS,
     SOURCE_MAX_POSTS_PER_RUN,
@@ -85,6 +86,18 @@ def test_expanded_source_keeps_reposts_strictly_limited():
     assert settings.max_new_posts_per_run == 20
     assert settings.max_search_pages == 24
     assert settings.allow_no_district is True
+
+
+def test_source_url_contains_only_studios_and_one_bedroom_apartments():
+    assert "/1-bedroom/studio/" in DEFAULT_SEARCH_URL
+    assert "2-bedroom" not in DEFAULT_SEARCH_URL
+
+
+def test_curated_rotation_contains_the_two_approved_apartments():
+    assert CURATED_ROTATION_SPECS == (
+        ("Филармония", 25_000),
+        ("Моссовет", 20_000),
+    )
 
 
 def test_subletting_listing_is_allowed_but_not_labeled():

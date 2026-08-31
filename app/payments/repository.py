@@ -36,6 +36,59 @@ class ApartmentRepository:
             )
             return result.scalar_one_or_none()
 
+    async def curated_rotation_apartments(
+        self, specs: tuple[tuple[str, int], ...]
+    ) -> list[Apartment]:
+        """Resolve one verified, photo-backed apartment for every curated spec.
+
+        Curated cards reuse the original source apartment stored by the payment
+        bot.  That preserves the private owner phone for paid delivery; the
+        public Lalafo repost deliberately has no phone and is never used as the
+        contact source.
+        """
+        if not specs:
+            return []
+        prices = {price for _, price in specs}
+        async with self.sessions() as session:
+            rows = list(
+                (
+                    await session.scalars(
+                        select(Apartment)
+                        .where(
+                            Apartment.price.in_(prices),
+                            Apartment.rooms == "1",
+                            Apartment.active.is_(True),
+                            Apartment.phone != "",
+                        )
+                        .order_by(
+                            Apartment.source_updated_at.desc(),
+                            Apartment.updated_at.desc(),
+                            Apartment.id.desc(),
+                        )
+                    )
+                ).all()
+            )
+        selected: list[Apartment] = []
+        used_ids: set[int] = set()
+        for district, price in specs:
+            normalized = district.casefold().replace("ё", "е")
+            match = next(
+                (
+                    apartment
+                    for apartment in rows
+                    if apartment.id not in used_ids
+                    and apartment.price == price
+                    and apartment.photo_urls
+                    and normalized
+                    in (apartment.district or "").casefold().replace("ё", "е")
+                ),
+                None,
+            )
+            if match is not None:
+                selected.append(match)
+                used_ids.add(match.id)
+        return selected
+
     async def published_lalafo_ids(self, lalafo_ids: list[int]) -> set[int]:
         if not lalafo_ids:
             return set()

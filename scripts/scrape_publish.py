@@ -78,6 +78,33 @@ MAX_REPOSTS_PER_RUN = 20
 CENTRAL_BATCH_SHARE = 0.60
 PREFERRED_BATCH_SHARE = 0.80
 MAX_CANDIDATE_POOL = 160
+# These two manually approved cards must remain in the normal three-hour
+# Telegram rotation.  They are resolved from the original, phone-backed
+# database records rather than from our phone-hidden public Lalafo reposts.
+CURATED_ROTATION_SPECS = (
+    ("Филармония", 25_000),
+    ("Моссовет", 20_000),
+)
+
+
+def apartment_to_ad(apartment) -> LalafoAd:
+    """Build the immutable publication payload stored for an apartment."""
+    return LalafoAd(
+        lalafo_id=apartment.lalafo_id,
+        source_url=apartment.source_url,
+        phone=apartment.phone,
+        price=apartment.price,
+        currency="KGS",
+        rooms=apartment.rooms,
+        district=apartment.district,
+        city=apartment.city,
+        deposit=apartment.deposit,
+        photo_urls=list(apartment.photo_urls),
+        category_id=2044,
+        no_subletting=apartment.no_subletting,
+        owner_listing=False,
+        source_updated_at=apartment.source_updated_at,
+    )
 
 
 async def fetch_detail_batch(
@@ -255,6 +282,7 @@ async def run() -> int:
     limit = 1 if settings.test_mode else SOURCE_MAX_POSTS_PER_RUN
     candidate_pool_limit = max(limit, min(limit * 3, MAX_CANDIDATE_POOL))
     candidates = []
+    curated_ids: set[int] = set()
     repost_candidate_ids: set[int] = set()
     repost_last_published_at: dict[int, datetime] = {}
 
@@ -280,6 +308,26 @@ async def run() -> int:
             await engine.dispose()
             return 2
         apartments = ApartmentRepository(sessions)
+
+        curated_apartments = await apartments.curated_rotation_apartments(
+            CURATED_ROTATION_SPECS
+        )
+        candidates.extend(apartment_to_ad(item) for item in curated_apartments)
+        curated_ids = {item.lalafo_id for item in curated_apartments}
+        repost_candidate_ids.update(curated_ids)
+        missing_curated = len(CURATED_ROTATION_SPECS) - len(curated_apartments)
+        if missing_curated:
+            logger.warning(
+                "Curated rotation is missing %d/%d source apartments; "
+                "the regular batch will continue safely",
+                missing_curated,
+                len(CURATED_ROTATION_SPECS),
+            )
+        else:
+            logger.info(
+                "Curated three-hour rotation loaded: %s",
+                ", ".join(str(item.lalafo_id) for item in curated_apartments),
+            )
 
     async with AsyncExitStack() as stack:
         client = await stack.enter_async_context(
@@ -376,6 +424,8 @@ async def run() -> int:
                     break
                 if ad is None:
                     continue
+                if ad.lalafo_id in curated_ids:
+                    continue
                 is_repost = search_ad.lalafo_id in repostable_ids
                 allowed, reason = is_allowed(
                     ad,
@@ -407,10 +457,16 @@ async def run() -> int:
                 break
             page_number += 1
 
-    candidates = select_publish_batch_with_reposts(
-        candidates,
+    curated_candidates = [
+        ad for ad in candidates if ad.lalafo_id in curated_ids
+    ]
+    regular_candidates = [
+        ad for ad in candidates if ad.lalafo_id not in curated_ids
+    ]
+    candidates = curated_candidates + select_publish_batch_with_reposts(
+        regular_candidates,
         repost_last_published_at,
-        limit,
+        max(0, limit - len(curated_candidates)),
     )
     repost_candidate_ids.intersection_update(ad.lalafo_id for ad in candidates)
     central_count = sum(is_central_district(ad.district) for ad in candidates)
