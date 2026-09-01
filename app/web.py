@@ -266,6 +266,11 @@ async def _watch_lalafo_auto_responder() -> None:
             if responder is None:
                 await _restart_lalafo_auto_responder("worker is missing")
             elif not responder.is_healthy(stale_after_seconds=stale_after):
+                status_snapshot = responder.status(stale_after_seconds=stale_after)
+                if status_snapshot.get("last_error") == "security_challenge":
+                    # A Lalafo 403/CAPTCHA requires operator intervention. Keep
+                    # the web process healthy without retrying the blocked login.
+                    continue
                 await _restart_lalafo_auto_responder("worker is stopped or stale")
         except asyncio.CancelledError:
             raise
