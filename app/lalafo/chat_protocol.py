@@ -23,6 +23,12 @@ LALAFO_HTTP_ORIGIN = "https://lalafo.kg"
 LALAFO_SOCKET_ORIGIN = "https://websocket.lalafo.com"
 LALAFO_SOCKET_PATH = "chat-ws/socket.io"
 
+LALAFO_WEB_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/151.0.0.0 Safari/537.36"
+)
+
 CHAT_PAGE_SIZE = 20
 MESSAGE_PAGE_SIZE = 26
 
@@ -499,9 +505,10 @@ class LalafoChatClient:
         self._login = login
         self._password = password
         self._fingerprint = fingerprint
+        self._anonymous_user_hash = str(uuid.uuid4())
         self._http = http or httpx.AsyncClient(
             base_url=LALAFO_HTTP_ORIGIN,
-            follow_redirects=False,
+            follow_redirects=True,
             timeout=httpx.Timeout(timeout),
         )
         self._owns_http = http is None
@@ -526,6 +533,27 @@ class LalafoChatClient:
         async with self._login_lock:
             if self._session is not None:
                 return self._session
+            try:
+                # The web client establishes the ordinary Lalafo/WAF cookie jar
+                # before submitting credentials. Keep this request non-mutating.
+                await self._http.get(
+                    "/login",
+                    headers=self._request_headers(
+                        authenticated=False,
+                        mutation=False,
+                        headers={
+                            "accept": (
+                                "text/html,application/xhtml+xml,application/xml;"
+                                "q=0.9,image/avif,image/webp,*/*;q=0.8"
+                            ),
+                            "referer": f"{LALAFO_HTTP_ORIGIN}/",
+                            "sec-fetch-dest": "document",
+                            "sec-fetch-mode": "navigate",
+                        },
+                    ),
+                )
+            except httpx.RequestError as exc:
+                raise LalafoGatewayError("network") from exc
             payload = await self._raw_request(
                 "/api/auth/login",
                 body={
@@ -534,10 +562,14 @@ class LalafoChatClient:
                 },
                 authenticated=False,
                 mutation=True,
+                headers={"referer": f"{LALAFO_HTTP_ORIGIN}/login"},
             )
             rest_token = _find_string(payload, ("token", "auth_token"))
             access_token = _find_string(payload, ("access_token", "accessToken")) or rest_token
-            user_hash = _find_string(payload, ("user_hash", "userHash", "hash"))
+            user_hash = (
+                _find_string(payload, ("user_hash", "userHash", "hash"))
+                or self._anonymous_user_hash
+            )
             owner_id = _owner_id(payload)
             if not rest_token or not access_token or not user_hash or not owner_id:
                 raise LalafoGatewayError("protocol")
@@ -720,23 +752,12 @@ class LalafoChatClient:
         headers: dict[str, str] | None = None,
         ambiguous_on_network_failure: bool = False,
     ) -> object:
-        request_headers = {
-            "accept": "application/json",
-            "content-type": "application/json",
-            "device": "pc",
-            "language": "ru_RU",
-            "country-id": "12",
-            "request-id": str(uuid.uuid4()),
-            **(headers or {}),
-        }
-        if mutation:
-            request_headers["device-fingerprint"] = self._fingerprint
-        if authenticated:
-            active = session or self._session
-            if active is None:
-                raise LalafoGatewayError("auth")
-            request_headers["authorization"] = f"Bearer {active.rest_token}"
-            request_headers["user-hash"] = active.user_hash
+        request_headers = self._request_headers(
+            authenticated=authenticated,
+            mutation=mutation,
+            session=session,
+            headers=headers,
+        )
         try:
             response = await self._http.post(path, headers=request_headers, json=body)
         except httpx.RequestError as exc:
@@ -750,3 +771,47 @@ class LalafoChatClient:
         if response.is_error:
             raise _classify_http_failure(response, payload)
         return payload
+
+    def _request_headers(
+        self,
+        *,
+        authenticated: bool,
+        mutation: bool,
+        session: LalafoSession | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> dict[str, str]:
+        active = session or self._session
+        if authenticated and active is None:
+            raise LalafoGatewayError("auth")
+        request_headers = {
+            "accept": "application/json, text/plain, */*",
+            "content-type": "application/json",
+            "device": "pc",
+            "language": "ru_RU",
+            "country-id": "12",
+            "request-id": f"react-client-{uuid.uuid4()}",
+            "device-fingerprint": self._fingerprint,
+            "user-hash": (
+                active.user_hash if authenticated and active else self._anonymous_user_hash
+            ),
+            "origin": LALAFO_HTTP_ORIGIN,
+            "referer": f"{LALAFO_HTTP_ORIGIN}/account/chats",
+            "x-cache-bypass": "yes",
+            "sec-fetch-dest": "empty",
+            "sec-fetch-mode": "cors",
+            "sec-fetch-site": "same-origin",
+            "sec-ch-ua": (
+                '"Not=A?Brand";v="99", "Google Chrome";v="151", '
+                '"Chromium";v="151"'
+            ),
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-platform": '"Windows"',
+            "user-agent": LALAFO_WEB_USER_AGENT,
+            **(headers or {}),
+        }
+        if authenticated and active:
+            request_headers["authorization"] = f"Bearer {active.rest_token}"
+        if not mutation:
+            request_headers.pop("content-type", None)
+            request_headers.pop("x-cache-bypass", None)
+        return request_headers

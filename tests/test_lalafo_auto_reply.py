@@ -511,11 +511,13 @@ async def test_security_challenge_halts_all_sending(store: AutoReplyStore) -> No
 
 
 @pytest.mark.asyncio
-async def test_client_uses_minimal_headers_server_socket_id_and_exact_text() -> None:
+async def test_client_uses_web_headers_server_socket_id_and_exact_text() -> None:
     requests: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)
+        if request.method == "GET" and request.url.path == "/login":
+            return httpx.Response(200, text="login")
         if request.url.path == "/api/auth/login":
             return httpx.Response(
                 200,
@@ -557,11 +559,16 @@ async def test_client_uses_minimal_headers_server_socket_id_and_exact_text() -> 
     await client.send_reply(job)
     await http.aclose()
 
-    login_request, send_request = requests
-    assert "origin" not in login_request.headers
-    assert "referer" not in login_request.headers
+    preflight_request, login_request, send_request = requests
+    assert preflight_request.method == "GET"
+    assert preflight_request.headers["sec-fetch-mode"] == "navigate"
+    assert login_request.headers["origin"] == "https://lalafo.kg"
+    assert login_request.headers["referer"] == "https://lalafo.kg/login"
+    assert login_request.headers["x-cache-bypass"] == "yes"
+    assert login_request.headers["user-hash"]
     assert login_request.headers["device"] == "pc"
     assert login_request.headers["device-fingerprint"] == "f" * 32
+    assert login_request.headers["request-id"].startswith("react-client-")
     assert send_request.headers["socket-id"] == "server-issued-id"
     body = json.loads(send_request.content)
     assert body["message"]["payload"] == AUTO_REPLY_TEXT
