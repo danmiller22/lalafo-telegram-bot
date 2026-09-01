@@ -1,0 +1,42 @@
+name: Realtime Lalafo auto reply
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/lalafo-auto-reply.yml"
+      - "app/lalafo/**"
+      - "scripts/lalafo_auto_reply_worker.py"
+  workflow_dispatch:
+  schedule:
+    # Each public-repository runner lives for 5h45m. The next run replaces it
+    # before GitHub's six-hour job limit; durable cursors recover the brief gap.
+    - cron: "13 */5 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lalafo-realtime-auto-reply
+  cancel-in-progress: true
+
+jobs:
+  responder:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    env:
+      LALAFO_LOGIN: ${{ secrets.LALAFO_LOGIN }}
+      LALAFO_PASSWORD: ${{ secrets.LALAFO_PASSWORD }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      LALAFO_WORKER_SECONDS: "20700"
+      LOG_LEVEL: INFO
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --disable-pip-version-check --quiet -r requirements.txt
+      - run: alembic upgrade head
+      - name: Keep the realtime responder connected
+        run: python -m scripts.lalafo_auto_reply_worker
