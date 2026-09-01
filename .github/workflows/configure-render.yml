@@ -1,0 +1,65 @@
+name: Configure Render auto-reply
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  configure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      LALAFO_LOGIN: ${{ secrets.LALAFO_LOGIN }}
+      LALAFO_PASSWORD: ${{ secrets.LALAFO_PASSWORD }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      RUN_TRIGGER_SECRET: ${{ secrets.CALLBACK_SECRET }}
+    steps:
+      - name: Validate required secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in RENDER_API_KEY LALAFO_LOGIN LALAFO_PASSWORD DATABASE_URL RUN_TRIGGER_SECRET; do
+            if [ -z "${!name:-}" ]; then
+              echo "Required repository secret is missing: ${name}" >&2
+              exit 1
+            fi
+          done
+
+      - name: Configure Render environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -n '[
+            {key: "LALAFO_AUTO_REPLY_ENABLED", value: "true"},
+            {key: "LALAFO_AUTO_REPLY_WEB_ENABLED", value: "true"},
+            {key: "LALAFO_LOGIN", value: env.LALAFO_LOGIN},
+            {key: "LALAFO_PASSWORD", value: env.LALAFO_PASSWORD},
+            {key: "DATABASE_URL", value: env.DATABASE_URL},
+            {key: "RUN_TRIGGER_SECRET", value: env.RUN_TRIGGER_SECRET},
+            {key: "RUN_BOT", value: "false"},
+            {key: "HOSTED_APARTMENT_SCHEDULER_ENABLED", value: "false"},
+            {key: "SERVICE_KEEPALIVE_ENABLED", value: "false"},
+            {key: "LOG_LEVEL", value: "INFO"},
+            {key: "WEB_CONCURRENCY", value: "1"}
+          ]' | curl --fail --silent --show-error \
+            --output /dev/null \
+            --request PUT \
+            --header "Authorization: Bearer ${RENDER_API_KEY}" \
+            --header "Content-Type: application/json" \
+            --data-binary @- \
+            https://api.render.com/v1/services/srv-dab2i2navr4c73ejo3s0/env-vars
+
+      - name: Deploy configured service
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            --output /dev/null \
+            --request POST \
+            --header "Authorization: Bearer ${RENDER_API_KEY}" \
+            --header "Content-Type: application/json" \
+            --data '{"clearCache":"do_not_clear"}' \
+            https://api.render.com/v1/services/srv-dab2i2navr4c73ejo3s0/deploys
