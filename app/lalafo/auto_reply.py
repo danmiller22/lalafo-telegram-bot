@@ -644,7 +644,10 @@ class LalafoAutoResponder:
                     self.authenticated = False
                 logger.warning("Lalafo auto-reply connection failed (%s)", exc.kind)
                 if exc.kind == "security_challenge":
-                    backoff = max(backoff, 60.0)
+                    # A 403/CAPTCHA is an explicit stop condition. Repeated
+                    # unattended logins can turn a temporary challenge into an
+                    # account block, so require a fresh operator-triggered run.
+                    self._stop.set()
             except Exception as exc:
                 self.last_error = type(exc).__name__
                 self.consecutive_failures += 1
