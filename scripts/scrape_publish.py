@@ -180,6 +180,21 @@ def candidate_quality(ad: LalafoAd) -> tuple[int, bool, bool, bool, int, int, bo
     )
 
 
+def deduplicate_candidates(candidates: list[LalafoAd]) -> list[LalafoAd]:
+    """Keep exactly one best representation of every Lalafo advertisement.
+
+    Lalafo can repeat an item across neighbouring search pages.  Reposts are
+    allowed across separate three-hour cycles, but the same Lalafo ID must
+    never occupy two slots in one Telegram batch.
+    """
+    unique: dict[int, LalafoAd] = {}
+    for ad in candidates:
+        current = unique.get(ad.lalafo_id)
+        if current is None or candidate_quality(ad) > candidate_quality(current):
+            unique[ad.lalafo_id] = ad
+    return list(unique.values())
+
+
 def select_publish_batch(
     candidates: list[LalafoAd],
     limit: int,
@@ -189,6 +204,7 @@ def select_publish_batch(
     """Build a diverse batch led by central and requested districts."""
     if limit <= 0 or not candidates:
         return []
+    candidates = deduplicate_candidates(candidates)
     central = sorted(
         (ad for ad in candidates if is_central_district(ad.district)),
         key=rank_key,
@@ -245,6 +261,7 @@ def select_publish_batch_with_reposts(
     """Use fresh cards first, then fill gaps with the oldest eligible reposts."""
     if limit <= 0 or not candidates:
         return []
+    candidates = deduplicate_candidates(candidates)
     repost_candidate_ids = set(repost_last_published_at)
     fresh = [ad for ad in candidates if ad.lalafo_id not in repost_candidate_ids]
     repeats = [ad for ad in candidates if ad.lalafo_id in repost_candidate_ids]
@@ -282,6 +299,7 @@ async def run() -> int:
     limit = 1 if settings.test_mode else SOURCE_MAX_POSTS_PER_RUN
     candidate_pool_limit = max(limit, min(limit * 3, MAX_CANDIDATE_POOL))
     candidates = []
+    candidate_ids: set[int] = set()
     curated_ids: set[int] = set()
     repost_candidate_ids: set[int] = set()
     repost_last_published_at: dict[int, datetime] = {}
@@ -314,6 +332,7 @@ async def run() -> int:
         )
         candidates.extend(apartment_to_ad(item) for item in curated_apartments)
         curated_ids = {item.lalafo_id for item in curated_apartments}
+        candidate_ids.update(curated_ids)
         repost_candidate_ids.update(curated_ids)
         missing_curated = len(CURATED_ROTATION_SPECS) - len(curated_apartments)
         if missing_curated:
@@ -426,6 +445,9 @@ async def run() -> int:
                     continue
                 if ad.lalafo_id in curated_ids:
                     continue
+                if ad.lalafo_id in candidate_ids:
+                    logger.info("Skipping same-cycle duplicate id=%s", ad.lalafo_id)
+                    continue
                 is_repost = search_ad.lalafo_id in repostable_ids
                 allowed, reason = is_allowed(
                     ad,
@@ -448,6 +470,7 @@ async def run() -> int:
                     logger.info("Skipping DB duplicate id=%s", ad.lalafo_id)
                     continue
                 candidates.append(ad)
+                candidate_ids.add(ad.lalafo_id)
                 if is_repost:
                     repost_candidate_ids.add(ad.lalafo_id)
             if page_number >= min(
@@ -463,10 +486,13 @@ async def run() -> int:
     regular_candidates = [
         ad for ad in candidates if ad.lalafo_id not in curated_ids
     ]
-    candidates = curated_candidates + select_publish_batch_with_reposts(
-        regular_candidates,
-        repost_last_published_at,
-        max(0, limit - len(curated_candidates)),
+    candidates = deduplicate_candidates(
+        curated_candidates
+        + select_publish_batch_with_reposts(
+            regular_candidates,
+            repost_last_published_at,
+            max(0, limit - len(curated_candidates)),
+        )
     )
     repost_candidate_ids.intersection_update(ad.lalafo_id for ad in candidates)
     central_count = sum(is_central_district(ad.district) for ad in candidates)

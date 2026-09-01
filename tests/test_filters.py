@@ -14,6 +14,7 @@ from scripts.scrape_publish import (
     SOURCE_MAX_SEARCH_PAGES,
     SOURCE_REPOST_AFTER_HOURS,
     candidate_quality,
+    deduplicate_candidates,
     is_central_district,
     is_preferred_district,
     select_publish_batch,
@@ -233,6 +234,40 @@ def test_publish_batch_fills_available_space_when_one_group_is_small():
 
     assert len(selected) == 8
     assert preferred[0] in selected
+
+
+def test_publish_batch_never_contains_the_same_lalafo_ad_twice():
+    duplicate = make_ad(lalafo_id=777, district="Тунгуч", phone="+996700000777")
+    candidates = [
+        duplicate,
+        make_ad(lalafo_id=778, district="ЦУМ", phone="+996700000778"),
+        duplicate.model_copy(update={"photo_urls": duplicate.photo_urls * 2}),
+    ]
+
+    selected = select_publish_batch(candidates, 3)
+
+    assert [ad.lalafo_id for ad in selected].count(777) == 1
+    assert len(selected) == 2
+    assert len(next(ad for ad in selected if ad.lalafo_id == 777).photo_urls) == 2
+
+
+def test_repost_batch_deduplicates_one_ad_within_the_same_cycle():
+    duplicate = make_ad(lalafo_id=900, district="Тунгуч", phone="+996700000900")
+    selected = select_publish_batch_with_reposts(
+        [duplicate, duplicate, make_ad(lalafo_id=901, phone="+996700000901")],
+        {900: datetime.now(timezone.utc) - timedelta(days=2)},
+        3,
+    )
+
+    assert [ad.lalafo_id for ad in selected].count(900) == 1
+    assert len(selected) == 2
+
+
+def test_candidate_deduplication_keeps_the_higher_quality_copy():
+    weaker = make_ad(lalafo_id=950, district="Джал", phone="+996700000950")
+    stronger = weaker.model_copy(update={"district": "ЦУМ"})
+
+    assert deduplicate_candidates([weaker, stronger]) == [stronger]
 
 
 def test_publish_batch_uses_fresh_cards_before_any_reposts():
