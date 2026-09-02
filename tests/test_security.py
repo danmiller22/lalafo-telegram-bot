@@ -75,12 +75,13 @@ def test_callback_data_is_short_and_contains_no_phone():
         assert "+996" not in callback
 
     private_url = group.inline_keyboard[0][0].url
-    assert private_url.startswith("https://t.me/arenda312bot?start=pay_")
-    payload = private_url.split("?start=pay_", 1)[1]
+    assert private_url.startswith("https://t.me/arenda312bot/access?startapp=")
+    payload = private_url.split("?startapp=", 1)[1]
     assert re.fullmatch(r"[A-Za-z0-9_-]+", payload)
-    assert len(f"pay_{payload}") <= 64
+    assert len(payload) <= 64
     assert "." not in payload
-    assert signer.verify_start_id("payment-link", payload) == 123456789
+    assert signer.verify_start_id("miniapp-apartment", payload) == 123456789
+    assert group.inline_keyboard[0][0].text == "🔐 Получить доступ — 500 сом"
     assert group.inline_keyboard[1][0].text == "Подать заявку на поиск квартиры"
     assert group.inline_keyboard[1][0].url == "https://t.me/arenda312bot?start=want"
     assert len(group.inline_keyboard) == 3

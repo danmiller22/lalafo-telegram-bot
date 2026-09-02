@@ -6,7 +6,8 @@ from app.security import TokenSigner
 from app.payment_plans import WEEK_PRICE
 
 
-APARTMENT_KEYBOARD_VERSION = 8
+APARTMENT_KEYBOARD_VERSION = 9
+MINI_APP_SHORT_NAME = "access"
 
 
 def _support_row(support_url: str) -> list[InlineKeyboardButton]:
@@ -16,15 +17,15 @@ def _support_row(support_url: str) -> list[InlineKeyboardButton]:
 def apartment_keyboard(
     apartment_id: int, *, signer: TokenSigner, bot_username: str, support_url: str
 ) -> InlineKeyboardMarkup:
-    payment_token = signer.sign_start_id("payment-link", apartment_id)
+    payment_token = signer.sign_start_id("miniapp-apartment", apartment_id)
     bot_url = f"https://t.me/{bot_username.lstrip('@')}"
-    private_url = f"{bot_url}?start=pay_{payment_token}"
+    mini_app_url = f"{bot_url}/{MINI_APP_SHORT_NAME}?startapp={payment_token}"
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="🔐 Посмотреть номер",
-                    url=private_url,
+                    text="🔐 Получить доступ — 500 сом",
+                    url=mini_app_url,
                 )
             ],
             [
