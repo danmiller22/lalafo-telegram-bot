@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.config import DEFAULT_SEARCH_URL, LALAFO_DISTRICT_FILTERS
+from app.config import DEFAULT_SEARCH_URL
 from app.lalafo.client import LalafoAccessError, LalafoClient, LalafoError
 
 
@@ -11,6 +11,12 @@ SEARCH_URL = (
     "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
     "dolgosrochnaya-arenda-kvartir/1-bedroom/2-bedrooms/studio/owner/"
     "real-estate-agency/bez-podseleniya?price[to]=35000"
+)
+
+DISTRICT_SEARCH_URL = (
+    "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
+    "dolgosrochnaya-arenda-kvartir/1-bedroom/studio/filarmoniya/tsum"
+    "?price[from]=18000&price[to]=35000"
 )
 
 
@@ -32,12 +38,9 @@ def test_search_params_preserve_configured_filters():
     assert params["parameters[946][0]"] == "81537"
 
 
-def test_default_search_uses_all_selected_districts():
+def test_default_search_uses_broad_room_and_price_filters():
     params = dict(LalafoClient._search_params(DEFAULT_SEARCH_URL, 1))
-    district_values = [
-        value for key, value in params.items() if key.startswith("parameters[357][")
-    ]
-    assert district_values == [value for _, value in LALAFO_DISTRICT_FILTERS]
+    assert not any(key.startswith("parameters[357][") for key in params)
     assert set(params[key] for key in params if key.startswith("parameters[69]")) == {
         "15496",
         "2773",
@@ -68,7 +71,7 @@ async def test_search_retries_without_long_district_filter_after_access_error():
         ]
     )
     try:
-        await client.search(DEFAULT_SEARCH_URL, page=1)
+        await client.search(DISTRICT_SEARCH_URL, page=1)
     finally:
         await client.close()
 
