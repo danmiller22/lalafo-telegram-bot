@@ -1,8 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
+import hmac
+import json
+import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
+from urllib.parse import urlencode
 
 import httpx
 import pytest
@@ -10,6 +16,21 @@ import pytest
 from app.config import get_settings
 from app.security import TokenSigner
 from app import web
+
+
+def miniapp_init_data(*, bot_token: str, user_id: int) -> str:
+    fields = {
+        "auth_date": str(int(time.time())),
+        "query_id": "AAE-web-test",
+        "user": json.dumps(
+            {"id": user_id, "first_name": "Test", "username": "mini_user"},
+            separators=(",", ":"),
+        ),
+    }
+    check = "\n".join(f"{key}={value}" for key, value in sorted(fields.items()))
+    secret = hmac.new(b"WebAppData", bot_token.encode(), hashlib.sha256).digest()
+    fields["hash"] = hmac.new(secret, check.encode(), hashlib.sha256).hexdigest()
+    return urlencode(fields)
 
 
 @pytest.fixture(autouse=True)
@@ -385,6 +406,149 @@ async def test_retired_featured_webhook_is_gone() -> None:
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post("/featured/webhook", json={"update_id": 10})
     assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_miniapp_page_is_public_but_session_requires_telegram_auth(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bot_token = "123456:telegram-test-token"
+    callback_secret = "c" * 32
+    monkeypatch.setenv("RUN_BOT", "true")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", bot_token)
+    monkeypatch.setenv("CALLBACK_SECRET", callback_secret)
+    get_settings.cache_clear()
+    apartment = SimpleNamespace(
+        rooms="1",
+        district="ЦУМ",
+        city="Бишкек",
+        price=25_000,
+        deposit=None,
+        photo_urls=["https://img.example/apartment.jpg"],
+        phone="+996555123456",
+    )
+    result = SimpleNamespace(
+        status="unpaid",
+        apartment=apartment,
+        access_expires_at=None,
+    )
+    service = SimpleNamespace(contact_status=AsyncMock(return_value=result))
+    monkeypatch.setattr(
+        web,
+        "_bot_runtime",
+        SimpleNamespace(workflow_data={"service": service}),
+    )
+    signer = TokenSigner(callback_secret)
+    start_param = signer.sign_start_id("miniapp-apartment", 42)
+    transport = httpx.ASGITransport(app=web.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        page = await client.get("/miniapp")
+        denied = await client.post(
+            "/miniapp/api/session",
+            json={"init_data": "invalid", "start_param": start_param},
+        )
+        accepted = await client.post(
+            "/miniapp/api/session",
+            json={
+                "init_data": miniapp_init_data(bot_token=bot_token, user_id=778899),
+                "start_param": start_param,
+            },
+        )
+
+    assert page.status_code == 200
+    assert "Telegram.WebApp" in page.text
+    assert denied.status_code == 401
+    assert accepted.status_code == 200
+    assert accepted.json() == {
+        "status": "unpaid",
+        "title": "1-комнатная квартира",
+        "details": "📍 ЦУМ\n🏙 Бишкек\n💰 25 000 сом",
+        "photo_url": "https://img.example/apartment.jpg",
+        "price": 500,
+    }
+    service.contact_status.assert_awaited_once_with(778899, 42)
+
+
+@pytest.mark.asyncio
+async def test_miniapp_receipt_is_forwarded_to_admin_and_enters_pending_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bot_token = "123456:telegram-test-token"
+    callback_secret = "c" * 32
+    monkeypatch.setenv("RUN_BOT", "true")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", bot_token)
+    monkeypatch.setenv("CALLBACK_SECRET", callback_secret)
+    monkeypatch.setenv("ADMIN_USER_ID", "999")
+    get_settings.cache_clear()
+    apartment = SimpleNamespace(
+        id=42,
+        rooms="1",
+        district="ЦУМ",
+        city="Бишкек",
+        price=25_000,
+        deposit=None,
+        photo_urls=["https://img.example/apartment.jpg"],
+        phone="+996555123456",
+    )
+    awaiting = SimpleNamespace(
+        status="awaiting_receipt", apartment=apartment, access_expires_at=None
+    )
+    pending = SimpleNamespace(
+        status="pending", apartment=apartment, access_expires_at=None
+    )
+    request = SimpleNamespace(
+        id=73,
+        telegram_user_id=778899,
+        username="mini_user",
+        first_name="Test",
+        plan="week",
+        apartment=apartment,
+    )
+    service = SimpleNamespace(
+        contact_status=AsyncMock(side_effect=[awaiting, pending]),
+        begin_payment=AsyncMock(),
+        submit_receipt=AsyncMock(return_value=request),
+    )
+    payments = SimpleNamespace(
+        claim_admin_notification=AsyncMock(return_value=True),
+        finish_admin_notification=AsyncMock(return_value=True),
+        restore_receipt_upload=AsyncMock(),
+    )
+    bot = SimpleNamespace(
+        send_photo=AsyncMock(return_value=SimpleNamespace(message_id=515)),
+        send_document=AsyncMock(),
+    )
+    monkeypatch.setattr(
+        web,
+        "_bot_runtime",
+        SimpleNamespace(
+            bot=bot,
+            workflow_data={"service": service, "payments": payments},
+        ),
+    )
+    signer = TokenSigner(callback_secret)
+    transport = httpx.ASGITransport(app=web.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/miniapp/api/receipt",
+            json={
+                "init_data": miniapp_init_data(bot_token=bot_token, user_id=778899),
+                "start_param": signer.sign_start_id("miniapp-apartment", 42),
+                "file_name": "receipt.jpg",
+                "content_type": "image/jpeg",
+                "file_base64": base64.b64encode(b"receipt-image").decode(),
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "pending"
+    service.begin_payment.assert_not_awaited()
+    service.submit_receipt.assert_awaited_once()
+    payments.claim_admin_notification.assert_awaited_once_with(73)
+    payments.finish_admin_notification.assert_awaited_once_with(73, 515)
+    payments.restore_receipt_upload.assert_not_awaited()
+    bot.send_photo.assert_awaited_once()
+    bot.send_document.assert_not_awaited()
 
 
 @pytest.mark.asyncio

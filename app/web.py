@@ -1,24 +1,33 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import logging
 import os
 import secrets
 from contextlib import suppress
 from datetime import UTC, datetime
+from pathlib import PurePath
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import httpx
 from aiogram import Bot
-from aiogram.types import Update
+from aiogram.types import BufferedInputFile, Update
 from fastapi import FastAPI, Header, HTTPException, Request, Response, status
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from pydantic import BaseModel
 
 from app.bot.main import BotRuntime, configure_bot_profile, create_runtime
 from app.config import get_settings
 from app.lalafo.auto_reply import LalafoAutoResponder
+from app.payment_plans import WEEK_PLAN, WEEK_PRICE
 from app.security import TokenSigner
-from app.telegram.keyboards import paid_keyboard
+from app.telegram.formatting import format_admin_card, format_apartment, room_title
+from app.telegram.keyboards import admin_keyboard, paid_keyboard
+from app.telegram.miniapp import mini_app_html, verify_telegram_init_data
+from app.lalafo.phone import display_phone
 
 logger = logging.getLogger(__name__)
 app = FastAPI(title="Lalafo Telegram service", docs_url=None, redoc_url=None)
@@ -71,6 +80,17 @@ _background_watchdog_state: dict[str, Any] = {
     "last_error": None,
     "restart_count": 0,
 }
+
+
+class MiniAppRequest(BaseModel):
+    init_data: str
+    start_param: str
+
+
+class MiniAppReceiptRequest(MiniAppRequest):
+    file_name: str
+    content_type: str
+    file_base64: str
 
 
 def _now() -> str:
@@ -714,6 +734,200 @@ async def telegram_webhook(
         **runtime.workflow_data,
     )
     return Response(status_code=status.HTTP_200_OK)
+
+
+def _miniapp_context(payload: MiniAppRequest):
+    settings = get_settings()
+    runtime = _bot_runtime
+    if not settings.run_bot or runtime is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Сервис временно недоступен.",
+        )
+    user = verify_telegram_init_data(
+        payload.init_data,
+        bot_token=settings.require_bot_token(),
+    )
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Не удалось подтвердить пользователя Telegram.",
+        )
+    signer = TokenSigner(settings.require_callback_secret())
+    apartment_id = signer.verify_start_id("miniapp-apartment", payload.start_param)
+    if apartment_id is None:
+        apartment_id = signer.decode_public_start_id(payload.start_param)
+    if apartment_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Ссылка на квартиру недействительна.",
+        )
+    return settings, runtime, user, apartment_id
+
+
+def _miniapp_result_payload(result) -> dict[str, Any]:
+    apartment = result.apartment
+    if apartment is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Квартира больше недоступна.",
+        )
+    formatted = format_apartment(apartment).splitlines()
+    response: dict[str, Any] = {
+        "status": result.status,
+        "title": room_title(apartment.rooms),
+        "details": "\n".join(formatted[1:]),
+        "photo_url": apartment.photo_urls[0] if apartment.photo_urls else None,
+        "price": WEEK_PRICE,
+    }
+    if result.status == "approved":
+        response["phone"] = display_phone(apartment.phone)
+        if result.access_expires_at is not None:
+            local_expiry = result.access_expires_at.astimezone(ZoneInfo("Asia/Bishkek"))
+            response["expires_at_text"] = local_expiry.strftime("%d.%m.%Y %H:%M")
+    return response
+
+
+@app.get("/miniapp", response_class=HTMLResponse, include_in_schema=False)
+async def telegram_mini_app() -> HTMLResponse:
+    return HTMLResponse(
+        mini_app_html(),
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Security-Policy": (
+                "default-src 'self'; script-src 'self' https://telegram.org 'unsafe-inline'; "
+                "style-src 'self' 'unsafe-inline'; img-src https: data:; "
+                "connect-src 'self'; frame-ancestors https://web.telegram.org"
+            ),
+            "Referrer-Policy": "no-referrer",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@app.post("/miniapp/api/session", include_in_schema=False)
+async def miniapp_session(payload: MiniAppRequest) -> dict[str, Any]:
+    _, runtime, user, apartment_id = _miniapp_context(payload)
+    result = await runtime.workflow_data["service"].contact_status(user.id, apartment_id)
+    if result.status == "unavailable":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Квартира больше недоступна.",
+        )
+    return _miniapp_result_payload(result)
+
+
+@app.post("/miniapp/api/start", include_in_schema=False)
+async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
+    settings, runtime, user, apartment_id = _miniapp_context(payload)
+    service = runtime.workflow_data["service"]
+    result = await service.contact_status(user.id, apartment_id)
+    if result.status not in {"approved", "pending", "awaiting_receipt"}:
+        try:
+            await service.begin_payment(
+                user_id=user.id,
+                apartment_id=apartment_id,
+                username=user.username,
+                first_name=user.first_name,
+                plan=WEEK_PLAN,
+            )
+        except LookupError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Квартира больше недоступна.",
+            ) from exc
+        result = await service.contact_status(user.id, apartment_id)
+    response = _miniapp_result_payload(result)
+    response["payment_url"] = settings.finik_payment_url
+    return response
+
+
+@app.post("/miniapp/api/receipt", include_in_schema=False)
+async def miniapp_upload_receipt(payload: MiniAppReceiptRequest) -> dict[str, Any]:
+    settings, runtime, user, apartment_id = _miniapp_context(payload)
+    if not settings.admin_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Проверка оплаты временно недоступна.",
+        )
+    if len(payload.file_base64) > 14_000_000:
+        raise HTTPException(status_code=413, detail="Файл должен быть не больше 10 МБ.")
+    try:
+        file_bytes = base64.b64decode(payload.file_base64, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise HTTPException(status_code=400, detail="Не удалось прочитать файл чека.") from exc
+    if not file_bytes or len(file_bytes) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Файл должен быть не больше 10 МБ.")
+    allowed_types = {"image/jpeg", "image/png", "application/pdf"}
+    content_type = payload.content_type.casefold()
+    if content_type not in allowed_types:
+        raise HTTPException(
+            status_code=415,
+            detail="Прикрепите чек в формате JPG, PNG или PDF.",
+        )
+
+    service = runtime.workflow_data["service"]
+    payments = runtime.workflow_data["payments"]
+    current = await service.contact_status(user.id, apartment_id)
+    if current.status == "approved":
+        return _miniapp_result_payload(current)
+    if current.status == "pending":
+        return _miniapp_result_payload(current)
+    if current.status != "awaiting_receipt":
+        try:
+            await service.begin_payment(
+                user_id=user.id,
+                apartment_id=apartment_id,
+                username=user.username,
+                first_name=user.first_name,
+                plan=WEEK_PLAN,
+            )
+        except LookupError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Квартира больше недоступна.",
+            ) from exc
+
+    request = await service.submit_receipt(
+        user_id=user.id,
+        file_id=f"miniapp:{apartment_id}:{int(datetime.now(UTC).timestamp())}",
+        file_type="photo" if content_type.startswith("image/") else "document",
+    )
+    if request is None:
+        raise HTTPException(status_code=409, detail="Сначала откройте оплату.")
+    if not await payments.claim_admin_notification(request.id):
+        result = await service.contact_status(user.id, apartment_id)
+        return _miniapp_result_payload(result)
+
+    filename = PurePath(payload.file_name or "receipt").name[:120] or "receipt"
+    upload = BufferedInputFile(file_bytes, filename=filename)
+    try:
+        caption = format_admin_card(request)
+        markup = admin_keyboard(request.id, signer=TokenSigner(settings.require_callback_secret()))
+        if content_type.startswith("image/"):
+            admin_message = await runtime.bot.send_photo(
+                settings.admin_user_id,
+                upload,
+                caption=caption,
+                reply_markup=markup,
+            )
+        else:
+            admin_message = await runtime.bot.send_document(
+                settings.admin_user_id,
+                upload,
+                caption=caption,
+                reply_markup=markup,
+            )
+    except Exception as exc:
+        await payments.restore_receipt_upload(request.id)
+        logger.exception("Mini App receipt notification failed")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Не удалось отправить чек. Попробуйте ещё раз.",
+        ) from exc
+    await payments.finish_admin_notification(request.id, admin_message.message_id)
+    result = await service.contact_status(user.id, apartment_id)
+    return _miniapp_result_payload(result)
 
 
 @app.get("/pay/{token}", include_in_schema=False)

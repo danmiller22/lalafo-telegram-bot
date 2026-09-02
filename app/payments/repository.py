@@ -470,6 +470,24 @@ class PaymentRepository:
                 .values(admin_message_id=None)
             )
 
+    async def restore_receipt_upload(self, request_id: int) -> None:
+        """Make a failed Mini App upload safely retryable by the customer."""
+        async with self.sessions.begin() as session:
+            await session.execute(
+                update(PaymentRequest)
+                .where(
+                    PaymentRequest.id == request_id,
+                    PaymentRequest.status == "pending",
+                    PaymentRequest.admin_message_id == -1,
+                )
+                .values(
+                    status="awaiting_receipt",
+                    receipt_file_id=None,
+                    receipt_file_type=None,
+                    admin_message_id=None,
+                )
+            )
+
     async def decide(self, request_id: int, *, approve: bool, admin_id: int) -> str:
         now = datetime.now(timezone.utc)
         async with self.sessions.begin() as session:
