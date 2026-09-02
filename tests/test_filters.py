@@ -90,8 +90,10 @@ def test_expanded_source_keeps_reposts_strictly_limited():
 
 
 def test_source_url_contains_only_studios_and_one_bedroom_apartments():
-    assert "/1-bedroom/studio/" in DEFAULT_SEARCH_URL
+    assert "/1-bedroom/studio?" in DEFAULT_SEARCH_URL
     assert "2-bedroom" not in DEFAULT_SEARCH_URL
+    assert "price[from]=18000&price[to]=35000" in DEFAULT_SEARCH_URL
+    assert "/filarmoniya/" not in DEFAULT_SEARCH_URL
 
 
 def test_curated_rotation_contains_the_two_approved_apartments():
@@ -201,7 +203,7 @@ def test_publish_batch_targets_eighty_percent_requested_districts():
     assert sum(is_preferred_district(ad.district) for ad in selected) == 48
 
 
-def test_publish_batch_targets_sixty_percent_central_districts():
+def test_publish_batch_targets_seventy_percent_central_districts():
     central = [
         make_ad(lalafo_id=index, district="ЦУМ", phone=f"+996555100{index:03d}")
         for index in range(1, 31)
@@ -222,7 +224,7 @@ def test_publish_batch_targets_sixty_percent_central_districts():
     selected = select_publish_batch(central + preferred + other, 25)
 
     assert len(selected) == 25
-    assert sum(is_central_district(ad.district) for ad in selected) == 15
+    assert sum(is_central_district(ad.district) for ad in selected) == 18
     assert sum(is_preferred_district(ad.district) for ad in selected) == 20
 
 

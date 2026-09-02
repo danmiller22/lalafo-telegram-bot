@@ -80,9 +80,8 @@ LALAFO_DISTRICT_FILTERS = (
 
 DEFAULT_SEARCH_URL = (
     "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
-    "dolgosrochnaya-arenda-kvartir/1-bedroom/studio/"
-    + "/".join(alias for alias, _ in LALAFO_DISTRICT_FILTERS)
-    + "?price[from]=18000&price[to]=35000"
+    "dolgosrochnaya-arenda-kvartir/1-bedroom/studio"
+    "?price[from]=18000&price[to]=35000"
 )
 
 APARTMENT_PUBLISH_INTERVAL_MINUTES = 180

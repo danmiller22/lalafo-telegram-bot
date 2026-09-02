@@ -75,9 +75,9 @@ SOURCE_MAX_SEARCH_PAGES = 24
 # rotates inventory instead of showing the same apartments every three hours.
 SOURCE_REPOST_AFTER_HOURS = 3.0
 MAX_REPOSTS_PER_RUN = 20
-CENTRAL_BATCH_SHARE = 0.60
+CENTRAL_BATCH_SHARE = 0.70
 PREFERRED_BATCH_SHARE = 0.80
-MAX_CANDIDATE_POOL = 160
+MAX_CANDIDATE_POOL = 200
 # These two manually approved cards must remain in the normal three-hour
 # Telegram rotation.  They are resolved from the original, phone-backed
 # database records rather than from our phone-hidden public Lalafo reposts.
@@ -297,7 +297,9 @@ async def run() -> int:
     # Test mode remains one-card-only, while production always has room for
     # the requested twenty-card batch.
     limit = 1 if settings.test_mode else SOURCE_MAX_POSTS_PER_RUN
-    candidate_pool_limit = max(limit, min(limit * 3, MAX_CANDIDATE_POOL))
+    # The unfiltered source is large. Inspect several pages so central bargains
+    # can outrank nearer but weaker results from the first page.
+    candidate_pool_limit = max(limit, min(limit * 4, MAX_CANDIDATE_POOL))
     candidates = []
     candidate_ids: set[int] = set()
     curated_ids: set[int] = set()
