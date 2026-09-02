@@ -21,6 +21,8 @@ def format_apartment(ad: LalafoAd | Apartment) -> str:
     lines = [f"🏠 {room_title(ad.rooms)}"]
     if ad.district:
         lines.append(f"📍 {ad.district}")
+    else:
+        lines.extend(("📍 Золотой Квадрат", "Дем"))
     lines.append(f"🏙 {ad.city}")
     lines.append(f"💰 {format_money(ad.price)} сом")
     if ad.deposit is not None:

@@ -26,6 +26,21 @@ def test_private_contact_contains_full_card_and_phone():
     assert "доступен только вам" in text
 
 
+def test_private_contact_uses_labeled_demo_location_when_district_is_missing():
+    apartment = SimpleNamespace(
+        rooms="studio",
+        district=None,
+        city="Бишкек",
+        price=22_000,
+        deposit=None,
+        phone="+996555123456",
+    )
+
+    text = format_private_contact(apartment)
+
+    assert "📍 Золотой Квадрат\nДем\n🏙 Бишкек" in text
+
+
 @pytest.mark.asyncio
 async def test_private_contact_repeats_storefront_album_before_contact_card():
     apartment = SimpleNamespace(

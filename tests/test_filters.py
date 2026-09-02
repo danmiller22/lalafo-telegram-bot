@@ -70,9 +70,11 @@ def test_agency_listing_is_allowed_but_not_identified_on_card():
     assert "собственник" not in text.casefold()
 
 
-def test_missing_district_and_optional_deposit_are_omitted():
+def test_missing_district_uses_labeled_demo_location_and_omits_deposit():
     text = format_apartment(make_ad(district=None, deposit=None, rooms="studio"))
-    assert text == "🏠 Студия\n🏙 Бишкек\n💰 35 000 сом"
+    assert text == (
+        "🏠 Студия\n📍 Золотой Квадрат\nДем\n🏙 Бишкек\n💰 35 000 сом"
+    )
 
 
 def test_expanded_source_keeps_reposts_strictly_limited():
