@@ -6,7 +6,7 @@ from app.security import TokenSigner
 from app.payment_plans import WEEK_PRICE
 
 
-APARTMENT_KEYBOARD_VERSION = 9
+APARTMENT_KEYBOARD_VERSION = 10
 MINI_APP_SHORT_NAME = "access"
 
 
@@ -24,7 +24,7 @@ def apartment_keyboard(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="🔐 Получить доступ — 500 сом",
+                    text="Получить номер",
                     url=mini_app_url,
                 )
             ],

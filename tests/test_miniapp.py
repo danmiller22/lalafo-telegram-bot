@@ -68,4 +68,5 @@ def test_mini_app_page_keeps_payment_and_receipt_in_one_window():
     assert "/miniapp/api/receipt" in html
     assert "Оплатить неделю — 500 сом" in html
     assert "Отправить чек на проверку" in html
-    assert "Без перехода в личный чат и команды /start" in html
+    assert "Без перехода в личный чат" not in html
+    assert "команды /start" not in html

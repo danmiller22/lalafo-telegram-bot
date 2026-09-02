@@ -13,6 +13,7 @@ from app.telegram.formatting import format_public_apartment
 from app.telegram.keyboards import apartment_keyboard
 
 logger = logging.getLogger(__name__)
+TELEGRAM_ALBUM_LIMIT = 10
 
 
 class TelegramPublishError(RuntimeError):
@@ -35,7 +36,10 @@ class TelegramPublisher:
         self.signer = signer
         self.bot_username = bot_username
         self.support_url = support_url
-        self.max_photos = max(1, min(max_photos, 10))
+        # Kept in the constructor for backwards compatibility with existing
+        # deployments. Public apartment cards now always use every photo that
+        # Lalafo returned; Telegram albums are split into groups of ten.
+        self.max_photos = max_photos
         self._retry_not_before = 0.0
         self._rate_limit_lock = asyncio.Lock()
 
@@ -67,61 +71,70 @@ class TelegramPublisher:
         raise TelegramPublishError("Telegram retry loop ended unexpectedly")
 
     async def publish(self, apartment_id: int, ad: LalafoAd) -> Message:
-        urls = ad.photo_urls[: self.max_photos]
+        urls = list(dict.fromkeys(ad.photo_urls))
         if not urls:
             raise TelegramPublishError("Apartment has no photos")
         album_messages: list[Message] = []
-        try:
-            if len(urls) == 1:
-                album_messages = [
-                    await self._retry(
-                        self.bot.send_photo,
-                        chat_id=self.chat_id,
-                        photo=urls[0],
-                    )
-                ]
-            else:
-                # Telegram downloads public Lalafo images directly. This avoids
-                # relaying every byte through the small cloud worker and makes
-                # large batches several times faster.
-                media = [InputMediaPhoto(media=url) for url in urls]
-                album_messages = list(
-                    await self._retry(
-                        self.bot.send_media_group,
-                        chat_id=self.chat_id,
-                        media=media,
-                    )
-                )
-        except Exception as album_error:
-            logger.warning(
-                "Direct Telegram album failed; retrying with main photo: %s",
-                type(album_error).__name__,
-            )
+        for offset in range(0, len(urls), TELEGRAM_ALBUM_LIMIT):
+            chunk = urls[offset : offset + TELEGRAM_ALBUM_LIMIT]
             try:
-                if len(urls) > 1:
-                    try:
-                        main_photo = await self._retry(
+                if len(chunk) == 1:
+                    sent = [
+                        await self._retry(
                             self.bot.send_photo,
                             chat_id=self.chat_id,
-                            photo=urls[0],
+                            photo=chunk[0],
                         )
-                    except Exception:
-                        main_photo = await self._retry(
-                            self.bot.send_photo,
-                            chat_id=self.chat_id,
-                            photo=URLInputFile(urls[0], timeout=25),
-                        )
+                    ]
                 else:
-                    # The direct URL has already exhausted its retries.
-                    # Switch immediately to the streaming fallback.
-                    main_photo = await self._retry(
-                        self.bot.send_photo,
-                        chat_id=self.chat_id,
-                        photo=URLInputFile(urls[0], timeout=25),
+                    # Telegram downloads public Lalafo images directly. This
+                    # keeps full albums fast on the small cloud worker.
+                    sent = list(
+                        await self._retry(
+                            self.bot.send_media_group,
+                            chat_id=self.chat_id,
+                            media=[InputMediaPhoto(media=url) for url in chunk],
+                        )
                     )
-                album_messages = [main_photo]
-            except Exception as exc:
-                raise TelegramPublishError("Telegram could not download apartment photos") from exc
+            except Exception as direct_error:
+                logger.warning(
+                    "Direct Telegram photo batch failed; retrying all photos via streaming: %s",
+                    type(direct_error).__name__,
+                )
+                try:
+                    if len(chunk) == 1:
+                        sent = [
+                            await self._retry(
+                                self.bot.send_photo,
+                                chat_id=self.chat_id,
+                                photo=URLInputFile(chunk[0], timeout=25),
+                            )
+                        ]
+                    else:
+                        sent = list(
+                            await self._retry(
+                                self.bot.send_media_group,
+                                chat_id=self.chat_id,
+                                media=[
+                                    InputMediaPhoto(
+                                        media=URLInputFile(url, timeout=25)
+                                    )
+                                    for url in chunk
+                                ],
+                            )
+                        )
+                except Exception as exc:
+                    for message in album_messages:
+                        try:
+                            await self.bot.delete_message(
+                                self.chat_id, message.message_id
+                            )
+                        except Exception:
+                            pass
+                    raise TelegramPublishError(
+                        "Telegram could not publish every apartment photo"
+                    ) from exc
+            album_messages.extend(sent)
         try:
             return await self._retry(
                 self.bot.send_message,

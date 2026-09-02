@@ -11,6 +11,7 @@ from app.telegram.formatting import format_apartment
 from app.telegram.keyboards import private_contact_keyboard
 
 logger = logging.getLogger(__name__)
+TELEGRAM_ALBUM_LIMIT = 10
 
 
 def format_private_contact(apartment: Apartment) -> str:
@@ -36,7 +37,9 @@ async def send_private_contact(
 ) -> None:
     text = format_private_contact(apartment)
     reply_markup = private_contact_keyboard(support_url=support_url)
-    photo_urls = apartment.photo_urls[: max(1, min(max_photos, 10))]
+    # The public card and the paid private copy must contain the same complete
+    # photo set. ``max_photos`` remains in the signature for compatibility.
+    photo_urls = list(dict.fromkeys(apartment.photo_urls))
     if len(photo_urls) == 1:
         try:
             await bot.send_photo(
@@ -52,26 +55,24 @@ async def send_private_contact(
                 type(exc).__name__,
             )
     elif photo_urls:
-        try:
-            await bot.send_media_group(
-                user_id,
-                [
-                    InputMediaPhoto(media=URLInputFile(url, timeout=25))
-                    for url in photo_urls
-                ],
-            )
-        except Exception as exc:
-            logger.warning(
-                "Could not deliver private apartment album; retrying with main photo: %s",
-                type(exc).__name__,
-            )
+        for offset in range(0, len(photo_urls), TELEGRAM_ALBUM_LIMIT):
+            chunk = photo_urls[offset : offset + TELEGRAM_ALBUM_LIMIT]
             try:
-                await bot.send_photo(
-                    user_id, URLInputFile(photo_urls[0], timeout=25)
-                )
-            except Exception as photo_exc:
+                if len(chunk) == 1:
+                    await bot.send_photo(
+                        user_id, URLInputFile(chunk[0], timeout=25)
+                    )
+                else:
+                    await bot.send_media_group(
+                        user_id,
+                        [
+                            InputMediaPhoto(media=URLInputFile(url, timeout=25))
+                            for url in chunk
+                        ],
+                    )
+            except Exception as exc:
                 logger.warning(
-                    "Could not deliver private apartment main photo: %s",
-                    type(photo_exc).__name__,
+                    "Could not deliver private apartment photo batch: %s",
+                    type(exc).__name__,
                 )
     await bot.send_message(user_id, text, reply_markup=reply_markup)

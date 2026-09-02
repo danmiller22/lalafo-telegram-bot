@@ -69,7 +69,6 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     .card {{ background: var(--tg-theme-secondary-bg-color, #fff); border-radius: 20px; padding: 16px; box-shadow: 0 8px 28px #00000012; }}
     .hero {{ width: 100%; max-height: 260px; object-fit: cover; border-radius: 15px; display: none; margin-bottom: 14px; }}
     h1 {{ font-size: 21px; margin: 0 0 8px; }}
-    .sub {{ color: var(--tg-theme-hint-color, #6c7a76); font-size: 14px; margin-bottom: 14px; }}
     .details {{ line-height: 1.55; white-space: pre-line; margin: 10px 0 16px; }}
     .price {{ font-size: 19px; font-weight: 750; margin: 12px 0 4px; }}
     .status {{ border-radius: 13px; padding: 12px; margin: 12px 0; background: #12856a18; line-height: 1.4; }}
@@ -87,7 +86,6 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
   <section class="card">
     <img id="hero" class="hero" alt="Квартира">
     <h1 id="title">Загружаем квартиру…</h1>
-    <div id="subtitle" class="sub">Без перехода в личный чат и команды /start</div>
     <div id="details" class="details"></div>
     <div id="status" class="status">Проверяем доступ…</div>
     <div id="phone" class="phone hidden"></div>

@@ -81,7 +81,7 @@ def test_callback_data_is_short_and_contains_no_phone():
     assert len(payload) <= 64
     assert "." not in payload
     assert signer.verify_start_id("miniapp-apartment", payload) == 123456789
-    assert group.inline_keyboard[0][0].text == "🔐 Получить доступ — 500 сом"
+    assert group.inline_keyboard[0][0].text == "Получить номер"
     assert group.inline_keyboard[1][0].text == "Подать заявку на поиск квартиры"
     assert group.inline_keyboard[1][0].url == "https://t.me/arenda312bot?start=want"
     assert len(group.inline_keyboard) == 3
