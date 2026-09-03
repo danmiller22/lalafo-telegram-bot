@@ -126,7 +126,7 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     el("details").textContent = data.details || "";
     if (data.photo_url) {{ el("hero").src = data.photo_url; el("hero").style.display = "block"; }}
     show("phone", data.status === "approved");
-    show("pay", ["unpaid", "rejected"].includes(data.status));
+    show("pay", ["unpaid", "awaiting_receipt", "rejected"].includes(data.status));
     show("receipt", data.status === "awaiting_receipt");
     if (data.status === "approved") {{
       el("phone").textContent = "📞 " + data.phone;
