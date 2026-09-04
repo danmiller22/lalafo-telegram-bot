@@ -112,7 +112,7 @@ async def run(
     )
     force = _truthy(os.getenv("FORCE_PUBLISH")) if force is None else force
     window_minutes = (
-        max(1, int(os.getenv("PUBLISH_RECENT_WINDOW_MINUTES", "100")))
+        max(1, int(os.getenv("PUBLISH_RECENT_WINDOW_MINUTES", "60")))
         if window_minutes is None
         else max(1, window_minutes)
     )

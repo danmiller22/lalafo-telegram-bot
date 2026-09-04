@@ -81,12 +81,12 @@ def test_expanded_source_keeps_reposts_strictly_limited():
     settings = Settings(_env_file=None)
 
     assert SOURCE_ALLOWED_ROOMS == ("studio", "1")
-    assert SOURCE_MAX_POSTS_PER_RUN == 20
+    assert SOURCE_MAX_POSTS_PER_RUN == 15
     assert SOURCE_MAX_SEARCH_PAGES == 24
-    assert MAX_REPOSTS_PER_RUN == 20
-    assert SOURCE_REPOST_AFTER_HOURS == 3.0
+    assert MAX_REPOSTS_PER_RUN == 15
+    assert SOURCE_REPOST_AFTER_HOURS == 1.0
     assert settings.rooms == "studio,1"
-    assert settings.max_new_posts_per_run == 20
+    assert settings.max_new_posts_per_run == 15
     assert settings.max_search_pages == 24
     assert settings.allow_no_district is True
 
@@ -205,7 +205,7 @@ def test_publish_batch_targets_eighty_percent_requested_districts():
     assert sum(is_preferred_district(ad.district) for ad in selected) == 48
 
 
-def test_publish_batch_targets_seventy_percent_central_districts():
+def test_publish_batch_targets_eighty_percent_central_districts():
     central = [
         make_ad(lalafo_id=index, district="ЦУМ", phone=f"+996555100{index:03d}")
         for index in range(1, 31)
@@ -226,7 +226,7 @@ def test_publish_batch_targets_seventy_percent_central_districts():
     selected = select_publish_batch(central + preferred + other, 25)
 
     assert len(selected) == 25
-    assert sum(is_central_district(ad.district) for ad in selected) == 18
+    assert sum(is_central_district(ad.district) for ad in selected) == 20
     assert sum(is_preferred_district(ad.district) for ad in selected) == 20
 
 
@@ -332,7 +332,7 @@ def test_publish_batch_fills_shortage_with_oldest_reposts_first():
     assert not ({ad.lalafo_id for ad in repeats[:-15]} & selected_ids)
 
 
-def test_publish_batch_never_adds_more_than_twenty_reposts():
+def test_publish_batch_never_adds_more_than_fifteen_reposts():
     fresh = [
         make_ad(lalafo_id=index, phone=f"+996702{index:06d}")
         for index in range(1, 11)
@@ -349,5 +349,5 @@ def test_publish_batch_never_adds_more_than_twenty_reposts():
 
     selected = select_publish_batch_with_reposts(fresh + repeats, repost_times, 40)
 
-    assert len(selected) == 30
-    assert len({ad.lalafo_id for ad in selected} & set(repost_times)) == 20
+    assert len(selected) == 25
+    assert len({ad.lalafo_id for ad in selected} & set(repost_times)) == 15

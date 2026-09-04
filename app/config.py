@@ -84,7 +84,7 @@ DEFAULT_SEARCH_URL = (
     "?price[from]=18000&price[to]=35000"
 )
 
-APARTMENT_PUBLISH_INTERVAL_MINUTES = 180
+APARTMENT_PUBLISH_INTERVAL_MINUTES = 60
 
 
 class Settings(BaseSettings):
@@ -143,7 +143,7 @@ class Settings(BaseSettings):
     min_price: int = 18_000
     max_price: int = 35_000
     rooms: str = "studio,1"
-    max_new_posts_per_run: int = 20
+    max_new_posts_per_run: int = 15
     max_search_pages: int = 24
     preferred_districts_only: bool = False
     # Telegram accepts at most ten photos per media group. Publishers split

@@ -420,7 +420,7 @@ async def _execute_due_apartment_cycle() -> int:
                 last_error=type(exc).__name__,
             )
             _run_state["last_exit_code"] = 1
-            logger.exception("Hosted three-hour apartment cycle failed")
+            logger.exception("Hosted hourly apartment cycle failed")
             return 1
         finally:
             _apartment_scheduler_state["running_cycle"] = False
@@ -581,7 +581,7 @@ async def startup() -> None:
             _apartment_scheduler_task = asyncio.create_task(
                 _run_hosted_apartment_scheduler(), name="apartment-scheduler"
             )
-            logger.info("Hosted three-hour apartment scheduler enabled")
+            logger.info("Hosted hourly apartment scheduler enabled")
         if settings.service_keepalive_enabled:
             _service_keepalive_state.update(
                 state="starting",

@@ -68,17 +68,17 @@ CENTRAL_DISTRICT_TERMS = (
 SOURCE_MIN_PRICE = 18_000
 SOURCE_MAX_PRICE = 35_000
 SOURCE_ALLOWED_ROOMS = ("studio", "1")
-SOURCE_MAX_POSTS_PER_RUN = 20
+SOURCE_MAX_POSTS_PER_RUN = 15
 SOURCE_MAX_SEARCH_PAGES = 24
 # A card becomes eligible after one publication interval, but selection below
 # always takes the oldest eligible cards first. With a large source pool this
-# rotates inventory instead of showing the same apartments every three hours.
-SOURCE_REPOST_AFTER_HOURS = 3.0
-MAX_REPOSTS_PER_RUN = 20
-CENTRAL_BATCH_SHARE = 0.70
+# rotates inventory instead of showing the same apartments every hour.
+SOURCE_REPOST_AFTER_HOURS = 1.0
+MAX_REPOSTS_PER_RUN = 15
+CENTRAL_BATCH_SHARE = 0.80
 PREFERRED_BATCH_SHARE = 0.80
 MAX_CANDIDATE_POOL = 200
-# These two manually approved cards must remain in the normal three-hour
+# These two manually approved cards must remain in the normal hourly
 # Telegram rotation.  They are resolved from the original, phone-backed
 # database records rather than from our phone-hidden public Lalafo reposts.
 CURATED_ROTATION_SPECS = (
@@ -184,7 +184,7 @@ def deduplicate_candidates(candidates: list[LalafoAd]) -> list[LalafoAd]:
     """Keep exactly one best representation of every Lalafo advertisement.
 
     Lalafo can repeat an item across neighbouring search pages.  Reposts are
-    allowed across separate three-hour cycles, but the same Lalafo ID must
+    allowed across separate hourly cycles, but the same Lalafo ID must
     never occupy two slots in one Telegram batch.
     """
     unique: dict[int, LalafoAd] = {}
@@ -346,7 +346,7 @@ async def run() -> int:
             )
         else:
             logger.info(
-                "Curated three-hour rotation loaded: %s",
+                "Curated hourly rotation loaded: %s",
                 ", ".join(str(item.lalafo_id) for item in curated_apartments),
             )
 

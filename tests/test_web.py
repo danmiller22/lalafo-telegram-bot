@@ -121,7 +121,7 @@ def test_apartment_interval_cannot_be_overridden_by_stale_cloud_env(
     monkeypatch.setenv("HOSTED_APARTMENT_PUBLISH_INTERVAL_MINUTES", "120")
     get_settings.cache_clear()
 
-    assert get_settings().hosted_apartment_publish_interval_minutes == 180
+    assert get_settings().hosted_apartment_publish_interval_minutes == 60
 
 
 @pytest.mark.asyncio
