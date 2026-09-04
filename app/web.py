@@ -842,6 +842,57 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
     return response
 
 
+@app.post("/miniapp/api/check", include_in_schema=False)
+async def miniapp_check_payment(payload: MiniAppRequest) -> dict[str, Any]:
+    settings, runtime, user, apartment_id = _miniapp_context(payload)
+    if not settings.admin_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Проверка оплаты временно недоступна.",
+        )
+    service = runtime.workflow_data["service"]
+    payments = runtime.workflow_data["payments"]
+    current = await service.contact_status(user.id, apartment_id)
+    if current.status == "approved":
+        return _miniapp_result_payload(current)
+    if current.status == "awaiting_receipt":
+        request = await payments.mark_payment_claimed(
+            user_id=user.id,
+            apartment_id=apartment_id,
+        )
+    elif current.status == "pending":
+        # A repeated tap is harmless and can repair a previously failed admin
+        # notification without creating a second payment request.
+        request = await payments.get_access(user.id, apartment_id)
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Сначала откройте ссылку на оплату.",
+        )
+    if request is None:
+        raise HTTPException(status_code=409, detail="Сначала откройте оплату.")
+    if await payments.claim_admin_notification(request.id):
+        try:
+            admin_message = await runtime.bot.send_message(
+                settings.admin_user_id,
+                format_admin_card(request),
+                reply_markup=admin_keyboard(
+                    request.id,
+                    signer=TokenSigner(settings.require_callback_secret()),
+                ),
+            )
+        except Exception as exc:
+            await payments.release_admin_notification(request.id)
+            logger.exception("Mini App payment notification failed")
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Не удалось отправить оплату на проверку. Попробуйте ещё раз.",
+            ) from exc
+        await payments.finish_admin_notification(request.id, admin_message.message_id)
+    result = await service.contact_status(user.id, apartment_id)
+    return _miniapp_result_payload(result)
+
+
 @app.post("/miniapp/api/receipt", include_in_schema=False)
 async def miniapp_upload_receipt(payload: MiniAppReceiptRequest) -> dict[str, Any]:
     settings, runtime, user, apartment_id = _miniapp_context(payload)

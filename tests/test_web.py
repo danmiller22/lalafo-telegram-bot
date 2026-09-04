@@ -552,6 +552,84 @@ async def test_miniapp_receipt_is_forwarded_to_admin_and_enters_pending_state(
 
 
 @pytest.mark.asyncio
+async def test_miniapp_payment_check_notifies_admin_and_returns_pending(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bot_token = "123456:telegram-test-token"
+    callback_secret = "c" * 32
+    monkeypatch.setenv("RUN_BOT", "true")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", bot_token)
+    monkeypatch.setenv("CALLBACK_SECRET", callback_secret)
+    monkeypatch.setenv("ADMIN_USER_ID", "999")
+    get_settings.cache_clear()
+    apartment = SimpleNamespace(
+        id=42,
+        rooms="1",
+        district="ЦУМ",
+        city="Бишкек",
+        price=25_000,
+        deposit=None,
+        photo_urls=["https://img.example/apartment.jpg"],
+        phone="+996555123456",
+    )
+    awaiting = SimpleNamespace(
+        status="awaiting_receipt", apartment=apartment, access_expires_at=None
+    )
+    pending = SimpleNamespace(
+        status="pending", apartment=apartment, access_expires_at=None
+    )
+    request = SimpleNamespace(
+        id=73,
+        telegram_user_id=778899,
+        username="mini_user",
+        first_name="Test",
+        plan="week",
+        apartment=apartment,
+        receipt_file_id=None,
+    )
+    service = SimpleNamespace(
+        contact_status=AsyncMock(side_effect=[awaiting, pending]),
+    )
+    payments = SimpleNamespace(
+        mark_payment_claimed=AsyncMock(return_value=request),
+        get_access=AsyncMock(),
+        claim_admin_notification=AsyncMock(return_value=True),
+        finish_admin_notification=AsyncMock(return_value=True),
+        release_admin_notification=AsyncMock(),
+    )
+    bot = SimpleNamespace(
+        send_message=AsyncMock(return_value=SimpleNamespace(message_id=515)),
+    )
+    monkeypatch.setattr(
+        web,
+        "_bot_runtime",
+        SimpleNamespace(
+            bot=bot,
+            workflow_data={"service": service, "payments": payments},
+        ),
+    )
+    signer = TokenSigner(callback_secret)
+    transport = httpx.ASGITransport(app=web.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/miniapp/api/check",
+            json={
+                "init_data": miniapp_init_data(bot_token=bot_token, user_id=778899),
+                "start_param": signer.sign_start_id("miniapp-apartment", 42),
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "pending"
+    payments.mark_payment_claimed.assert_awaited_once_with(
+        user_id=778899, apartment_id=42
+    )
+    payments.claim_admin_notification.assert_awaited_once_with(73)
+    payments.finish_admin_notification.assert_awaited_once_with(73, 515)
+    bot.send_message.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_payment_redirect_replaces_button_and_opens_finik(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

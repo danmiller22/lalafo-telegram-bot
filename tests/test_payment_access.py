@@ -119,6 +119,34 @@ async def test_admin_notification_claim_is_atomic_and_retryable(repositories, se
 
 
 @pytest.mark.asyncio
+async def test_miniapp_payment_claim_enters_pending_once(repositories, service):
+    apartments, payments, _ = repositories
+    apartment = await apartments.upsert_discovered(make_ad(lalafo_id=446))
+    submission = await service.begin_payment(
+        user_id=302,
+        apartment_id=apartment.id,
+        username="buyer",
+        first_name="Buyer",
+        plan=WEEK_PLAN,
+    )
+
+    first = await payments.mark_payment_claimed(
+        user_id=302, apartment_id=apartment.id
+    )
+    repeated = await payments.mark_payment_claimed(
+        user_id=302, apartment_id=apartment.id
+    )
+
+    assert first is not None
+    assert first.id == submission.request.id
+    assert first.status == "pending"
+    assert first.receipt_file_id is None
+    assert repeated is not None
+    assert repeated.id == first.id
+    assert repeated.status == "pending"
+
+
+@pytest.mark.asyncio
 async def test_single_number_plan_is_not_available(repositories, service):
     apartments, _, _ = repositories
     apartment = await apartments.upsert_discovered(make_ad(lalafo_id=445))

@@ -55,7 +55,11 @@ def format_admin_card(request: PaymentRequest) -> str:
         f"👤 {user_label(request)}",
         f"💳 Тариф: {plan_label(request.plan)}",
         payment_line,
-        "🧾 Чек прикреплён клиентом",
+        (
+            "🧾 Чек прикреплён клиентом"
+            if getattr(request, "receipt_file_id", None)
+            else "⏳ Клиент нажал «Я оплатил(а)» — проверьте поступление"
+        ),
     ]
     if apartment.district:
         lines.append(f"📍 {apartment.district}")

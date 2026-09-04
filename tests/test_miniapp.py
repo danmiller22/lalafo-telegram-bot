@@ -65,9 +65,11 @@ def test_mini_app_page_keeps_payment_and_receipt_in_one_window():
 
     assert "/miniapp/api/session" in html
     assert "/miniapp/api/start" in html
-    assert "/miniapp/api/receipt" in html
+    assert "/miniapp/api/check" in html
     assert "Оплатить неделю — 500 сом" in html
-    assert "Отправить чек на проверку" in html
+    assert "Я оплатил(а)" in html
+    assert "Статус: оплата проверяется" in html
+    assert "Оплата проверяется. Квартира сохранена" in html
     assert '["unpaid", "awaiting_receipt", "rejected"].includes(data.status)' in html
     assert "Без перехода в личный чат" not in html
     assert "команды /start" not in html

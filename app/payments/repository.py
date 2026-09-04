@@ -424,6 +424,31 @@ class PaymentRepository:
             request_id = request.id
         return await self.get_request(request_id)
 
+    async def mark_payment_claimed(
+        self, *, user_id: int, apartment_id: int
+    ) -> PaymentRequest | None:
+        """Move one Mini App payment to review without requiring a receipt.
+
+        The apartment id keeps simultaneous customer flows isolated, while the
+        conditional update makes repeated taps idempotent.
+        """
+        async with self.sessions.begin() as session:
+            result = await session.execute(
+                select(PaymentRequest).where(
+                    PaymentRequest.telegram_user_id == user_id,
+                    PaymentRequest.apartment_id == apartment_id,
+                )
+            )
+            request = result.scalar_one_or_none()
+            if request is None:
+                return None
+            if request.status == "awaiting_receipt":
+                request.status = "pending"
+                request.admin_message_id = None
+                await session.flush()
+            request_id = request.id
+        return await self.get_request(request_id)
+
     async def set_admin_message(self, request_id: int, message_id: int) -> None:
         async with self.sessions.begin() as session:
             await session.execute(

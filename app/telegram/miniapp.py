@@ -76,7 +76,7 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     button, .button {{ width: 100%; border: 0; border-radius: 14px; padding: 14px 16px; margin-top: 9px; font: inherit; font-weight: 750; text-align: center; cursor: pointer; text-decoration: none; display: block; }}
     .primary {{ background: var(--tg-theme-button-color, #079b79); color: var(--tg-theme-button-text-color, white); }}
     .secondary {{ background: #12856a18; color: var(--tg-theme-link-color, #07866b); }}
-    input[type=file] {{ width: 100%; margin: 10px 0 0; padding: 10px; border: 1px solid #7c8b8738; border-radius: 12px; }}
+    button:disabled {{ cursor: default; opacity: .82; }}
     .hidden {{ display: none !important; }}
     .foot {{ text-align: center; color: var(--tg-theme-hint-color, #6c7a76); font-size: 12px; margin-top: 14px; }}
   </style>
@@ -90,10 +90,8 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     <div id="status" class="status">Проверяем доступ…</div>
     <div id="phone" class="phone hidden"></div>
     <button id="pay" class="primary hidden">Оплатить неделю — 500 сом</button>
-    <div id="receipt" class="hidden">
-      <input id="file" type="file" accept="image/jpeg,image/png,application/pdf">
-      <button id="upload" class="primary">Отправить чек на проверку</button>
-    </div>
+    <button id="check" class="secondary hidden">Я оплатил(а)</button>
+    <button id="checking" class="secondary hidden" disabled>⏳ Статус: оплата проверяется</button>
     <button id="refresh" class="secondary">Обновить статус</button>
   </section>
   <div class="foot">Номер виден только пользователю с подтверждённым доступом</div>
@@ -127,14 +125,15 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     if (data.photo_url) {{ el("hero").src = data.photo_url; el("hero").style.display = "block"; }}
     show("phone", data.status === "approved");
     show("pay", ["unpaid", "awaiting_receipt", "rejected"].includes(data.status));
-    show("receipt", data.status === "awaiting_receipt");
+    show("check", data.status === "awaiting_receipt");
+    show("checking", data.status === "pending");
     if (data.status === "approved") {{
       el("phone").textContent = "📞 " + data.phone;
       message("✅ Доступ активен" + (data.expires_at_text ? " до " + data.expires_at_text : ""));
     }} else if (data.status === "pending") {{
-      message("⏳ Чек проверяется. Квартира сохранена — закройте окно и вернитесь позже.");
+      message("⏳ Оплата проверяется. Квартира сохранена — номер появится здесь после подтверждения.");
     }} else if (data.status === "awaiting_receipt") {{
-      message("После оплаты прикрепите фото или PDF чека ниже.");
+      message("После оплаты нажмите «Я оплатил(а)». Мы проверим поступление.");
     }} else if (data.status === "rejected") {{
       message("Оплата не подтверждена. Можно повторить оплату и отправить новый чек.");
     }} else {{
@@ -159,22 +158,13 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     }} catch (error) {{ message(error.message); }}
     finally {{ el("pay").disabled = false; }}
   }};
-  el("upload").onclick = async () => {{
-    const file = el("file").files[0];
-    if (!file) {{ message("Сначала выберите фото или PDF чека."); return; }}
-    if (file.size > 10 * 1024 * 1024) {{ message("Файл должен быть не больше 10 МБ."); return; }}
-    el("upload").disabled = true;
-    message("Отправляем чек…");
+  el("check").onclick = async () => {{
+    el("check").disabled = true;
+    message("Проверяем заявку…");
     try {{
-      const encoded = await new Promise((resolve, reject) => {{
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result).split(",", 2)[1]);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      }});
-      render(await api("/miniapp/api/receipt", {{file_name: file.name, content_type: file.type, file_base64: encoded}}));
+      render(await api("/miniapp/api/check", {{}}));
     }} catch (error) {{ message(error.message); }}
-    finally {{ el("upload").disabled = false; }}
+    finally {{ el("check").disabled = false; }}
   }};
   el("refresh").onclick = load;
   load();
