@@ -110,9 +110,10 @@ async def run(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+    settings = get_settings()
     force = _truthy(os.getenv("FORCE_PUBLISH")) if force is None else force
     window_minutes = (
-        max(1, int(os.getenv("PUBLISH_RECENT_WINDOW_MINUTES", "60")))
+        settings.hosted_apartment_publish_interval_minutes
         if window_minutes is None
         else max(1, window_minutes)
     )
@@ -129,7 +130,6 @@ async def run(
     follower_wait_seconds = max(
         0, min(900, int(os.getenv("PUBLISH_FOLLOWER_WAIT_SECONDS", "600")))
     )
-    settings = get_settings()
     engine, sessions = create_engine_and_session(settings.database_url)
     try:
         await init_db(engine)

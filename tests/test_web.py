@@ -362,7 +362,7 @@ async def test_hosted_scheduler_runs_due_check_without_forcing_duplicates(
     select_proxies.assert_awaited_once()
     run_if_due.assert_awaited_once_with(
         force=False,
-        window_minutes=180,
+        window_minutes=60,
         max_attempts=3,
         wait_for_active_lease=False,
     )

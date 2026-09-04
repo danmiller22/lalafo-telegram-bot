@@ -295,7 +295,7 @@ async def run() -> int:
     state = PostedState.load(settings.posted_state_path)
     # Product-level source limits deliberately ignore stale cloud overrides.
     # Test mode remains one-card-only, while production always has room for
-    # the requested twenty-card batch.
+    # the requested fifteen-card batch.
     limit = 1 if settings.test_mode else SOURCE_MAX_POSTS_PER_RUN
     # The unfiltered source is large. Inspect several pages so central bargains
     # can outrank nearer but weaker results from the first page.
