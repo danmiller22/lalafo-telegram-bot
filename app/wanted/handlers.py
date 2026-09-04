@@ -308,7 +308,44 @@ async def my_wanted_ads(
     settings: Settings,
     signer: TokenSigner,
 ) -> None:
-    rows = await wanted_ads.owned(message.from_user.id)
+    await _send_my_wanted_ads(
+        message,
+        user_id=message.from_user.id,
+        wanted_ads=wanted_ads,
+        settings=settings,
+        signer=signer,
+    )
+
+
+@router.callback_query(F.data == "menu:mywanted")
+async def my_wanted_ads_button(
+    callback: CallbackQuery,
+    wanted_ads: WantedAdRepository,
+    settings: Settings,
+    signer: TokenSigner,
+) -> None:
+    if not callback.message or callback.message.chat.type != "private":
+        await callback.answer("Откройте личный чат бота.", show_alert=True)
+        return
+    await callback.answer()
+    await _send_my_wanted_ads(
+        callback.message,
+        user_id=callback.from_user.id,
+        wanted_ads=wanted_ads,
+        settings=settings,
+        signer=signer,
+    )
+
+
+async def _send_my_wanted_ads(
+    message: Message,
+    *,
+    user_id: int,
+    wanted_ads: WantedAdRepository,
+    settings: Settings,
+    signer: TokenSigner,
+) -> None:
+    rows = await wanted_ads.owned(user_id)
     status_labels = {
         "awaiting_payment": "ожидает оплаты",
         "pending": "на проверке",

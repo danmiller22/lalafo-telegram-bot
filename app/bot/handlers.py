@@ -288,6 +288,11 @@ async def status_handler(message: Message) -> None:
     await message.answer("✅ Бот работает")
 
 
+@router.callback_query(F.data == "menu:status")
+async def status_button_handler(callback: CallbackQuery) -> None:
+    await callback.answer("✅ Бот работает", show_alert=True)
+
+
 @router.callback_query(F.data.startswith(CONTACT_PREFIX))
 async def contact_handler(
     callback: CallbackQuery,

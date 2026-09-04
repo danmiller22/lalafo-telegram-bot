@@ -3,11 +3,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.bot.handlers import start_handler
+from app.bot.handlers import start_handler, status_button_handler
 from app.config import Settings
 from app.security import TokenSigner
 from app.wanted.admin import wanted_admin_callback
-from app.wanted.handlers import wanted_command, wanted_paid
+from app.support.handlers import support_button
+from app.wanted.handlers import my_wanted_ads_button, wanted_command, wanted_paid
 from app.wanted.keyboards import wanted_public_keyboard
 
 
@@ -57,8 +58,58 @@ async def test_plain_start_shows_wanted_ad_button():
 
     state.clear.assert_awaited_once()
     markup = message.answer.await_args.kwargs["reply_markup"]
-    assert markup.inline_keyboard[0][0].text == "🔎 Разместить «Ищу квартиру»"
+    assert markup.inline_keyboard[0][0].text == "🔎 Подать заявку на поиск квартиры"
     assert markup.inline_keyboard[0][0].callback_data == "wanted:new"
+    assert markup.inline_keyboard[1][0].text == "📋 Мои заявки"
+    assert markup.inline_keyboard[1][0].callback_data == "menu:mywanted"
+    assert [button.callback_data for button in markup.inline_keyboard[2]] == [
+        "menu:support",
+        "menu:status",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_menu_status_button_reports_that_bot_is_running():
+    callback = SimpleNamespace(answer=AsyncMock())
+
+    await status_button_handler(callback)
+
+    callback.answer.assert_awaited_once_with("✅ Бот работает", show_alert=True)
+
+
+@pytest.mark.asyncio
+async def test_menu_support_button_opens_support_inside_the_bot():
+    message = SimpleNamespace(chat=SimpleNamespace(type="private"), answer=AsyncMock())
+    callback = SimpleNamespace(message=message, answer=AsyncMock())
+    state = SimpleNamespace(clear=AsyncMock(), set_state=AsyncMock())
+
+    await support_button(callback, state)
+
+    callback.answer.assert_awaited_once_with()
+    state.clear.assert_awaited_once()
+    state.set_state.assert_awaited_once()
+    assert "Техподдержка" in message.answer.await_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_menu_my_wanted_button_uses_customer_id():
+    message = SimpleNamespace(chat=SimpleNamespace(type="private"), answer=AsyncMock())
+    callback = SimpleNamespace(
+        message=message,
+        from_user=SimpleNamespace(id=321),
+        answer=AsyncMock(),
+    )
+    wanted_ads = SimpleNamespace(owned=AsyncMock(return_value=[]))
+
+    await my_wanted_ads_button(
+        callback,
+        wanted_ads=wanted_ads,
+        settings=Settings(),
+        signer=TokenSigner("a-very-long-test-secret"),
+    )
+
+    wanted_ads.owned.assert_awaited_once_with(321)
+    assert "нет заявок" in message.answer.await_args.args[0].casefold()
 
 
 @pytest.mark.asyncio

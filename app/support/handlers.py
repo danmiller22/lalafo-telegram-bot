@@ -66,6 +66,15 @@ async def support_command(
         )
 
 
+@router.callback_query(F.data == "menu:support")
+async def support_button(callback: CallbackQuery, state: FSMContext) -> None:
+    if not callback.message or callback.message.chat.type != "private":
+        await callback.answer("Откройте личный чат бота.", show_alert=True)
+        return
+    await callback.answer()
+    await begin_support(callback.message, state)
+
+
 @router.callback_query(F.data.startswith("support:faq:"))
 async def support_faq_callback(callback: CallbackQuery, state: FSMContext) -> None:
     key = (callback.data or "").rsplit(":", 1)[-1]

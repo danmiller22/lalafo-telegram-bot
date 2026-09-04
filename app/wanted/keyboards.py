@@ -9,8 +9,17 @@ from app.security import TokenSigner
 def main_menu_keyboard(support_url: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🔎 Разместить «Ищу квартиру»", callback_data="wanted:new")],
-            [InlineKeyboardButton(text="🛟 Техподдержка", url=support_url)],
+            [
+                InlineKeyboardButton(
+                    text="🔎 Подать заявку на поиск квартиры",
+                    callback_data="wanted:new",
+                )
+            ],
+            [InlineKeyboardButton(text="📋 Мои заявки", callback_data="menu:mywanted")],
+            [
+                InlineKeyboardButton(text="🛟 Техподдержка", callback_data="menu:support"),
+                InlineKeyboardButton(text="✅ Проверить бота", callback_data="menu:status"),
+            ],
         ]
     )
 
