@@ -166,8 +166,8 @@ class Settings(BaseSettings):
     apartment_publication_lease_seconds: int = 300
     apartment_publication_heartbeat_seconds: float = 60.0
     city: str = "Бишкек"
-    min_price: int = 18_000
-    max_price: int = 35_000
+    min_price: int = 15_000
+    max_price: int = 40_000
     rooms: str = "studio,1"
     max_new_posts_per_run: int = 15
     max_search_pages: int = 24

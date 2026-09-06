@@ -86,6 +86,8 @@ def test_expanded_source_keeps_reposts_strictly_limited():
     assert MAX_REPOSTS_PER_RUN == 15
     assert SOURCE_REPOST_AFTER_HOURS == 1.0
     assert settings.rooms == "studio,1"
+    assert settings.min_price == 15_000
+    assert settings.max_price == 40_000
     assert settings.max_new_posts_per_run == 15
     assert settings.max_search_pages == 24
     assert settings.allow_no_district is True

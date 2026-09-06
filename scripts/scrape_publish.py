@@ -66,8 +66,10 @@ CENTRAL_DISTRICT_TERMS = (
     "западный автовокзал",
     "политех",
 )
-SOURCE_MIN_PRICE = 18_000
-SOURCE_MAX_PRICE = 35_000
+# The main source itself remains 20–35k; the supplementary no-subletting
+# source intentionally widens the final fallback inventory to 15–40k.
+SOURCE_MIN_PRICE = 15_000
+SOURCE_MAX_PRICE = 40_000
 SOURCE_ALLOWED_ROOMS = ("studio", "1")
 SOURCE_MAX_POSTS_PER_RUN = 15
 SOURCE_MAX_SEARCH_PAGES = 24
