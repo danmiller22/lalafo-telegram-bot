@@ -105,6 +105,17 @@ def test_curated_rotation_contains_the_two_approved_apartments():
     )
 
 
+def test_permanently_excluded_source_never_enters_a_publish_batch():
+    blocked = make_ad(
+        lalafo_id=115809037,
+        source_url="https://lalafo.kg/bishkek/ads/example-id-115809037",
+        district="ЦУМ",
+    )
+    allowed = make_ad(lalafo_id=115809038, district="ЦУМ")
+
+    assert select_publish_batch([blocked, allowed], limit=2) == [allowed]
+
+
 def test_subletting_listing_is_allowed_but_not_labeled():
     ad = make_ad(no_subletting=False, rooms="1")
 

@@ -12,6 +12,7 @@ from aiogram import Bot
 from app.config import get_settings
 from app.database import create_engine_and_session, init_db
 from app.lalafo.client import LalafoClient, LalafoError, LalafoNotFound
+from app.lalafo.exclusions import is_permanently_excluded
 from app.lalafo.models import LalafoAd
 from app.lalafo.parser import LalafoParseError
 from app.payments.repository import ApartmentRepository
@@ -45,6 +46,10 @@ def selected_listings(raw: str) -> list[SelectedListing]:
         ):
             raise ValueError(f"Unsupported Lalafo detail URL: {value}")
         lalafo_id = int(match.group(1))
+        if is_permanently_excluded(lalafo_id):
+            raise ValueError(
+                f"This Lalafo advertisement is permanently excluded: {lalafo_id}"
+            )
         if lalafo_id in seen:
             continue
         seen.add(lalafo_id)

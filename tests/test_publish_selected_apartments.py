@@ -29,3 +29,10 @@ def test_selected_listings_accepts_deduplicated_lalafo_urls() -> None:
 def test_selected_listings_rejects_unsafe_or_incomplete_urls(value: str) -> None:
     with pytest.raises(ValueError):
         selected_listings(value)
+
+
+def test_selected_listings_rejects_permanently_excluded_source() -> None:
+    with pytest.raises(ValueError, match="permanently excluded"):
+        selected_listings(
+            "https://lalafo.kg/bishkek/ads/example-id-115809037"
+        )

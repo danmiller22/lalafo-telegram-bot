@@ -10,6 +10,7 @@ from collections.abc import Callable, Mapping
 
 from app.config import DEFAULT_SEARCH_URL, get_settings
 from app.lalafo.client import LalafoClient, LalafoError, LalafoNotFound
+from app.lalafo.exclusions import is_permanently_excluded
 from app.lalafo.models import LalafoAd, SearchAd
 from app.lalafo.parser import LalafoParseError, is_allowed
 from app.lalafo.phone import mask_phone
@@ -189,6 +190,9 @@ def deduplicate_candidates(candidates: list[LalafoAd]) -> list[LalafoAd]:
     """
     unique: dict[int, LalafoAd] = {}
     for ad in candidates:
+        if is_permanently_excluded(ad.lalafo_id):
+            logger.info("Skipping permanently excluded ad id=%s", ad.lalafo_id)
+            continue
         current = unique.get(ad.lalafo_id)
         if current is None or candidate_quality(ad) > candidate_quality(current):
             unique[ad.lalafo_id] = ad
@@ -332,6 +336,11 @@ async def run() -> int:
         curated_apartments = await apartments.curated_rotation_apartments(
             CURATED_ROTATION_SPECS
         )
+        curated_apartments = [
+            item
+            for item in curated_apartments
+            if not is_permanently_excluded(item.lalafo_id)
+        ]
         candidates.extend(apartment_to_ad(item) for item in curated_apartments)
         curated_ids = {item.lalafo_id for item in curated_apartments}
         candidate_ids.update(curated_ids)
@@ -416,6 +425,12 @@ async def run() -> int:
             repost_last_published_at.update(repostable_publications)
             detail_search_ads = []
             for search_ad in page.items:
+                if is_permanently_excluded(search_ad.lalafo_id):
+                    logger.info(
+                        "Skipping permanently excluded source ad id=%s",
+                        search_ad.lalafo_id,
+                    )
+                    continue
                 is_repost = search_ad.lalafo_id in repostable_ids
                 if state.contains(search_ad.lalafo_id) and not is_repost:
                     continue
@@ -444,6 +459,9 @@ async def run() -> int:
                 if len(candidates) >= candidate_pool_limit:
                     break
                 if ad is None:
+                    continue
+                if is_permanently_excluded(ad.lalafo_id):
+                    logger.info("Skipping permanently excluded ad id=%s", ad.lalafo_id)
                     continue
                 if ad.lalafo_id in curated_ids:
                     continue
