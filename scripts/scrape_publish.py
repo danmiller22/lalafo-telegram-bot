@@ -8,7 +8,7 @@ import math
 import re
 from collections.abc import Callable, Mapping
 
-from app.config import DEFAULT_SEARCH_URL, get_settings
+from app.config import ADDITIONAL_SEARCH_URLS, DEFAULT_SEARCH_URL, get_settings
 from app.lalafo.client import LalafoClient, LalafoError, LalafoNotFound
 from app.lalafo.exclusions import is_permanently_excluded
 from app.lalafo.models import LalafoAd, SearchAd
@@ -377,10 +377,21 @@ async def run() -> int:
             )
             for _ in range(max(1, min(12, settings.apartment_detail_concurrency)))
         ]
+        search_urls = (DEFAULT_SEARCH_URL, *ADDITIONAL_SEARCH_URLS)
+        search_index = 0
+        search_url = search_urls[search_index]
+        # Reserve one normal card batch for every supplementary source so a
+        # large primary query cannot starve it.
+        source_candidate_limit = candidate_pool_limit - limit * (
+            len(search_urls) - 1
+        )
         page_number = 1
-        while len(candidates) < candidate_pool_limit:
+        # Always inspect at least one page from each operator-approved source.
+        # Once the shared pool is full, move to the next source for one page
+        # instead of spending the whole cycle on the first, larger query.
+        while len(candidates) < candidate_pool_limit or search_index < len(search_urls) - 1:
             try:
-                page = await client.search(DEFAULT_SEARCH_URL, page=page_number)
+                page = await client.search(search_url, page=page_number)
             except (LalafoError, LalafoParseError) as exc:
                 if candidates:
                     logger.warning(
@@ -456,7 +467,7 @@ async def run() -> int:
                 else set()
             )
             for search_ad, ad in details:
-                if len(candidates) >= candidate_pool_limit:
+                if len(candidates) >= source_candidate_limit:
                     break
                 if ad is None:
                     continue
@@ -493,11 +504,27 @@ async def run() -> int:
                 candidate_ids.add(ad.lalafo_id)
                 if is_repost:
                     repost_candidate_ids.add(ad.lalafo_id)
+            if len(candidates) >= source_candidate_limit:
+                search_index += 1
+                if search_index >= len(search_urls):
+                    break
+                search_url = search_urls[search_index]
+                source_candidate_limit = candidate_pool_limit
+                page_number = 1
+                logger.info("Switching to supplementary Lalafo source %d", search_index + 1)
+                continue
             if page_number >= min(
                 page.page_count,
                 SOURCE_MAX_SEARCH_PAGES,
             ):
-                break
+                search_index += 1
+                if search_index >= len(search_urls):
+                    break
+                search_url = search_urls[search_index]
+                source_candidate_limit = candidate_pool_limit
+                page_number = 1
+                logger.info("Switching to supplementary Lalafo source %d", search_index + 1)
+                continue
             page_number += 1
 
     curated_candidates = [

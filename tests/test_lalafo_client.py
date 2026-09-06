@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.config import DEFAULT_SEARCH_URL
+from app.config import ADDITIONAL_SEARCH_URLS, DEFAULT_SEARCH_URL
 from app.lalafo.client import LalafoAccessError, LalafoClient, LalafoError
 
 
@@ -38,15 +38,23 @@ def test_search_params_preserve_configured_filters():
     assert params["parameters[946][0]"] == "81537"
 
 
-def test_default_search_uses_broad_room_and_price_filters():
+def test_primary_search_uses_the_operator_one_bedroom_and_price_filters():
     params = dict(LalafoClient._search_params(DEFAULT_SEARCH_URL, 1))
-    assert not any(key.startswith("parameters[357][") for key in params)
+    assert any(key.startswith("parameters[357][") for key in params)
+    assert [params[key] for key in params if key.startswith("parameters[69]")] == [
+        "2773"
+    ]
+    assert params["price[from]"] == "20000"
+    assert params["price[to]"] == "35000"
+
+
+def test_supplementary_search_keeps_studio_and_no_subletting_supply():
+    params = dict(LalafoClient._search_params(ADDITIONAL_SEARCH_URLS[0], 1))
     assert set(params[key] for key in params if key.startswith("parameters[69]")) == {
         "15496",
         "2773",
     }
-    assert params["price[from]"] == "18000"
-    assert params["price[to]"] == "35000"
+    assert params["parameters[946][0]"] == "81537"
 
 
 @pytest.mark.parametrize(

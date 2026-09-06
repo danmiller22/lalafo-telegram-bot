@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from app.config import DEFAULT_SEARCH_URL, Settings
+from app.config import ADDITIONAL_SEARCH_URLS, DEFAULT_SEARCH_URL, Settings
 from app.lalafo.parser import is_allowed
 from app.telegram.formatting import format_apartment, format_public_apartment
 from app.lalafo.subletting import halve_subletting_candidates
@@ -91,11 +91,16 @@ def test_expanded_source_keeps_reposts_strictly_limited():
     assert settings.allow_no_district is True
 
 
-def test_source_url_contains_only_studios_and_one_bedroom_apartments():
-    assert "/1-bedroom/studio?" in DEFAULT_SEARCH_URL
+def test_source_urls_follow_the_operator_filters():
+    assert "/1-bedroom/" in DEFAULT_SEARCH_URL
     assert "2-bedroom" not in DEFAULT_SEARCH_URL
-    assert "price[from]=18000&price[to]=35000" in DEFAULT_SEARCH_URL
-    assert "/filarmoniya/" not in DEFAULT_SEARCH_URL
+    assert "price[from]=20000&price[to]=35000" in DEFAULT_SEARCH_URL
+    assert "/filarmoniya/" in DEFAULT_SEARCH_URL
+    assert ADDITIONAL_SEARCH_URLS == (
+        "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
+        "dolgosrochnaya-arenda-kvartir/1-bedroom/studio/bez-podseleniya"
+        "?price[from]=15000&price[to]=40000",
+    )
 
 
 def test_curated_rotation_contains_the_two_approved_apartments():
