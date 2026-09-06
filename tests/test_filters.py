@@ -80,12 +80,12 @@ def test_missing_district_uses_labeled_demo_location_and_omits_deposit():
 def test_expanded_source_keeps_reposts_strictly_limited():
     settings = Settings(_env_file=None)
 
-    assert SOURCE_ALLOWED_ROOMS == ("studio", "1")
+    assert SOURCE_ALLOWED_ROOMS == ("1",)
     assert SOURCE_MAX_POSTS_PER_RUN == 15
     assert SOURCE_MAX_SEARCH_PAGES == 24
     assert MAX_REPOSTS_PER_RUN == 15
     assert SOURCE_REPOST_AFTER_HOURS == 1.0
-    assert settings.rooms == "studio,1"
+    assert settings.rooms == "1"
     assert settings.min_price == 15_000
     assert settings.max_price == 40_000
     assert settings.max_new_posts_per_run == 15
@@ -100,7 +100,7 @@ def test_source_urls_follow_the_operator_filters():
     assert "/filarmoniya/" in DEFAULT_SEARCH_URL
     assert ADDITIONAL_SEARCH_URLS == (
         "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
-        "dolgosrochnaya-arenda-kvartir/1-bedroom/studio/bez-podseleniya"
+        "dolgosrochnaya-arenda-kvartir/1-bedroom/bez-podseleniya"
         "?price[from]=15000&price[to]=40000",
     )
 

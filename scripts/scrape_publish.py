@@ -70,7 +70,7 @@ CENTRAL_DISTRICT_TERMS = (
 # source intentionally widens the final fallback inventory to 15–40k.
 SOURCE_MIN_PRICE = 15_000
 SOURCE_MAX_PRICE = 40_000
-SOURCE_ALLOWED_ROOMS = ("studio", "1")
+SOURCE_ALLOWED_ROOMS = ("1",)
 SOURCE_MAX_POSTS_PER_RUN = 15
 SOURCE_MAX_SEARCH_PAGES = 24
 # A card becomes eligible after one publication interval, but selection below

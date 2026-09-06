@@ -102,11 +102,10 @@ DEFAULT_SEARCH_URL = (
     "?price[from]=20000&price[to]=35000"
 )
 
-# A supplementary pool preserves the user's separate no-subletting filter and
-# supplies studios when the primary one-bedroom central pool is thin.
+# A supplementary pool preserves the user's separate no-subletting filter.
 ADDITIONAL_SEARCH_URLS = (
     "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
-    "dolgosrochnaya-arenda-kvartir/1-bedroom/studio/bez-podseleniya"
+    "dolgosrochnaya-arenda-kvartir/1-bedroom/bez-podseleniya"
     "?price[from]=15000&price[to]=40000",
 )
 
@@ -168,7 +167,7 @@ class Settings(BaseSettings):
     city: str = "Бишкек"
     min_price: int = 15_000
     max_price: int = 40_000
-    rooms: str = "studio,1"
+    rooms: str = "1"
     max_new_posts_per_run: int = 15
     max_search_pages: int = 24
     preferred_districts_only: bool = False

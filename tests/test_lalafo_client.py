@@ -48,12 +48,11 @@ def test_primary_search_uses_the_operator_one_bedroom_and_price_filters():
     assert params["price[to]"] == "35000"
 
 
-def test_supplementary_search_keeps_studio_and_no_subletting_supply():
+def test_supplementary_search_keeps_one_bedroom_and_no_subletting_supply():
     params = dict(LalafoClient._search_params(ADDITIONAL_SEARCH_URLS[0], 1))
-    assert set(params[key] for key in params if key.startswith("parameters[69]")) == {
-        "15496",
-        "2773",
-    }
+    assert [params[key] for key in params if key.startswith("parameters[69]")] == [
+        "2773"
+    ]
     assert params["parameters[946][0]"] == "81537"
 
 
