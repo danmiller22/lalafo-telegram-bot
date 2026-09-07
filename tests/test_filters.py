@@ -115,6 +115,9 @@ def test_curated_rotation_contains_the_two_approved_apartments():
         115333471,
         112925333,
         114091573,
+        116107608,
+        116136417,
+        115936987,
     )
 
 
