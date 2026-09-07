@@ -121,6 +121,14 @@ async def run() -> int:
             ad: LalafoAd | None = None
             try:
                 ad = await client.detail(item.url)
+                if ad.currency.upper() != "KGS":
+                    logger.error(
+                        "Selected apartment id=%s has unsupported currency=%s",
+                        item.lalafo_id,
+                        ad.currency,
+                    )
+                    failures += 1
+                    continue
                 # These curated cards mirror the user's Lalafo drafts, whose
                 # deposit field is intentionally blank.
                 ad = ad.model_copy(update={"deposit": None})

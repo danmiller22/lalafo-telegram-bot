@@ -114,7 +114,6 @@ def test_curated_rotation_contains_the_two_approved_apartments():
     assert CURATED_ROTATION_LALAFO_IDS == (
         115333471,
         113410189,
-        112925333,
         114091573,
     )
 
