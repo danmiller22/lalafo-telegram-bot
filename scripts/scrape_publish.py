@@ -92,7 +92,7 @@ CURATED_ROTATION_SPECS = (
 # Telegram rotation after their first confirmed publication.
 CURATED_ROTATION_LALAFO_IDS = (
     115333471,
-    113410189,
+    112925333,
     114091573,
 )
 
