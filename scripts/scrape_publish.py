@@ -78,8 +78,8 @@ SOURCE_MAX_SEARCH_PAGES = 24
 # rotates inventory instead of showing the same apartments every hour.
 SOURCE_REPOST_AFTER_HOURS = 1.0
 MAX_REPOSTS_PER_RUN = 15
-CENTRAL_BATCH_SHARE = 0.80
-PREFERRED_BATCH_SHARE = 0.80
+CENTRAL_BATCH_SHARE = 0.50
+OWNER_OTHER_BATCH_SHARE = 0.50
 MAX_CANDIDATE_POOL = 200
 # These two manually approved cards must remain in the normal hourly
 # Telegram rotation.  They are resolved from the original, phone-backed
@@ -217,7 +217,7 @@ def select_publish_batch(
     *,
     rank_key: Callable[[LalafoAd], tuple] = candidate_quality,
 ) -> list[LalafoAd]:
-    """Build a diverse batch led by central and requested districts."""
+    """Build a 50/50 batch: old central pool and other owner listings."""
     if limit <= 0 or not candidates:
         return []
     candidates = deduplicate_candidates(candidates)
@@ -226,38 +226,51 @@ def select_publish_batch(
         key=rank_key,
         reverse=True,
     )
-    preferred = sorted(
+    owner_other = sorted(
         (
             ad
             for ad in candidates
-            if is_preferred_district(ad.district)
-            and not is_central_district(ad.district)
+            if ad.owner_listing and not is_central_district(ad.district)
         ),
         key=rank_key,
         reverse=True,
     )
-    other = sorted(
-        (ad for ad in candidates if not is_preferred_district(ad.district)),
+    fallback = sorted(
+        (
+            ad
+            for ad in candidates
+            if not is_central_district(ad.district) and ad not in owner_other
+        ),
         key=rank_key,
         reverse=True,
     )
     total = min(limit, len(candidates))
     central_target = min(len(central), math.ceil(total * CENTRAL_BATCH_SHARE))
-    requested_target = min(
-        len(central) + len(preferred),
-        math.ceil(total * PREFERRED_BATCH_SHARE),
-    )
+    owner_target = min(len(owner_other), total - central_target)
     selected = central[:central_target]
-    preferred_take = min(len(preferred), max(0, requested_target - len(selected)))
-    selected.extend(preferred[:preferred_take])
-    central_extra_take = min(
-        len(central) - central_target,
-        max(0, requested_target - len(selected)),
-    )
-    selected.extend(
-        central[central_target : central_target + central_extra_take]
-    )
-    selected.extend(other[: total - len(selected)])
+    selected.extend(owner_other[:owner_target])
+
+    # If either half is temporarily short, keep the hourly run full without
+    # weakening the owner-only rule while owner candidates are available.
+    if len(selected) < total:
+        selected_ids = {ad.lalafo_id for ad in selected}
+        owner_remainder = [
+            ad for ad in owner_other if ad.lalafo_id not in selected_ids
+        ]
+        selected.extend(owner_remainder[: total - len(selected)])
+    if len(selected) < total:
+        selected_ids = {ad.lalafo_id for ad in selected}
+        central_remainder = [
+            ad for ad in central if ad.lalafo_id not in selected_ids
+        ]
+        selected.extend(central_remainder[: total - len(selected)])
+    if len(selected) < total:
+        selected_ids = {ad.lalafo_id for ad in selected}
+        selected.extend(
+            [ad for ad in fallback if ad.lalafo_id not in selected_ids][
+                : total - len(selected)
+            ]
+        )
     if len(selected) < total:
         selected_ids = {ad.lalafo_id for ad in selected}
         remaining = sorted(
@@ -564,8 +577,13 @@ async def run() -> int:
     repost_candidate_ids.intersection_update(ad.lalafo_id for ad in candidates)
     central_count = sum(is_central_district(ad.district) for ad in candidates)
     central_percent = round(central_count * 100 / len(candidates)) if candidates else 0
-    preferred_count = sum(is_preferred_district(ad.district) for ad in candidates)
-    preferred_percent = round(preferred_count * 100 / len(candidates)) if candidates else 0
+    owner_other_count = sum(
+        ad.owner_listing and not is_central_district(ad.district)
+        for ad in candidates
+    )
+    owner_other_percent = (
+        round(owner_other_count * 100 / len(candidates)) if candidates else 0
+    )
     logger.info(
         "Central-district share: %d/%d (%d%%), target=%d%%",
         central_count,
@@ -574,11 +592,11 @@ async def run() -> int:
         round(CENTRAL_BATCH_SHARE * 100),
     )
     logger.info(
-        "Preferred-district share: %d/%d (%d%%), target=%d%%",
-        preferred_count,
+        "Other-district owner share: %d/%d (%d%%), target=%d%%",
+        owner_other_count,
         len(candidates),
-        preferred_percent,
-        round(PREFERRED_BATCH_SHARE * 100),
+        owner_other_percent,
+        round(OWNER_OTHER_BATCH_SHARE * 100),
     )
     logger.info("Eligible photo-prioritized apartments selected: %d", len(candidates))
     for ad in candidates:
