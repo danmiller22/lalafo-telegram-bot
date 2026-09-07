@@ -103,6 +103,9 @@ def test_source_urls_follow_the_operator_filters():
         "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
         "dolgosrochnaya-arenda-kvartir/1-bedroom/bez-podseleniya"
         "?price[from]=15000&price[to]=40000",
+        "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
+        "dolgosrochnaya-arenda-kvartir/1-bedroom/owner"
+        "?price[from]=15000&price[to]=40000",
     )
 
 
