@@ -88,6 +88,14 @@ CURATED_ROTATION_SPECS = (
     ("Филармония", 25_000),
     ("Моссовет", 20_000),
 )
+# Explicit user-approved Lalafo sources that must stay in the recurring
+# Telegram rotation after their first confirmed publication.
+CURATED_ROTATION_LALAFO_IDS = (
+    115333471,
+    113410189,
+    112925333,
+    114091573,
+)
 
 
 def apartment_to_ad(apartment) -> LalafoAd:
@@ -337,6 +345,14 @@ async def run() -> int:
 
         curated_apartments = await apartments.curated_rotation_apartments(
             CURATED_ROTATION_SPECS
+        )
+        curated_apartments.extend(
+            await apartments.curated_rotation_apartments_by_ids(
+                CURATED_ROTATION_LALAFO_IDS
+            )
+        )
+        curated_apartments = list(
+            {item.lalafo_id: item for item in curated_apartments}.values()
         )
         curated_apartments = [
             item

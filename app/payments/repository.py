@@ -89,6 +89,28 @@ class ApartmentRepository:
                 used_ids.add(match.id)
         return selected
 
+    async def curated_rotation_apartments_by_ids(
+        self, lalafo_ids: tuple[int, ...]
+    ) -> list[Apartment]:
+        """Resolve explicitly approved source advertisements for rotation."""
+        if not lalafo_ids:
+            return []
+        positions = {lalafo_id: index for index, lalafo_id in enumerate(lalafo_ids)}
+        async with self.sessions() as session:
+            rows = list(
+                (
+                    await session.scalars(
+                        select(Apartment).where(
+                            Apartment.lalafo_id.in_(lalafo_ids),
+                            Apartment.rooms == "1",
+                            Apartment.active.is_(True),
+                            Apartment.phone != "",
+                        )
+                    )
+                ).all()
+            )
+        return sorted(rows, key=lambda apartment: positions[apartment.lalafo_id])
+
     async def published_lalafo_ids(self, lalafo_ids: list[int]) -> set[int]:
         if not lalafo_ids:
             return set()

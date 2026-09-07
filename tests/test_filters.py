@@ -8,6 +8,7 @@ from app.telegram.formatting import format_apartment, format_public_apartment
 from app.lalafo.subletting import halve_subletting_candidates
 from scripts.scrape_publish import (
     CURATED_ROTATION_SPECS,
+    CURATED_ROTATION_LALAFO_IDS,
     MAX_REPOSTS_PER_RUN,
     SOURCE_ALLOWED_ROOMS,
     SOURCE_MAX_POSTS_PER_RUN,
@@ -109,6 +110,12 @@ def test_curated_rotation_contains_the_two_approved_apartments():
     assert CURATED_ROTATION_SPECS == (
         ("Филармония", 25_000),
         ("Моссовет", 20_000),
+    )
+    assert CURATED_ROTATION_LALAFO_IDS == (
+        115333471,
+        113410189,
+        112925333,
+        114091573,
     )
 
 

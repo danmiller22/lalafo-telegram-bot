@@ -55,3 +55,20 @@ async def test_curated_rotation_resolves_latest_original_phone_backed_cards(
 
     assert [item.lalafo_id for item in selected] == [102, 103]
     assert all(item.phone for item in selected)
+
+
+@pytest.mark.asyncio
+async def test_curated_rotation_resolves_explicitly_approved_ids(repositories) -> None:
+    apartments, _, _ = repositories
+    first = await apartments.upsert_discovered(
+        make_ad(lalafo_id=115333471, rooms="1", price=30_000)
+    )
+    second = await apartments.upsert_discovered(
+        make_ad(lalafo_id=114091573, rooms="1", price=26_000)
+    )
+
+    selected = await apartments.curated_rotation_apartments_by_ids(
+        (114091573, 115333471, 999999)
+    )
+
+    assert [item.id for item in selected] == [second.id, first.id]
