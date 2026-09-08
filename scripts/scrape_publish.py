@@ -98,6 +98,8 @@ CURATED_ROTATION_LALAFO_IDS = (
     116107608,
     116136417,
     115936987,
+    116040769,
+    116159856,
 )
 
 
@@ -371,6 +373,9 @@ async def run() -> int:
                 CURATED_ROTATION_LALAFO_IDS
             )
         )
+        curated_apartments.extend(
+            await apartments.managed_lalafo_source_apartments()
+        )
         curated_apartments = list(
             {item.lalafo_id: item for item in curated_apartments}.values()
         )
@@ -577,14 +582,15 @@ async def run() -> int:
     regular_candidates = [
         ad for ad in candidates if ad.lalafo_id not in curated_ids
     ]
-    candidates = deduplicate_candidates(
-        curated_candidates
-        + select_publish_batch_with_reposts(
-            regular_candidates,
-            repost_last_published_at,
-            max(0, limit - len(curated_candidates)),
-        )
+    # Operator-curated/profile source cards form bookends.  The live owner-only
+    # feed fills the middle, and the same bookends are repeated at the end.
+    bookends = deduplicate_candidates(curated_candidates)
+    owner_middle = select_publish_batch_with_reposts(
+        regular_candidates,
+        repost_last_published_at,
+        limit,
     )
+    candidates = bookends + owner_middle + bookends
     repost_candidate_ids.intersection_update(ad.lalafo_id for ad in candidates)
     central_count = sum(is_central_district(ad.district) for ad in candidates)
     central_percent = round(central_count * 100 / len(candidates)) if candidates else 0
@@ -696,7 +702,16 @@ async def run() -> int:
         return ad, None, True
 
     try:
-        results = await asyncio.gather(*(publish_one(ad) for ad in candidates))
+        beginning_results = []
+        for ad in bookends:
+            beginning_results.append(await publish_one(ad))
+        middle_results = await asyncio.gather(
+            *(publish_one(ad) for ad in owner_middle)
+        )
+        ending_results = []
+        for ad in bookends:
+            ending_results.append(await publish_one(ad))
+        results = beginning_results + list(middle_results) + ending_results
         for ad, message_id, failed in results:
             if failed:
                 publish_failures += 1

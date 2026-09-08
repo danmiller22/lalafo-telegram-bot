@@ -114,6 +114,8 @@ def test_curated_rotation_preserves_manually_approved_apartments():
         116107608,
         116136417,
         115936987,
+        116040769,
+        116159856,
     )
 
 

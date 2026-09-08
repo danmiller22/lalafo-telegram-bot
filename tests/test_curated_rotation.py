@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from app.models import DailyFeaturedPublication
 from tests.helpers import make_ad
 
 
@@ -72,3 +73,28 @@ async def test_curated_rotation_resolves_explicitly_approved_ids(repositories) -
     )
 
     assert [item.id for item in selected] == [second.id, first.id]
+
+
+@pytest.mark.asyncio
+async def test_managed_profile_ads_restore_their_original_sources(
+    repositories,
+) -> None:
+    apartments, _, sessions = repositories
+    source = await apartments.upsert_discovered(
+        make_ad(lalafo_id=116000001, rooms="1", phone="+996555000001")
+    )
+    async with sessions() as session:
+        session.add(
+            DailyFeaturedPublication(
+                business_date=datetime.now(timezone.utc).date(),
+                slot=1,
+                source_apartment_id=source.id,
+                source_lalafo_id=source.lalafo_id,
+                managed_lalafo_ad_id=999000001,
+            )
+        )
+        await session.commit()
+
+    selected = await apartments.managed_lalafo_source_apartments()
+
+    assert [item.lalafo_id for item in selected] == [116000001]

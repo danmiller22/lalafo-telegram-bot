@@ -3,13 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from app.lalafo.models import PHONE_SOURCE_VERSION, LalafoAd
-from app.models import Apartment, PaymentRequest
+from app.models import Apartment, DailyFeaturedPublication, PaymentRequest
 from app.payment_plans import WEEK_PLAN, expires_at_for
 from app.state import ad_fingerprint
 from app.telegram.keyboards import APARTMENT_KEYBOARD_VERSION
@@ -110,6 +110,53 @@ class ApartmentRepository:
                 ).all()
             )
         return sorted(rows, key=lambda apartment: positions[apartment.lalafo_id])
+
+    async def managed_lalafo_source_apartments(self) -> list[Apartment]:
+        """Resolve original source cards behind ads created on our Lalafo profile."""
+        async with self.sessions() as session:
+            references = (
+                await session.execute(
+                    select(
+                        DailyFeaturedPublication.source_apartment_id,
+                        DailyFeaturedPublication.source_lalafo_id,
+                    )
+                    .where(
+                        or_(
+                            DailyFeaturedPublication.managed_lalafo_ad_id.is_not(None),
+                            DailyFeaturedPublication.managed_lalafo_ad_url.is_not(None),
+                        )
+                    )
+                    .order_by(DailyFeaturedPublication.created_at.desc())
+                )
+            ).all()
+            apartment_ids = {
+                apartment_id
+                for apartment_id, _ in references
+                if apartment_id is not None
+            }
+            lalafo_ids = {lalafo_id for _, lalafo_id in references}
+            if not apartment_ids and not lalafo_ids:
+                return []
+            rows = list(
+                (
+                    await session.scalars(
+                        select(Apartment).where(
+                            or_(
+                                Apartment.id.in_(apartment_ids),
+                                Apartment.lalafo_id.in_(lalafo_ids),
+                            ),
+                            Apartment.rooms == "1",
+                            Apartment.active.is_(True),
+                            Apartment.phone != "",
+                        )
+                    )
+                ).all()
+            )
+        position = {
+            lalafo_id: index
+            for index, (_, lalafo_id) in enumerate(references)
+        }
+        return sorted(rows, key=lambda item: position.get(item.lalafo_id, len(position)))
 
     async def published_lalafo_ids(self, lalafo_ids: list[int]) -> set[int]:
         if not lalafo_ids:
