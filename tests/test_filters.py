@@ -13,6 +13,8 @@ from scripts.scrape_publish import (
     SOURCE_ALLOWED_ROOMS,
     SOURCE_MAX_POSTS_PER_RUN,
     SOURCE_MAX_SEARCH_PAGES,
+    SOURCE_MIN_PHOTOS,
+    SOURCE_MIN_PRICE,
     SOURCE_REPOST_AFTER_HOURS,
     candidate_quality,
     deduplicate_candidates,
@@ -84,6 +86,8 @@ def test_expanded_source_keeps_reposts_strictly_limited():
     assert SOURCE_ALLOWED_ROOMS == ("1",)
     assert SOURCE_MAX_POSTS_PER_RUN == 15
     assert SOURCE_MAX_SEARCH_PAGES == 24
+    assert SOURCE_MIN_PRICE == 18_000
+    assert SOURCE_MIN_PHOTOS == 3
     assert MAX_REPOSTS_PER_RUN == 15
     assert SOURCE_REPOST_AFTER_HOURS == 1.0
     assert settings.rooms == "1"
@@ -98,7 +102,7 @@ def test_source_urls_follow_the_operator_filters():
     assert "/1-bedroom/" in DEFAULT_SEARCH_URL
     assert "/owner" in DEFAULT_SEARCH_URL
     assert "2-bedroom" not in DEFAULT_SEARCH_URL
-    assert "price[from]=15000&price[to]=40000" in DEFAULT_SEARCH_URL
+    assert "price[from]=18000&price[to]=40000" in DEFAULT_SEARCH_URL
     assert ADDITIONAL_SEARCH_URLS == ()
 
 

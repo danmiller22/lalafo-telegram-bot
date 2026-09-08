@@ -81,7 +81,7 @@ LALAFO_DISTRICT_FILTERS = (
 DEFAULT_SEARCH_URL = (
     "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
     "dolgosrochnaya-arenda-kvartir/1-bedroom/owner"
-    "?price[from]=15000&price[to]=40000"
+    "?price[from]=18000&price[to]=40000"
 )
 
 # The owner filter above is the sole source.  Keeping this tuple explicit

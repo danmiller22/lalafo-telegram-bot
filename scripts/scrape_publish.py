@@ -68,9 +68,10 @@ CENTRAL_DISTRICT_TERMS = (
 )
 # The main source itself remains 20–35k; the supplementary no-subletting
 # source intentionally widens the final fallback inventory to 15–40k.
-SOURCE_MIN_PRICE = 15_000
+SOURCE_MIN_PRICE = 18_000
 SOURCE_MAX_PRICE = 40_000
 SOURCE_ALLOWED_ROOMS = ("1",)
+SOURCE_MIN_PHOTOS = 3
 SOURCE_MAX_POSTS_PER_RUN = 15
 SOURCE_MAX_SEARCH_PAGES = 24
 # A card becomes eligible after one publication interval, but selection below
@@ -534,6 +535,13 @@ async def run() -> int:
                     continue
                 if ad.price < max(settings.min_price, SOURCE_MIN_PRICE):
                     logger.info("Skipping ad id=%s reason=min_price", ad.lalafo_id)
+                    continue
+                if len(ad.photo_urls) < SOURCE_MIN_PHOTOS:
+                    logger.info(
+                        "Skipping ad id=%s reason=too_few_photos count=%d",
+                        ad.lalafo_id,
+                        len(ad.photo_urls),
+                    )
                     continue
                 if not ad.owner_listing:
                     logger.info(

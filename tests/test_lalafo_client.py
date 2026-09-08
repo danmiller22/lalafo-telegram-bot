@@ -46,7 +46,7 @@ def test_primary_search_uses_the_operator_owner_one_bedroom_and_price_filters():
     assert [
         params[key] for key in params if key.startswith("parameters[2149]")
     ] == ["19057"]
-    assert params["price[from]"] == "15000"
+    assert params["price[from]"] == "18000"
     assert params["price[to]"] == "40000"
 
 
