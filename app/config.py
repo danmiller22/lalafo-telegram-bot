@@ -80,39 +80,13 @@ LALAFO_DISTRICT_FILTERS = (
 
 DEFAULT_SEARCH_URL = (
     "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
-    "dolgosrochnaya-arenda-kvartir/1-bedroom/"
-    "vostok-5/ortosajskij-rynok/energetiki/rajon-bgu/tunguch/madina/dordoj/"
-    "alamedin-rynok/oshskij-rynok/filarmoniya/politekh/dzhal/pishpek/kok-zhar/"
-    "ak-orgo/alamedin-1/tsum/p-23249-asanbaj/goin/zapadnyi-avtovokzal/mcr-ulan/"
-    "tash-rabat/tec/yug-2/mossovet/med-akademiya/10-mkr/1000-melochej-karpinka/"
-    "11-mkr/12-mkr/3-mkr/4-mkr/5-mkr/6-mkr/7-mkr/8-mkr/9-mkr/azija-moll/"
-    "ata-tjurk-park/beta-stores/beta-stores-2/bishkek-park-trc/botanicheskij-sad/"
-    "gorodskaja-bolnica-4-ul-ajni/dvorec-sporta/dzhunhaj-rynok/zhd-vokzal/karavan-trc/"
-    "ak-zhar-zhm/p-30333-ak-ordo-3-zhm/p-30342-ak-ordo-1-zhm/ak-ordo-2-zhm/"
-    "p-30350-bakaj-ata-zhm/panorama/taatan-tc/fizpribory/centralnaja-mechet/"
-    "mega-komfort-tc/ala-archa-tc/bokonbaevaumetalieva/vecherka/bulvar-erkindik/"
-    "zagscirk/manasabokonbaeva/molodaya-gvardiya/sovetskayaskryabina/trc-tehnopark/"
-    "trc-i-mall/tc-vesna/umetalievafrunze/yunusalievasuvanberdieva/zolotoj-kvadrat/"
-    "square-ala-too/auca/vefa-shopping-center/dordoi-plaza-shopping-center/"
-    "st-almatinka-chuy/st-akhunbaeva-maldybaeva/st-moscow-gogol/"
-    "st-moscow-turusbekova/yugnyi-magistral/ayu-grand/gosregistr/dushanbinka/"
-    "panfilov-park-spartak-stadium/moskovskaya-st-umetalieva-st/ulan-2-microdistrict/"
-    "victory-square/jal-hospital/physical-education-ksafkis/"
-    "moskovskaya-st-manasa-st-belinka/sredniy-dzhal/dzhal-15/dzhal-29/1000-melochey"
-    "?price[from]=20000&price[to]=35000"
+    "dolgosrochnaya-arenda-kvartir/1-bedroom/owner"
+    "?price[from]=15000&price[to]=40000"
 )
 
-# Supplementary pools preserve the existing source and add a dedicated
-# owner-only inventory.  The publisher applies the final 50/50 mix after
-# parsing details, so agency cards can never leak into the owner half.
-ADDITIONAL_SEARCH_URLS = (
-    "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
-    "dolgosrochnaya-arenda-kvartir/1-bedroom/bez-podseleniya"
-    "?price[from]=15000&price[to]=40000",
-    "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
-    "dolgosrochnaya-arenda-kvartir/1-bedroom/owner"
-    "?price[from]=15000&price[to]=40000",
-)
+# The owner filter above is the sole source.  Keeping this tuple explicit
+# prevents an older supplementary realtor/agency feed from being re-enabled.
+ADDITIONAL_SEARCH_URLS: tuple[str, ...] = ()
 
 APARTMENT_PUBLISH_INTERVAL_MINUTES = 60
 

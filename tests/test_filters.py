@@ -96,32 +96,22 @@ def test_expanded_source_keeps_reposts_strictly_limited():
 
 def test_source_urls_follow_the_operator_filters():
     assert "/1-bedroom/" in DEFAULT_SEARCH_URL
+    assert "/owner" in DEFAULT_SEARCH_URL
     assert "2-bedroom" not in DEFAULT_SEARCH_URL
-    assert "price[from]=20000&price[to]=35000" in DEFAULT_SEARCH_URL
-    assert "/filarmoniya/" in DEFAULT_SEARCH_URL
-    assert ADDITIONAL_SEARCH_URLS == (
-        "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
-        "dolgosrochnaya-arenda-kvartir/1-bedroom/bez-podseleniya"
-        "?price[from]=15000&price[to]=40000",
-        "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
-        "dolgosrochnaya-arenda-kvartir/1-bedroom/owner"
-        "?price[from]=15000&price[to]=40000",
-    )
+    assert "price[from]=15000&price[to]=40000" in DEFAULT_SEARCH_URL
+    assert ADDITIONAL_SEARCH_URLS == ()
 
 
-def test_curated_rotation_contains_the_two_approved_apartments():
-    assert CURATED_ROTATION_SPECS == (
-        ("Филармония", 25_000),
-        ("Моссовет", 20_000),
-    )
-    assert CURATED_ROTATION_LALAFO_IDS == (
-        115333471,
-        112925333,
-        114091573,
-        116107608,
-        116136417,
-        115936987,
-    )
+def test_curated_rotation_cannot_bypass_owner_only_filter():
+    assert CURATED_ROTATION_SPECS == ()
+    assert CURATED_ROTATION_LALAFO_IDS == ()
+
+
+def test_publish_batch_rejects_realtors_even_in_central_districts():
+    realtor = make_ad(lalafo_id=1, district="ЦУМ", owner_listing=False)
+    owner = make_ad(lalafo_id=2, district="Тунгуч", owner_listing=True)
+
+    assert select_publish_batch([realtor, owner], limit=2) == [owner]
 
 
 def test_permanently_excluded_source_never_enters_a_publish_batch():

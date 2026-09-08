@@ -84,20 +84,10 @@ MAX_CANDIDATE_POOL = 200
 # These two manually approved cards must remain in the normal hourly
 # Telegram rotation.  They are resolved from the original, phone-backed
 # database records rather than from our phone-hidden public Lalafo reposts.
-CURATED_ROTATION_SPECS = (
-    ("Филармония", 25_000),
-    ("Моссовет", 20_000),
-)
-# Explicit user-approved Lalafo sources that must stay in the recurring
-# Telegram rotation after their first confirmed publication.
-CURATED_ROTATION_LALAFO_IDS = (
-    115333471,
-    112925333,
-    114091573,
-    116107608,
-    116136417,
-    115936987,
-)
+# Stored cards predate the strict owner-only policy and cannot prove the
+# offerer type from the apartment table.  They must not bypass live parsing.
+CURATED_ROTATION_SPECS: tuple[tuple[str, int], ...] = ()
+CURATED_ROTATION_LALAFO_IDS: tuple[int, ...] = ()
 
 
 def apartment_to_ad(apartment) -> LalafoAd:
@@ -220,7 +210,11 @@ def select_publish_batch(
     """Build a 50/50 batch: old central pool and other owner listings."""
     if limit <= 0 or not candidates:
         return []
-    candidates = deduplicate_candidates(candidates)
+    candidates = [
+        ad for ad in deduplicate_candidates(candidates) if ad.owner_listing
+    ]
+    if not candidates:
+        return []
     central = sorted(
         (ad for ad in candidates if is_central_district(ad.district)),
         key=rank_key,
@@ -524,6 +518,12 @@ async def run() -> int:
                     continue
                 if ad.price < max(settings.min_price, SOURCE_MIN_PRICE):
                     logger.info("Skipping ad id=%s reason=min_price", ad.lalafo_id)
+                    continue
+                if not ad.owner_listing:
+                    logger.info(
+                        "Skipping ad id=%s reason=not_owner_listing",
+                        ad.lalafo_id,
+                    )
                     continue
                 if not settings.allow_no_deposit and ad.deposit is None:
                     logger.info("Skipping ad id=%s reason=deposit", ad.lalafo_id)
