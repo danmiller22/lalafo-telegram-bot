@@ -124,7 +124,8 @@ class ApartmentRepository:
                         or_(
                             DailyFeaturedPublication.managed_lalafo_ad_id.is_not(None),
                             DailyFeaturedPublication.managed_lalafo_ad_url.is_not(None),
-                        )
+                        ),
+                        DailyFeaturedPublication.deactivated_at.is_(None),
                     )
                     .order_by(DailyFeaturedPublication.created_at.desc())
                 )
