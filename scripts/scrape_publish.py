@@ -84,10 +84,21 @@ MAX_CANDIDATE_POOL = 200
 # These two manually approved cards must remain in the normal hourly
 # Telegram rotation.  They are resolved from the original, phone-backed
 # database records rather than from our phone-hidden public Lalafo reposts.
-# Stored cards predate the strict owner-only policy and cannot prove the
-# offerer type from the apartment table.  They must not bypass live parsing.
-CURATED_ROTATION_SPECS: tuple[tuple[str, int], ...] = ()
-CURATED_ROTATION_LALAFO_IDS: tuple[int, ...] = ()
+# Manually approved cards remain in every hourly rotation.  The strict
+# owner-only rule applies to newly discovered source cards, not this explicit
+# operator-curated inventory.
+CURATED_ROTATION_SPECS = (
+    ("Филармония", 25_000),
+    ("Моссовет", 20_000),
+)
+CURATED_ROTATION_LALAFO_IDS = (
+    115333471,
+    112925333,
+    114091573,
+    116107608,
+    116136417,
+    115936987,
+)
 
 
 def apartment_to_ad(apartment) -> LalafoAd:

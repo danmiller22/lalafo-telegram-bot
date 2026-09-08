@@ -102,9 +102,19 @@ def test_source_urls_follow_the_operator_filters():
     assert ADDITIONAL_SEARCH_URLS == ()
 
 
-def test_curated_rotation_cannot_bypass_owner_only_filter():
-    assert CURATED_ROTATION_SPECS == ()
-    assert CURATED_ROTATION_LALAFO_IDS == ()
+def test_curated_rotation_preserves_manually_approved_apartments():
+    assert CURATED_ROTATION_SPECS == (
+        ("Филармония", 25_000),
+        ("Моссовет", 20_000),
+    )
+    assert CURATED_ROTATION_LALAFO_IDS == (
+        115333471,
+        112925333,
+        114091573,
+        116107608,
+        116136417,
+        115936987,
+    )
 
 
 def test_publish_batch_rejects_realtors_even_in_central_districts():
