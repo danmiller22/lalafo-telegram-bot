@@ -72,7 +72,8 @@ SOURCE_MIN_PRICE = 18_000
 SOURCE_MAX_PRICE = 40_000
 SOURCE_ALLOWED_ROOMS = ("1",)
 SOURCE_MIN_PHOTOS = 4
-SOURCE_MAX_POSTS_PER_RUN = 15
+SOURCE_MAX_POSTS_PER_RUN = 13
+SOURCE_PUBLISH_SPACING_SECONDS = 280
 SOURCE_MAX_SEARCH_PAGES = 24
 # A card becomes eligible after one publication interval, but selection below
 # always takes the oldest eligible cards first. With a large source pool this
@@ -592,11 +593,11 @@ async def run() -> int:
     ]
     # Fresh owner cards lead the batch. Cards tied to our own Lalafo profile
     # appear once, strictly at the end, so they never crowd out fresh supply.
-    profile_cards = deduplicate_candidates(curated_candidates)
+    profile_cards = deduplicate_candidates(curated_candidates)[:limit]
     owner_middle = select_publish_batch_with_reposts(
         regular_candidates,
         repost_last_published_at,
-        limit,
+        max(0, limit - len(profile_cards)),
     )
     candidates = owner_middle + profile_cards
     repost_candidate_ids.intersection_update(ad.lalafo_id for ad in candidates)
@@ -710,13 +711,16 @@ async def run() -> int:
         return ad, None, True
 
     try:
-        middle_results = await asyncio.gather(
-            *(publish_one(ad) for ad in owner_middle)
-        )
-        profile_results = []
-        for ad in profile_cards:
-            profile_results.append(await publish_one(ad))
-        results = list(middle_results) + profile_results
+        results = []
+        for index, ad in enumerate(candidates):
+            result = await publish_one(ad)
+            results.append(result)
+            if result[1] is not None and index < len(candidates) - 1:
+                logger.info(
+                    "Waiting %d seconds before the next Telegram card",
+                    SOURCE_PUBLISH_SPACING_SECONDS,
+                )
+                await asyncio.sleep(SOURCE_PUBLISH_SPACING_SECONDS)
         for ad, message_id, failed in results:
             if failed:
                 publish_failures += 1

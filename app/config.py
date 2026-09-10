@@ -88,7 +88,7 @@ DEFAULT_SEARCH_URL = (
 # prevents an older supplementary realtor/agency feed from being re-enabled.
 ADDITIONAL_SEARCH_URLS: tuple[str, ...] = ()
 
-APARTMENT_PUBLISH_INTERVAL_MINUTES = 60
+APARTMENT_PUBLISH_INTERVAL_MINUTES = 120
 
 
 class Settings(BaseSettings):
@@ -140,14 +140,14 @@ class Settings(BaseSettings):
     # Keep each public album adjacent to its card. Speed comes from direct
     # Telegram URL fetches and concurrent Lalafo detail collection.
     apartment_publish_concurrency: int = 1
-    apartment_cycle_timeout_seconds: float = 1_500.0
+    apartment_cycle_timeout_seconds: float = 4_200.0
     apartment_publication_lease_seconds: int = 300
     apartment_publication_heartbeat_seconds: float = 60.0
     city: str = "Бишкек"
     min_price: int = 15_000
     max_price: int = 40_000
     rooms: str = "1"
-    max_new_posts_per_run: int = 15
+    max_new_posts_per_run: int = 13
     max_search_pages: int = 24
     preferred_districts_only: bool = False
     # Telegram accepts at most ten photos per media group. Publishers split

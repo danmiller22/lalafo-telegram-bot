@@ -15,6 +15,7 @@ from scripts.scrape_publish import (
     SOURCE_MAX_SEARCH_PAGES,
     SOURCE_MIN_PHOTOS,
     SOURCE_MIN_PRICE,
+    SOURCE_PUBLISH_SPACING_SECONDS,
     SOURCE_REPOST_AFTER_HOURS,
     candidate_quality,
     deduplicate_candidates,
@@ -84,7 +85,8 @@ def test_expanded_source_keeps_reposts_strictly_limited():
     settings = Settings(_env_file=None)
 
     assert SOURCE_ALLOWED_ROOMS == ("1",)
-    assert SOURCE_MAX_POSTS_PER_RUN == 15
+    assert SOURCE_MAX_POSTS_PER_RUN == 13
+    assert SOURCE_PUBLISH_SPACING_SECONDS == 280
     assert SOURCE_MAX_SEARCH_PAGES == 24
     assert SOURCE_MIN_PRICE == 18_000
     assert SOURCE_MIN_PHOTOS == 4
@@ -93,7 +95,7 @@ def test_expanded_source_keeps_reposts_strictly_limited():
     assert settings.rooms == "1"
     assert settings.min_price == 15_000
     assert settings.max_price == 40_000
-    assert settings.max_new_posts_per_run == 15
+    assert settings.max_new_posts_per_run == 13
     assert settings.max_search_pages == 24
     assert settings.allow_no_district is True
 
