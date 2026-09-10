@@ -80,10 +80,10 @@ LALAFO_DISTRICT_FILTERS = (
 
 DEFAULT_SEARCH_URL = (
     "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
-    "dolgosrochnaya-arenda-kvartir/1-bedroom/2-bedrooms/studio/owner/"
+    "dolgosrochnaya-arenda-kvartir/1-bedroom/studio/owner/"
     "semeynym/param-bez-detey/studentam/bez-podseleniya/"
-    "mozhno-s-zhivotnymi/bez-zhivotnyh"
-    "?price[from]=15000&price[to]=40000"
+    "mozhno-s-zhivotnymi"
+    "?price[from]=10000&price[to]=40000"
 )
 
 # The owner filter above is the sole source.  Keeping this tuple explicit
@@ -146,7 +146,7 @@ class Settings(BaseSettings):
     apartment_publication_lease_seconds: int = 300
     apartment_publication_heartbeat_seconds: float = 60.0
     city: str = "Бишкек"
-    min_price: int = 15_000
+    min_price: int = 10_000
     max_price: int = 40_000
     rooms: str = "1"
     max_new_posts_per_run: int = 13
