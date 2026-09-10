@@ -42,7 +42,7 @@ def test_primary_search_uses_the_operator_owner_one_bedroom_and_price_filters():
     params = dict(LalafoClient._search_params(DEFAULT_SEARCH_URL, 1))
     assert set(
       params[key] for key in params if key.startswith("parameters[69]")
-    ) == {"2773", "2774"}
+    ) == {"15496", "2773"}
     assert [
         params[key] for key in params if key.startswith("parameters[2149]")
     ] == ["19057"]
