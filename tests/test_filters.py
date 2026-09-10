@@ -19,6 +19,7 @@ from scripts.scrape_publish import (
     SOURCE_REPOST_AFTER_HOURS,
     candidate_quality,
     deduplicate_candidates,
+    eligible_curated_apartments,
     is_central_district,
     is_preferred_district,
     select_publish_batch,
@@ -127,6 +128,21 @@ def test_curated_rotation_preserves_manually_approved_apartments():
         116040769,
         116159856,
     )
+
+
+def test_curated_rotation_obeys_the_six_hour_repost_cooldown():
+    apartments = [
+        type("ApartmentStub", (), {"lalafo_id": lalafo_id})()
+        for lalafo_id in (101, 102, 103)
+    ]
+
+    eligible = eligible_curated_apartments(
+        apartments,
+        published_ids={101, 102},
+        repostable_ids={102},
+    )
+
+    assert [apartment.lalafo_id for apartment in eligible] == [102, 103]
 
 
 def test_publish_batch_rejects_realtors_even_in_central_districts():

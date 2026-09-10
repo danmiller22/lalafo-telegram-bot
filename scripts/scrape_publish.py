@@ -83,12 +83,10 @@ MAX_REPOSTS_PER_RUN = 15
 CENTRAL_BATCH_SHARE = 0.50
 OWNER_OTHER_BATCH_SHARE = 0.50
 MAX_CANDIDATE_POOL = 200
-# These two manually approved cards must remain in the normal hourly
-# Telegram rotation.  They are resolved from the original, phone-backed
-# database records rather than from our phone-hidden public Lalafo reposts.
-# Manually approved cards remain in every hourly rotation.  The strict
-# owner-only rule applies to newly discovered source cards, not this explicit
-# operator-curated inventory.
+# These manually approved cards remain in the normal Telegram rotation, but
+# they follow the same six-hour cooldown as every other apartment.  They are
+# resolved from the original, phone-backed database records rather than from
+# our phone-hidden public Lalafo reposts.
 CURATED_ROTATION_SPECS = (
     ("Филармония", 25_000),
     ("Моссовет", 20_000),
@@ -214,6 +212,20 @@ def deduplicate_candidates(candidates: list[LalafoAd]) -> list[LalafoAd]:
         if current is None or candidate_quality(ad) > candidate_quality(current):
             unique[ad.lalafo_id] = ad
     return list(unique.values())
+
+
+def eligible_curated_apartments(
+    apartments,
+    published_ids: set[int],
+    repostable_ids: set[int],
+):
+    """Exclude curated cards that were published less than six hours ago."""
+    return [
+        apartment
+        for apartment in apartments
+        if apartment.lalafo_id not in published_ids
+        or apartment.lalafo_id in repostable_ids
+    ]
 
 
 def select_publish_batch(
@@ -386,11 +398,26 @@ async def run() -> int:
             for item in curated_apartments
             if not is_permanently_excluded(item.lalafo_id)
         ]
+        available_curated_count = len(curated_apartments)
+        all_curated_ids = [item.lalafo_id for item in curated_apartments]
+        published_curated_ids = await apartments.published_lalafo_ids(
+            all_curated_ids
+        )
+        repostable_curated = await apartments.repostable_lalafo_publications(
+            all_curated_ids,
+            after_hours=SOURCE_REPOST_AFTER_HOURS,
+        )
+        curated_apartments = eligible_curated_apartments(
+            curated_apartments,
+            published_curated_ids,
+            set(repostable_curated),
+        )
         candidates.extend(apartment_to_ad(item) for item in curated_apartments)
         curated_ids = {item.lalafo_id for item in curated_apartments}
         candidate_ids.update(curated_ids)
-        repost_candidate_ids.update(curated_ids)
-        missing_curated = len(CURATED_ROTATION_SPECS) - len(curated_apartments)
+        repost_candidate_ids.update(repostable_curated)
+        repost_last_published_at.update(repostable_curated)
+        missing_curated = len(CURATED_ROTATION_SPECS) - available_curated_count
         if missing_curated:
             logger.warning(
                 "Curated rotation is missing %d/%d source apartments; "
