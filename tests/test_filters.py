@@ -32,7 +32,6 @@ from tests.helpers import make_ad
     [
         ({"price": 40001}, "price"),
         ({"currency": "USD"}, "wrong_currency"),
-        ({"rooms": "2"}, "rooms"),
         ({"rooms": "3"}, "rooms"),
         ({"city": "Ош"}, "wrong_city"),
         ({"photo_urls": []}, "photos"),
@@ -84,11 +83,11 @@ def test_missing_district_uses_labeled_demo_location_and_omits_deposit():
 def test_expanded_source_keeps_reposts_strictly_limited():
     settings = Settings(_env_file=None)
 
-    assert SOURCE_ALLOWED_ROOMS == ("1",)
+    assert SOURCE_ALLOWED_ROOMS == ("1", "2", "studio")
     assert SOURCE_MAX_POSTS_PER_RUN == 13
     assert SOURCE_PUBLISH_SPACING_SECONDS == 280
     assert SOURCE_MAX_SEARCH_PAGES == 24
-    assert SOURCE_MIN_PRICE == 18_000
+    assert SOURCE_MIN_PRICE == 15_000
     assert SOURCE_MIN_PHOTOS == 4
     assert MAX_REPOSTS_PER_RUN == 15
     assert SOURCE_REPOST_AFTER_HOURS == 6.0
@@ -103,8 +102,10 @@ def test_expanded_source_keeps_reposts_strictly_limited():
 def test_source_urls_follow_the_operator_filters():
     assert "/1-bedroom/" in DEFAULT_SEARCH_URL
     assert "/owner" in DEFAULT_SEARCH_URL
-    assert "2-bedroom" not in DEFAULT_SEARCH_URL
-    assert "price[from]=18000&price[to]=40000" in DEFAULT_SEARCH_URL
+    assert "/2-bedrooms/studio/owner/" in DEFAULT_SEARCH_URL
+    assert "/semeynym/param-bez-detey/studentam/" in DEFAULT_SEARCH_URL
+    assert "/bez-podseleniya/mozhno-s-zhivotnymi/bez-zhivotnyh" in DEFAULT_SEARCH_URL
+    assert "price[from]=15000&price[to]=40000" in DEFAULT_SEARCH_URL
     assert ADDITIONAL_SEARCH_URLS == ()
 
 

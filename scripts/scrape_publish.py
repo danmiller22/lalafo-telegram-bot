@@ -68,9 +68,9 @@ CENTRAL_DISTRICT_TERMS = (
 )
 # The main source itself remains 20–35k; the supplementary no-subletting
 # source intentionally widens the final fallback inventory to 15–40k.
-SOURCE_MIN_PRICE = 18_000
+SOURCE_MIN_PRICE = 15_000
 SOURCE_MAX_PRICE = 40_000
-SOURCE_ALLOWED_ROOMS = ("1",)
+SOURCE_ALLOWED_ROOMS = ("1", "2", "studio")
 SOURCE_MIN_PHOTOS = 4
 SOURCE_MAX_POSTS_PER_RUN = 13
 SOURCE_PUBLISH_SPACING_SECONDS = 280
