@@ -87,9 +87,9 @@ def test_expanded_source_keeps_reposts_strictly_limited():
     assert SOURCE_MAX_POSTS_PER_RUN == 15
     assert SOURCE_MAX_SEARCH_PAGES == 24
     assert SOURCE_MIN_PRICE == 18_000
-    assert SOURCE_MIN_PHOTOS == 3
+    assert SOURCE_MIN_PHOTOS == 4
     assert MAX_REPOSTS_PER_RUN == 15
-    assert SOURCE_REPOST_AFTER_HOURS == 1.0
+    assert SOURCE_REPOST_AFTER_HOURS == 6.0
     assert settings.rooms == "1"
     assert settings.min_price == 15_000
     assert settings.max_price == 40_000

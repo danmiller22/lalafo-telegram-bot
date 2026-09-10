@@ -71,13 +71,13 @@ CENTRAL_DISTRICT_TERMS = (
 SOURCE_MIN_PRICE = 18_000
 SOURCE_MAX_PRICE = 40_000
 SOURCE_ALLOWED_ROOMS = ("1",)
-SOURCE_MIN_PHOTOS = 3
+SOURCE_MIN_PHOTOS = 4
 SOURCE_MAX_POSTS_PER_RUN = 15
 SOURCE_MAX_SEARCH_PAGES = 24
 # A card becomes eligible after one publication interval, but selection below
 # always takes the oldest eligible cards first. With a large source pool this
 # rotates inventory instead of showing the same apartments every hour.
-SOURCE_REPOST_AFTER_HOURS = 1.0
+SOURCE_REPOST_AFTER_HOURS = 6.0
 MAX_REPOSTS_PER_RUN = 15
 CENTRAL_BATCH_SHARE = 0.50
 OWNER_OTHER_BATCH_SHARE = 0.50
@@ -336,7 +336,7 @@ async def run() -> int:
     limit = 1 if settings.test_mode else SOURCE_MAX_POSTS_PER_RUN
     # The unfiltered source is large. Inspect several pages so central bargains
     # can outrank nearer but weaker results from the first page.
-    candidate_pool_limit = max(limit, min(limit * 4, MAX_CANDIDATE_POOL))
+    candidate_pool_limit = max(limit, min(limit * 10, MAX_CANDIDATE_POOL))
     candidates = []
     candidate_ids: set[int] = set()
     curated_ids: set[int] = set()
@@ -590,15 +590,15 @@ async def run() -> int:
     regular_candidates = [
         ad for ad in candidates if ad.lalafo_id not in curated_ids
     ]
-    # Operator-curated/profile source cards form bookends.  The live owner-only
-    # feed fills the middle, and the same bookends are repeated at the end.
-    bookends = deduplicate_candidates(curated_candidates)
+    # Fresh owner cards lead the batch. Cards tied to our own Lalafo profile
+    # appear once, strictly at the end, so they never crowd out fresh supply.
+    profile_cards = deduplicate_candidates(curated_candidates)
     owner_middle = select_publish_batch_with_reposts(
         regular_candidates,
         repost_last_published_at,
         limit,
     )
-    candidates = bookends + owner_middle + bookends
+    candidates = owner_middle + profile_cards
     repost_candidate_ids.intersection_update(ad.lalafo_id for ad in candidates)
     central_count = sum(is_central_district(ad.district) for ad in candidates)
     central_percent = round(central_count * 100 / len(candidates)) if candidates else 0
@@ -710,16 +710,13 @@ async def run() -> int:
         return ad, None, True
 
     try:
-        beginning_results = []
-        for ad in bookends:
-            beginning_results.append(await publish_one(ad))
         middle_results = await asyncio.gather(
             *(publish_one(ad) for ad in owner_middle)
         )
-        ending_results = []
-        for ad in bookends:
-            ending_results.append(await publish_one(ad))
-        results = beginning_results + list(middle_results) + ending_results
+        profile_results = []
+        for ad in profile_cards:
+            profile_results.append(await publish_one(ad))
+        results = list(middle_results) + profile_results
         for ad, message_id, failed in results:
             if failed:
                 publish_failures += 1
