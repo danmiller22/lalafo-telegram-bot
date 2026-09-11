@@ -4,6 +4,7 @@ import pytest
 
 from scripts.publish_two_bedrooms import (
     TWO_BEDROOM_DAILY_LIMIT,
+    TWO_BEDROOM_MIN_PRICE,
     TWO_BEDROOM_PRIMARY_MIN_PHOTOS,
     TWO_BEDROOM_SEARCH_URL,
     TWO_BEDROOM_SLOT_LIMIT,
@@ -17,7 +18,9 @@ from tests.helpers import make_ad
 
 def test_two_bedroom_source_and_limits_are_fixed() -> None:
     assert "/2-bedrooms/owner" in TWO_BEDROOM_SEARCH_URL
+    assert "price[from]=20000" in TWO_BEDROOM_SEARCH_URL
     assert "price[to]=40000" in TWO_BEDROOM_SEARCH_URL
+    assert TWO_BEDROOM_MIN_PRICE == 20_000
     assert TWO_BEDROOM_DAILY_LIMIT == 20
     assert TWO_BEDROOM_SLOT_LIMIT == 5
     assert TWO_BEDROOM_PRIMARY_MIN_PHOTOS == 4
@@ -33,6 +36,7 @@ def test_two_bedroom_batch_uses_strong_photo_cards_before_fallback() -> None:
         make_ad(lalafo_id=6, rooms="1", photo_urls=["x"] * 4),
         make_ad(lalafo_id=7, rooms="2", price=40_001, photo_urls=["x"] * 4),
         make_ad(lalafo_id=8, rooms="2", owner_listing=False, photo_urls=["x"] * 4),
+        make_ad(lalafo_id=9, rooms="2", price=19_999, photo_urls=["x"] * 4),
     ]
 
     selected = select_two_bedroom_batch(strong + [fallback] + rejected, 5)

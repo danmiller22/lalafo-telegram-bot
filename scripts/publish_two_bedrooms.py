@@ -33,12 +33,13 @@ BISHKEK = ZoneInfo("Asia/Bishkek")
 TWO_BEDROOM_SEARCH_URL = (
     "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
     "dolgosrochnaya-arenda-kvartir/2-bedrooms/owner"
-    "?price[from]=1&price[to]=40000"
+    "?price[from]=20000&price[to]=40000"
 )
 TWO_BEDROOM_DAILY_LIMIT = 20
 TWO_BEDROOM_SLOT_LIMIT = 5
 TWO_BEDROOM_PRIMARY_MIN_PHOTOS = 4
 TWO_BEDROOM_FALLBACK_MIN_PHOTOS = 1
+TWO_BEDROOM_MIN_PRICE = 20_000
 TWO_BEDROOM_MAX_PRICE = 40_000
 TWO_BEDROOM_CANDIDATE_LIMIT = 100
 TWO_BEDROOM_SLOT_HOURS = (9, 13, 17, 21)
@@ -93,7 +94,7 @@ def select_two_bedroom_batch(candidates: list[LalafoAd], limit: int) -> list[Lal
         if (
             allowed
             and ad.owner_listing
-            and ad.price > 0
+            and TWO_BEDROOM_MIN_PRICE <= ad.price <= TWO_BEDROOM_MAX_PRICE
             and len(ad.photo_urls) >= TWO_BEDROOM_FALLBACK_MIN_PHOTOS
             and not is_permanently_excluded(ad.lalafo_id)
         ):
@@ -194,7 +195,12 @@ async def run(*, target_today: int | None = None) -> int:
                     for item in page.items
                     if item.lalafo_id not in candidate_ids
                     and not is_permanently_excluded(item.lalafo_id)
-                    and (not item.price or 0 < item.price <= TWO_BEDROOM_MAX_PRICE)
+                    and (
+                        not item.price
+                        or TWO_BEDROOM_MIN_PRICE
+                        <= item.price
+                        <= TWO_BEDROOM_MAX_PRICE
+                    )
                     and item.photo_urls
                 ]
                 published_ids = await apartments.published_lalafo_ids(
