@@ -22,6 +22,7 @@ from app.telegram.publisher import TelegramPublishError, TelegramPublisher
 
 logger = logging.getLogger(__name__)
 _LALAFO_ID = re.compile(r"-id-(\d+)(?:$|[/?#])")
+SELECTED_REPOST_AFTER_HOURS = 6.0
 
 
 @dataclass(frozen=True)
@@ -59,6 +60,23 @@ def selected_listings(raw: str) -> list[SelectedListing]:
     if len(result) > 10:
         raise ValueError("A selected publication is limited to 10 apartments")
     return result
+
+
+def eligible_selected_listings(
+    selected: list[SelectedListing],
+    published_ids: set[int],
+    repostable_ids: set[int],
+) -> tuple[list[SelectedListing], list[SelectedListing]]:
+    """Keep fresh or six-hour-old cards and report recent duplicates separately."""
+    eligible = [
+        item
+        for item in selected
+        if item.lalafo_id not in published_ids
+        or item.lalafo_id in repostable_ids
+    ]
+    eligible_ids = {item.lalafo_id for item in eligible}
+    recent = [item for item in selected if item.lalafo_id not in eligible_ids]
+    return eligible, recent
 
 
 def _confirmed() -> bool:
@@ -114,8 +132,27 @@ async def run() -> int:
     )
     published = 0
     failures = 0
+    skipped_recent = 0
     try:
         await init_db(engine)
+        selected_ids = [item.lalafo_id for item in selected]
+        published_ids = await apartments.published_lalafo_ids(selected_ids)
+        repostable_ids = await apartments.repostable_lalafo_ids(
+            selected_ids,
+            after_hours=SELECTED_REPOST_AFTER_HOURS,
+        )
+        selected, recent = eligible_selected_listings(
+            selected,
+            published_ids,
+            repostable_ids,
+        )
+        skipped_recent = len(recent)
+        for item in recent:
+            logger.info(
+                "SELECTED_SKIPPED_RECENT lalafo_id=%s cooldown_hours=%s",
+                item.lalafo_id,
+                SELECTED_REPOST_AFTER_HOURS,
+            )
         for item in selected:
             apartment = None
             ad: LalafoAd | None = None
@@ -181,7 +218,12 @@ async def run() -> int:
         await bot.session.close()
         await engine.dispose()
 
-    logger.info("Selected Telegram publication finished: published=%d failed=%d", published, failures)
+    logger.info(
+        "Selected Telegram publication finished: published=%d skipped_recent=%d failed=%d",
+        published,
+        skipped_recent,
+        failures,
+    )
     return 0 if published == len(selected) and failures == 0 else 2
 
 

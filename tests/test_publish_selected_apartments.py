@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from tools.publish_selected_apartments import selected_listings
+from tools.publish_selected_apartments import (
+    SELECTED_REPOST_AFTER_HOURS,
+    eligible_selected_listings,
+    selected_listings,
+)
 
 
 def test_selected_listings_accepts_deduplicated_lalafo_urls() -> None:
@@ -15,6 +19,24 @@ def test_selected_listings_accepts_deduplicated_lalafo_urls() -> None:
         (115863328, url_a),
         (115838403, url_b),
     ]
+
+
+def test_selected_publication_obeys_the_six_hour_repost_cooldown() -> None:
+    selected = selected_listings(
+        "https://lalafo.kg/bishkek/ads/first-id-115863328 "
+        "https://lalafo.kg/bishkek/ads/second-id-115838403 "
+        "https://lalafo.kg/bishkek/ads/third-id-115838404"
+    )
+
+    eligible, recent = eligible_selected_listings(
+        selected,
+        published_ids={115863328, 115838403},
+        repostable_ids={115838403},
+    )
+
+    assert SELECTED_REPOST_AFTER_HOURS == 6.0
+    assert [item.lalafo_id for item in eligible] == [115838403, 115838404]
+    assert [item.lalafo_id for item in recent] == [115863328]
 
 
 @pytest.mark.parametrize(
