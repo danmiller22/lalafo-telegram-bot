@@ -73,6 +73,8 @@ async def published_two_bedrooms_today(sessions, *, now: datetime | None = None)
                 .where(
                     Apartment.publication_status == "published",
                     Apartment.rooms == "2",
+                    Apartment.price >= TWO_BEDROOM_MIN_PRICE,
+                    Apartment.price <= TWO_BEDROOM_MAX_PRICE,
                     Apartment.published_at.is_not(None),
                     Apartment.published_at >= start,
                     Apartment.published_at <= end,

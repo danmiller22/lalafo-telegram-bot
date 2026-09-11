@@ -76,8 +76,12 @@ async def test_daily_count_includes_only_two_bedrooms_from_bishkek_day(
     apartments, _, sessions = repositories
     inside = await apartments.upsert_discovered(make_ad(lalafo_id=101, rooms="2"))
     one_room = await apartments.upsert_discovered(make_ad(lalafo_id=102, rooms="1"))
+    too_cheap = await apartments.upsert_discovered(
+        make_ad(lalafo_id=103, rooms="2", price=15_000)
+    )
     await apartments.mark_published(inside.id, chat_id=-1001, message_id=1)
     await apartments.mark_published(one_room.id, chat_id=-1001, message_id=2)
+    await apartments.mark_published(too_cheap.id, chat_id=-1001, message_id=3)
 
     count = await published_two_bedrooms_today(
         sessions,
