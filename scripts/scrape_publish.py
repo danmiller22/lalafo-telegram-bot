@@ -70,21 +70,21 @@ CENTRAL_DISTRICT_TERMS = (
     "западный автовокзал",
     "политех",
 )
-# The main source itself remains 20–35k; the supplementary no-subletting
-# source intentionally widens the final fallback inventory to 15–40k.
+# Both searches are owner-only. The supplementary search includes owners who
+# left optional audience tags blank; detail-level checks remove shared housing.
 SOURCE_MIN_PRICE = 10_000
 SOURCE_MAX_PRICE = 40_000
 SOURCE_ALLOWED_ROOMS = ("1", "studio", "2")
-SOURCE_MIN_PHOTOS = 4
-SOURCE_MAX_POSTS_PER_RUN = 13
-SOURCE_PUBLISH_SPACING_SECONDS = 280
-SOURCE_MAX_SEARCH_PAGES = 24
+SOURCE_MIN_PHOTOS = 2
+SOURCE_MAX_POSTS_PER_RUN = 18
+SOURCE_PUBLISH_SPACING_SECONDS = 180
+SOURCE_MAX_SEARCH_PAGES = 36
 # Published apartments are terminal: every cycle must use fresh inventory.
 SOURCE_REPOST_AFTER_HOURS = None
 MAX_REPOSTS_PER_RUN = 0
 CENTRAL_BATCH_SHARE = 0.50
 OWNER_OTHER_BATCH_SHARE = 0.50
-MAX_CANDIDATE_POOL = 200
+MAX_CANDIDATE_POOL = 300
 # Two-bedroom cards are mixed into the normal stream instead of being sent as
 # a separate burst. Two per regular cycle reaches at most twenty per Bishkek day.
 TWO_BEDROOM_MIN_PRICE = 20_000
@@ -401,11 +401,11 @@ async def run() -> int:
     state = PostedState.load(settings.posted_state_path)
     # Product-level source limits deliberately ignore stale cloud overrides.
     # Test mode remains one-card-only, while production always has room for
-    # the requested fifteen-card batch.
+    # the requested expanded mixed batch.
     limit = 1 if settings.test_mode else SOURCE_MAX_POSTS_PER_RUN
     # The unfiltered source is large. Inspect several pages so central bargains
     # can outrank nearer but weaker results from the first page.
-    candidate_pool_limit = max(limit, min(limit * 10, MAX_CANDIDATE_POOL))
+    candidate_pool_limit = max(limit, min(limit * 15, MAX_CANDIDATE_POOL))
     candidates = []
     candidate_ids: set[int] = set()
     curated_ids: set[int] = set()
@@ -619,6 +619,12 @@ async def run() -> int:
                 if not ad.owner_listing:
                     logger.info(
                         "Skipping ad id=%s reason=not_owner_listing",
+                        ad.lalafo_id,
+                    )
+                    continue
+                if not ad.no_subletting:
+                    logger.info(
+                        "Skipping ad id=%s reason=shared_housing",
                         ad.lalafo_id,
                     )
                     continue

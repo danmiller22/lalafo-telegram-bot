@@ -50,8 +50,18 @@ def test_primary_search_uses_the_operator_owner_one_bedroom_and_price_filters():
     assert params["price[to]"] == "40000"
 
 
-def test_owner_search_has_no_supplementary_realtor_sources():
-    assert ADDITIONAL_SEARCH_URLS == ()
+def test_supplementary_search_keeps_owner_rooms_and_price_filters():
+    assert len(ADDITIONAL_SEARCH_URLS) == 1
+    params = dict(LalafoClient._search_params(ADDITIONAL_SEARCH_URLS[0], 1))
+    assert set(
+        params[key] for key in params if key.startswith("parameters[69]")
+    ) == {"15496", "2773", "2774"}
+    assert [
+        params[key] for key in params if key.startswith("parameters[2149]")
+    ] == ["19057"]
+    assert not any(key.startswith("parameters[946]") for key in params)
+    assert params["price[from]"] == "10000"
+    assert params["price[to]"] == "40000"
 
 
 @pytest.mark.parametrize(

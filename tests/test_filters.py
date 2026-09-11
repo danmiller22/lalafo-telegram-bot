@@ -92,11 +92,11 @@ def test_expanded_source_keeps_reposts_strictly_limited():
     settings = Settings(_env_file=None)
 
     assert SOURCE_ALLOWED_ROOMS == ("1", "studio", "2")
-    assert SOURCE_MAX_POSTS_PER_RUN == 13
-    assert SOURCE_PUBLISH_SPACING_SECONDS == 280
-    assert SOURCE_MAX_SEARCH_PAGES == 24
+    assert SOURCE_MAX_POSTS_PER_RUN == 18
+    assert SOURCE_PUBLISH_SPACING_SECONDS == 180
+    assert SOURCE_MAX_SEARCH_PAGES == 36
     assert SOURCE_MIN_PRICE == 10_000
-    assert SOURCE_MIN_PHOTOS == 4
+    assert SOURCE_MIN_PHOTOS == 2
     assert MAX_REPOSTS_PER_RUN == 0
     assert SOURCE_REPOST_AFTER_HOURS is None
     assert TWO_BEDROOM_MIN_PRICE == 20_000
@@ -106,8 +106,8 @@ def test_expanded_source_keeps_reposts_strictly_limited():
     assert settings.rooms == "1"
     assert settings.min_price == 10_000
     assert settings.max_price == 40_000
-    assert settings.max_new_posts_per_run == 13
-    assert settings.max_search_pages == 24
+    assert settings.max_new_posts_per_run == 18
+    assert settings.max_search_pages == 36
     assert settings.allow_no_district is True
 
 
@@ -119,7 +119,11 @@ def test_source_urls_follow_the_operator_filters():
     assert "/bez-podseleniya/mozhno-s-zhivotnymi" in DEFAULT_SEARCH_URL
     assert "bez-zhivotnyh" not in DEFAULT_SEARCH_URL
     assert "price[from]=10000&price[to]=40000" in DEFAULT_SEARCH_URL
-    assert ADDITIONAL_SEARCH_URLS == ()
+    assert len(ADDITIONAL_SEARCH_URLS) == 1
+    supplementary = ADDITIONAL_SEARCH_URLS[0]
+    assert "/1-bedroom/2-bedrooms/studio/owner" in supplementary
+    assert "bez-podseleniya" not in supplementary
+    assert "price[from]=10000&price[to]=40000" in supplementary
 
 
 def test_two_bedroom_price_floor_is_stricter_than_other_rooms():

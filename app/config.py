@@ -86,9 +86,14 @@ DEFAULT_SEARCH_URL = (
     "?price[from]=10000&price[to]=40000"
 )
 
-# The owner filter above is the sole source.  Keeping this tuple explicit
-# prevents an older supplementary realtor/agency feed from being re-enabled.
-ADDITIONAL_SEARCH_URLS: tuple[str, ...] = ()
+# Some owners leave Lalafo's optional audience and pet fields blank. Search
+# those listings separately, while the detail parser still rejects agencies
+# and shared-room/subletting offers before publication.
+ADDITIONAL_SEARCH_URLS: tuple[str, ...] = (
+    "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
+    "dolgosrochnaya-arenda-kvartir/1-bedroom/2-bedrooms/studio/owner"
+    "?price[from]=10000&price[to]=40000",
+)
 
 APARTMENT_PUBLISH_INTERVAL_MINUTES = 120
 
@@ -149,8 +154,8 @@ class Settings(BaseSettings):
     min_price: int = 10_000
     max_price: int = 40_000
     rooms: str = "1"
-    max_new_posts_per_run: int = 13
-    max_search_pages: int = 24
+    max_new_posts_per_run: int = 18
+    max_search_pages: int = 36
     preferred_districts_only: bool = False
     # Telegram accepts at most ten photos per media group. Publishers split
     # longer listings into adjacent groups so no Lalafo photo is dropped.
