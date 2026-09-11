@@ -17,11 +17,18 @@ from scripts.scrape_publish import (
     SOURCE_MIN_PRICE,
     SOURCE_PUBLISH_SPACING_SECONDS,
     SOURCE_REPOST_AFTER_HOURS,
+    TWO_BEDROOM_DAILY_LIMIT,
+    TWO_BEDROOM_MAX_PER_RUN,
+    TWO_BEDROOM_MAX_PRICE,
+    TWO_BEDROOM_MIN_PRICE,
     candidate_quality,
     deduplicate_candidates,
     eligible_curated_apartments,
     is_central_district,
     is_preferred_district,
+    minimum_price_for_rooms,
+    mix_room_types,
+    published_two_bedrooms_today,
     select_publish_batch,
     select_publish_batch_with_reposts,
 )
@@ -33,7 +40,6 @@ from tests.helpers import make_ad
     [
         ({"price": 40001}, "price"),
         ({"currency": "USD"}, "wrong_currency"),
-        ({"rooms": "2"}, "rooms"),
         ({"rooms": "3"}, "rooms"),
         ({"city": "Ош"}, "wrong_city"),
         ({"photo_urls": []}, "photos"),
@@ -85,7 +91,7 @@ def test_missing_district_uses_labeled_demo_location_and_omits_deposit():
 def test_expanded_source_keeps_reposts_strictly_limited():
     settings = Settings(_env_file=None)
 
-    assert SOURCE_ALLOWED_ROOMS == ("1", "studio")
+    assert SOURCE_ALLOWED_ROOMS == ("1", "studio", "2")
     assert SOURCE_MAX_POSTS_PER_RUN == 13
     assert SOURCE_PUBLISH_SPACING_SECONDS == 280
     assert SOURCE_MAX_SEARCH_PAGES == 24
@@ -93,6 +99,10 @@ def test_expanded_source_keeps_reposts_strictly_limited():
     assert SOURCE_MIN_PHOTOS == 4
     assert MAX_REPOSTS_PER_RUN == 0
     assert SOURCE_REPOST_AFTER_HOURS is None
+    assert TWO_BEDROOM_MIN_PRICE == 20_000
+    assert TWO_BEDROOM_MAX_PRICE == 40_000
+    assert TWO_BEDROOM_DAILY_LIMIT == 20
+    assert TWO_BEDROOM_MAX_PER_RUN == 2
     assert settings.rooms == "1"
     assert settings.min_price == 10_000
     assert settings.max_price == 40_000
@@ -104,13 +114,57 @@ def test_expanded_source_keeps_reposts_strictly_limited():
 def test_source_urls_follow_the_operator_filters():
     assert "/1-bedroom/" in DEFAULT_SEARCH_URL
     assert "/owner" in DEFAULT_SEARCH_URL
-    assert "/1-bedroom/studio/owner/" in DEFAULT_SEARCH_URL
-    assert "2-bedrooms" not in DEFAULT_SEARCH_URL
+    assert "/1-bedroom/2-bedrooms/studio/owner/" in DEFAULT_SEARCH_URL
     assert "/semeynym/param-bez-detey/studentam/" in DEFAULT_SEARCH_URL
     assert "/bez-podseleniya/mozhno-s-zhivotnymi" in DEFAULT_SEARCH_URL
     assert "bez-zhivotnyh" not in DEFAULT_SEARCH_URL
     assert "price[from]=10000&price[to]=40000" in DEFAULT_SEARCH_URL
     assert ADDITIONAL_SEARCH_URLS == ()
+
+
+def test_two_bedroom_price_floor_is_stricter_than_other_rooms():
+    assert minimum_price_for_rooms("studio") == 10_000
+    assert minimum_price_for_rooms("1") == 10_000
+    assert minimum_price_for_rooms("2") == 20_000
+
+
+def test_room_types_are_interleaved_instead_of_batched():
+    cards = [
+        make_ad(lalafo_id=1, rooms="1"),
+        make_ad(lalafo_id=2, rooms="2"),
+        make_ad(lalafo_id=3, rooms="studio"),
+        make_ad(lalafo_id=4, rooms="1"),
+        make_ad(lalafo_id=5, rooms="2"),
+        make_ad(lalafo_id=6, rooms="studio"),
+    ]
+
+    assert [ad.rooms for ad in mix_room_types(cards)] == [
+        "studio", "2", "1", "studio", "2", "1"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_daily_two_bedroom_count_ignores_cheap_and_other_rooms(
+    repositories,
+):
+    apartments, _, sessions = repositories
+    valid = await apartments.upsert_discovered(
+        make_ad(lalafo_id=9901, rooms="2", price=25_000)
+    )
+    cheap = await apartments.upsert_discovered(
+        make_ad(lalafo_id=9902, rooms="2", price=15_000)
+    )
+    one_room = await apartments.upsert_discovered(
+        make_ad(lalafo_id=9903, rooms="1", price=25_000)
+    )
+    for message_id, apartment in enumerate((valid, cheap, one_room), start=1):
+        await apartments.mark_published(
+            apartment.id,
+            chat_id=-1001,
+            message_id=message_id,
+        )
+
+    assert await published_two_bedrooms_today(sessions) == 1
 
 
 def test_curated_rotation_preserves_manually_approved_apartments():

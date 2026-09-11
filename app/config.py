@@ -80,7 +80,7 @@ LALAFO_DISTRICT_FILTERS = (
 
 DEFAULT_SEARCH_URL = (
     "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
-    "dolgosrochnaya-arenda-kvartir/1-bedroom/studio/owner/"
+    "dolgosrochnaya-arenda-kvartir/1-bedroom/2-bedrooms/studio/owner/"
     "semeynym/param-bez-detey/studentam/bez-podseleniya/"
     "mozhno-s-zhivotnymi"
     "?price[from]=10000&price[to]=40000"

@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import AsyncExitStack
-from datetime import datetime, timezone
+from datetime import datetime, time, timezone
 import logging
 import math
 import re
 from collections.abc import Callable, Mapping
+from zoneinfo import ZoneInfo
+
+from sqlalchemy import func, select
 
 from app.config import ADDITIONAL_SEARCH_URLS, DEFAULT_SEARCH_URL, get_settings
 from app.lalafo.client import LalafoClient, LalafoError, LalafoNotFound
@@ -14,6 +17,7 @@ from app.lalafo.exclusions import is_permanently_excluded
 from app.lalafo.models import LalafoAd, SearchAd
 from app.lalafo.parser import LalafoParseError, is_allowed
 from app.lalafo.phone import mask_phone
+from app.models import Apartment
 from app.state import PostedState, ad_fingerprint
 from app.telegram.formatting import format_apartment
 
@@ -70,7 +74,7 @@ CENTRAL_DISTRICT_TERMS = (
 # source intentionally widens the final fallback inventory to 15–40k.
 SOURCE_MIN_PRICE = 10_000
 SOURCE_MAX_PRICE = 40_000
-SOURCE_ALLOWED_ROOMS = ("1", "studio")
+SOURCE_ALLOWED_ROOMS = ("1", "studio", "2")
 SOURCE_MIN_PHOTOS = 4
 SOURCE_MAX_POSTS_PER_RUN = 13
 SOURCE_PUBLISH_SPACING_SECONDS = 280
@@ -81,10 +85,15 @@ MAX_REPOSTS_PER_RUN = 0
 CENTRAL_BATCH_SHARE = 0.50
 OWNER_OTHER_BATCH_SHARE = 0.50
 MAX_CANDIDATE_POOL = 200
-# These manually approved cards remain in the normal Telegram rotation, but
-# they follow the same six-hour cooldown as every other apartment.  They are
-# resolved from the original, phone-backed database records rather than from
-# our phone-hidden public Lalafo reposts.
+# Two-bedroom cards are mixed into the normal stream instead of being sent as
+# a separate burst. Two per regular cycle reaches at most twenty per Bishkek day.
+TWO_BEDROOM_MIN_PRICE = 20_000
+TWO_BEDROOM_MAX_PRICE = 40_000
+TWO_BEDROOM_DAILY_LIMIT = 20
+TWO_BEDROOM_MAX_PER_RUN = 2
+BISHKEK = ZoneInfo("Asia/Bishkek")
+# Manually approved cards remain eligible once, using their original,
+# phone-backed database records rather than phone-hidden public reposts.
 CURATED_ROTATION_SPECS = (
     ("Моссовет", 20_000),
 )
@@ -211,6 +220,54 @@ def deduplicate_candidates(candidates: list[LalafoAd]) -> list[LalafoAd]:
         if current is None or candidate_quality(ad) > candidate_quality(current):
             unique[ad.lalafo_id] = ad
     return list(unique.values())
+
+
+def minimum_price_for_rooms(rooms: str) -> int:
+    return TWO_BEDROOM_MIN_PRICE if rooms == "2" else SOURCE_MIN_PRICE
+
+
+def mix_room_types(candidates: list[LalafoAd]) -> list[LalafoAd]:
+    """Interleave studios, two-bedroom and one-bedroom cards without bursts."""
+    queues = {
+        room: [ad for ad in candidates if ad.rooms == room]
+        for room in ("studio", "2", "1")
+    }
+    mixed: list[LalafoAd] = []
+    while any(queues.values()):
+        for room in ("studio", "2", "1"):
+            if queues[room]:
+                mixed.append(queues[room].pop(0))
+    mixed.extend(ad for ad in candidates if ad.rooms not in queues)
+    return mixed
+
+
+async def published_two_bedrooms_today(
+    sessions, *, now: datetime | None = None
+) -> int:
+    current = (now or datetime.now(timezone.utc)).astimezone(BISHKEK)
+    start = datetime.combine(current.date(), time.min, tzinfo=BISHKEK).astimezone(
+        timezone.utc
+    )
+    end = datetime.combine(current.date(), time.max, tzinfo=BISHKEK).astimezone(
+        timezone.utc
+    )
+    async with sessions() as session:
+        return int(
+            await session.scalar(
+                select(func.count())
+                .select_from(Apartment)
+                .where(
+                    Apartment.publication_status == "published",
+                    Apartment.rooms == "2",
+                    Apartment.price >= TWO_BEDROOM_MIN_PRICE,
+                    Apartment.price <= TWO_BEDROOM_MAX_PRICE,
+                    Apartment.published_at.is_not(None),
+                    Apartment.published_at >= start,
+                    Apartment.published_at <= end,
+                )
+            )
+            or 0
+        )
 
 
 def eligible_curated_apartments(
@@ -354,6 +411,7 @@ async def run() -> int:
     curated_ids: set[int] = set()
     repost_candidate_ids: set[int] = set()
     repost_last_published_at: dict[int, datetime] = {}
+    two_bedrooms_published_today = 0
 
     engine = None
     apartments = None
@@ -377,6 +435,7 @@ async def run() -> int:
             await engine.dispose()
             return 2
         apartments = ApartmentRepository(sessions)
+        two_bedrooms_published_today = await published_two_bedrooms_today(sessions)
 
         curated_apartments = await apartments.curated_rotation_apartments(
             CURATED_ROTATION_SPECS
@@ -547,7 +606,7 @@ async def run() -> int:
                 if not allowed:
                     logger.info("Skipping ad id=%s reason=%s", ad.lalafo_id, reason)
                     continue
-                if ad.price < max(settings.min_price, SOURCE_MIN_PRICE):
+                if ad.price < max(settings.min_price, minimum_price_for_rooms(ad.rooms)):
                     logger.info("Skipping ad id=%s reason=min_price", ad.lalafo_id)
                     continue
                 if len(ad.photo_urls) < SOURCE_MIN_PHOTOS:
@@ -604,15 +663,23 @@ async def run() -> int:
     regular_candidates = [
         ad for ad in candidates if ad.lalafo_id not in curated_ids
     ]
-    # Fresh owner cards lead the batch. Cards tied to our own Lalafo profile
-    # appear once, strictly at the end, so they never crowd out fresh supply.
     profile_cards = deduplicate_candidates(curated_candidates)[:limit]
-    owner_middle = select_publish_batch_with_reposts(
-        regular_candidates,
-        repost_last_published_at,
+    two_bedroom_limit = min(
+        TWO_BEDROOM_MAX_PER_RUN,
+        max(0, TWO_BEDROOM_DAILY_LIMIT - two_bedrooms_published_today),
         max(0, limit - len(profile_cards)),
     )
-    candidates = owner_middle + profile_cards
+    two_bedroom_cards = select_publish_batch_with_reposts(
+        [ad for ad in regular_candidates if ad.rooms == "2"],
+        {},
+        two_bedroom_limit,
+    )
+    owner_middle = select_publish_batch_with_reposts(
+        [ad for ad in regular_candidates if ad.rooms in {"1", "studio"}],
+        repost_last_published_at,
+        max(0, limit - len(profile_cards) - len(two_bedroom_cards)),
+    )
+    candidates = mix_room_types(owner_middle + two_bedroom_cards + profile_cards)
     repost_candidate_ids.intersection_update(ad.lalafo_id for ad in candidates)
     central_count = sum(is_central_district(ad.district) for ad in candidates)
     central_percent = round(central_count * 100 / len(candidates)) if candidates else 0
