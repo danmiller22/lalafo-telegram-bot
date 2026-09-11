@@ -7,9 +7,16 @@ change, whereas Lalafo's advertisement ID identifies the exact source card.
 from __future__ import annotations
 
 
-# The Tunguch 20,000 KGS apartment (gray sectional sofa) was explicitly
-# withdrawn by the operator and must never be sent to Telegram again.
-PERMANENTLY_EXCLUDED_LALAFO_IDS = frozenset({115809037})
+# Explicitly withdrawn advertisements must never be sent to Telegram again.
+# The Filarmoniya IDs are the original source and its managed public copy for
+# the 25,000 KGS card with the bouquet photo.
+PERMANENTLY_EXCLUDED_LALAFO_IDS = frozenset(
+    {
+        115809037,
+        115884595,
+        112298605,
+    }
+)
 
 
 def is_permanently_excluded(lalafo_id: int) -> bool:

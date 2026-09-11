@@ -22,7 +22,7 @@ from app.telegram.publisher import TelegramPublishError, TelegramPublisher
 
 logger = logging.getLogger(__name__)
 _LALAFO_ID = re.compile(r"-id-(\d+)(?:$|[/?#])")
-SELECTED_REPOST_AFTER_HOURS = 6.0
+SELECTED_REPOST_AFTER_HOURS = None
 
 
 @dataclass(frozen=True)
@@ -67,12 +67,11 @@ def eligible_selected_listings(
     published_ids: set[int],
     repostable_ids: set[int],
 ) -> tuple[list[SelectedListing], list[SelectedListing]]:
-    """Keep fresh or six-hour-old cards and report recent duplicates separately."""
+    """Keep never-published cards and report permanent duplicates separately."""
     eligible = [
         item
         for item in selected
         if item.lalafo_id not in published_ids
-        or item.lalafo_id in repostable_ids
     ]
     eligible_ids = {item.lalafo_id for item in eligible}
     recent = [item for item in selected if item.lalafo_id not in eligible_ids]
@@ -133,25 +132,21 @@ async def run() -> int:
     published = 0
     failures = 0
     skipped_recent = 0
+    skipped_identity_duplicate = 0
     try:
         await init_db(engine)
         selected_ids = [item.lalafo_id for item in selected]
         published_ids = await apartments.published_lalafo_ids(selected_ids)
-        repostable_ids = await apartments.repostable_lalafo_ids(
-            selected_ids,
-            after_hours=SELECTED_REPOST_AFTER_HOURS,
-        )
         selected, recent = eligible_selected_listings(
             selected,
             published_ids,
-            repostable_ids,
+            set(),
         )
         skipped_recent = len(recent)
         for item in recent:
             logger.info(
-                "SELECTED_SKIPPED_RECENT lalafo_id=%s cooldown_hours=%s",
+                "SELECTED_SKIPPED_PERMANENT_DUPLICATE lalafo_id=%s",
                 item.lalafo_id,
-                SELECTED_REPOST_AFTER_HOURS,
             )
         for item in selected:
             apartment = None
@@ -190,6 +185,13 @@ async def run() -> int:
 
             assert apartment is not None
             card_source = ad if ad is not None else apartment
+            if await apartments.is_duplicate(card_source):
+                skipped_identity_duplicate += 1
+                logger.info(
+                    "SELECTED_SKIPPED_IDENTITY_DUPLICATE lalafo_id=%s",
+                    item.lalafo_id,
+                )
+                continue
             try:
                 message = await publisher.publish(apartment.id, card_source)
                 await apartments.mark_published(
@@ -219,12 +221,15 @@ async def run() -> int:
         await engine.dispose()
 
     logger.info(
-        "Selected Telegram publication finished: published=%d skipped_recent=%d failed=%d",
+        "Selected Telegram publication finished: published=%d skipped_recent=%d "
+        "skipped_identity_duplicate=%d failed=%d",
         published,
         skipped_recent,
+        skipped_identity_duplicate,
         failures,
     )
-    return 0 if published == len(selected) and failures == 0 else 2
+    handled = published + skipped_identity_duplicate
+    return 0 if handled == len(selected) and failures == 0 else 2
 
 
 def main() -> None:

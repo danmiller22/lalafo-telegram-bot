@@ -75,11 +75,9 @@ SOURCE_MIN_PHOTOS = 4
 SOURCE_MAX_POSTS_PER_RUN = 13
 SOURCE_PUBLISH_SPACING_SECONDS = 280
 SOURCE_MAX_SEARCH_PAGES = 24
-# A card becomes eligible after one publication interval, but selection below
-# always takes the oldest eligible cards first. With a large source pool this
-# rotates inventory instead of showing the same apartments every hour.
-SOURCE_REPOST_AFTER_HOURS = 6.0
-MAX_REPOSTS_PER_RUN = 15
+# Published apartments are terminal: every cycle must use fresh inventory.
+SOURCE_REPOST_AFTER_HOURS = None
+MAX_REPOSTS_PER_RUN = 0
 CENTRAL_BATCH_SHARE = 0.50
 OWNER_OTHER_BATCH_SHARE = 0.50
 MAX_CANDIDATE_POOL = 200
@@ -88,7 +86,6 @@ MAX_CANDIDATE_POOL = 200
 # resolved from the original, phone-backed database records rather than from
 # our phone-hidden public Lalafo reposts.
 CURATED_ROTATION_SPECS = (
-    ("Филармония", 25_000),
     ("Моссовет", 20_000),
 )
 CURATED_ROTATION_LALAFO_IDS = (
@@ -405,20 +402,14 @@ async def run() -> int:
         published_curated_ids = await apartments.published_lalafo_ids(
             all_curated_ids
         )
-        repostable_curated = await apartments.repostable_lalafo_publications(
-            all_curated_ids,
-            after_hours=SOURCE_REPOST_AFTER_HOURS,
-        )
         curated_apartments = eligible_curated_apartments(
             curated_apartments,
             published_curated_ids,
-            set(repostable_curated),
+            set(),
         )
         candidates.extend(apartment_to_ad(item) for item in curated_apartments)
         curated_ids = {item.lalafo_id for item in curated_apartments}
         candidate_ids.update(curated_ids)
-        repost_candidate_ids.update(repostable_curated)
-        repost_last_published_at.update(repostable_curated)
         missing_curated = len(CURATED_ROTATION_SPECS) - available_curated_count
         if missing_curated:
             logger.warning(
@@ -498,14 +489,7 @@ async def run() -> int:
                 if apartments is not None
                 else set()
             )
-            repostable_publications = (
-                await apartments.repostable_lalafo_publications(
-                    [item.lalafo_id for item in page.items],
-                    after_hours=SOURCE_REPOST_AFTER_HOURS,
-                )
-                if apartments is not None
-                else {}
-            )
+            repostable_publications = {}
             repostable_ids = set(repostable_publications)
             repost_last_published_at.update(repostable_publications)
             detail_search_ads = []

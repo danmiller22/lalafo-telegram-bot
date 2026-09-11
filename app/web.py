@@ -430,9 +430,24 @@ async def _execute_due_apartment_cycle() -> int:
 async def _run_hosted_apartment_scheduler() -> None:
     settings = get_settings()
     check_seconds = max(30.0, settings.hosted_apartment_scheduler_check_seconds)
+    last_two_bedroom_slot: str | None = None
     while True:
         try:
             await _execute_due_apartment_cycle()
+            from scripts.publish_two_bedrooms import bishkek_slot_target
+            from scripts.publish_two_bedrooms import run as run_two_bedrooms
+
+            slot = bishkek_slot_target()
+            if slot is not None and slot[0] != last_two_bedroom_slot:
+                last_two_bedroom_slot = slot[0]
+                await _select_hosted_lalafo_proxies()
+                two_bedroom_exit = await run_two_bedrooms(target_today=slot[1])
+                if two_bedroom_exit:
+                    logger.error(
+                        "Hosted two-bedroom slot failed: slot=%s exit_code=%d",
+                        slot[0],
+                        two_bedroom_exit,
+                    )
         except asyncio.CancelledError:
             raise
         except Exception as exc:

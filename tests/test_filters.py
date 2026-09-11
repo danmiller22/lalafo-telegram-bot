@@ -91,8 +91,8 @@ def test_expanded_source_keeps_reposts_strictly_limited():
     assert SOURCE_MAX_SEARCH_PAGES == 24
     assert SOURCE_MIN_PRICE == 10_000
     assert SOURCE_MIN_PHOTOS == 4
-    assert MAX_REPOSTS_PER_RUN == 15
-    assert SOURCE_REPOST_AFTER_HOURS == 6.0
+    assert MAX_REPOSTS_PER_RUN == 0
+    assert SOURCE_REPOST_AFTER_HOURS is None
     assert settings.rooms == "1"
     assert settings.min_price == 10_000
     assert settings.max_price == 40_000
@@ -115,7 +115,6 @@ def test_source_urls_follow_the_operator_filters():
 
 def test_curated_rotation_preserves_manually_approved_apartments():
     assert CURATED_ROTATION_SPECS == (
-        ("Филармония", 25_000),
         ("Моссовет", 20_000),
     )
     assert CURATED_ROTATION_LALAFO_IDS == (
@@ -132,7 +131,7 @@ def test_curated_rotation_preserves_manually_approved_apartments():
     )
 
 
-def test_curated_rotation_obeys_the_six_hour_repost_cooldown():
+def test_curated_rotation_never_reposts_published_apartments():
     apartments = [
         type("ApartmentStub", (), {"lalafo_id": lalafo_id})()
         for lalafo_id in (101, 102, 103)
@@ -141,10 +140,10 @@ def test_curated_rotation_obeys_the_six_hour_repost_cooldown():
     eligible = eligible_curated_apartments(
         apartments,
         published_ids={101, 102},
-        repostable_ids={102},
+        repostable_ids=set(),
     )
 
-    assert [apartment.lalafo_id for apartment in eligible] == [102, 103]
+    assert [apartment.lalafo_id for apartment in eligible] == [103]
 
 
 def test_publish_batch_rejects_realtors_even_in_central_districts():
@@ -317,7 +316,7 @@ def test_publish_batch_never_contains_the_same_lalafo_ad_twice():
     assert len(next(ad for ad in selected if ad.lalafo_id == 777).photo_urls) == 2
 
 
-def test_repost_batch_deduplicates_one_ad_within_the_same_cycle():
+def test_publish_batch_excludes_previously_published_ad_entirely():
     duplicate = make_ad(lalafo_id=900, district="Тунгуч", phone="+996700000900")
     selected = select_publish_batch_with_reposts(
         [duplicate, duplicate, make_ad(lalafo_id=901, phone="+996700000901")],
@@ -325,8 +324,7 @@ def test_repost_batch_deduplicates_one_ad_within_the_same_cycle():
         3,
     )
 
-    assert [ad.lalafo_id for ad in selected].count(900) == 1
-    assert len(selected) == 2
+    assert [ad.lalafo_id for ad in selected] == [901]
 
 
 def test_candidate_deduplication_keeps_the_higher_quality_copy():
@@ -370,7 +368,7 @@ def test_publish_batch_uses_fresh_cards_when_repeats_are_unavailable():
     assert sum(ad.lalafo_id == 45 for ad in selected) == 0
 
 
-def test_publish_batch_fills_shortage_with_oldest_reposts_first():
+def test_publish_batch_does_not_fill_shortage_with_old_posts():
     fresh = [
         make_ad(lalafo_id=index, phone=f"+996700{index:06d}")
         for index in range(1, 11)
@@ -388,13 +386,12 @@ def test_publish_batch_fills_shortage_with_oldest_reposts_first():
     selected = select_publish_batch_with_reposts(fresh + repeats, repost_times, 25)
     selected_ids = {ad.lalafo_id for ad in selected}
 
-    assert len(selected) == 25
-    assert {ad.lalafo_id for ad in fresh} <= selected_ids
-    assert {ad.lalafo_id for ad in repeats[-15:]} <= selected_ids
-    assert not ({ad.lalafo_id for ad in repeats[:-15]} & selected_ids)
+    assert len(selected) == 10
+    assert {ad.lalafo_id for ad in fresh} == selected_ids
+    assert not ({ad.lalafo_id for ad in repeats} & selected_ids)
 
 
-def test_publish_batch_never_adds_more_than_fifteen_reposts():
+def test_publish_batch_never_adds_any_reposts():
     fresh = [
         make_ad(lalafo_id=index, phone=f"+996702{index:06d}")
         for index in range(1, 11)
@@ -411,5 +408,5 @@ def test_publish_batch_never_adds_more_than_fifteen_reposts():
 
     selected = select_publish_batch_with_reposts(fresh + repeats, repost_times, 40)
 
-    assert len(selected) == 25
-    assert len({ad.lalafo_id for ad in selected} & set(repost_times)) == 15
+    assert len(selected) == 10
+    assert not ({ad.lalafo_id for ad in selected} & set(repost_times))

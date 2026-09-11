@@ -21,7 +21,7 @@ def test_selected_listings_accepts_deduplicated_lalafo_urls() -> None:
     ]
 
 
-def test_selected_publication_obeys_the_six_hour_repost_cooldown() -> None:
+def test_selected_publication_never_reposts_published_cards() -> None:
     selected = selected_listings(
         "https://lalafo.kg/bishkek/ads/first-id-115863328 "
         "https://lalafo.kg/bishkek/ads/second-id-115838403 "
@@ -34,9 +34,9 @@ def test_selected_publication_obeys_the_six_hour_repost_cooldown() -> None:
         repostable_ids={115838403},
     )
 
-    assert SELECTED_REPOST_AFTER_HOURS == 6.0
-    assert [item.lalafo_id for item in eligible] == [115838403, 115838404]
-    assert [item.lalafo_id for item in recent] == [115863328]
+    assert SELECTED_REPOST_AFTER_HOURS is None
+    assert [item.lalafo_id for item in eligible] == [115838404]
+    assert [item.lalafo_id for item in recent] == [115863328, 115838403]
 
 
 @pytest.mark.parametrize(
@@ -57,4 +57,12 @@ def test_selected_listings_rejects_permanently_excluded_source() -> None:
     with pytest.raises(ValueError, match="permanently excluded"):
         selected_listings(
             "https://lalafo.kg/bishkek/ads/example-id-115809037"
+        )
+
+
+@pytest.mark.parametrize("lalafo_id", [115884595, 112298605])
+def test_selected_listings_rejects_withdrawn_filarmoniya_card(lalafo_id: int) -> None:
+    with pytest.raises(ValueError, match="permanently excluded"):
+        selected_listings(
+            f"https://lalafo.kg/bishkek/ads/filarmoniya-id-{lalafo_id}"
         )
