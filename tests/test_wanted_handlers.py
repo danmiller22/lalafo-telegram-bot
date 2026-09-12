@@ -8,7 +8,7 @@ from app.config import Settings
 from app.security import TokenSigner
 from app.wanted.admin import wanted_admin_callback
 from app.support.handlers import support_button
-from app.wanted.handlers import my_wanted_ads_button, wanted_command, wanted_paid
+from app.wanted.handlers import my_wanted_ads_button, wanted_paid
 from app.wanted.keyboards import wanted_public_keyboard
 
 
@@ -88,7 +88,7 @@ async def test_menu_support_button_opens_support_inside_the_bot():
     callback.answer.assert_awaited_once_with()
     state.clear.assert_awaited_once()
     state.set_state.assert_awaited_once()
-    assert "Техподдержка" in message.answer.await_args.args[0]
+    assert "Помощь" in message.answer.await_args.args[0]
 
 
 @pytest.mark.asyncio
@@ -228,19 +228,6 @@ async def test_wanted_deep_link_starts_form_immediately():
     state.clear.assert_awaited_once()
     state.set_state.assert_awaited_once()
     assert "Сколько комнат вам нужно?" in message.answer.await_args.args[0]
-
-
-@pytest.mark.asyncio
-async def test_want_command_starts_room_form():
-    message = SimpleNamespace(answer=AsyncMock())
-    state = SimpleNamespace(clear=AsyncMock(), set_state=AsyncMock())
-
-    await wanted_command(message, state)
-
-    state.clear.assert_awaited_once()
-    state.set_state.assert_awaited_once()
-    markup = message.answer.await_args.kwargs["reply_markup"]
-    assert [button.text for button in markup.inline_keyboard[0]] == ["Студия", "1", "2"]
 
 
 @pytest.mark.asyncio

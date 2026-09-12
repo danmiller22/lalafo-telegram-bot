@@ -4,7 +4,7 @@ import logging
 import re
 
 from aiogram import Bot, F, Router
-from aiogram.filters import Command, StateFilter
+from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
@@ -37,11 +37,6 @@ async def begin_wanted_form(message: Message, state: FSMContext) -> None:
     )
 
 
-@router.message(F.chat.type == "private", Command("want"))
-async def wanted_command(message: Message, state: FSMContext) -> None:
-    await begin_wanted_form(message, state)
-
-
 @router.callback_query(F.data == "wanted:new")
 async def wanted_start(callback: CallbackQuery, state: FSMContext) -> None:
     if not callback.message or callback.message.chat.type != "private":
@@ -49,14 +44,6 @@ async def wanted_start(callback: CallbackQuery, state: FSMContext) -> None:
         return
     await callback.answer()
     await begin_wanted_form(callback.message, state)
-
-
-@router.message(Command("cancel"))
-async def wanted_cancel_command(
-    message: Message, state: FSMContext, settings: Settings
-) -> None:
-    await state.clear()
-    await message.answer("Создание заявки отменено.", reply_markup=main_menu_keyboard(settings.support_bot_url))
 
 
 @router.callback_query(F.data == "wanted:cancel")
@@ -299,22 +286,6 @@ async def wanted_paid(
         logger.error("Wanted ad admin notification failed: %s", type(exc).__name__)
         return
     await wanted_ads.finish_admin_notification(ad.id, admin_message.message_id)
-
-
-@router.message(F.chat.type == "private", Command("mywanted"))
-async def my_wanted_ads(
-    message: Message,
-    wanted_ads: WantedAdRepository,
-    settings: Settings,
-    signer: TokenSigner,
-) -> None:
-    await _send_my_wanted_ads(
-        message,
-        user_id=message.from_user.id,
-        wanted_ads=wanted_ads,
-        settings=settings,
-        signer=signer,
-    )
 
 
 @router.callback_query(F.data == "menu:mywanted")

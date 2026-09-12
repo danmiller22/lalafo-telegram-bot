@@ -7,7 +7,6 @@ from typing import Any
 
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import BotCommand
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.bot import admin, handlers
@@ -71,15 +70,9 @@ async def configure_bot_profile(runtime: BotRuntime) -> None:
     They must never delay FastAPI readiness or customer messages.
     """
     me = await runtime.bot.get_me()
-    await runtime.bot.set_my_commands(
-        [
-            BotCommand(command="start", description="Главное меню"),
-            BotCommand(command="want", description="Разместить «Ищу квартиру»"),
-            BotCommand(command="support", description="Техподдержка"),
-            BotCommand(command="mywanted", description="Мои заявки"),
-            BotCommand(command="status", description="Проверить работу бота"),
-        ]
-    )
+    # Customer navigation is entirely button-driven. /start remains an
+    # internal Telegram deep-link transport, but is not advertised as a command.
+    await runtime.bot.delete_my_commands()
     logging.getLogger(__name__).info("Bot initialized: @%s (id=%s)", me.username, me.id)
 
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 
 from aiogram import Bot, F, Router
-from aiogram.filters import Command, CommandStart
+from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
@@ -272,20 +272,10 @@ async def receipt_handler(
 @router.callback_query(F.data == "receipt:send")
 async def receipt_prompt_handler(callback: CallbackQuery) -> None:
     await callback.answer(
-        "🧾 Отправьте в этот чат фото или файл чека. После этого оплата "
-        "автоматически уйдёт администратору на проверку.",
+        "🧾 Отправьте в этот чат фото или файл чека. Бот примет его и сообщит "
+        "результат проверки здесь.",
         show_alert=True,
     )
-
-
-@router.message(Command("myid"))
-async def myid_handler(message: Message) -> None:
-    await message.answer(f"Ваш Telegram ID: {message.from_user.id}")
-
-
-@router.message(Command("status"))
-async def status_handler(message: Message) -> None:
-    await message.answer("✅ Бот работает")
 
 
 @router.callback_query(F.data == "menu:status")

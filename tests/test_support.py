@@ -7,8 +7,8 @@ import pytest
 
 from app.config import Settings
 from app.security import TokenSigner
-from app.support.faq import FAQ_BY_KEY, faq_for_text
-from app.support.handlers import support_question, support_reply_send
+from app.support.faq import FAQ_BY_KEY, fallback_answer, faq_for_text
+from app.support.handlers import support_question
 from app.support.keyboards import support_admin_keyboard, support_menu_keyboard
 from app.support.repository import SupportTicketRepository
 
@@ -69,88 +69,30 @@ async def test_support_ticket_lifecycle(repositories):
 
 
 @pytest.mark.asyncio
-async def test_common_question_is_answered_without_admin_handoff():
+async def test_common_question_is_answered_directly():
     message = SimpleNamespace(
         text="Как получить номер собственника?",
         answer=AsyncMock(),
     )
-    tickets = AsyncMock()
+    await support_question(message)
 
-    await support_question(
-        message,
-        settings=Settings(admin_user_id=999),
-        support_tickets=tickets,
-        signer=TokenSigner("support-test-secret-123"),
-        bot=AsyncMock(),
-    )
-
-    tickets.create.assert_not_awaited()
     assert "Посмотреть номер" in message.answer.await_args.args[0]
 
 
 @pytest.mark.asyncio
-async def test_unknown_question_is_handed_to_admin():
-    user = SimpleNamespace(id=777, username="customer", first_name="Клиент")
+async def test_unknown_question_gets_self_service_answer_without_handoff():
     message = SimpleNamespace(
         text="У меня необычная проблема с конкретной квартирой",
-        from_user=user,
-        chat=SimpleNamespace(id=777),
-        message_id=10,
         answer=AsyncMock(),
     )
-    tickets = AsyncMock()
-    tickets.create.return_value = SimpleNamespace(id=51)
-    bot = AsyncMock()
-    bot.send_message.return_value = SimpleNamespace(message_id=900)
+    await support_question(message)
 
-    await support_question(
-        message,
-        settings=Settings(admin_user_id=999),
-        support_tickets=tickets,
-        signer=TokenSigner("support-test-secret-123"),
-        bot=bot,
-    )
-
-    tickets.create.assert_awaited_once()
-    bot.send_message.assert_awaited_once()
-    assert bot.send_message.await_args.args[0] == 999
-    tickets.mark_notified.assert_awaited_once_with(51, 900)
-    assert "передан администратору" in message.answer.await_args.args[0]
+    answer = message.answer.await_args.args[0]
+    assert answer == fallback_answer(message.text)
+    assert "администратор" not in answer.casefold()
 
 
-@pytest.mark.asyncio
-async def test_admin_answer_is_delivered_from_bot_and_closes_ticket():
-    message = SimpleNamespace(
-        text="Проверьте кнопку ещё раз — теперь всё работает.",
-        caption=None,
-        from_user=SimpleNamespace(id=999),
-        chat=SimpleNamespace(id=999),
-        message_id=77,
-        answer=AsyncMock(),
-    )
-    state = AsyncMock()
-    state.get_data.return_value = {"support_ticket_id": 51}
-    tickets = AsyncMock()
-    tickets.get.return_value = SimpleNamespace(
-        id=51,
-        status="open",
-        telegram_user_id=777,
-    )
-    bot = AsyncMock()
-
-    await support_reply_send(
-        message,
-        state=state,
-        settings=Settings(admin_user_id=999),
-        support_tickets=tickets,
-        bot=bot,
-    )
-
-    bot.send_message.assert_awaited_once()
-    assert bot.send_message.await_args.args[0] == 777
-    tickets.answer.assert_awaited_once_with(
-        51,
-        text="Проверьте кнопку ещё раз — теперь всё работает.",
-        actor_id=999,
-    )
-    state.clear.assert_awaited_once()
+def test_typed_commands_are_redirected_to_buttons():
+    answer = fallback_answer("/want")
+    assert "кнопками" in answer
+    assert "Подать заявку" in answer
