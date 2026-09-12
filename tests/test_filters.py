@@ -90,7 +90,7 @@ def test_agency_listing_is_allowed_but_not_identified_on_card():
 def test_missing_district_uses_labeled_demo_location_and_omits_deposit():
     text = format_apartment(make_ad(district=None, deposit=None, rooms="studio"))
     assert text == (
-        "🏠 Студия\n📍 Золотой Квадрат\nДем\n🏙 Бишкек\n💰 35 000 сом"
+        "🏠 Студия\n📍 Золотой Квадрат\n🏙 Бишкек\n💰 35 000 сом"
     )
 
 

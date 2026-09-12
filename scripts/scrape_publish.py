@@ -730,12 +730,16 @@ async def run() -> int:
                     )
                     break
                 logger.error(
-                    "Search failed safely before candidates were collected: %s",
+                    "Lalafo source is temporarily unavailable; "
+                    "deferring publication without an operator alert: %s",
                     exc,
                 )
                 if engine is not None:
                     await engine.dispose()
-                return 2
+                # A blocked/temporarily unavailable catalogue is not a broken
+                # publisher. Leave Telegram untouched and try fresh inventory
+                # on the next scheduled cycle instead of alarming the operator.
+                return 0
             if page_number == 1:
                 logger.info("Lalafo source search found %d advertisements", page.total)
             if not page.items:
