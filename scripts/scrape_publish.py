@@ -121,6 +121,16 @@ PRIORITY_AD_SPECS = (
         "sdaetsa-svetlaa-studia1-komnatnaa-id-115746322",
         "Карпинка — Восток-5",
     ),
+    (
+        "https://lalafo.kg/bishkek/ads/"
+        "sdau-kvartiru-vostok5-po-cuj-s-mebelu-id-116273232",
+        "Восток-5",
+    ),
+    (
+        "https://lalafo.kg/bishkek/ads/"
+        "sdau-kvartiru-kievskaa-kalyk-akieva-id-114324774",
+        "Филармония",
+    ),
 )
 
 
