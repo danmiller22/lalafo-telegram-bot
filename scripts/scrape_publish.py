@@ -109,6 +109,19 @@ CURATED_ROTATION_LALAFO_IDS = (
     114533207,
     116120466,
 )
+PRIORITY_AD_SPECS = (
+    (
+        "https://lalafo.kg/bishkek/ads/1-komnata-1000-melocej-"
+        "agentstvo-nedvizimosti-bez-zivotnyh-ot-1-mesaca-ot-3-mesacev-"
+        "ot-6-mesacev-s-mebelu-casticno-id-115806919",
+        "1000 мелочей — Дордой Плаза ТЦ",
+    ),
+    (
+        "https://lalafo.kg/bishkek/ads/"
+        "sdaetsa-svetlaa-studia1-komnatnaa-id-115746322",
+        "Карпинка — Восток-5",
+    ),
+)
 
 
 def apartment_to_ad(apartment) -> LalafoAd:
@@ -478,6 +491,60 @@ async def run() -> int:
             )
             for _ in range(max(1, min(12, settings.apartment_detail_concurrency)))
         ]
+        # Operator-supplied cards are fetched directly so they do not depend on
+        # their position in Lalafo search results. Normal published-ID and
+        # fingerprint/phone checks still make every card strictly one-time.
+        for priority_url, district_label in PRIORITY_AD_SPECS:
+            match = re.search(r"-id-(\d+)(?:[/?#]|$)", priority_url)
+            if match is None:
+                logger.warning("Skipping malformed priority URL: %s", priority_url)
+                continue
+            priority_id = int(match.group(1))
+            if is_permanently_excluded(priority_id) or state.contains(priority_id):
+                continue
+            if apartments is not None and priority_id in await apartments.published_lalafo_ids(
+                [priority_id]
+            ):
+                continue
+            try:
+                priority_ad = await client.detail(priority_url)
+            except (LalafoError, LalafoParseError, ValueError) as exc:
+                logger.warning(
+                    "Skipping unavailable priority ad id=%s error=%s",
+                    priority_id,
+                    type(exc).__name__,
+                )
+                continue
+            allowed, reason = is_allowed(
+                priority_ad,
+                city=settings.city,
+                max_price=SOURCE_MAX_PRICE,
+                rooms=SOURCE_ALLOWED_ROOMS,
+            )
+            if not allowed:
+                logger.info("Skipping priority ad id=%s reason=%s", priority_id, reason)
+                continue
+            if priority_ad.price < max(
+                settings.min_price,
+                minimum_price_for_rooms(priority_ad.rooms),
+            ):
+                logger.info("Skipping priority ad id=%s reason=min_price", priority_id)
+                continue
+            if not priority_ad.no_subletting:
+                logger.info("Skipping priority ad id=%s reason=shared_housing", priority_id)
+                continue
+            priority_ad = priority_ad.model_copy(update={"district": district_label})
+            duplicate_ids = (
+                await apartments.duplicate_candidate_ids([priority_ad])
+                if apartments is not None
+                else set()
+            )
+            if priority_id in duplicate_ids:
+                continue
+            candidates.append(priority_ad)
+            candidate_ids.add(priority_id)
+            curated_ids.add(priority_id)
+
         search_urls = (DEFAULT_SEARCH_URL, *ADDITIONAL_SEARCH_URLS)
         search_index = 0
         search_url = search_urls[search_index]

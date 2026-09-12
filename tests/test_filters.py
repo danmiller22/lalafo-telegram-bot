@@ -10,6 +10,7 @@ from scripts.scrape_publish import (
     CURATED_ROTATION_SPECS,
     CURATED_ROTATION_LALAFO_IDS,
     MAX_REPOSTS_PER_RUN,
+    PRIORITY_AD_SPECS,
     SOURCE_ALLOWED_ROOMS,
     SOURCE_MAX_POSTS_PER_RUN,
     SOURCE_MAX_SEARCH_PAGES,
@@ -175,6 +176,17 @@ def test_curated_rotation_preserves_manually_approved_apartments():
     assert CURATED_ROTATION_SPECS == (
         ("Моссовет", 20_000),
     )
+
+
+def test_operator_priority_apartments_have_requested_district_labels():
+    assert [int(url.rsplit("-id-", 1)[1]) for url, _ in PRIORITY_AD_SPECS] == [
+        115806919,
+        115746322,
+    ]
+    assert [district for _, district in PRIORITY_AD_SPECS] == [
+        "1000 мелочей — Дордой Плаза ТЦ",
+        "Карпинка — Восток-5",
+    ]
     assert CURATED_ROTATION_LALAFO_IDS == (
         115333471,
         112925333,
