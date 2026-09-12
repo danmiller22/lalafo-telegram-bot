@@ -5,6 +5,7 @@ from contextlib import AsyncExitStack
 from datetime import datetime, time, timezone
 import logging
 import math
+import random
 import re
 from collections.abc import Callable, Mapping
 from zoneinfo import ZoneInfo
@@ -91,6 +92,7 @@ TWO_BEDROOM_MIN_PRICE = 20_000
 TWO_BEDROOM_MAX_PRICE = 40_000
 TWO_BEDROOM_DAILY_LIMIT = 20
 TWO_BEDROOM_MAX_PER_RUN = 2
+MANAGED_PROFILE_MAX_PER_RUN = 1
 BISHKEK = ZoneInfo("Asia/Bishkek")
 # Manually approved cards remain eligible once, using their original,
 # phone-backed database records rather than phone-hidden public reposts.
@@ -277,6 +279,44 @@ def is_substandard_structure(ad: LalafoAd) -> bool:
     return params.get("этаж") == "1" and params.get("количество этажей") == "1"
 
 
+def managed_source_to_ad(apartment, managed_ad: LalafoAd) -> LalafoAd:
+    """Keep the original photos/contact while mirroring our profile price/area."""
+    return apartment_to_ad(apartment).model_copy(
+        update={
+            "price": managed_ad.price,
+            "district": managed_ad.district,
+        }
+    )
+
+
+def choose_managed_profile_cards(
+    candidates: list[LalafoAd],
+    *,
+    limit: int = MANAGED_PROFILE_MAX_PER_RUN,
+    rng: random.Random | random.SystemRandom | None = None,
+) -> list[LalafoAd]:
+    """Choose a small random slice so managed-profile originals never arrive in a burst."""
+    unique = deduplicate_candidates(candidates)
+    if limit <= 0 or not unique:
+        return []
+    chooser = rng or random.SystemRandom()
+    return chooser.sample(unique, k=min(limit, len(unique)))
+
+
+def insert_randomly(
+    cards: list[LalafoAd],
+    additions: list[LalafoAd],
+    *,
+    rng: random.Random | random.SystemRandom | None = None,
+) -> list[LalafoAd]:
+    """Place isolated profile cards at unpredictable positions in a mixed batch."""
+    result = list(cards)
+    chooser = rng or random.SystemRandom()
+    for card in additions:
+        result.insert(chooser.randrange(len(result) + 1), card)
+    return result
+
+
 def mix_room_types(candidates: list[LalafoAd]) -> list[LalafoAd]:
     """Interleave studios, two-bedroom and one-bedroom cards without bursts."""
     queues = {
@@ -437,6 +477,8 @@ async def run() -> int:
     candidates = []
     candidate_ids: set[int] = set()
     curated_ids: set[int] = set()
+    managed_profile_ids: set[int] = set()
+    managed_sources = []
     repost_candidate_ids: set[int] = set()
     repost_last_published_at: dict[int, datetime] = {}
     two_bedrooms_published_today = 0
@@ -474,9 +516,7 @@ async def run() -> int:
                 CURATED_ROTATION_LALAFO_IDS
             )
         )
-        curated_apartments.extend(
-            await apartments.managed_lalafo_source_apartments()
-        )
+        managed_sources = await apartments.managed_lalafo_sources()
         curated_apartments = list(
             {item.lalafo_id: item for item in curated_apartments}.values()
         )
@@ -530,6 +570,76 @@ async def run() -> int:
             )
             for _ in range(max(1, min(12, settings.apartment_detail_concurrency)))
         ]
+        # Ads on our own Lalafo profile intentionally hide/replace the source
+        # contact. Restore the original card, but mirror the live profile price
+        # and district exactly. An unavailable managed ad is no longer current
+        # and is skipped. At most one is selected later, preventing a burst.
+        for managed_source in managed_sources:
+            source = managed_source.apartment
+            if is_permanently_excluded(source.lalafo_id):
+                continue
+            if state.contains(source.lalafo_id):
+                continue
+            if apartments is not None:
+                published_source_ids = await apartments.published_lalafo_ids(
+                    [source.lalafo_id]
+                )
+                if source.lalafo_id in published_source_ids:
+                    continue
+            managed_url = managed_source.managed_lalafo_ad_url
+            if not managed_url and managed_source.managed_lalafo_ad_id:
+                managed_url = (
+                    "https://lalafo.kg/bishkek/ads/"
+                    f"managed-id-{managed_source.managed_lalafo_ad_id}"
+                )
+            if not managed_url:
+                continue
+            try:
+                managed_ad = await client.detail(managed_url)
+            except (LalafoError, LalafoParseError, ValueError) as exc:
+                logger.info(
+                    "Skipping inactive managed profile ad source_id=%s error=%s",
+                    source.lalafo_id,
+                    type(exc).__name__,
+                )
+                continue
+            merged_ad = managed_source_to_ad(source, managed_ad)
+            allowed, reason = is_allowed(
+                merged_ad,
+                city=settings.city,
+                max_price=SOURCE_MAX_PRICE,
+                rooms=SOURCE_ALLOWED_ROOMS,
+            )
+            if not allowed or merged_ad.price < max(
+                settings.min_price,
+                minimum_price_for_rooms(merged_ad.rooms),
+            ):
+                logger.info(
+                    "Skipping managed profile source id=%s reason=%s",
+                    source.lalafo_id,
+                    reason if not allowed else "min_price",
+                )
+                continue
+            if len(merged_ad.photo_urls) < SOURCE_MIN_PHOTOS:
+                continue
+            if not merged_ad.no_subletting or is_substandard_structure(merged_ad):
+                continue
+            duplicate_ids = (
+                await apartments.duplicate_candidate_ids([merged_ad])
+                if apartments is not None
+                else set()
+            )
+            if source.lalafo_id in duplicate_ids:
+                continue
+            candidates.append(merged_ad)
+            candidate_ids.add(source.lalafo_id)
+            curated_ids.add(source.lalafo_id)
+            managed_profile_ids.add(source.lalafo_id)
+        logger.info(
+            "Active managed-profile originals eligible for random rotation: %d",
+            len(managed_profile_ids),
+        )
+
         # Operator-supplied cards are fetched directly so they do not depend on
         # their position in Lalafo search results. Normal published-ID and
         # fingerprint/phone checks still make every card strictly one-time.
@@ -756,17 +866,28 @@ async def run() -> int:
                 continue
             page_number += 1
 
+    managed_profile_candidates = [
+        ad for ad in candidates if ad.lalafo_id in managed_profile_ids
+    ]
     curated_candidates = [
-        ad for ad in candidates if ad.lalafo_id in curated_ids
+        ad
+        for ad in candidates
+        if ad.lalafo_id in curated_ids and ad.lalafo_id not in managed_profile_ids
     ]
     regular_candidates = [
         ad for ad in candidates if ad.lalafo_id not in curated_ids
     ]
-    profile_cards = deduplicate_candidates(curated_candidates)[:limit]
+    managed_profile_cards = choose_managed_profile_cards(
+        managed_profile_candidates,
+        limit=min(MANAGED_PROFILE_MAX_PER_RUN, limit),
+    )
+    profile_cards = deduplicate_candidates(curated_candidates)[
+        : max(0, limit - len(managed_profile_cards))
+    ]
     two_bedroom_limit = min(
         TWO_BEDROOM_MAX_PER_RUN,
         max(0, TWO_BEDROOM_DAILY_LIMIT - two_bedrooms_published_today),
-        max(0, limit - len(profile_cards)),
+        max(0, limit - len(profile_cards) - len(managed_profile_cards)),
     )
     two_bedroom_cards = select_publish_batch_with_reposts(
         [ad for ad in regular_candidates if ad.rooms == "2"],
@@ -776,9 +897,18 @@ async def run() -> int:
     owner_middle = select_publish_batch_with_reposts(
         [ad for ad in regular_candidates if ad.rooms in {"1", "studio"}],
         repost_last_published_at,
-        max(0, limit - len(profile_cards) - len(two_bedroom_cards)),
+        max(
+            0,
+            limit
+            - len(profile_cards)
+            - len(managed_profile_cards)
+            - len(two_bedroom_cards),
+        ),
     )
-    candidates = mix_room_types(owner_middle + two_bedroom_cards + profile_cards)
+    candidates = insert_randomly(
+        mix_room_types(owner_middle + two_bedroom_cards + profile_cards),
+        managed_profile_cards,
+    )
     repost_candidate_ids.intersection_update(ad.lalafo_id for ad in candidates)
     central_count = sum(is_central_district(ad.district) for ad in candidates)
     central_percent = round(central_count * 100 / len(candidates)) if candidates else 0

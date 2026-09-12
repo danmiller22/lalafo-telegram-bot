@@ -121,7 +121,7 @@ def test_apartment_interval_cannot_be_overridden_by_stale_cloud_env(
     monkeypatch.setenv("HOSTED_APARTMENT_PUBLISH_INTERVAL_MINUTES", "120")
     get_settings.cache_clear()
 
-    assert get_settings().hosted_apartment_publish_interval_minutes == 120
+    assert get_settings().hosted_apartment_publish_interval_minutes == 90
 
 
 @pytest.mark.asyncio
@@ -362,7 +362,7 @@ async def test_hosted_scheduler_runs_due_check_without_forcing_duplicates(
     select_proxies.assert_awaited_once()
     run_if_due.assert_awaited_once_with(
         force=False,
-        window_minutes=120,
+        window_minutes=90,
         max_attempts=3,
         wait_for_active_lease=False,
     )

@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import random
 
 import pytest
 
@@ -23,11 +24,14 @@ from scripts.scrape_publish import (
     TWO_BEDROOM_MAX_PRICE,
     TWO_BEDROOM_MIN_PRICE,
     candidate_quality,
+    choose_managed_profile_cards,
     deduplicate_candidates,
     eligible_curated_apartments,
     is_central_district,
     is_preferred_district,
     is_substandard_structure,
+    insert_randomly,
+    managed_source_to_ad,
     minimum_price_for_rooms,
     mix_room_types,
     published_two_bedrooms_today,
@@ -435,6 +439,48 @@ def test_candidate_deduplication_keeps_the_higher_quality_copy():
     stronger = weaker.model_copy(update={"district": "ЦУМ"})
 
     assert deduplicate_candidates([weaker, stronger]) == [stronger]
+
+
+def test_managed_profile_card_keeps_original_contact_but_uses_profile_terms():
+    original = make_ad(
+        lalafo_id=700,
+        price=22_000,
+        district="Исходный район",
+        phone="+996700000700",
+        photo_urls=["original-1", "original-2"],
+    )
+    managed = make_ad(
+        lalafo_id=900,
+        price=31_000,
+        district="Филармония",
+        phone="",
+        photo_urls=["profile-copy"],
+    )
+
+    merged = managed_source_to_ad(original, managed)
+
+    assert merged.lalafo_id == original.lalafo_id
+    assert merged.source_url == original.source_url
+    assert merged.phone == original.phone
+    assert merged.photo_urls == original.photo_urls
+    assert merged.price == managed.price
+    assert merged.district == managed.district
+
+
+def test_managed_profile_cards_are_limited_to_one_and_inserted_randomly():
+    managed = [make_ad(lalafo_id=index) for index in (701, 702, 703)]
+    normal = [make_ad(lalafo_id=index) for index in (801, 802, 803)]
+
+    selected = choose_managed_profile_cards(
+        managed,
+        rng=random.Random(4),
+    )
+    mixed = insert_randomly(normal, selected, rng=random.Random(2))
+
+    assert len(selected) == 1
+    assert len(mixed) == 4
+    assert selected[0] in mixed
+    assert mixed != normal + selected
 
 
 def test_publish_batch_uses_fresh_cards_before_any_reposts():

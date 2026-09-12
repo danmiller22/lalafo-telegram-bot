@@ -91,10 +91,17 @@ async def test_managed_profile_ads_restore_their_original_sources(
                 source_apartment_id=source.id,
                 source_lalafo_id=source.lalafo_id,
                 managed_lalafo_ad_id=999000001,
+                managed_lalafo_ad_url=(
+                    "https://lalafo.kg/bishkek/ads/profile-copy-id-999000001"
+                ),
             )
         )
         await session.commit()
 
     selected = await apartments.managed_lalafo_source_apartments()
+    mappings = await apartments.managed_lalafo_sources()
 
     assert [item.lalafo_id for item in selected] == [116000001]
+    assert [item.apartment.lalafo_id for item in mappings] == [116000001]
+    assert mappings[0].managed_lalafo_ad_id == 999000001
+    assert mappings[0].managed_lalafo_ad_url.endswith("id-999000001")

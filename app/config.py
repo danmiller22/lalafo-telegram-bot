@@ -97,7 +97,7 @@ ADDITIONAL_SEARCH_URLS: tuple[str, ...] = (
     "?price[from]=10000&price[to]=40000",
 )
 
-APARTMENT_PUBLISH_INTERVAL_MINUTES = 120
+APARTMENT_PUBLISH_INTERVAL_MINUTES = 90
 
 
 class Settings(BaseSettings):

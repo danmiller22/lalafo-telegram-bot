@@ -21,6 +21,15 @@ class PaymentSubmission:
     outcome: str
 
 
+@dataclass(frozen=True)
+class ManagedLalafoSource:
+    """Original contact card paired with the ad shown on our Lalafo profile."""
+
+    apartment: Apartment
+    managed_lalafo_ad_id: int | None
+    managed_lalafo_ad_url: str | None
+
+
 class ApartmentRepository:
     def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
         self.sessions = sessions
@@ -113,12 +122,18 @@ class ApartmentRepository:
 
     async def managed_lalafo_source_apartments(self) -> list[Apartment]:
         """Resolve original source cards behind ads created on our Lalafo profile."""
+        return [item.apartment for item in await self.managed_lalafo_sources()]
+
+    async def managed_lalafo_sources(self) -> list[ManagedLalafoSource]:
+        """Return active managed ads together with their original source cards."""
         async with self.sessions() as session:
             references = (
                 await session.execute(
                     select(
                         DailyFeaturedPublication.source_apartment_id,
                         DailyFeaturedPublication.source_lalafo_id,
+                        DailyFeaturedPublication.managed_lalafo_ad_id,
+                        DailyFeaturedPublication.managed_lalafo_ad_url,
                     )
                     .where(
                         or_(
@@ -132,10 +147,10 @@ class ApartmentRepository:
             ).all()
             apartment_ids = {
                 apartment_id
-                for apartment_id, _ in references
+                for apartment_id, _, _, _ in references
                 if apartment_id is not None
             }
-            lalafo_ids = {lalafo_id for _, lalafo_id in references}
+            lalafo_ids = {lalafo_id for _, lalafo_id, _, _ in references}
             if not apartment_ids and not lalafo_ids:
                 return []
             rows = list(
@@ -146,18 +161,30 @@ class ApartmentRepository:
                                 Apartment.id.in_(apartment_ids),
                                 Apartment.lalafo_id.in_(lalafo_ids),
                             ),
-                            Apartment.rooms == "1",
+                            Apartment.rooms.in_(("1", "2", "studio")),
                             Apartment.active.is_(True),
                             Apartment.phone != "",
                         )
                     )
                 ).all()
             )
-        position = {
-            lalafo_id: index
-            for index, (_, lalafo_id) in enumerate(references)
-        }
-        return sorted(rows, key=lambda item: position.get(item.lalafo_id, len(position)))
+        by_id = {item.id: item for item in rows}
+        by_lalafo_id = {item.lalafo_id: item for item in rows}
+        selected: list[ManagedLalafoSource] = []
+        used_source_ids: set[int] = set()
+        for source_id, source_lalafo_id, managed_id, managed_url in references:
+            apartment = by_id.get(source_id) or by_lalafo_id.get(source_lalafo_id)
+            if apartment is None or apartment.id in used_source_ids:
+                continue
+            selected.append(
+                ManagedLalafoSource(
+                    apartment=apartment,
+                    managed_lalafo_ad_id=managed_id,
+                    managed_lalafo_ad_url=managed_url,
+                )
+            )
+            used_source_ids.add(apartment.id)
+        return selected
 
     async def published_lalafo_ids(self, lalafo_ids: list[int]) -> set[int]:
         if not lalafo_ids:
