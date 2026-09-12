@@ -402,6 +402,7 @@ async def run() -> int:
     repost_candidate_ids: set[int] = set()
     repost_last_published_at: dict[int, datetime] = {}
     two_bedrooms_published_today = 0
+    direct_priority_count = 0
 
     engine = None
     apartments = None
@@ -544,8 +545,15 @@ async def run() -> int:
             candidates.append(priority_ad)
             candidate_ids.add(priority_id)
             curated_ids.add(priority_id)
+            direct_priority_count += 1
 
-        search_urls = (DEFAULT_SEARCH_URL, *ADDITIONAL_SEARCH_URLS)
+        # Publish newly supplied operator cards immediately. Once their IDs are
+        # durable, later cycles skip them and resume the full automatic search.
+        if direct_priority_count:
+            candidate_pool_limit = len(candidates)
+            search_urls = (DEFAULT_SEARCH_URL,)
+        else:
+            search_urls = (DEFAULT_SEARCH_URL, *ADDITIONAL_SEARCH_URLS)
         search_index = 0
         search_url = search_urls[search_index]
         # Reserve one normal card batch for every supplementary source so a
