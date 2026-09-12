@@ -93,7 +93,7 @@ def test_expanded_source_keeps_reposts_strictly_limited():
 
     assert SOURCE_ALLOWED_ROOMS == ("1", "studio", "2")
     assert SOURCE_MAX_POSTS_PER_RUN == 18
-    assert SOURCE_PUBLISH_SPACING_SECONDS == 180
+    assert SOURCE_PUBLISH_SPACING_SECONDS == 150
     assert SOURCE_MAX_SEARCH_PAGES == 36
     assert SOURCE_MIN_PRICE == 10_000
     assert SOURCE_MIN_PHOTOS == 2
