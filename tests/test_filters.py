@@ -38,6 +38,7 @@ from scripts.scrape_publish import (
     published_two_bedrooms_today,
     select_publish_batch,
     select_publish_batch_with_reposts,
+    select_owners_then_realtors,
     source_candidate_targets,
 )
 from tests.helpers import make_ad
@@ -103,7 +104,7 @@ def test_expanded_source_keeps_reposts_strictly_limited():
     assert SOURCE_MAX_POSTS_PER_RUN == 18
     assert SOURCE_PUBLISH_SPACING_SECONDS == 150
     assert SOURCE_MAX_SEARCH_PAGES == 36
-    assert SOURCE_MIN_PRICE == 10_000
+    assert SOURCE_MIN_PRICE == 20_000
     assert SOURCE_MIN_PHOTOS == 2
     assert MAX_REPOSTS_PER_RUN == 0
     assert SOURCE_REPOST_AFTER_HOURS is None
@@ -112,7 +113,7 @@ def test_expanded_source_keeps_reposts_strictly_limited():
     assert TWO_BEDROOM_DAILY_LIMIT == 20
     assert TWO_BEDROOM_MAX_PER_RUN == 2
     assert settings.rooms == "1"
-    assert settings.min_price == 10_000
+    assert settings.min_price == 20_000
     assert settings.max_price == 40_000
     assert settings.max_new_posts_per_run == 18
     assert settings.max_search_pages == 36
@@ -126,12 +127,12 @@ def test_source_urls_follow_the_operator_filters():
     assert "/semeynym/param-bez-detey/studentam/" in DEFAULT_SEARCH_URL
     assert "/bez-podseleniya/mozhno-s-zhivotnymi" in DEFAULT_SEARCH_URL
     assert "bez-zhivotnyh" not in DEFAULT_SEARCH_URL
-    assert "price[from]=10000&price[to]=40000" in DEFAULT_SEARCH_URL
+    assert "price[from]=20000&price[to]=40000" in DEFAULT_SEARCH_URL
     assert len(ADDITIONAL_SEARCH_URLS) == 2
     assert "/1-bedroom/2-bedrooms/studio/owner" in ADDITIONAL_SEARCH_URLS[0]
     assert "/1-bedroom/2-bedrooms/studio/real-estate-agency" in ADDITIONAL_SEARCH_URLS[1]
     assert all("bez-podseleniya" not in url for url in ADDITIONAL_SEARCH_URLS)
-    assert all("price[from]=10000&price[to]=40000" in url for url in ADDITIONAL_SEARCH_URLS)
+    assert all("price[from]=20000&price[to]=40000" in url for url in ADDITIONAL_SEARCH_URLS)
 
 
 def test_realtor_fallback_reserves_nearly_half_of_discovery_pool():
@@ -142,9 +143,9 @@ def test_realtor_fallback_reserves_nearly_half_of_discovery_pool():
     assert targets[-1] - targets[-2] == 135
 
 
-def test_two_bedroom_price_floor_is_stricter_than_other_rooms():
-    assert minimum_price_for_rooms("studio") == 10_000
-    assert minimum_price_for_rooms("1") == 10_000
+def test_all_room_types_have_twenty_thousand_price_floor():
+    assert minimum_price_for_rooms("studio") == 20_000
+    assert minimum_price_for_rooms("1") == 20_000
     assert minimum_price_for_rooms("2") == 20_000
 
 
@@ -161,6 +162,16 @@ def test_single_floor_temporary_style_unit_is_rejected():
         ]
     )
     assert is_substandard_structure(ad)
+
+
+@pytest.mark.parametrize("district", ["Алтын-Ордо ж/м", "Ак-Ордо 3 ж/м", "Колмо жилмассив"])
+def test_residential_settlement_annexes_are_rejected(district):
+    assert is_substandard_structure(make_ad(district=district, price=20_000))
+
+
+def test_private_house_and_annex_descriptions_are_rejected():
+    assert is_substandard_structure(make_ad(source_description="Комната в частном доме"))
+    assert is_substandard_structure(make_ad(source_description="Тёплая пристройка"))
 
 
 def test_normal_multistorey_apartment_is_kept():
@@ -268,6 +279,23 @@ def test_publish_batch_accepts_realtors_without_public_label():
     assert {ad.lalafo_id for ad in selected} == {1, 2}
     assert "риелтор" not in format_apartment(realtor).casefold()
     assert "собственник" not in format_apartment(realtor).casefold()
+
+
+def test_owner_cards_are_exhausted_before_realtor_fallback():
+    owners = [
+        make_ad(lalafo_id=index, owner_listing=True, phone=f"+996700{index:06d}")
+        for index in (1, 2)
+    ]
+    realtors = [
+        make_ad(lalafo_id=index, owner_listing=False, phone=f"+996555{index:06d}")
+        for index in (3, 4, 5)
+    ]
+
+    selected = select_owners_then_realtors(owners + realtors, limit=4)
+
+    assert len(selected) == 4
+    assert selected[:2] == owners
+    assert sum(not ad.owner_listing for ad in selected) == 2
 
 
 def test_permanently_excluded_source_never_enters_a_publish_batch():

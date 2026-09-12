@@ -73,7 +73,7 @@ CENTRAL_DISTRICT_TERMS = (
 )
 # The fallback search includes owners and real-estate agents; detail-level
 # checks still remove shared housing and all public cards omit offerer type.
-SOURCE_MIN_PRICE = 10_000
+SOURCE_MIN_PRICE = 20_000
 SOURCE_MAX_PRICE = 40_000
 SOURCE_ALLOWED_ROOMS = ("1", "studio", "2")
 SOURCE_MIN_PHOTOS = 2
@@ -269,8 +269,22 @@ def is_substandard_structure(ad: LalafoAd) -> bool:
         "барачного типа",
         "модульный дом",
         "общежитие",
+        "частный сектор",
+        "в частном доме",
+        "пристройка",
+        "цокольный этаж",
+        "полуподвал",
+        "коридорного типа",
     )
     if any(term in text for term in blocked_terms):
+        return True
+
+    district = (ad.district or "").casefold().replace("ё", "е")
+    # Бишкек listings from residential settlements (ж/м) are commonly a room
+    # or an annex in a private yard presented as a one-room apartment.
+    if "жилмассив" in district or "жилой массив" in district or re.search(
+        r"(?:^|\s)ж\s*/?\s*м(?:\s|$)", district
+    ):
         return True
 
     params = {
@@ -279,7 +293,16 @@ def is_substandard_structure(ad: LalafoAd) -> bool:
     }
     # Lalafo listings marked as both floor 1 and a one-floor building are
     # overwhelmingly temporary/private-yard units rather than apartments.
-    return params.get("этаж") == "1" and params.get("количество этажей") == "1"
+    building_floor_value = next(
+        (
+            value
+            for name, value in params.items()
+            if "количество этажей" in name or "этажность" in name
+        ),
+        "",
+    )
+    building_floor_match = re.search(r"\d+", building_floor_value)
+    return bool(building_floor_match and int(building_floor_match.group()) <= 1)
 
 
 def managed_source_to_ad(apartment, managed_ad: LalafoAd) -> LalafoAd:
@@ -481,6 +504,24 @@ def select_publish_batch_with_reposts(
             select_publish_batch(repeats, repeat_limit, rank_key=oldest_first)
         )
     return sorted(selected, key=candidate_quality, reverse=True)
+
+
+def select_owners_then_realtors(
+    candidates: list[LalafoAd],
+    limit: int,
+) -> list[LalafoAd]:
+    """Fill with owners first and use realtor cards only for the shortage."""
+    owners = [ad for ad in candidates if ad.owner_listing]
+    realtors = [ad for ad in candidates if not ad.owner_listing]
+    selected = select_publish_batch_with_reposts(owners, {}, limit)
+    selected.extend(
+        select_publish_batch_with_reposts(
+            realtors,
+            {},
+            max(0, limit - len(selected)),
+        )
+    )
+    return selected
 
 
 async def run() -> int:
@@ -939,14 +980,12 @@ async def run() -> int:
         max(0, TWO_BEDROOM_DAILY_LIMIT - two_bedrooms_published_today),
         max(0, limit - len(profile_cards) - len(managed_profile_cards)),
     )
-    two_bedroom_cards = select_publish_batch_with_reposts(
+    two_bedroom_cards = select_owners_then_realtors(
         [ad for ad in regular_candidates if ad.rooms == "2"],
-        {},
         two_bedroom_limit,
     )
-    owner_middle = select_publish_batch_with_reposts(
+    owner_middle = select_owners_then_realtors(
         [ad for ad in regular_candidates if ad.rooms in {"1", "studio"}],
-        repost_last_published_at,
         max(
             0,
             limit

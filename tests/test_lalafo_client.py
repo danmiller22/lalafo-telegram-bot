@@ -46,7 +46,7 @@ def test_primary_search_uses_the_operator_owner_one_bedroom_and_price_filters():
     assert [
         params[key] for key in params if key.startswith("parameters[2149]")
     ] == ["19057"]
-    assert params["price[from]"] == "10000"
+    assert params["price[from]"] == "20000"
     assert params["price[to]"] == "40000"
 
 
@@ -61,7 +61,7 @@ def test_supplementary_search_reserves_owner_and_realtor_pools():
             params[key] for key in params if key.startswith("parameters[2149]")
         ] == [expected_offerer]
         assert not any(key.startswith("parameters[946]") for key in params)
-        assert params["price[from]"] == "10000"
+        assert params["price[from]"] == "20000"
         assert params["price[to]"] == "40000"
 
 

@@ -83,7 +83,7 @@ DEFAULT_SEARCH_URL = (
     "dolgosrochnaya-arenda-kvartir/1-bedroom/2-bedrooms/studio/owner/"
     "semeynym/param-bez-detey/studentam/bez-podseleniya/"
     "mozhno-s-zhivotnymi"
-    "?price[from]=10000&price[to]=40000"
+    "?price[from]=20000&price[to]=40000"
 )
 
 # Keep separate fallback pools so realtor inventory always gets reserved search
@@ -91,10 +91,10 @@ DEFAULT_SEARCH_URL = (
 ADDITIONAL_SEARCH_URLS: tuple[str, ...] = (
     "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
     "dolgosrochnaya-arenda-kvartir/1-bedroom/2-bedrooms/studio/owner"
-    "?price[from]=10000&price[to]=40000",
+    "?price[from]=20000&price[to]=40000",
     "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
     "dolgosrochnaya-arenda-kvartir/1-bedroom/2-bedrooms/studio/real-estate-agency"
-    "?price[from]=10000&price[to]=40000",
+    "?price[from]=20000&price[to]=40000",
 )
 
 APARTMENT_PUBLISH_INTERVAL_MINUTES = 90
@@ -153,7 +153,7 @@ class Settings(BaseSettings):
     apartment_publication_lease_seconds: int = 300
     apartment_publication_heartbeat_seconds: float = 60.0
     city: str = "Бишкек"
-    min_price: int = 10_000
+    min_price: int = 20_000
     max_price: int = 40_000
     rooms: str = "1"
     max_new_posts_per_run: int = 18
