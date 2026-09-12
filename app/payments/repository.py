@@ -223,11 +223,6 @@ class ApartmentRepository:
                         (Apartment.fingerprint == fingerprint)
                         & (Apartment.publication_status == "published")
                     )
-                    | (
-                        (Apartment.phone == ad.phone)
-                        & (Apartment.publication_status == "published")
-                        & (Apartment.active.is_(True))
-                    )
                 )
             )
             return result.first() is not None
@@ -237,7 +232,6 @@ class ApartmentRepository:
         if not ads:
             return set()
         fingerprints = {ad_fingerprint(ad) for ad in ads}
-        phones = {ad.phone for ad in ads if ad.phone}
         lalafo_ids = {ad.lalafo_id for ad in ads}
         async with self.sessions() as session:
             rows = (
@@ -245,25 +239,20 @@ class ApartmentRepository:
                     select(
                         Apartment.lalafo_id,
                         Apartment.fingerprint,
-                        Apartment.phone,
-                        Apartment.active,
                     ).where(
                         Apartment.publication_status == "published",
                         (Apartment.lalafo_id.in_(lalafo_ids))
                         | (Apartment.fingerprint.in_(fingerprints))
-                        | (Apartment.phone.in_(phones)),
                     )
                 )
             ).all()
         duplicate_ids = {row.lalafo_id for row in rows if row.lalafo_id in lalafo_ids}
         duplicate_fingerprints = {row.fingerprint for row in rows}
-        duplicate_phones = {row.phone for row in rows if row.active}
         return {
             ad.lalafo_id
             for ad in ads
             if ad.lalafo_id in duplicate_ids
             or ad_fingerprint(ad) in duplicate_fingerprints
-            or ad.phone in duplicate_phones
         }
 
     async def upsert_discovered(self, ad: LalafoAd) -> Apartment:

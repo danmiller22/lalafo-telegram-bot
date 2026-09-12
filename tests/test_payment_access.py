@@ -206,9 +206,10 @@ async def test_published_apartment_blocks_id_and_fingerprint_duplicates(reposito
 
     assert await apartments.is_duplicate(original) is True
     assert await apartments.is_duplicate(make_ad(lalafo_id=556)) is True
+    # One realtor phone may legitimately represent several different units.
     assert await apartments.is_duplicate(
         make_ad(lalafo_id=557, price=30000, district="Другой район")
-    ) is True
+    ) is False
     assert await apartments.published_lalafo_ids([555, 999]) == {555}
     assert await apartments.repostable_lalafo_ids([555, 999], after_hours=0) == {555}
     repostable = await apartments.repostable_lalafo_publications(
