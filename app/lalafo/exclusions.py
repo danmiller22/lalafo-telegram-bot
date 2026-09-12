@@ -15,6 +15,7 @@ PERMANENTLY_EXCLUDED_LALAFO_IDS = frozenset(
         115809037,
         115884595,
         112298605,
+        97832535,
     }
 )
 

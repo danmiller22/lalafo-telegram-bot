@@ -249,6 +249,34 @@ def minimum_price_for_rooms(rooms: str) -> int:
     return TWO_BEDROOM_MIN_PRICE if rooms == "2" else SOURCE_MIN_PRICE
 
 
+def is_substandard_structure(ad: LalafoAd) -> bool:
+    """Reject containers, temporary housing and apartment-like barracks."""
+    text = re.sub(
+        r"[^\w]+",
+        " ",
+        f"{ad.source_title} {ad.source_description}".casefold().replace("ё", "е"),
+    )
+    blocked_terms = (
+        "контейнер",
+        "времянка",
+        "вагончик",
+        "барак",
+        "барачного типа",
+        "модульный дом",
+        "общежитие",
+    )
+    if any(term in text for term in blocked_terms):
+        return True
+
+    params = {
+        str(item.get("name") or "").casefold(): str(item.get("value") or "").strip()
+        for item in ad.source_params
+    }
+    # Lalafo listings marked as both floor 1 and a one-floor building are
+    # overwhelmingly temporary/private-yard units rather than apartments.
+    return params.get("этаж") == "1" and params.get("количество этажей") == "1"
+
+
 def mix_room_types(candidates: list[LalafoAd]) -> list[LalafoAd]:
     """Interleave studios, two-bedroom and one-bedroom cards without bursts."""
     queues = {
@@ -544,6 +572,9 @@ async def run() -> int:
             if not priority_ad.no_subletting:
                 logger.info("Skipping priority ad id=%s reason=shared_housing", priority_id)
                 continue
+            if is_substandard_structure(priority_ad):
+                logger.info("Skipping priority ad id=%s reason=substandard_structure", priority_id)
+                continue
             priority_ad = priority_ad.model_copy(update={"district": district_label})
             duplicate_ids = (
                 await apartments.duplicate_candidate_ids([priority_ad])
@@ -681,6 +712,12 @@ async def run() -> int:
                 if not ad.no_subletting:
                     logger.info(
                         "Skipping ad id=%s reason=shared_housing",
+                        ad.lalafo_id,
+                    )
+                    continue
+                if is_substandard_structure(ad):
+                    logger.info(
+                        "Skipping ad id=%s reason=substandard_structure",
                         ad.lalafo_id,
                     )
                     continue

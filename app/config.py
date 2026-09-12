@@ -86,12 +86,14 @@ DEFAULT_SEARCH_URL = (
     "?price[from]=10000&price[to]=40000"
 )
 
-# Expand the fallback catalog to both owners and real-estate agents who leave
-# optional audience fields blank. Public Telegram cards never expose offerer type.
+# Keep separate fallback pools so realtor inventory always gets reserved search
+# capacity instead of being crowded out by the much larger owner result set.
 ADDITIONAL_SEARCH_URLS: tuple[str, ...] = (
     "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
-    "dolgosrochnaya-arenda-kvartir/1-bedroom/2-bedrooms/studio/"
-    "owner/real-estate-agency"
+    "dolgosrochnaya-arenda-kvartir/1-bedroom/2-bedrooms/studio/owner"
+    "?price[from]=10000&price[to]=40000",
+    "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
+    "dolgosrochnaya-arenda-kvartir/1-bedroom/2-bedrooms/studio/real-estate-agency"
     "?price[from]=10000&price[to]=40000",
 )
 

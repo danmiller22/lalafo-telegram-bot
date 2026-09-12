@@ -27,6 +27,7 @@ from scripts.scrape_publish import (
     eligible_curated_apartments,
     is_central_district,
     is_preferred_district,
+    is_substandard_structure,
     minimum_price_for_rooms,
     mix_room_types,
     published_two_bedrooms_today,
@@ -120,17 +121,42 @@ def test_source_urls_follow_the_operator_filters():
     assert "/bez-podseleniya/mozhno-s-zhivotnymi" in DEFAULT_SEARCH_URL
     assert "bez-zhivotnyh" not in DEFAULT_SEARCH_URL
     assert "price[from]=10000&price[to]=40000" in DEFAULT_SEARCH_URL
-    assert len(ADDITIONAL_SEARCH_URLS) == 1
-    supplementary = ADDITIONAL_SEARCH_URLS[0]
-    assert "/1-bedroom/2-bedrooms/studio/owner/real-estate-agency" in supplementary
-    assert "bez-podseleniya" not in supplementary
-    assert "price[from]=10000&price[to]=40000" in supplementary
+    assert len(ADDITIONAL_SEARCH_URLS) == 2
+    assert "/1-bedroom/2-bedrooms/studio/owner" in ADDITIONAL_SEARCH_URLS[0]
+    assert "/1-bedroom/2-bedrooms/studio/real-estate-agency" in ADDITIONAL_SEARCH_URLS[1]
+    assert all("bez-podseleniya" not in url for url in ADDITIONAL_SEARCH_URLS)
+    assert all("price[from]=10000&price[to]=40000" in url for url in ADDITIONAL_SEARCH_URLS)
 
 
 def test_two_bedroom_price_floor_is_stricter_than_other_rooms():
     assert minimum_price_for_rooms("studio") == 10_000
     assert minimum_price_for_rooms("1") == 10_000
     assert minimum_price_for_rooms("2") == 20_000
+
+
+@pytest.mark.parametrize("term", ["контейнер", "времянка", "вагончик", "барак"])
+def test_substandard_housing_terms_are_rejected(term):
+    assert is_substandard_structure(make_ad(source_description=f"Сдаётся {term}"))
+
+
+def test_single_floor_temporary_style_unit_is_rejected():
+    ad = make_ad(
+        source_params=[
+            {"name": "Этаж", "value": "1"},
+            {"name": "Количество этажей", "value": "1"},
+        ]
+    )
+    assert is_substandard_structure(ad)
+
+
+def test_normal_multistorey_apartment_is_kept():
+    ad = make_ad(
+        source_params=[
+            {"name": "Этаж", "value": "3"},
+            {"name": "Количество этажей", "value": "9"},
+        ]
+    )
+    assert not is_substandard_structure(ad)
 
 
 def test_room_types_are_interleaved_instead_of_batched():
