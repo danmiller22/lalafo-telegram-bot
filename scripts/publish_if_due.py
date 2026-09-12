@@ -31,6 +31,11 @@ def should_publish(*, force: bool, recent_count: int) -> bool:
     return force or recent_count == 0
 
 
+def cycle_succeeded(*, exit_code: int, error: str | None, published: int) -> bool:
+    """Treat a clean no-op as success when no fresh unique cards exist."""
+    return exit_code == 0 or (published > 0 and error == "CycleTimeout")
+
+
 async def recent_published_count(*, window_minutes: int) -> int:
     count, _ = await publication_window_status(window_minutes=window_minutes)
     return count
@@ -224,10 +229,15 @@ async def run(
             published = await published_since_count(
                 sessions, started_at=claim.started_at
             )
-            # A hard timeout may cancel only the unfinished cards. Already
-            # acknowledged cards are durable and must not be replaced by a
-            # second oversized batch.
-            if published > 0 and (last_code == 0 or error == "CycleTimeout"):
+            # A clean scraper exit with zero cards means the current inventory
+            # contains no fresh unique matches. That is a successful no-op,
+            # not an infrastructure failure. A hard timeout is also successful
+            # when at least one acknowledged card is already durable.
+            if cycle_succeeded(
+                exit_code=last_code,
+                error=error,
+                published=published,
+            ):
                 await finish_publication(
                     sessions,
                     token=claim.token,
@@ -235,6 +245,8 @@ async def run(
                     published_count=published,
                     error=None,
                 )
+                if published == 0:
+                    logger.info("Publication completed: no fresh eligible apartments")
                 return 0
             if attempt < max_attempts:
                 wait_seconds = min(30, 10 * attempt)
