@@ -86,12 +86,12 @@ DEFAULT_SEARCH_URL = (
     "?price[from]=10000&price[to]=40000"
 )
 
-# Some owners leave Lalafo's optional audience and pet fields blank. Search
-# those listings separately, while the detail parser still rejects agencies
-# and shared-room/subletting offers before publication.
+# Expand the fallback catalog to both owners and real-estate agents who leave
+# optional audience fields blank. Public Telegram cards never expose offerer type.
 ADDITIONAL_SEARCH_URLS: tuple[str, ...] = (
     "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
-    "dolgosrochnaya-arenda-kvartir/1-bedroom/2-bedrooms/studio/owner"
+    "dolgosrochnaya-arenda-kvartir/1-bedroom/2-bedrooms/studio/"
+    "owner/real-estate-agency"
     "?price[from]=10000&price[to]=40000",
 )
 

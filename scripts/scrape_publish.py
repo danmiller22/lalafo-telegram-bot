@@ -70,8 +70,8 @@ CENTRAL_DISTRICT_TERMS = (
     "западный автовокзал",
     "политех",
 )
-# Both searches are owner-only. The supplementary search includes owners who
-# left optional audience tags blank; detail-level checks remove shared housing.
+# The fallback search includes owners and real-estate agents; detail-level
+# checks still remove shared housing and all public cards omit offerer type.
 SOURCE_MIN_PRICE = 10_000
 SOURCE_MAX_PRICE = 40_000
 SOURCE_ALLOWED_ROOMS = ("1", "studio", "2")
@@ -290,12 +290,10 @@ def select_publish_batch(
     *,
     rank_key: Callable[[LalafoAd], tuple] = candidate_quality,
 ) -> list[LalafoAd]:
-    """Build a 50/50 batch: old central pool and other owner listings."""
+    """Build a 50/50 batch from central and other-district listings."""
     if limit <= 0 or not candidates:
         return []
-    candidates = [
-        ad for ad in deduplicate_candidates(candidates) if ad.owner_listing
-    ]
+    candidates = deduplicate_candidates(candidates)
     if not candidates:
         return []
     central = sorted(
@@ -304,20 +302,7 @@ def select_publish_batch(
         reverse=True,
     )
     owner_other = sorted(
-        (
-            ad
-            for ad in candidates
-            if ad.owner_listing and not is_central_district(ad.district)
-        ),
-        key=rank_key,
-        reverse=True,
-    )
-    fallback = sorted(
-        (
-            ad
-            for ad in candidates
-            if not is_central_district(ad.district) and ad not in owner_other
-        ),
+        (ad for ad in candidates if not is_central_district(ad.district)),
         key=rank_key,
         reverse=True,
     )
@@ -327,8 +312,7 @@ def select_publish_batch(
     selected = central[:central_target]
     selected.extend(owner_other[:owner_target])
 
-    # If either half is temporarily short, keep the hourly run full without
-    # weakening the owner-only rule while owner candidates are available.
+    # If either half is temporarily short, keep the run full from the other.
     if len(selected) < total:
         selected_ids = {ad.lalafo_id for ad in selected}
         owner_remainder = [
@@ -341,13 +325,6 @@ def select_publish_batch(
             ad for ad in central if ad.lalafo_id not in selected_ids
         ]
         selected.extend(central_remainder[: total - len(selected)])
-    if len(selected) < total:
-        selected_ids = {ad.lalafo_id for ad in selected}
-        selected.extend(
-            [ad for ad in fallback if ad.lalafo_id not in selected_ids][
-                : total - len(selected)
-            ]
-        )
     if len(selected) < total:
         selected_ids = {ad.lalafo_id for ad in selected}
         remaining = sorted(
@@ -616,12 +593,6 @@ async def run() -> int:
                         len(ad.photo_urls),
                     )
                     continue
-                if not ad.owner_listing:
-                    logger.info(
-                        "Skipping ad id=%s reason=not_owner_listing",
-                        ad.lalafo_id,
-                    )
-                    continue
                 if not ad.no_subletting:
                     logger.info(
                         "Skipping ad id=%s reason=shared_housing",
@@ -690,8 +661,7 @@ async def run() -> int:
     central_count = sum(is_central_district(ad.district) for ad in candidates)
     central_percent = round(central_count * 100 / len(candidates)) if candidates else 0
     owner_other_count = sum(
-        ad.owner_listing and not is_central_district(ad.district)
-        for ad in candidates
+        not is_central_district(ad.district) for ad in candidates
     )
     owner_other_percent = (
         round(owner_other_count * 100 / len(candidates)) if candidates else 0
@@ -704,7 +674,7 @@ async def run() -> int:
         round(CENTRAL_BATCH_SHARE * 100),
     )
     logger.info(
-        "Other-district owner share: %d/%d (%d%%), target=%d%%",
+        "Other-district share: %d/%d (%d%%), target=%d%%",
         owner_other_count,
         len(candidates),
         owner_other_percent,

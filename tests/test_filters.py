@@ -121,7 +121,7 @@ def test_source_urls_follow_the_operator_filters():
     assert "price[from]=10000&price[to]=40000" in DEFAULT_SEARCH_URL
     assert len(ADDITIONAL_SEARCH_URLS) == 1
     supplementary = ADDITIONAL_SEARCH_URLS[0]
-    assert "/1-bedroom/2-bedrooms/studio/owner" in supplementary
+    assert "/1-bedroom/2-bedrooms/studio/owner/real-estate-agency" in supplementary
     assert "bez-podseleniya" not in supplementary
     assert "price[from]=10000&price[to]=40000" in supplementary
 
@@ -204,11 +204,14 @@ def test_curated_rotation_never_reposts_published_apartments():
     assert [apartment.lalafo_id for apartment in eligible] == [103]
 
 
-def test_publish_batch_rejects_realtors_even_in_central_districts():
+def test_publish_batch_accepts_realtors_without_public_label():
     realtor = make_ad(lalafo_id=1, district="ЦУМ", owner_listing=False)
     owner = make_ad(lalafo_id=2, district="Тунгуч", owner_listing=True)
 
-    assert select_publish_batch([realtor, owner], limit=2) == [owner]
+    selected = select_publish_batch([realtor, owner], limit=2)
+    assert {ad.lalafo_id for ad in selected} == {1, 2}
+    assert "риелтор" not in format_apartment(realtor).casefold()
+    assert "собственник" not in format_apartment(realtor).casefold()
 
 
 def test_permanently_excluded_source_never_enters_a_publish_batch():
