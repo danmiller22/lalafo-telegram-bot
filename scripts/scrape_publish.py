@@ -86,6 +86,9 @@ MAX_REPOSTS_PER_RUN = 0
 CENTRAL_BATCH_SHARE = 0.50
 OWNER_OTHER_BATCH_SHARE = 0.50
 MAX_CANDIDATE_POOL = 300
+# Keep nearly half of the discovery pool available for agents. This fallback
+# grows the catalogue after unique owner listings have been exhausted.
+REALTOR_CANDIDATE_RESERVE_SHARE = 0.45
 # Two-bedroom cards are mixed into the normal stream instead of being sent as
 # a separate burst. Two per regular cycle reaches at most twenty per Bishkek day.
 TWO_BEDROOM_MIN_PRICE = 20_000
@@ -315,6 +318,26 @@ def insert_randomly(
     for card in additions:
         result.insert(chooser.randrange(len(result) + 1), card)
     return result
+
+
+def source_candidate_targets(
+    pool_limit: int,
+    source_count: int,
+    batch_limit: int,
+) -> list[int]:
+    """Reserve a large final slice for the realtor-only fallback source."""
+    if source_count <= 1:
+        return [pool_limit]
+    realtor_start = max(
+        batch_limit,
+        math.floor(pool_limit * (1 - REALTOR_CANDIDATE_RESERVE_SHARE)),
+    )
+    owner_source_count = source_count - 1
+    targets = [
+        max(batch_limit, math.floor(realtor_start * (index + 1) / owner_source_count))
+        for index in range(owner_source_count)
+    ]
+    return [min(pool_limit, target) for target in targets] + [pool_limit]
 
 
 def mix_room_types(candidates: list[LalafoAd]) -> list[LalafoAd]:
@@ -707,11 +730,12 @@ async def run() -> int:
             search_urls = (DEFAULT_SEARCH_URL, *ADDITIONAL_SEARCH_URLS)
         search_index = 0
         search_url = search_urls[search_index]
-        # Reserve one normal card batch for every supplementary source so a
-        # large primary query cannot starve it.
-        source_candidate_limit = candidate_pool_limit - limit * (
-            len(search_urls) - 1
+        source_targets = source_candidate_targets(
+            candidate_pool_limit,
+            len(search_urls),
+            limit,
         )
+        source_candidate_limit = source_targets[search_index]
         page_number = 1
         # Always inspect at least one page from each operator-approved source.
         # Once the shared pool is full, move to the next source for one page
@@ -720,17 +744,29 @@ async def run() -> int:
             try:
                 page = await client.search(search_url, page=page_number)
             except (LalafoError, LalafoParseError) as exc:
+                search_index += 1
+                if search_index < len(search_urls):
+                    logger.warning(
+                        "Lalafo source %d failed on page %d; trying fallback "
+                        "source %d: %s",
+                        search_index,
+                        page_number,
+                        search_index + 1,
+                        exc,
+                    )
+                    search_url = search_urls[search_index]
+                    source_candidate_limit = source_targets[search_index]
+                    page_number = 1
+                    continue
                 if candidates:
                     logger.warning(
-                        "Search page %d failed after %d candidates; "
-                        "publishing the durable partial batch: %s",
-                        page_number,
+                        "Final realtor source failed after %d durable candidates; "
+                        "publishing the partial batch",
                         len(candidates),
-                        exc,
                     )
                     break
                 logger.error(
-                    "Lalafo source is temporarily unavailable; "
+                    "All owner and realtor sources are temporarily unavailable; "
                     "deferring publication without an operator alert: %s",
                     exc,
                 )
@@ -743,7 +779,17 @@ async def run() -> int:
             if page_number == 1:
                 logger.info("Lalafo source search found %d advertisements", page.total)
             if not page.items:
-                break
+                search_index += 1
+                if search_index >= len(search_urls):
+                    break
+                search_url = search_urls[search_index]
+                source_candidate_limit = source_targets[search_index]
+                page_number = 1
+                logger.info(
+                    "Current source has no more matches; trying fallback source %d",
+                    search_index + 1,
+                )
+                continue
             page.items.sort(
                 key=lambda item: item.updated_at.timestamp() if item.updated_at else 0,
                 reverse=True,
@@ -852,7 +898,7 @@ async def run() -> int:
                 if search_index >= len(search_urls):
                     break
                 search_url = search_urls[search_index]
-                source_candidate_limit = candidate_pool_limit
+                source_candidate_limit = source_targets[search_index]
                 page_number = 1
                 logger.info("Switching to supplementary Lalafo source %d", search_index + 1)
                 continue
@@ -864,7 +910,7 @@ async def run() -> int:
                 if search_index >= len(search_urls):
                     break
                 search_url = search_urls[search_index]
-                source_candidate_limit = candidate_pool_limit
+                source_candidate_limit = source_targets[search_index]
                 page_number = 1
                 logger.info("Switching to supplementary Lalafo source %d", search_index + 1)
                 continue

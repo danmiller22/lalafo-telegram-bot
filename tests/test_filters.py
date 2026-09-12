@@ -12,6 +12,7 @@ from scripts.scrape_publish import (
     CURATED_ROTATION_LALAFO_IDS,
     MAX_REPOSTS_PER_RUN,
     PRIORITY_AD_SPECS,
+    REALTOR_CANDIDATE_RESERVE_SHARE,
     SOURCE_ALLOWED_ROOMS,
     SOURCE_MAX_POSTS_PER_RUN,
     SOURCE_MAX_SEARCH_PAGES,
@@ -37,6 +38,7 @@ from scripts.scrape_publish import (
     published_two_bedrooms_today,
     select_publish_batch,
     select_publish_batch_with_reposts,
+    source_candidate_targets,
 )
 from tests.helpers import make_ad
 
@@ -130,6 +132,14 @@ def test_source_urls_follow_the_operator_filters():
     assert "/1-bedroom/2-bedrooms/studio/real-estate-agency" in ADDITIONAL_SEARCH_URLS[1]
     assert all("bez-podseleniya" not in url for url in ADDITIONAL_SEARCH_URLS)
     assert all("price[from]=10000&price[to]=40000" in url for url in ADDITIONAL_SEARCH_URLS)
+
+
+def test_realtor_fallback_reserves_nearly_half_of_discovery_pool():
+    targets = source_candidate_targets(300, source_count=3, batch_limit=18)
+
+    assert REALTOR_CANDIDATE_RESERVE_SHARE == 0.45
+    assert targets == [82, 165, 300]
+    assert targets[-1] - targets[-2] == 135
 
 
 def test_two_bedroom_price_floor_is_stricter_than_other_rooms():
