@@ -11,6 +11,7 @@ from scripts.scrape_publish import (
     CURATED_ROTATION_SPECS,
     CURATED_ROTATION_LALAFO_IDS,
     MAX_REPOSTS_PER_RUN,
+    MANAGED_PROFILE_TERM_OVERRIDES,
     PRIORITY_AD_SPECS,
     REALTOR_CANDIDATE_RESERVE_SHARE,
     SOURCE_ALLOWED_ROOMS,
@@ -505,7 +506,7 @@ def test_managed_profile_card_keeps_original_contact_but_uses_profile_terms():
     assert merged.district == managed.district
 
 
-def test_managed_profile_cards_are_limited_to_one_and_inserted_randomly():
+def test_all_current_managed_profile_cards_are_selected():
     managed = [make_ad(lalafo_id=index) for index in (701, 702, 703)]
     normal = [make_ad(lalafo_id=index) for index in (801, 802, 803)]
 
@@ -515,10 +516,17 @@ def test_managed_profile_cards_are_limited_to_one_and_inserted_randomly():
     )
     mixed = insert_randomly(normal, selected, rng=random.Random(2))
 
-    assert len(selected) == 1
-    assert len(mixed) == 4
-    assert selected[0] in mixed
-    assert mixed != normal + selected
+    assert len(selected) == 3
+    assert len(mixed) == 6
+    assert {ad.lalafo_id for ad in selected} == {701, 702, 703}
+
+
+def test_current_lalafo_account_cards_keep_their_visible_terms():
+    assert MANAGED_PROFILE_TERM_OVERRIDES == {
+        116250033: (23_000, "Восток-5"),
+        116276831: (26_000, "Восток-5"),
+        116282246: (23_000, "Филармония"),
+    }
 
 
 def test_publish_batch_uses_fresh_cards_before_any_reposts():

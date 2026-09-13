@@ -95,7 +95,7 @@ TWO_BEDROOM_MIN_PRICE = 20_000
 TWO_BEDROOM_MAX_PRICE = 40_000
 TWO_BEDROOM_DAILY_LIMIT = 20
 TWO_BEDROOM_MAX_PER_RUN = 2
-MANAGED_PROFILE_MAX_PER_RUN = 1
+MANAGED_PROFILE_MAX_PER_RUN = 3
 BISHKEK = ZoneInfo("Asia/Bishkek")
 # Manually approved cards remain eligible once, using their original,
 # phone-backed database records rather than phone-hidden public reposts.
@@ -137,6 +137,15 @@ PRIORITY_AD_SPECS = (
         "Филармония",
     ),
 )
+
+# Cards currently visible in the operator's Lalafo account. Ads waiting for
+# payment are not publicly fetchable, so keep their account-visible terms here
+# while original photos and owner phones continue to come from the database.
+MANAGED_PROFILE_TERM_OVERRIDES = {
+    116250033: (23_000, "Восток-5"),
+    116276831: (26_000, "Восток-5"),
+    116282246: (23_000, "Филармония"),
+}
 
 
 def apartment_to_ad(apartment) -> LalafoAd:
@@ -636,8 +645,8 @@ async def run() -> int:
         ]
         # Ads on our own Lalafo profile intentionally hide/replace the source
         # contact. Restore the original card, but mirror the live profile price
-        # and district exactly. An unavailable managed ad is no longer current
-        # and is skipped. At most one is selected later, preventing a burst.
+        # and district exactly. Payment-waiting account ads use the terms
+        # explicitly observed in the authenticated account page.
         for managed_source in managed_sources:
             source = managed_source.apartment
             if is_permanently_excluded(source.lalafo_id):
@@ -658,16 +667,38 @@ async def run() -> int:
                 )
             if not managed_url:
                 continue
+            term_override = MANAGED_PROFILE_TERM_OVERRIDES.get(
+                managed_source.managed_lalafo_ad_id or 0
+            )
             try:
                 managed_ad = await client.detail(managed_url)
             except (LalafoError, LalafoParseError, ValueError) as exc:
+                if term_override is None:
+                    logger.info(
+                        "Skipping inactive managed profile ad source_id=%s error=%s",
+                        source.lalafo_id,
+                        type(exc).__name__,
+                    )
+                    continue
                 logger.info(
-                    "Skipping inactive managed profile ad source_id=%s error=%s",
-                    source.lalafo_id,
-                    type(exc).__name__,
+                    "Using account-visible terms for managed ad id=%s",
+                    managed_source.managed_lalafo_ad_id,
                 )
-                continue
-            merged_ad = managed_source_to_ad(source, managed_ad)
+                merged_ad = apartment_to_ad(source).model_copy(
+                    update={
+                        "price": term_override[0],
+                        "district": term_override[1],
+                    }
+                )
+            else:
+                merged_ad = managed_source_to_ad(source, managed_ad)
+                if term_override is not None:
+                    merged_ad = merged_ad.model_copy(
+                        update={
+                            "price": term_override[0],
+                            "district": term_override[1],
+                        }
+                    )
             allowed, reason = is_allowed(
                 merged_ad,
                 city=settings.city,
