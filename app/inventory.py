@@ -259,7 +259,20 @@ class InventoryRepository:
         day_start = day_start_local.astimezone(timezone.utc)
         day_end = (day_start_local + timedelta(days=1)).astimezone(timezone.utc)
         async with self.sessions.begin() as session:
-            already_two = int(
+            published_two = int(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(Apartment)
+                    .where(
+                        Apartment.publication_status == "published",
+                        Apartment.published_at >= day_start,
+                        Apartment.published_at < day_end,
+                        Apartment.rooms == "2",
+                    )
+                )
+                or 0
+            )
+            reserved_two = int(
                 await session.scalar(
                     select(func.count())
                     .select_from(ApartmentInventoryQueue)
@@ -267,12 +280,13 @@ class InventoryRepository:
                     .where(
                         ApartmentInventoryQueue.scheduled_at >= day_start,
                         ApartmentInventoryQueue.scheduled_at < day_end,
-                        ApartmentInventoryQueue.status.in_(("queued", "publishing", "published")),
+                        ApartmentInventoryQueue.status.in_(("queued", "publishing")),
                         Apartment.rooms == "2",
                     )
                 )
                 or 0
             )
+            already_two = published_two + reserved_two
             queued_apartment_ids = select(ApartmentInventoryQueue.apartment_id)
             queued_fingerprints = select(Apartment.fingerprint).join(
                 ApartmentInventoryQueue,
@@ -324,7 +338,24 @@ class InventoryRepository:
     async def claim_due(self, *, now: datetime | None = None) -> ApartmentInventoryQueue | None:
         now = as_utc(now or datetime.now(timezone.utc))
         stale = now - timedelta(minutes=20)
+        local = now.astimezone(BISHKEK)
+        day_start = local.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+        day_end = (local.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)).astimezone(timezone.utc)
         async with self.sessions.begin() as session:
+            published_today = int(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(Apartment)
+                    .where(
+                        Apartment.publication_status == "published",
+                        Apartment.published_at >= day_start,
+                        Apartment.published_at < day_end,
+                    )
+                )
+                or 0
+            )
+            if published_today >= 36:
+                return None
             await session.execute(
                 update(ApartmentInventoryQueue)
                 .where(
