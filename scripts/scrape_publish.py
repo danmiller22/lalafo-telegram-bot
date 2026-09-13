@@ -134,7 +134,7 @@ PRIORITY_AD_SPECS = (
         "https://lalafo.kg/bishkek/ads/"
         "1-komnata-tehnopark-bez-podselenia-ot-3-mesacev-"
         "s-mebelu-polnostu-id-114595809",
-        "Технопарк",
+        "Восток-5",
     ),
     (
         "https://lalafo.kg/bishkek/ads/1-komnata-1000-melocej-"

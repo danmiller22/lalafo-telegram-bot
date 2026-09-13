@@ -17,6 +17,8 @@ from app.lalafo.models import PHONE_SOURCE_VERSION, LalafoAd
 from app.lalafo.parser import LalafoParseError
 from app.payments.repository import ApartmentRepository
 from app.security import TokenSigner
+from app.telegram.formatting import format_public_apartment
+from app.telegram.keyboards import apartment_keyboard
 from app.telegram.publisher import TelegramPublishError, TelegramPublisher
 
 
@@ -27,6 +29,7 @@ MANAGED_SELECTED_TERM_OVERRIDES = {
     116308426: (26_000, "Восток-5"),
     116308347: (40_000, "Восток-5"),
 }
+SELECTED_DISTRICT_CORRECTIONS = {114595809: "Восток-5"}
 
 
 @dataclass(frozen=True)
@@ -223,6 +226,40 @@ async def run() -> int:
                 failures += 1
         selected_ids = [item.lalafo_id for item in selected]
         published_ids = await apartments.published_lalafo_ids(selected_ids)
+        for lalafo_id, district in SELECTED_DISTRICT_CORRECTIONS.items():
+            if lalafo_id not in selected_ids or lalafo_id not in published_ids:
+                continue
+            published_apartment = await apartments.get_by_lalafo(lalafo_id)
+            if (
+                published_apartment is None
+                or not published_apartment.telegram_message_id
+            ):
+                continue
+            corrected_ad = stored_owner_ad(
+                published_apartment,
+                price=published_apartment.price,
+                district=district,
+            )
+            published_apartment = await apartments.upsert_discovered(corrected_ad)
+            await bot.edit_message_text(
+                chat_id=settings.telegram_group_id,
+                message_id=published_apartment.telegram_message_id,
+                text=format_public_apartment(
+                    corrected_ad,
+                    bot_username=settings.telegram_bot_username,
+                ),
+                reply_markup=apartment_keyboard(
+                    published_apartment.id,
+                    signer=TokenSigner(callback_secret),
+                    bot_username=settings.telegram_bot_username,
+                    support_url=settings.support_url,
+                ),
+            )
+            logger.info(
+                "SELECTED_DISTRICT_CORRECTED lalafo_id=%s district=%s",
+                lalafo_id,
+                district,
+            )
         selected, recent = eligible_selected_listings(
             selected,
             published_ids,

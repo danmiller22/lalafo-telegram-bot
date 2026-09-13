@@ -243,7 +243,7 @@ def test_operator_priority_apartments_have_requested_district_labels():
     assert [district for _, district in PRIORITY_AD_SPECS] == [
         "Гоин",
         "Филармония",
-        "Технопарк",
+        "Восток-5",
         "1000 мелочей — Дордой Плаза ТЦ",
         "Карпинка — Восток-5",
         "Восток-5",
