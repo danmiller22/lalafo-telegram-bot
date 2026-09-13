@@ -14,10 +14,10 @@ from app.models import Apartment, ApartmentDiscoveryRun, ApartmentInventoryQueue
 
 BISHKEK = ZoneInfo("Asia/Bishkek")
 BATCH_SIZES = (4, 4, 4, 3, 3)
-FIRST_HALF_CENTRAL = (3, 3, 2, 3, 2)  # 13; paired with 12 below = 25/day
-SECOND_HALF_CENTRAL = (2, 3, 2, 3, 2)
-MAX_TWO_BEDROOMS_PER_WINDOW = 2
-MAX_TWO_BEDROOMS_PER_DAY = 20
+FIRST_HALF_CENTRAL = (3, 3, 3, 3, 3)  # 15; paired with 14 below = 29/day
+SECOND_HALF_CENTRAL = (3, 3, 3, 3, 2)
+MAX_TWO_BEDROOMS_PER_WINDOW = 1
+MAX_TWO_BEDROOMS_PER_DAY = 10
 
 
 def as_utc(value: datetime) -> datetime:
@@ -72,6 +72,7 @@ def _pick_for_window(
     *,
     two_bedroom_allowance: int,
     central: bool,
+    prefer_two: bool = False,
 ) -> list[Apartment]:
     picked: list[Apartment] = []
     two_count = 0
@@ -84,12 +85,17 @@ def _pick_for_window(
         ]
         if not eligible:
             break
-        eligible.sort(
-            key=lambda item: (
-                _candidate_key(item, central=central),
-                room_counts.get(item.rooms, 0),
-            )
-        )
+        def selection_key(item: Apartment) -> tuple[object, ...]:
+            base = _candidate_key(item, central=central)
+            if prefer_two and two_count == 0 and two_bedroom_allowance > 0:
+                room_rank = {"2": 0, "1": 1, "studio": 2}.get(item.rooms, 3)
+            else:
+                # After the single two-bedroom slot, fill with one-bedroom
+                # apartments first and use studios only as a fallback.
+                room_rank = {"1": 0, "studio": 1, "2": 2}.get(item.rooms, 3)
+            return (*base[:3], room_rank, room_counts.get(item.rooms, 0), *base[3:])
+
+        eligible.sort(key=selection_key)
         item = eligible[0]
         pool.remove(item)
         picked.append(item)
@@ -139,19 +145,24 @@ def plan_period(
             central_pool,
             central_count,
             room_counts,
-            two_bedroom_allowance=two_allowance,
+            two_bedroom_allowance=min(1, two_allowance),
             central=True,
+            prefer_two=True,
         )
-        two_allowance -= sum(item.rooms == "2" for item in selected)
+        window_two = sum(item.rooms == "2" for item in selected)
+        two_allowance -= window_two
         remaining = batch_size - len(selected)
         others = _pick_for_window(
             other_pool,
             remaining,
             room_counts,
-            two_bedroom_allowance=two_allowance,
+            two_bedroom_allowance=min(1 - window_two, two_allowance),
             central=False,
+            prefer_two=window_two == 0,
         )
-        two_allowance -= sum(item.rooms == "2" for item in others)
+        other_two = sum(item.rooms == "2" for item in others)
+        window_two += other_two
+        two_allowance -= other_two
         selected.extend(others)
         # If non-central supply is short, add a central card, but never reduce
         # the required 2–3 central cards in the window.
@@ -160,7 +171,7 @@ def plan_period(
                 central_pool,
                 min(3 - central_count, batch_size - len(selected)),
                 room_counts,
-                two_bedroom_allowance=two_allowance,
+                two_bedroom_allowance=min(1 - window_two, two_allowance),
                 central=True,
             )
             two_allowance -= sum(item.rooms == "2" for item in extras)
