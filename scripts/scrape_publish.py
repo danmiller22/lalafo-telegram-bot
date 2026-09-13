@@ -121,6 +121,22 @@ CURATED_ROTATION_LALAFO_IDS = (
 )
 PRIORITY_AD_SPECS = (
     (
+        "https://lalafo.kg/bishkek/ads/"
+        "sdau-kvartira-otdelno-id-81141886",
+        "Гоин",
+    ),
+    (
+        "https://lalafo.kg/bishkek/ads/"
+        "1-komnata-filarmonia-bez-zivotnyh-id-116308607",
+        "Филармония",
+    ),
+    (
+        "https://lalafo.kg/bishkek/ads/"
+        "1-komnata-tehnopark-bez-podselenia-ot-3-mesacev-"
+        "s-mebelu-polnostu-id-114595809",
+        "Технопарк",
+    ),
+    (
         "https://lalafo.kg/bishkek/ads/1-komnata-1000-melocej-"
         "agentstvo-nedvizimosti-bez-zivotnyh-ot-1-mesaca-ot-3-mesacev-"
         "ot-6-mesacev-s-mebelu-casticno-id-115806919",
@@ -147,6 +163,8 @@ PRIORITY_AD_SPECS = (
 # payment are not publicly fetchable, so keep their account-visible terms here
 # while original photos and owner phones continue to come from the database.
 MANAGED_PROFILE_TERM_OVERRIDES = {
+    116308426: (26_000, "Восток-5"),
+    116308347: (40_000, "Восток-5"),
     116250033: (23_000, "Восток-5"),
     116276831: (26_000, "Восток-5"),
     116282246: (23_000, "Филармония"),

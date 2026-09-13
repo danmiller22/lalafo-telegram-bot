@@ -232,12 +232,18 @@ def test_curated_rotation_preserves_manually_approved_apartments():
 
 def test_operator_priority_apartments_have_requested_district_labels():
     assert [int(url.rsplit("-id-", 1)[1]) for url, _ in PRIORITY_AD_SPECS] == [
+        81141886,
+        116308607,
+        114595809,
         115806919,
         115746322,
         116273232,
         114324774,
     ]
     assert [district for _, district in PRIORITY_AD_SPECS] == [
+        "Гоин",
+        "Филармония",
+        "Технопарк",
         "1000 мелочей — Дордой Плаза ТЦ",
         "Карпинка — Восток-5",
         "Восток-5",

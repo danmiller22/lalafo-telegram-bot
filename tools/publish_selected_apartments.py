@@ -13,7 +13,7 @@ from app.config import get_settings
 from app.database import create_engine_and_session, init_db
 from app.lalafo.client import LalafoClient, LalafoError, LalafoNotFound
 from app.lalafo.exclusions import is_permanently_excluded
-from app.lalafo.models import LalafoAd
+from app.lalafo.models import PHONE_SOURCE_VERSION, LalafoAd
 from app.lalafo.parser import LalafoParseError
 from app.payments.repository import ApartmentRepository
 from app.security import TokenSigner
@@ -23,12 +23,47 @@ from app.telegram.publisher import TelegramPublishError, TelegramPublisher
 logger = logging.getLogger(__name__)
 _LALAFO_ID = re.compile(r"-id-(\d+)(?:$|[/?#])")
 SELECTED_REPOST_AFTER_HOURS = None
+MANAGED_SELECTED_TERM_OVERRIDES = {
+    116308426: (26_000, "Восток-5"),
+    116308347: (40_000, "Восток-5"),
+}
 
 
 @dataclass(frozen=True)
 class SelectedListing:
     lalafo_id: int
     url: str
+
+
+def selected_managed_ad_ids(raw: str) -> set[int]:
+    """Parse an explicit allow-list of active ads from the operator's profile."""
+    result: set[int] = set()
+    for value in re.split(r"[\s,]+", raw.strip()):
+        if not value:
+            continue
+        if not value.isdigit():
+            raise ValueError(f"Unsupported managed Lalafo ID: {value}")
+        result.add(int(value))
+    return result
+
+
+def stored_owner_ad(apartment, *, price: int, district: str | None) -> LalafoAd:
+    """Use current public terms without replacing the verified source contact."""
+    return LalafoAd(
+        lalafo_id=apartment.lalafo_id,
+        source_url=apartment.source_url,
+        phone=apartment.phone,
+        price=price,
+        currency="KGS",
+        rooms=apartment.rooms,
+        district=district or apartment.district,
+        city=apartment.city,
+        deposit=None,
+        photo_urls=list(apartment.photo_urls),
+        category_id=2044,
+        no_subletting=apartment.no_subletting,
+        owner_listing=apartment.owner_listing,
+    )
 
 
 def selected_listings(raw: str) -> list[SelectedListing]:
@@ -101,6 +136,12 @@ async def run() -> int:
 
     try:
         selected = selected_listings(os.getenv("SELECTED_LALAFO_URLS", ""))
+        managed_raw = os.getenv("SELECTED_MANAGED_LALAFO_AD_IDS", "").strip()
+        managed_ad_ids = (
+            selected_managed_ad_ids(managed_raw)
+            if managed_raw
+            else set(MANAGED_SELECTED_TERM_OVERRIDES)
+        )
     except ValueError as exc:
         logger.error("Invalid selected publication: %s", exc)
         return 2
@@ -135,6 +176,45 @@ async def run() -> int:
     skipped_identity_duplicate = 0
     try:
         await init_db(engine)
+        managed_by_source_id = {}
+        if managed_ad_ids:
+            managed_sources = await apartments.managed_lalafo_sources()
+            selected_source_ids = {item.lalafo_id for item in selected}
+            for managed in managed_sources:
+                if managed.managed_lalafo_ad_id not in managed_ad_ids:
+                    continue
+                source = managed.apartment
+                if (
+                    source.phone_source_version != PHONE_SOURCE_VERSION
+                    or not source.phone
+                    or len(source.photo_urls) < 2
+                ):
+                    logger.error(
+                        "Managed source id=%s has no verified original contact/photos",
+                        source.lalafo_id,
+                    )
+                    failures += 1
+                    continue
+                managed_by_source_id[source.lalafo_id] = managed
+                if source.lalafo_id not in selected_source_ids:
+                    selected.append(
+                        SelectedListing(
+                            lalafo_id=source.lalafo_id,
+                            url=source.source_url,
+                        )
+                    )
+                    selected_source_ids.add(source.lalafo_id)
+            missing_managed_ids = managed_ad_ids - {
+                item.managed_lalafo_ad_id
+                for item in managed_by_source_id.values()
+                if item.managed_lalafo_ad_id is not None
+            }
+            for managed_id in sorted(missing_managed_ids):
+                logger.error(
+                    "Active managed ad id=%s has no verified original mapping",
+                    managed_id,
+                )
+                failures += 1
         selected_ids = [item.lalafo_id for item in selected]
         published_ids = await apartments.published_lalafo_ids(selected_ids)
         selected, recent = eligible_selected_listings(
@@ -151,8 +231,32 @@ async def run() -> int:
         for item in selected:
             apartment = None
             ad: LalafoAd | None = None
+            managed = managed_by_source_id.get(item.lalafo_id)
             try:
-                ad = await client.detail(item.url)
+                if managed is None:
+                    ad = await client.detail(item.url)
+                else:
+                    managed_ad = None
+                    if managed.managed_lalafo_ad_url:
+                        try:
+                            managed_ad = await client.detail(
+                                managed.managed_lalafo_ad_url
+                            )
+                        except (LalafoError, LalafoParseError, ValueError):
+                            logger.info(
+                                "Using account-visible terms for managed ad id=%s",
+                                managed.managed_lalafo_ad_id,
+                            )
+                    override = MANAGED_SELECTED_TERM_OVERRIDES.get(
+                        managed.managed_lalafo_ad_id or 0
+                    )
+                    if managed_ad is None and override is None:
+                        raise LalafoParseError("Managed profile terms are unavailable")
+                    ad = stored_owner_ad(
+                        managed.apartment,
+                        price=(override[0] if override else managed_ad.price),
+                        district=(override[1] if override else managed_ad.district),
+                    )
                 if ad.currency.upper() != "KGS":
                     logger.error(
                         "Selected apartment id=%s has unsupported currency=%s",
@@ -166,6 +270,14 @@ async def run() -> int:
                 ad = ad.model_copy(update={"deposit": None})
                 apartment = await apartments.upsert_discovered(ad)
             except (LalafoError, LalafoNotFound, LalafoParseError, ValueError) as exc:
+                if managed is not None:
+                    logger.error(
+                        "Managed original id=%s is unavailable: %s",
+                        item.lalafo_id,
+                        type(exc).__name__,
+                    )
+                    failures += 1
+                    continue
                 # If Lalafo temporarily hides a phone or blocks the detail
                 # route, an already verified database copy remains usable.
                 apartment = await apartments.get_by_lalafo(item.lalafo_id)

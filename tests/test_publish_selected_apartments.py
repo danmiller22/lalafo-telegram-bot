@@ -5,6 +5,7 @@ import pytest
 from tools.publish_selected_apartments import (
     SELECTED_REPOST_AFTER_HOURS,
     eligible_selected_listings,
+    selected_managed_ad_ids,
     selected_listings,
 )
 
@@ -37,6 +38,16 @@ def test_selected_publication_never_reposts_published_cards() -> None:
     assert SELECTED_REPOST_AFTER_HOURS is None
     assert [item.lalafo_id for item in eligible] == [115838404]
     assert [item.lalafo_id for item in recent] == [115863328, 115838403]
+
+
+def test_selected_managed_ad_ids_are_explicit_and_deduplicated() -> None:
+    assert selected_managed_ad_ids("116308426, 116308347 116308426") == {
+        116308426,
+        116308347,
+    }
+
+    with pytest.raises(ValueError, match="Unsupported managed"):
+        selected_managed_ad_ids("all")
 
 
 @pytest.mark.parametrize(
