@@ -8,8 +8,12 @@ import pytest
 from app.config import Settings
 from app.security import TokenSigner
 from app.support.faq import FAQ_BY_KEY, fallback_answer, faq_for_text
-from app.support.handlers import support_question
-from app.support.keyboards import support_admin_keyboard, support_menu_keyboard
+from app.support.handlers import support_back, support_faq_callback, support_question
+from app.support.keyboards import (
+    support_admin_keyboard,
+    support_back_keyboard,
+    support_menu_keyboard,
+)
 from app.support.repository import SupportTicketRepository
 
 
@@ -35,6 +39,14 @@ def test_support_menu_contains_every_faq_and_close_button():
 
     assert set(callbacks[:-1]) == {f"support:faq:{key}" for key in FAQ_BY_KEY}
     assert callbacks[-1] == "support:close"
+
+
+def test_support_answer_has_only_back_button():
+    keyboard = support_back_keyboard()
+
+    assert len(keyboard.inline_keyboard) == 1
+    assert len(keyboard.inline_keyboard[0]) == 1
+    assert keyboard.inline_keyboard[0][0].callback_data == "support:back"
 
 
 def test_admin_reply_button_is_signed():
@@ -77,6 +89,38 @@ async def test_common_question_is_answered_directly():
     await support_question(message)
 
     assert "Посмотреть номер" in message.answer.await_args.args[0]
+    keyboard = message.answer.await_args.kwargs["reply_markup"]
+    assert keyboard.inline_keyboard[0][0].callback_data == "support:back"
+
+
+@pytest.mark.asyncio
+async def test_faq_button_replaces_menu_with_answer_and_back_button():
+    message = SimpleNamespace(edit_text=AsyncMock())
+    callback = SimpleNamespace(
+        data="support:faq:phone",
+        message=message,
+        answer=AsyncMock(),
+    )
+    state = SimpleNamespace(set_state=AsyncMock())
+
+    await support_faq_callback(callback, state)
+
+    message.edit_text.assert_awaited_once()
+    keyboard = message.edit_text.await_args.kwargs["reply_markup"]
+    assert keyboard.inline_keyboard[0][0].callback_data == "support:back"
+
+
+@pytest.mark.asyncio
+async def test_back_button_replaces_answer_with_full_menu():
+    message = SimpleNamespace(edit_text=AsyncMock())
+    callback = SimpleNamespace(message=message, answer=AsyncMock())
+    state = SimpleNamespace(set_state=AsyncMock())
+
+    await support_back(callback, state)
+
+    assert "Помощь" in message.edit_text.await_args.args[0]
+    keyboard = message.edit_text.await_args.kwargs["reply_markup"]
+    assert len(keyboard.inline_keyboard) == len(FAQ_BY_KEY) + 1
 
 
 @pytest.mark.asyncio

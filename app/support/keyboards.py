@@ -17,6 +17,14 @@ def support_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+def support_back_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="support:back")]
+        ]
+    )
+
+
 def support_admin_keyboard(ticket_id: int, *, signer: TokenSigner) -> InlineKeyboardMarkup:
     token = signer.sign_id("support-reply", ticket_id)
     return InlineKeyboardMarkup(

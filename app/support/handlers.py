@@ -7,19 +7,23 @@ from aiogram.types import CallbackQuery, Message
 
 from app.config import Settings
 from app.support.faq import FAQ_BY_KEY, fallback_answer, faq_for_text
-from app.support.keyboards import support_menu_keyboard
+from app.support.keyboards import support_back_keyboard, support_menu_keyboard
 from app.support.states import SupportConversation
 from app.wanted.keyboards import main_menu_keyboard
 
 router = Router(name="support")
+
+SUPPORT_MENU_TEXT = (
+    "🛟 Помощь\n\nВыберите вопрос кнопкой или напишите его своими словами — "
+    "бот ответит сразу."
+)
 
 
 async def begin_support(message: Message, state: FSMContext) -> None:
     await state.clear()
     await state.set_state(SupportConversation.active)
     await message.answer(
-        "🛟 Помощь\n\nВыберите вопрос кнопкой или напишите его своими словами — "
-        "бот ответит сразу.",
+        SUPPORT_MENU_TEXT,
         reply_markup=support_menu_keyboard(),
     )
 
@@ -43,7 +47,21 @@ async def support_faq_callback(callback: CallbackQuery, state: FSMContext) -> No
     await state.set_state(SupportConversation.active)
     await callback.answer()
     if callback.message:
-        await callback.message.answer(item.answer, reply_markup=support_menu_keyboard())
+        await callback.message.edit_text(
+            item.answer,
+            reply_markup=support_back_keyboard(),
+        )
+
+
+@router.callback_query(F.data == "support:back")
+async def support_back(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.set_state(SupportConversation.active)
+    await callback.answer()
+    if callback.message:
+        await callback.message.edit_text(
+            SUPPORT_MENU_TEXT,
+            reply_markup=support_menu_keyboard(),
+        )
 
 
 @router.callback_query(F.data == "support:close")
@@ -55,7 +73,7 @@ async def support_close(
     await state.clear()
     await callback.answer("Помощь закрыта")
     if callback.message:
-        await callback.message.answer(
+        await callback.message.edit_text(
             "Главное меню:",
             reply_markup=main_menu_keyboard(settings.support_bot_url),
         )
@@ -65,4 +83,4 @@ async def support_close(
 async def support_question(message: Message) -> None:
     item = faq_for_text((message.text or "").strip())
     answer = item.answer if item is not None else fallback_answer(message.text or "")
-    await message.answer(answer, reply_markup=support_menu_keyboard())
+    await message.answer(answer, reply_markup=support_back_keyboard())
