@@ -179,6 +179,12 @@ async def run() -> int:
         managed_by_source_id = {}
         if managed_ad_ids:
             managed_sources = await apartments.managed_lalafo_sources()
+            for managed in managed_sources:
+                logger.info(
+                    "MANAGED_SOURCE_MAPPING managed_id=%s source_lalafo_id=%s",
+                    managed.managed_lalafo_ad_id,
+                    managed.apartment.lalafo_id,
+                )
             selected_source_ids = {item.lalafo_id for item in selected}
             for managed in managed_sources:
                 if managed.managed_lalafo_ad_id not in managed_ad_ids:
