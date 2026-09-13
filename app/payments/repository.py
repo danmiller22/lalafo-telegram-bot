@@ -282,8 +282,11 @@ class ApartmentRepository:
             or ad_fingerprint(ad) in duplicate_fingerprints
         }
 
-    async def upsert_discovered(self, ad: LalafoAd) -> Apartment:
+    async def upsert_discovered(
+        self, ad: LalafoAd, *, discovery_priority: bool = False
+    ) -> Apartment:
         fingerprint = ad_fingerprint(ad)
+        now = datetime.now(timezone.utc)
         async with self.sessions.begin() as session:
             result = await session.execute(
                 select(Apartment).where(Apartment.lalafo_id == ad.lalafo_id)
@@ -302,8 +305,11 @@ class ApartmentRepository:
                     city=ad.city,
                     deposit=ad.deposit,
                     no_subletting=ad.no_subletting,
+                    owner_listing=ad.owner_listing,
+                    discovery_priority=discovery_priority,
                     photo_urls=ad.photo_urls,
                     source_updated_at=ad.source_updated_at,
+                    last_seen_at=now,
                     active=True,
                     publication_status="discovered",
                 )
@@ -319,8 +325,13 @@ class ApartmentRepository:
                 apartment.city = ad.city
                 apartment.deposit = ad.deposit
                 apartment.no_subletting = ad.no_subletting
+                apartment.owner_listing = ad.owner_listing
+                apartment.discovery_priority = (
+                    apartment.discovery_priority or discovery_priority
+                )
                 apartment.photo_urls = ad.photo_urls
                 apartment.source_updated_at = ad.source_updated_at
+                apartment.last_seen_at = now
                 apartment.active = True
             await session.flush()
             await session.refresh(apartment)

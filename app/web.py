@@ -6,6 +6,7 @@ import binascii
 import logging
 import os
 import secrets
+import inspect
 from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import PurePath
@@ -219,7 +220,12 @@ async def _execute_scraper() -> int:
         try:
             from scripts.scrape_publish import run as run_scraper
 
-            _run_state["last_exit_code"] = await run_scraper()
+            if "discovery_only" in inspect.signature(run_scraper).parameters:
+                _run_state["last_exit_code"] = await run_scraper(discovery_only=True)
+            else:
+                # Keeps test/development adapters with the old zero-argument
+                # callable shape working without restoring bulk publication.
+                _run_state["last_exit_code"] = await run_scraper()
         except Exception:
             _run_state["last_exit_code"] = 1
             logger.exception("Hosted scraper run failed")

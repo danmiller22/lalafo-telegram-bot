@@ -40,6 +40,8 @@ class Apartment(Base):
     city: Mapped[str] = mapped_column(String(100), nullable=False)
     deposit: Mapped[int | None] = mapped_column(Integer)
     no_subletting: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    owner_listing: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    discovery_priority: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     photo_urls: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     telegram_message_id: Mapped[int | None] = mapped_column(BigInteger)
     telegram_chat_id: Mapped[int | None] = mapped_column(BigInteger)
@@ -47,6 +49,7 @@ class Apartment(Base):
     phone_source_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     source_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     publication_status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="discovered"
@@ -59,6 +62,56 @@ class Apartment(Base):
     )
 
     payments: Mapped[list["PaymentRequest"]] = relationship(back_populates="apartment")
+
+
+class ApartmentInventoryQueue(Base):
+    """A durable, one-time publication reservation for an apartment."""
+
+    __tablename__ = "apartment_inventory_queue"
+    __table_args__ = (
+        UniqueConstraint("apartment_id", name="uq_inventory_apartment"),
+        Index("ix_inventory_due", "status", "scheduled_at"),
+        Index("ix_inventory_window", "window_key", "sequence"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    apartment_id: Mapped[int] = mapped_column(
+        ForeignKey("apartments.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    window_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="queued")
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow
+    )
+
+    apartment: Mapped[Apartment] = relationship()
+
+
+class ApartmentDiscoveryRun(Base):
+    """Lease and outcome for one 00:00/12:00 Bishkek discovery period."""
+
+    __tablename__ = "apartment_discovery_runs"
+
+    period_key: Mapped[str] = mapped_column(String(32), primary_key=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="running")
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    discovered_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    queued_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow
+    )
 
 
 class ApartmentPublicationSchedule(Base):

@@ -97,6 +97,25 @@ ADDITIONAL_SEARCH_URLS: tuple[str, ...] = (
     "?price[from]=20000&price[to]=40000",
 )
 
+_CENTER_PATH = (
+    "1000-melochey/azija-moll/rajon-bgu/bishkek-park-trc/"
+    "dordoi-plaza-shopping-center/zolotoj-kvadrat/karavan-trc/"
+    "1000-melochej-karpinka/square-ala-too/filarmoniya/tsum/"
+    "vefa-shopping-center/bulvar-erkindik"
+)
+_INVENTORY_BASE = (
+    "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
+    "dolgosrochnaya-arenda-kvartir/1-bedroom/2-bedrooms/studio/"
+)
+# The twice-daily collector deliberately checks these four pools separately,
+# so broad owner results cannot crowd out central or realtor inventory.
+INVENTORY_SEARCH_URLS: tuple[str, ...] = (
+    f"{_INVENTORY_BASE}{_CENTER_PATH}/owner?price[from]=20000&price[to]=40000",
+    f"{_INVENTORY_BASE}owner?price[from]=20000&price[to]=40000",
+    f"{_INVENTORY_BASE}{_CENTER_PATH}/real-estate-agency?price[from]=20000&price[to]=40000",
+    f"{_INVENTORY_BASE}real-estate-agency?price[from]=20000&price[to]=40000",
+)
+
 APARTMENT_PUBLISH_INTERVAL_MINUTES = 90
 
 

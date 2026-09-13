@@ -12,7 +12,12 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
 
-from app.config import ADDITIONAL_SEARCH_URLS, DEFAULT_SEARCH_URL, get_settings
+from app.config import (
+    ADDITIONAL_SEARCH_URLS,
+    DEFAULT_SEARCH_URL,
+    INVENTORY_SEARCH_URLS,
+    get_settings,
+)
 from app.lalafo.client import LalafoClient, LalafoError, LalafoNotFound
 from app.lalafo.exclusions import is_permanently_excluded
 from app.lalafo.models import LalafoAd, SearchAd
@@ -533,7 +538,7 @@ def select_owners_then_realtors(
     return selected
 
 
-async def run() -> int:
+async def run(*, discovery_only: bool = False) -> int:
     settings = get_settings()
     logging.basicConfig(
         level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -546,7 +551,9 @@ async def run() -> int:
     limit = 1 if settings.test_mode else SOURCE_MAX_POSTS_PER_RUN
     # The unfiltered source is large. Inspect several pages so central bargains
     # can outrank nearer but weaker results from the first page.
-    candidate_pool_limit = max(limit, min(limit * 15, MAX_CANDIDATE_POOL))
+    candidate_pool_limit = 120 if discovery_only else max(
+        limit, min(limit * 15, MAX_CANDIDATE_POOL)
+    )
     candidates = []
     candidate_ids: set[int] = set()
     curated_ids: set[int] = set()
@@ -565,12 +572,13 @@ async def run() -> int:
         from app.database import create_engine_and_session, init_db
         from app.payments.repository import ApartmentRepository
 
-        try:
-            token = settings.require_bot_token()
-            callback_secret = settings.require_callback_secret()
-        except RuntimeError as exc:
-            logger.error("Production configuration is incomplete: %s", exc)
-            return 2
+        if not discovery_only:
+            try:
+                token = settings.require_bot_token()
+                callback_secret = settings.require_callback_secret()
+            except RuntimeError as exc:
+                logger.error("Production configuration is incomplete: %s", exc)
+                return 2
         engine, sessions = create_engine_and_session(settings.database_url)
         try:
             await init_db(engine)
@@ -796,7 +804,9 @@ async def run() -> int:
         # Publish newly supplied cards and active originals from our own Lalafo
         # profile immediately. Once their source IDs are durable, later cycles
         # skip them and resume the full automatic catalogue search.
-        if direct_priority_count or managed_profile_ids:
+        if discovery_only:
+            search_urls = INVENTORY_SEARCH_URLS
+        elif direct_priority_count or managed_profile_ids:
             candidate_pool_limit = len(candidates)
             search_urls = (DEFAULT_SEARCH_URL,)
         else:
@@ -989,6 +999,26 @@ async def run() -> int:
                 continue
             page_number += 1
 
+    if discovery_only:
+        assert apartments is not None
+        from app.inventory import InventoryRepository
+
+        inventory_candidates = deduplicate_candidates(candidates)[:120]
+        priority_ids = managed_profile_ids | curated_ids
+        for ad in inventory_candidates:
+            await apartments.upsert_discovered(
+                ad, discovery_priority=ad.lalafo_id in priority_ids
+            )
+        queued = await InventoryRepository(sessions).schedule_period()
+        logger.info(
+            "Inventory discovery stored=%d queued=%d",
+            len(inventory_candidates),
+            queued,
+        )
+        if engine is not None:
+            await engine.dispose()
+        return 0
+
     managed_profile_candidates = [
         ad for ad in candidates if ad.lalafo_id in managed_profile_ids
     ]
@@ -1179,7 +1209,9 @@ async def run() -> int:
 
 
 def main() -> None:
-    raise SystemExit(asyncio.run(run()))
+    # Direct/legacy invocations are discovery-only. Telegram delivery belongs
+    # exclusively to the durable one-card queue publisher.
+    raise SystemExit(asyncio.run(run(discovery_only=True)))
 
 
 if __name__ == "__main__":

@@ -99,7 +99,10 @@ async def publication_schedule_status(*, window_minutes: int):
     engine, sessions = create_engine_and_session(settings.database_url)
     try:
         await init_db(engine)
-        return await schedule_snapshot(sessions, interval_minutes=window_minutes)
+        # The durable inventory contains exact 8–15 minute card times, so the
+        # dispatcher must wake every minute. ``window_minutes`` remains in the
+        # public signature for compatibility with older hosted callers.
+        return await schedule_snapshot(sessions, interval_minutes=1)
     finally:
         await engine.dispose()
 
@@ -111,6 +114,14 @@ async def run(
     max_attempts: int | None = None,
     wait_for_active_lease: bool | None = None,
 ) -> int:
+    # The old implementation below is retained temporarily for compatibility
+    # with imported helpers, but all production entry points now use the split
+    # discovery/queue publisher. It atomically publishes at most one due card.
+    from scripts.inventory_cycle import run as run_inventory_cycle
+
+    return await run_inventory_cycle()
+
+    # Legacy combined scrape-and-publish path (intentionally unreachable).
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
