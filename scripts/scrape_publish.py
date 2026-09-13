@@ -762,9 +762,10 @@ async def run() -> int:
             curated_ids.add(priority_id)
             direct_priority_count += 1
 
-        # Publish newly supplied operator cards immediately. Once their IDs are
-        # durable, later cycles skip them and resume the full automatic search.
-        if direct_priority_count:
+        # Publish newly supplied cards and active originals from our own Lalafo
+        # profile immediately. Once their source IDs are durable, later cycles
+        # skip them and resume the full automatic catalogue search.
+        if direct_priority_count or managed_profile_ids:
             candidate_pool_limit = len(candidates)
             search_urls = (DEFAULT_SEARCH_URL,)
         else:
