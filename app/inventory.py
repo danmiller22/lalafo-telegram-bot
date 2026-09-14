@@ -14,8 +14,11 @@ from app.models import Apartment, ApartmentDiscoveryRun, ApartmentInventoryQueue
 
 BISHKEK = ZoneInfo("Asia/Bishkek")
 BATCH_SIZES = (4, 4, 4, 3, 3)
-FIRST_HALF_CENTRAL = (3, 3, 3, 3, 3)  # 15; paired with 14 below = 29/day
-SECOND_HALF_CENTRAL = (3, 3, 3, 3, 2)
+# Keep the catalogue strongly centre-focused without increasing the overall
+# publication rate: 16 central cards per half-day, 32 of 36 per full day when
+# enough suitable inventory is available.
+FIRST_HALF_CENTRAL = (4, 3, 3, 3, 3)
+SECOND_HALF_CENTRAL = (4, 3, 3, 3, 3)
 MAX_TWO_BEDROOMS_PER_WINDOW = 1
 MAX_TWO_BEDROOMS_PER_DAY = 10
 
@@ -164,12 +167,11 @@ def plan_period(
         window_two += other_two
         two_allowance -= other_two
         selected.extend(others)
-        # If non-central supply is short, add a central card, but never reduce
-        # the required 2–3 central cards in the window.
-        if len(selected) < batch_size and central_count < 3:
+        # If non-central supply is short, fill the window from the central pool.
+        if len(selected) < batch_size and central_count < batch_size:
             extras = _pick_for_window(
                 central_pool,
-                min(3 - central_count, batch_size - len(selected)),
+                min(batch_size - central_count, batch_size - len(selected)),
                 room_counts,
                 two_bedroom_allowance=min(1 - window_two, two_allowance),
                 central=True,

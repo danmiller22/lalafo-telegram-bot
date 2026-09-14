@@ -101,7 +101,7 @@ _CENTER_PATH = (
     "1000-melochey/azija-moll/rajon-bgu/bishkek-park-trc/"
     "dordoi-plaza-shopping-center/zolotoj-kvadrat/karavan-trc/"
     "1000-melochej-karpinka/square-ala-too/filarmoniya/tsum/"
-    "vefa-shopping-center/bulvar-erkindik"
+    "vefa-shopping-center/bulvar-erkindik/vostok-5/trc-tehnopark"
 )
 _INVENTORY_BASE = (
     "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"

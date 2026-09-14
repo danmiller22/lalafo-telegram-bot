@@ -31,7 +31,7 @@ def _apartments(count: int, *, central: bool, start_id: int, owner: bool = True)
     ]
 
 
-def test_two_periods_plan_36_cards_with_29_central_and_fewer_two_bedrooms():
+def test_two_periods_plan_36_cards_with_32_central_and_fewer_two_bedrooms():
     stock = _apartments(60, central=True, start_id=1) + _apartments(
         40, central=False, start_id=100
     )
@@ -45,7 +45,7 @@ def test_two_periods_plan_36_cards_with_29_central_and_fewer_two_bedrooms():
     )
     all_items = first + second
     assert len(all_items) == 36
-    assert sum("золотой" in item.apartment.district.casefold() for item in all_items) == 29
+    assert sum("золотой" in item.apartment.district.casefold() for item in all_items) == 32
     assert 5 <= sum(item.apartment.rooms == "2" for item in all_items) <= 10
 
     for planned in (first, second):
@@ -57,7 +57,10 @@ def test_two_periods_plan_36_cards_with_29_central_and_fewer_two_bedrooms():
         for items in windows.values():
             ordered = sorted(items, key=lambda item: item.sequence)
             starts.append(ordered[0].scheduled_at)
-            assert 2 <= sum("золотой" in item.apartment.district.casefold() for item in items) <= 3
+            central_count = sum(
+                "золотой" in item.apartment.district.casefold() for item in items
+            )
+            assert central_count == len(items) if len(items) == 3 else central_count >= 3
             assert sum(item.apartment.rooms == "2" for item in items) <= 1
             for before, after in zip(ordered, ordered[1:]):
                 assert timedelta(minutes=8) <= after.scheduled_at - before.scheduled_at <= timedelta(minutes=15)
