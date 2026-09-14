@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from urllib.parse import urlsplit
 
 from aiogram import Bot
+from aiogram.exceptions import TelegramBadRequest
 
 from app.config import get_settings
 from app.database import create_engine_and_session, init_db
@@ -330,20 +331,29 @@ async def run() -> int:
                 district=district,
             )
             published_apartment = await apartments.upsert_discovered(corrected_ad)
-            await bot.edit_message_text(
-                chat_id=settings.telegram_group_id,
-                message_id=published_apartment.telegram_message_id,
-                text=format_public_apartment(
-                    corrected_ad,
-                    bot_username=settings.telegram_bot_username,
-                ),
-                reply_markup=apartment_keyboard(
-                    published_apartment.id,
-                    signer=TokenSigner(callback_secret),
-                    bot_username=settings.telegram_bot_username,
-                    support_url=settings.support_url,
-                ),
-            )
+            try:
+                await bot.edit_message_text(
+                    chat_id=settings.telegram_group_id,
+                    message_id=published_apartment.telegram_message_id,
+                    text=format_public_apartment(
+                        corrected_ad,
+                        bot_username=settings.telegram_bot_username,
+                    ),
+                    reply_markup=apartment_keyboard(
+                        published_apartment.id,
+                        signer=TokenSigner(callback_secret),
+                        bot_username=settings.telegram_bot_username,
+                        support_url=settings.support_url,
+                    ),
+                )
+            except TelegramBadRequest as exc:
+                if "message is not modified" not in str(exc).casefold():
+                    raise
+                logger.info(
+                    "SELECTED_DISTRICT_ALREADY_CURRENT lalafo_id=%s district=%s",
+                    lalafo_id,
+                    district,
+                )
             logger.info(
                 "SELECTED_DISTRICT_CORRECTED lalafo_id=%s district=%s",
                 lalafo_id,
