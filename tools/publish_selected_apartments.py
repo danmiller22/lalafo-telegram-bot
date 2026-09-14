@@ -38,6 +38,16 @@ MANAGED_KNOWN_SOURCE_IDS = {
     116325997: 114595809,
     114621485: 81141886,
 }
+MANAGED_KNOWN_PHOTO_URLS = {
+    116308426: [
+        "https://img5.lalafo.com/i/posters/original/b5/40/1b/4a0b6ae6398e737c849fce2a97.jpeg",
+        "https://img5.lalafo.com/i/posters/api/17/07/fc/14407976884fc70d579cc9e385.jpeg",
+        "https://img5.lalafo.com/i/posters/api/46/8b/a7/2c0fbda0bebbf14c7d9a2739d3.jpeg",
+        "https://img5.lalafo.com/i/posters/api/78/8a/79/f668f24e721f227272d0b60a8a.jpeg",
+        "https://img5.lalafo.com/i/posters/api/c8/b0/f8/6da47fc20897b117166fe2907d.jpeg",
+        "https://img5.lalafo.com/i/posters/api/c2/8a/89/9916e0c55c4c6f053f4d491139.jpeg",
+    ],
+}
 SELECTED_CARD_CORRECTIONS = {114595809: (32_000, "Восток-5")}
 
 
@@ -154,6 +164,11 @@ async def run() -> int:
             if managed_raw
             else set(MANAGED_SELECTED_TERM_OVERRIDES)
         )
+        selected_managed_ids = {
+            item.lalafo_id for item in selected if item.lalafo_id in managed_ad_ids
+        }
+        if selected_managed_ids:
+            managed_ad_ids = selected_managed_ids
     except ValueError as exc:
         logger.error("Invalid selected publication: %s", exc)
         return 2
@@ -244,17 +259,25 @@ async def run() -> int:
                     ):
                         source = candidate
                 if source is None:
+                    managed_photo_urls = MANAGED_KNOWN_PHOTO_URLS.get(managed_id)
                     try:
                         managed_ad = await client.detail(managed_url)
                     except (LalafoError, LalafoParseError, ValueError) as exc:
-                        logger.warning(
-                            "Active managed ad id=%s cannot be inspected: %s",
+                        if managed_photo_urls is None:
+                            logger.warning(
+                                "Active managed ad id=%s cannot be inspected: %s",
+                                managed_id,
+                                type(exc).__name__,
+                            )
+                            continue
+                        logger.info(
+                            "Using account-observed photos for managed ad id=%s",
                             managed_id,
-                            type(exc).__name__,
                         )
-                        continue
+                    else:
+                        managed_photo_urls = list(managed_ad.photo_urls)
                     source = await apartments.verified_source_by_photos(
-                        list(managed_ad.photo_urls),
+                        managed_photo_urls,
                         excluded_lalafo_ids=managed_ad_ids,
                     )
                 if source is None:
