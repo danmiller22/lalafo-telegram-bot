@@ -529,9 +529,11 @@ def test_all_current_managed_profile_cards_are_selected():
 
 def test_current_lalafo_account_cards_keep_their_visible_terms():
     assert MANAGED_PROFILE_TERM_OVERRIDES == {
-        116250033: (23_000, "Восток-5"),
-        116276831: (26_000, "Восток-5"),
-        116282246: (23_000, "Филармония"),
+        116308426: (26_000, "Восток-5"),
+        116308347: (28_000, "Восток-5"),
+        116325992: (32_000, "Филармония"),
+        116325997: (32_000, "Восток-5"),
+        114621485: (35_000, "ЦУМ"),
     }
 
 

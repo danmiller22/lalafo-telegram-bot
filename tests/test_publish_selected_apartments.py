@@ -22,7 +22,7 @@ def test_selected_listings_accepts_deduplicated_lalafo_urls() -> None:
     ]
 
 
-def test_selected_publication_never_reposts_published_cards() -> None:
+def test_selected_publication_reposts_only_explicitly_allowed_cards() -> None:
     selected = selected_listings(
         "https://lalafo.kg/bishkek/ads/first-id-115863328 "
         "https://lalafo.kg/bishkek/ads/second-id-115838403 "
@@ -36,8 +36,8 @@ def test_selected_publication_never_reposts_published_cards() -> None:
     )
 
     assert SELECTED_REPOST_AFTER_HOURS is None
-    assert [item.lalafo_id for item in eligible] == [115838404]
-    assert [item.lalafo_id for item in recent] == [115863328, 115838403]
+    assert [item.lalafo_id for item in eligible] == [115838403, 115838404]
+    assert [item.lalafo_id for item in recent] == [115863328]
 
 
 def test_selected_managed_ad_ids_are_explicit_and_deduplicated() -> None:

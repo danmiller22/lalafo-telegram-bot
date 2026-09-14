@@ -15,7 +15,7 @@ from app.lalafo.client import LalafoClient, LalafoError, LalafoNotFound
 from app.lalafo.exclusions import is_permanently_excluded
 from app.lalafo.models import PHONE_SOURCE_VERSION, LalafoAd
 from app.lalafo.parser import LalafoParseError
-from app.payments.repository import ApartmentRepository
+from app.payments.repository import ApartmentRepository, ManagedLalafoSource
 from app.security import TokenSigner
 from app.telegram.formatting import format_public_apartment
 from app.telegram.keyboards import apartment_keyboard
@@ -27,9 +27,18 @@ _LALAFO_ID = re.compile(r"-id-(\d+)(?:$|[/?#])")
 SELECTED_REPOST_AFTER_HOURS = None
 MANAGED_SELECTED_TERM_OVERRIDES = {
     116308426: (26_000, "Восток-5"),
-    116308347: (40_000, "Восток-5"),
+    116308347: (28_000, "Восток-5"),
+    116325992: (32_000, "Филармония"),
+    116325997: (32_000, "Восток-5"),
+    114621485: (35_000, "ЦУМ"),
 }
-SELECTED_CARD_CORRECTIONS = {114595809: (28_000, "Восток-5")}
+MANAGED_KNOWN_SOURCE_IDS = {
+    116308347: 116243546,
+    116325992: 116308607,
+    116325997: 114595809,
+    114621485: 81141886,
+}
+SELECTED_CARD_CORRECTIONS = {114595809: (32_000, "Восток-5")}
 
 
 @dataclass(frozen=True)
@@ -109,7 +118,7 @@ def eligible_selected_listings(
     eligible = [
         item
         for item in selected
-        if item.lalafo_id not in published_ids
+        if item.lalafo_id not in published_ids or item.lalafo_id in repostable_ids
     ]
     eligible_ids = {item.lalafo_id for item in eligible}
     recent = [item for item in selected if item.lalafo_id not in eligible_ids]
@@ -219,10 +228,68 @@ async def run() -> int:
                 if item.managed_lalafo_ad_id is not None
             }
             for managed_id in sorted(missing_managed_ids):
-                logger.warning(
-                    "Active managed ad id=%s has no verified original mapping",
-                    managed_id,
+                managed_url = (
+                    "https://lalafo.kg/bishkek/ads/"
+                    f"managed-id-{managed_id}"
                 )
+                source = None
+                known_source_id = MANAGED_KNOWN_SOURCE_IDS.get(managed_id)
+                if known_source_id is not None:
+                    candidate = await apartments.get_by_lalafo(known_source_id)
+                    if (
+                        candidate is not None
+                        and candidate.phone
+                        and candidate.phone_source_version == PHONE_SOURCE_VERSION
+                        and len(candidate.photo_urls) >= 2
+                    ):
+                        source = candidate
+                if source is None:
+                    try:
+                        managed_ad = await client.detail(managed_url)
+                    except (LalafoError, LalafoParseError, ValueError) as exc:
+                        logger.warning(
+                            "Active managed ad id=%s cannot be inspected: %s",
+                            managed_id,
+                            type(exc).__name__,
+                        )
+                        continue
+                    source = await apartments.verified_source_by_photos(
+                        list(managed_ad.photo_urls),
+                        excluded_lalafo_ids=managed_ad_ids,
+                    )
+                if source is None:
+                    logger.warning(
+                        "Active managed ad id=%s has no unique verified photo match",
+                        managed_id,
+                    )
+                    continue
+                await apartments.save_managed_lalafo_source(
+                    managed_lalafo_ad_id=managed_id,
+                    managed_lalafo_ad_url=managed_url,
+                    apartment=source,
+                )
+                managed = ManagedLalafoSource(
+                    apartment=source,
+                    managed_lalafo_ad_id=managed_id,
+                    managed_lalafo_ad_url=managed_url,
+                )
+                managed_by_source_id[source.lalafo_id] = managed
+                logger.info(
+                    "MANAGED_SOURCE_MATCHED managed_id=%s source_lalafo_id=%s",
+                    managed_id,
+                    source.lalafo_id,
+                )
+                if source.lalafo_id not in selected_source_ids:
+                    selected.append(
+                        SelectedListing(
+                            lalafo_id=source.lalafo_id,
+                            url=source.source_url,
+                        )
+                    )
+                    selected_source_ids.add(source.lalafo_id)
+        selected = [
+            item for item in selected if item.lalafo_id not in managed_ad_ids
+        ]
         selected_ids = [item.lalafo_id for item in selected]
         published_ids = await apartments.published_lalafo_ids(selected_ids)
         for lalafo_id, (price, district) in SELECTED_CARD_CORRECTIONS.items():
@@ -262,7 +329,7 @@ async def run() -> int:
         selected, recent = eligible_selected_listings(
             selected,
             published_ids,
-            set(),
+            set(managed_by_source_id),
         )
         skipped_recent = len(recent)
         for item in recent:
@@ -339,7 +406,7 @@ async def run() -> int:
 
             assert apartment is not None
             card_source = ad if ad is not None else apartment
-            if await apartments.is_duplicate(card_source):
+            if managed is None and await apartments.is_duplicate(card_source):
                 skipped_identity_duplicate += 1
                 logger.info(
                     "SELECTED_SKIPPED_IDENTITY_DUPLICATE lalafo_id=%s",

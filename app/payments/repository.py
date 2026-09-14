@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from pathlib import PurePosixPath
+from urllib.parse import urlsplit
 
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
@@ -185,6 +187,88 @@ class ApartmentRepository:
             )
             used_source_ids.add(apartment.id)
         return selected
+
+    async def verified_source_by_photos(
+        self,
+        photo_urls: list[str],
+        *,
+        excluded_lalafo_ids: set[int] | None = None,
+    ) -> Apartment | None:
+        """Find one verified source whose photos are identical to a managed ad.
+
+        Lalafo keeps the same content-addressed image filename when a photo is
+        reused.  Requiring at least two identical files and a unique best match
+        prevents a visually similar apartment from donating the wrong phone.
+        """
+
+        def photo_key(url: str) -> str:
+            return PurePosixPath(urlsplit(url).path).name.casefold()
+
+        keys = {photo_key(url) for url in photo_urls if photo_key(url)}
+        if len(keys) < 2:
+            return None
+        excluded = excluded_lalafo_ids or set()
+        async with self.sessions() as session:
+            rows = list(
+                (
+                    await session.scalars(
+                        select(Apartment).where(
+                            Apartment.phone != "",
+                            Apartment.phone_source_version == PHONE_SOURCE_VERSION,
+                        )
+                    )
+                ).all()
+            )
+        scored: list[tuple[int, Apartment]] = []
+        for apartment in rows:
+            if apartment.lalafo_id in excluded:
+                continue
+            candidate_keys = {
+                photo_key(url) for url in apartment.photo_urls if photo_key(url)
+            }
+            overlap = len(keys & candidate_keys)
+            if overlap >= 2:
+                scored.append((overlap, apartment))
+        if not scored:
+            return None
+        scored.sort(key=lambda item: (item[0], item[1].updated_at), reverse=True)
+        best_overlap = scored[0][0]
+        best = [apartment for overlap, apartment in scored if overlap == best_overlap]
+        return best[0] if len(best) == 1 else None
+
+    async def save_managed_lalafo_source(
+        self,
+        *,
+        managed_lalafo_ad_id: int,
+        managed_lalafo_ad_url: str,
+        apartment: Apartment,
+    ) -> None:
+        """Persist a verified managed-to-original link for future rotations."""
+        business_date = datetime.now(timezone.utc).date()
+        async with self.sessions.begin() as session:
+            row = await session.scalar(
+                select(DailyFeaturedPublication).where(
+                    DailyFeaturedPublication.managed_lalafo_ad_id
+                    == managed_lalafo_ad_id
+                )
+            )
+            if row is None:
+                row = DailyFeaturedPublication(
+                    business_date=business_date,
+                    slot=-managed_lalafo_ad_id,
+                    source_apartment_id=apartment.id,
+                    source_lalafo_id=apartment.lalafo_id,
+                    managed_lalafo_ad_id=managed_lalafo_ad_id,
+                    managed_lalafo_ad_url=managed_lalafo_ad_url,
+                    campaign_status="active",
+                    lalafo_publication_status="published",
+                )
+                session.add(row)
+            else:
+                row.source_apartment_id = apartment.id
+                row.source_lalafo_id = apartment.lalafo_id
+                row.managed_lalafo_ad_url = managed_lalafo_ad_url
+                row.deactivated_at = None
 
     async def published_lalafo_ids(self, lalafo_ids: list[int]) -> set[int]:
         if not lalafo_ids:

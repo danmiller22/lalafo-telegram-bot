@@ -105,3 +105,46 @@ async def test_managed_profile_ads_restore_their_original_sources(
     assert [item.apartment.lalafo_id for item in mappings] == [116000001]
     assert mappings[0].managed_lalafo_ad_id == 999000001
     assert mappings[0].managed_lalafo_ad_url.endswith("id-999000001")
+
+
+@pytest.mark.asyncio
+async def test_managed_profile_source_is_matched_and_saved_by_exact_photos(
+    repositories,
+) -> None:
+    apartments, _, _ = repositories
+    source = await apartments.upsert_discovered(
+        make_ad(
+            lalafo_id=116000002,
+            rooms="1",
+            phone="+996555000002",
+            photo_urls=[
+                "https://img5.lalafo.com/i/posters/original/a/same-one.jpeg",
+                "https://img5.lalafo.com/i/posters/original/b/same-two.jpeg",
+                "https://img5.lalafo.com/i/posters/original/c/source-only.jpeg",
+            ],
+        )
+    )
+
+    matched = await apartments.verified_source_by_photos(
+        [
+            "https://img5.lalafo.com/i/posters/api/x/same-one.jpeg",
+            "https://img5.lalafo.com/i/posters/api/y/same-two.jpeg",
+            "https://img5.lalafo.com/i/posters/api/z/managed-only.jpeg",
+        ]
+    )
+    assert matched is not None
+    assert matched.lalafo_id == source.lalafo_id
+
+    await apartments.save_managed_lalafo_source(
+        managed_lalafo_ad_id=999000002,
+        managed_lalafo_ad_url=(
+            "https://lalafo.kg/bishkek/ads/profile-copy-id-999000002"
+        ),
+        apartment=matched,
+    )
+    mappings = await apartments.managed_lalafo_sources()
+    assert any(
+        item.managed_lalafo_ad_id == 999000002
+        and item.apartment.lalafo_id == 116000002
+        for item in mappings
+    )

@@ -20,10 +20,13 @@ logger = logging.getLogger(__name__)
 BISHKEK = ZoneInfo("Asia/Bishkek")
 ACTIVE_MANAGED_TERMS = {
     116308426: (26_000, "Восток-5"),
-    116308347: (40_000, "Восток-5"),
+    116308347: (28_000, "Восток-5"),
+    116325992: (32_000, "Филармония"),
+    116325997: (32_000, "Восток-5"),
+    114621485: (35_000, "ЦУМ"),
 }
-MIN_GLOBAL_REPEAT_GAP = timedelta(hours=3, minutes=30)
-REPEAT_HOURS = frozenset({0, 4, 8, 12, 16, 20})
+MIN_GLOBAL_REPEAT_GAP = timedelta(hours=1, minutes=30)
+REPEAT_HOURS = frozenset(range(0, 24, 2))
 
 
 def is_repeat_window(now: datetime, last_repeat_at: datetime | None) -> bool:
