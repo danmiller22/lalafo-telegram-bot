@@ -29,7 +29,7 @@ MANAGED_SELECTED_TERM_OVERRIDES = {
     116308426: (26_000, "Восток-5"),
     116308347: (40_000, "Восток-5"),
 }
-SELECTED_DISTRICT_CORRECTIONS = {114595809: "Восток-5"}
+SELECTED_CARD_CORRECTIONS = {114595809: (28_000, "Восток-5")}
 
 
 @dataclass(frozen=True)
@@ -225,7 +225,7 @@ async def run() -> int:
                 )
         selected_ids = [item.lalafo_id for item in selected]
         published_ids = await apartments.published_lalafo_ids(selected_ids)
-        for lalafo_id, district in SELECTED_DISTRICT_CORRECTIONS.items():
+        for lalafo_id, (price, district) in SELECTED_CARD_CORRECTIONS.items():
             if lalafo_id not in selected_ids or lalafo_id not in published_ids:
                 continue
             published_apartment = await apartments.get_by_lalafo(lalafo_id)
@@ -236,7 +236,7 @@ async def run() -> int:
                 continue
             corrected_ad = stored_owner_ad(
                 published_apartment,
-                price=published_apartment.price,
+                price=price,
                 district=district,
             )
             published_apartment = await apartments.upsert_discovered(corrected_ad)
