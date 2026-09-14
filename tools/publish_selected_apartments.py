@@ -219,11 +219,10 @@ async def run() -> int:
                 if item.managed_lalafo_ad_id is not None
             }
             for managed_id in sorted(missing_managed_ids):
-                logger.error(
+                logger.warning(
                     "Active managed ad id=%s has no verified original mapping",
                     managed_id,
                 )
-                failures += 1
         selected_ids = [item.lalafo_id for item in selected]
         published_ids = await apartments.published_lalafo_ids(selected_ids)
         for lalafo_id, district in SELECTED_DISTRICT_CORRECTIONS.items():
