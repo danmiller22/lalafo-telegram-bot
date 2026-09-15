@@ -5,7 +5,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
@@ -143,6 +143,24 @@ def _confirmed() -> bool:
         "yes",
         "on",
     }
+
+
+def _force_repost(raw_urls: str) -> bool:
+    enabled_by_environment = os.getenv(
+        "FORCE_SELECTED_REPOST", ""
+    ).strip().casefold() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if enabled_by_environment:
+        return True
+    return any(
+        parse_qs(urlsplit(value).query).get("codex_force_repost") == ["1"]
+        for value in re.split(r"[\s,]+", raw_urls.strip())
+        if value
+    )
 
 
 async def run() -> int:
@@ -359,9 +377,10 @@ async def run() -> int:
                 lalafo_id,
                 district,
             )
+        force_repost = _force_repost(os.getenv("SELECTED_LALAFO_URLS", ""))
         selected, recent = eligible_selected_listings(
             selected,
-            published_ids,
+            published_ids if not force_repost else set(),
             set(managed_by_source_id),
         )
         skipped_recent = len(recent)
@@ -439,7 +458,11 @@ async def run() -> int:
 
             assert apartment is not None
             card_source = ad if ad is not None else apartment
-            if managed is None and await apartments.is_duplicate(card_source):
+            if (
+                not force_repost
+                and managed is None
+                and await apartments.is_duplicate(card_source)
+            ):
                 skipped_identity_duplicate += 1
                 logger.info(
                     "SELECTED_SKIPPED_IDENTITY_DUPLICATE lalafo_id=%s",

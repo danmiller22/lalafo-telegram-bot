@@ -4,6 +4,7 @@ import pytest
 
 from tools.publish_selected_apartments import (
     SELECTED_REPOST_AFTER_HOURS,
+    _force_repost,
     eligible_selected_listings,
     selected_managed_ad_ids,
     selected_listings,
@@ -38,6 +39,31 @@ def test_selected_publication_reposts_only_explicitly_allowed_cards() -> None:
     assert SELECTED_REPOST_AFTER_HOURS is None
     assert [item.lalafo_id for item in eligible] == [115838403, 115838404]
     assert [item.lalafo_id for item in recent] == [115863328]
+
+
+def test_force_repost_can_make_every_selected_card_eligible() -> None:
+    selected = selected_listings(
+        "https://lalafo.kg/bishkek/ads/first-id-115863328 "
+        "https://lalafo.kg/bishkek/ads/second-id-115838403"
+    )
+
+    eligible, recent = eligible_selected_listings(
+        selected,
+        published_ids=set(),
+        repostable_ids=set(),
+    )
+
+    assert [item.lalafo_id for item in eligible] == [115863328, 115838403]
+    assert recent == []
+
+
+def test_force_repost_marker_is_explicit(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("FORCE_SELECTED_REPOST", raising=False)
+
+    assert not _force_repost("https://lalafo.kg/ads/example-id-1")
+    assert _force_repost(
+        "https://lalafo.kg/ads/example-id-1?codex_force_repost=1"
+    )
 
 
 def test_selected_managed_ad_ids_are_explicit_and_deduplicated() -> None:
