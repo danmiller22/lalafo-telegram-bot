@@ -140,11 +140,7 @@ def plan_period(
     for index, (batch_size, central_target, start) in enumerate(
         zip(BATCH_SIZES, central_targets, starts)
     ):
-        if len(central_pool) < 2:
-            break
         central_count = min(central_target, len(central_pool), batch_size)
-        if central_count < 2:
-            break
         selected = _pick_for_window(
             central_pool,
             central_count,
@@ -169,6 +165,9 @@ def plan_period(
         two_allowance -= other_two
         selected.extend(others)
         # If non-central supply is short, fill the window from the central pool.
+        # A centre shortage must never stop the publisher completely: after
+        # taking every available central card, fill the remaining places from
+        # the broader owner/realtor stock gathered by discovery.
         if len(selected) < batch_size and central_count < batch_size:
             extras = _pick_for_window(
                 central_pool,

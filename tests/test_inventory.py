@@ -63,9 +63,36 @@ def test_two_periods_plan_36_cards_with_32_central_and_fewer_two_bedrooms():
             assert central_count == len(items) if len(items) == 3 else central_count >= 3
             assert sum(item.apartment.rooms == "2" for item in items) <= 1
             for before, after in zip(ordered, ordered[1:]):
-                assert timedelta(minutes=8) <= after.scheduled_at - before.scheduled_at <= timedelta(minutes=15)
+                assert (
+                    timedelta(minutes=8)
+                    <= after.scheduled_at - before.scheduled_at
+                    <= timedelta(minutes=15)
+                )
         for before, after in zip(sorted(starts), sorted(starts)[1:]):
             assert after - before >= timedelta(minutes=90)
+
+
+def test_period_uses_broader_stock_when_no_central_apartments_exist():
+    stock = _apartments(24, central=False, start_id=1, owner=False)
+    period_start = datetime(2026, 9, 13, 0, tzinfo=timezone(timedelta(hours=6)))
+
+    planned = plan_period(stock, period_start=period_start, rng=random.Random(9))
+
+    assert len(planned) == 18
+    assert all(not "золотой" in item.apartment.district.casefold() for item in planned)
+    assert 5 <= sum(item.apartment.rooms == "2" for item in planned) <= 10
+
+
+def test_period_keeps_single_central_card_and_fills_with_realtors():
+    stock = _apartments(1, central=True, start_id=1) + _apartments(
+        20, central=False, start_id=100, owner=False
+    )
+    period_start = datetime(2026, 9, 13, 12, tzinfo=timezone(timedelta(hours=6)))
+
+    planned = plan_period(stock, period_start=period_start, rng=random.Random(10))
+
+    assert len(planned) == 18
+    assert sum("золотой" in item.apartment.district.casefold() for item in planned) == 1
 
 
 @pytest.mark.asyncio
