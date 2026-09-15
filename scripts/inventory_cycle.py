@@ -35,7 +35,12 @@ def discovery_outcome(*, exit_code: int, queued_count: int) -> tuple[bool, str |
 async def run(*, force_discovery: bool | None = None) -> int:
     """Run the due 12-hour search and dispatch no more than one due card."""
     settings = get_settings()
-    force = _truthy(os.getenv("FORCE_DISCOVERY")) if force_discovery is None else force_discovery
+    force = (
+        _truthy(os.getenv("FORCE_DISCOVERY"))
+        or _truthy(os.getenv("FORCE_PUBLISH"))
+        if force_discovery is None
+        else force_discovery
+    )
     engine, sessions = create_engine_and_session(settings.database_url)
     await init_db(engine)
     inventory = InventoryRepository(sessions)
