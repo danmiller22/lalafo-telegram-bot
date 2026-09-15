@@ -19,6 +19,19 @@ def _truthy(value: str | None) -> bool:
     return (value or "").strip().casefold() in {"1", "true", "yes", "on"}
 
 
+def discovery_outcome(*, exit_code: int, queued_count: int) -> tuple[bool, str | None]:
+    """Only a populated period is a successful large discovery.
+
+    A clean scraper exit with an empty queue used to suppress every retry for
+    the rest of the 12-hour period.  Keep it retryable instead.
+    """
+    if exit_code != 0:
+        return False, f"ExitCode{exit_code}"
+    if queued_count <= 0:
+        return False, "EmptyInventory"
+    return True, None
+
+
 async def run(*, force_discovery: bool | None = None) -> int:
     """Run the due 12-hour search and dispatch no more than one due card."""
     settings = get_settings()
@@ -31,21 +44,23 @@ async def run(*, force_discovery: bool | None = None) -> int:
     await engine.dispose()
 
     if period_key is not None:
-        success = False
-        error = None
+        code = 1
+        raised_error = None
         try:
             code = await discover(discovery_only=True)
-            success = code == 0
-            if not success:
-                error = f"ExitCode{code}"
         except Exception as exc:
-            code = 1
-            error = type(exc).__name__
+            raised_error = type(exc).__name__
             logger.exception("Large apartment discovery failed; existing inventory retained")
         engine, sessions = create_engine_and_session(settings.database_url)
         try:
             repository = InventoryRepository(sessions)
             discovered_count, queued_count = await repository.period_counts(now=now)
+            success, error = discovery_outcome(
+                exit_code=code,
+                queued_count=queued_count,
+            )
+            if raised_error is not None:
+                success, error = False, raised_error
             await repository.finish_discovery(
                 period_key,
                 success=success,
@@ -53,6 +68,13 @@ async def run(*, force_discovery: bool | None = None) -> int:
                 queued=queued_count,
                 error=error,
             )
+            if not success:
+                logger.warning(
+                    "Apartment discovery remains retryable: error=%s discovered=%d queued=%d",
+                    error,
+                    discovered_count,
+                    queued_count,
+                )
         finally:
             await engine.dispose()
 

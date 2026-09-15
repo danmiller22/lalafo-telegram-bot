@@ -6,7 +6,7 @@ import random
 
 import pytest
 
-from app.inventory import InventoryRepository, plan_period
+from app.inventory import DISCOVERY_RETRY_MINUTES, InventoryRepository, plan_period
 from app.models import ApartmentInventoryQueue
 from tests.helpers import make_ad
 
@@ -125,3 +125,27 @@ async def test_concurrent_publishers_cannot_claim_the_same_card(repositories):
         inventory.claim_due(now=now), inventory.claim_due(now=now)
     )
     assert sum(item is not None for item in claims) == 1
+
+
+@pytest.mark.asyncio
+async def test_failed_empty_discovery_retries_after_cooldown(repositories):
+    _, _, sessions = repositories
+    inventory = InventoryRepository(sessions)
+    now = datetime.now(timezone.utc)
+    key = await inventory.claim_discovery(now=now)
+    assert key is not None
+    await inventory.finish_discovery(
+        key,
+        success=False,
+        discovered=0,
+        queued=0,
+        error="EmptyInventory",
+    )
+
+    assert await inventory.claim_discovery(now=now + timedelta(minutes=5)) is None
+    assert (
+        await inventory.claim_discovery(
+            now=now + timedelta(minutes=DISCOVERY_RETRY_MINUTES + 1)
+        )
+        == key
+    )

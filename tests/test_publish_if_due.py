@@ -1,4 +1,5 @@
 from scripts.publish_if_due import cycle_succeeded, should_publish
+from scripts.inventory_cycle import discovery_outcome
 
 
 def test_clean_cycle_with_no_new_unique_cards_is_successful():
@@ -24,3 +25,15 @@ def test_primary_or_backup_run_publishes_when_window_is_empty() -> None:
 
 def test_backup_run_skips_after_recent_success() -> None:
     assert not should_publish(force=False, recent_count=1)
+
+
+def test_empty_inventory_discovery_stays_retryable() -> None:
+    assert discovery_outcome(exit_code=0, queued_count=0) == (
+        False,
+        "EmptyInventory",
+    )
+    assert discovery_outcome(exit_code=2, queued_count=0) == (
+        False,
+        "ExitCode2",
+    )
+    assert discovery_outcome(exit_code=0, queued_count=18) == (True, None)

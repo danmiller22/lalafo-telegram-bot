@@ -21,6 +21,7 @@ FIRST_HALF_CENTRAL = (4, 3, 3, 3, 3)
 SECOND_HALF_CENTRAL = (4, 3, 3, 3, 3)
 MAX_TWO_BEDROOMS_PER_WINDOW = 1
 MAX_TWO_BEDROOMS_PER_DAY = 10
+DISCOVERY_RETRY_MINUTES = 30
 
 
 def as_utc(value: datetime) -> datetime:
@@ -219,6 +220,14 @@ class InventoryRepository:
                     return key
                 lease = as_utc(row.lease_until) if row.lease_until else None
                 if not force and (row.status == "succeeded" or (row.status == "running" and lease and lease > as_utc(now))):
+                    return None
+                completed = as_utc(row.completed_at) if row.completed_at else None
+                if (
+                    not force
+                    and row.status == "failed"
+                    and completed
+                    and completed > as_utc(now) - timedelta(minutes=DISCOVERY_RETRY_MINUTES)
+                ):
                     return None
                 row.status = "running"
                 row.lease_until = lease_until

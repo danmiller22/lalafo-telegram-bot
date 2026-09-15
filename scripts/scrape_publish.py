@@ -877,9 +877,9 @@ async def run(*, discovery_only: bool = False) -> int:
                 if engine is not None:
                     await engine.dispose()
                 # A blocked/temporarily unavailable catalogue is not a broken
-                # publisher. Leave Telegram untouched and try fresh inventory
-                # on the next scheduled cycle instead of alarming the operator.
-                return 0
+                # publisher. In discovery mode signal the retryable shortage;
+                # the orchestrator records it without sending an admin alert.
+                return 2 if discovery_only else 0
             if page_number == 1:
                 logger.info("Lalafo source search found %d advertisements", page.total)
             if not page.items:
