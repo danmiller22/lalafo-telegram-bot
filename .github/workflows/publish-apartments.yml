@@ -14,13 +14,10 @@ on:
         type: boolean
         default: true
   schedule:
-    # Primary three-hour window (Bishkek remains on UTC+6 year-round).
-    - cron: "0 */3 * * *"
-    # Independent recovery window. The due-check exits immediately when the
-    # primary window already published successfully.
-    - cron: "30 */3 * * *"
-    # A second recovery window catches a slow/failed primary infrastructure run.
-    - cron: "0 1-22/3 * * *"
+    # The durable queue decides whether a card is due. A ten-minute cloud tick
+    # keeps publication working while the owner's PC is off. At 06:00/18:00 UTC
+    # the same tick starts the 00:00/12:00 Bishkek large discovery.
+    - cron: "*/10 * * * *"
 
 permissions:
   contents: read
