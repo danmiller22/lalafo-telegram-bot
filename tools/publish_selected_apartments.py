@@ -50,7 +50,10 @@ MANAGED_KNOWN_PHOTO_URLS = {
         "https://img5.lalafo.com/i/posters/api/c2/8a/89/9916e0c55c4c6f053f4d491139.jpeg",
     ],
 }
-SELECTED_CARD_CORRECTIONS = {114595809: (32_000, "Восток-5")}
+SELECTED_CARD_CORRECTIONS = {
+    114595809: (32_000, "Восток-5"),
+    116352866: (21_000, "ЦУМ"),
+}
 SEARCH_REQUEST_ANNOUNCEMENT = """🏠 <b>Не нашли подходящую квартиру?</b>
 
 Не тратьте часы на просмотр десятков объявлений — оставьте заявку на поиск через нашего бота <b>@arenda312bot</b>.
@@ -229,7 +232,11 @@ async def run() -> int:
         managed_ad_ids = (
             selected_managed_ad_ids(managed_raw)
             if managed_raw
-            else set(MANAGED_SELECTED_TERM_OVERRIDES)
+            else {
+                item.lalafo_id
+                for item in selected
+                if item.lalafo_id in MANAGED_SELECTED_TERM_OVERRIDES
+            }
         )
         selected_managed_ids = {
             item.lalafo_id for item in selected if item.lalafo_id in managed_ad_ids
