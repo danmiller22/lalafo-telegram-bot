@@ -209,13 +209,27 @@ async def _publish_search_request_announcement(
         ]
     )
     if edit_message_id is not None:
-        message = await bot.edit_message_text(
-            SEARCH_REQUEST_ANNOUNCEMENT,
-            chat_id=chat_id,
-            message_id=edit_message_id,
-            parse_mode="HTML",
-            reply_markup=reply_markup,
-        )
+        try:
+            message = await bot.edit_message_text(
+                SEARCH_REQUEST_ANNOUNCEMENT,
+                chat_id=chat_id,
+                message_id=edit_message_id,
+                parse_mode="HTML",
+                reply_markup=reply_markup,
+            )
+        except TelegramBadRequest as exc:
+            if "message to edit not found" not in str(exc).lower():
+                raise
+            logger.warning(
+                "Announcement message %s no longer exists; publishing a new one",
+                edit_message_id,
+            )
+            message = await bot.send_message(
+                chat_id,
+                SEARCH_REQUEST_ANNOUNCEMENT,
+                parse_mode="HTML",
+                reply_markup=reply_markup,
+            )
     else:
         message = await bot.send_message(
             chat_id,
