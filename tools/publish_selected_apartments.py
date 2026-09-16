@@ -54,19 +54,13 @@ SELECTED_CARD_CORRECTIONS = {
     114595809: (32_000, "Восток-5"),
     116352866: (21_000, "ЦУМ"),
 }
-SEARCH_REQUEST_ANNOUNCEMENT = """🏠 <b>Не нашли подходящую квартиру?</b>
+SEARCH_REQUEST_ANNOUNCEMENT = """🔎 <b>Ищете квартиру?</b>
 
-Не тратьте часы на просмотр десятков объявлений — оставьте заявку на поиск через нашего бота <b>@arenda312bot</b>.
+Оставьте заявку через бота <b>@arenda312bot</b> — её увидят арендодатели и сами свяжутся с вами, если у них есть подходящая квартира.
 
-📝 В короткой анкете укажите:
-• желаемый район;
-• бюджет;
-• количество комнат;
-• важные пожелания.
+Мы не занимаемся подбором квартир и не обещаем найти вариант. Бот только публикует вашу заявку.
 
-Мы получим вашу заявку и поможем подобрать подходящие варианты из новых объявлений.
-
-👇 Нажмите кнопку ниже и заполните заявку."""
+👇 Нажмите кнопку ниже, чтобы оставить заявку."""
 
 
 @dataclass(frozen=True)
@@ -189,22 +183,49 @@ def _search_request_announcement_requested(raw_urls: str) -> bool:
     )
 
 
-async def _publish_search_request_announcement(bot: Bot, chat_id: int) -> int:
-    message = await bot.send_message(
-        chat_id,
-        SEARCH_REQUEST_ANNOUNCEMENT,
-        parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    InlineKeyboardButton(
-                        text="🔎 Подать заявку на поиск квартиры",
-                        url="https://t.me/arenda312bot",
-                    )
-                ]
+def _search_request_announcement_edit_message_id(raw_urls: str) -> int | None:
+    for value in re.split(r"[\s,]+", raw_urls.strip()):
+        if not value:
+            continue
+        raw_message_id = parse_qs(urlsplit(value).query).get(
+            "codex_announcement_edit_message_id"
+        )
+        if raw_message_id:
+            return int(raw_message_id[0])
+    return None
+
+
+async def _publish_search_request_announcement(
+    bot: Bot,
+    chat_id: int,
+    *,
+    edit_message_id: int | None = None,
+) -> int:
+    reply_markup = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🔎 Оставить заявку на поиск квартиры",
+                    url="https://t.me/arenda312bot",
+                )
             ]
-        ),
+        ]
     )
+    if edit_message_id is not None:
+        message = await bot.edit_message_text(
+            SEARCH_REQUEST_ANNOUNCEMENT,
+            chat_id=chat_id,
+            message_id=edit_message_id,
+            parse_mode="HTML",
+            reply_markup=reply_markup,
+        )
+    else:
+        message = await bot.send_message(
+            chat_id,
+            SEARCH_REQUEST_ANNOUNCEMENT,
+            parse_mode="HTML",
+            reply_markup=reply_markup,
+        )
     await bot.pin_chat_message(
         chat_id,
         message.message_id,
@@ -262,6 +283,9 @@ async def run() -> int:
             message_id = await _publish_search_request_announcement(
                 bot,
                 settings.telegram_group_id,
+                edit_message_id=_search_request_announcement_edit_message_id(
+                    raw_urls
+                ),
             )
             logger.info(
                 "SEARCH_REQUEST_ANNOUNCEMENT_PUBLISHED message_id=%s pinned=true",

@@ -5,6 +5,7 @@ import pytest
 from tools.publish_selected_apartments import (
     SELECTED_REPOST_AFTER_HOURS,
     _force_repost,
+    _search_request_announcement_edit_message_id,
     _search_request_announcement_requested,
     eligible_selected_listings,
     selected_managed_ad_ids,
@@ -74,6 +75,17 @@ def test_search_request_announcement_marker_is_explicit() -> None:
     assert _search_request_announcement_requested(
         "https://lalafo.kg/ads/example-id-1?codex_announcement=search_request"
     )
+
+
+def test_search_request_announcement_can_edit_existing_message() -> None:
+    assert _search_request_announcement_edit_message_id(
+        "https://lalafo.kg/ads/example-id-1?"
+        "codex_announcement=search_request&"
+        "codex_announcement_edit_message_id=32991"
+    ) == 32991
+    assert _search_request_announcement_edit_message_id(
+        "https://lalafo.kg/ads/example-id-1?codex_announcement=search_request"
+    ) is None
 
 
 def test_selected_managed_ad_ids_are_explicit_and_deduplicated() -> None:
