@@ -5,6 +5,7 @@ import pytest
 from tools.publish_selected_apartments import (
     SELECTED_REPOST_AFTER_HOURS,
     _force_repost,
+    _search_request_announcement_requested,
     eligible_selected_listings,
     selected_managed_ad_ids,
     selected_listings,
@@ -63,6 +64,15 @@ def test_force_repost_marker_is_explicit(monkeypatch: pytest.MonkeyPatch) -> Non
     assert not _force_repost("https://lalafo.kg/ads/example-id-1")
     assert _force_repost(
         "https://lalafo.kg/ads/example-id-1?codex_force_repost=1"
+    )
+
+
+def test_search_request_announcement_marker_is_explicit() -> None:
+    assert not _search_request_announcement_requested(
+        "https://lalafo.kg/ads/example-id-1"
+    )
+    assert _search_request_announcement_requested(
+        "https://lalafo.kg/ads/example-id-1?codex_announcement=search_request"
     )
 
 

@@ -9,6 +9,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from app.config import get_settings
 from app.database import create_engine_and_session, init_db
@@ -50,6 +51,19 @@ MANAGED_KNOWN_PHOTO_URLS = {
     ],
 }
 SELECTED_CARD_CORRECTIONS = {114595809: (32_000, "Восток-5")}
+SEARCH_REQUEST_ANNOUNCEMENT = """🏠 <b>Не нашли подходящую квартиру?</b>
+
+Не тратьте часы на просмотр десятков объявлений — оставьте заявку на поиск через нашего бота <b>@arenda312bot</b>.
+
+📝 В короткой анкете укажите:
+• желаемый район;
+• бюджет;
+• количество комнат;
+• важные пожелания.
+
+Мы получим вашу заявку и поможем подобрать подходящие варианты из новых объявлений.
+
+👇 Нажмите кнопку ниже и заполните заявку."""
 
 
 @dataclass(frozen=True)
@@ -163,6 +177,39 @@ def _force_repost(raw_urls: str) -> bool:
     )
 
 
+def _search_request_announcement_requested(raw_urls: str) -> bool:
+    return any(
+        parse_qs(urlsplit(value).query).get("codex_announcement")
+        == ["search_request"]
+        for value in re.split(r"[\s,]+", raw_urls.strip())
+        if value
+    )
+
+
+async def _publish_search_request_announcement(bot: Bot, chat_id: int) -> int:
+    message = await bot.send_message(
+        chat_id,
+        SEARCH_REQUEST_ANNOUNCEMENT,
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="🔎 Подать заявку на поиск квартиры",
+                        url="https://t.me/arenda312bot",
+                    )
+                ]
+            ]
+        ),
+    )
+    await bot.pin_chat_message(
+        chat_id,
+        message.message_id,
+        disable_notification=False,
+    )
+    return message.message_id
+
+
 async def run() -> int:
     logging.basicConfig(
         level=logging.INFO,
@@ -175,8 +222,9 @@ async def run() -> int:
         )
         return 2
 
+    raw_urls = os.getenv("SELECTED_LALAFO_URLS", "")
     try:
-        selected = selected_listings(os.getenv("SELECTED_LALAFO_URLS", ""))
+        selected = selected_listings(raw_urls)
         managed_raw = os.getenv("SELECTED_MANAGED_LALAFO_AD_IDS", "").strip()
         managed_ad_ids = (
             selected_managed_ad_ids(managed_raw)
@@ -202,6 +250,20 @@ async def run() -> int:
 
     engine, sessions = create_engine_and_session(settings.database_url)
     bot = Bot(token=token)
+    if _search_request_announcement_requested(raw_urls):
+        try:
+            message_id = await _publish_search_request_announcement(
+                bot,
+                settings.telegram_group_id,
+            )
+            logger.info(
+                "SEARCH_REQUEST_ANNOUNCEMENT_PUBLISHED message_id=%s pinned=true",
+                message_id,
+            )
+            return 0
+        finally:
+            await bot.session.close()
+            await engine.dispose()
     client = LalafoClient(
         timeout=settings.http_timeout_seconds,
         max_retries=settings.http_max_retries,
