@@ -54,13 +54,10 @@ SELECTED_CARD_CORRECTIONS = {
     114595809: (32_000, "Восток-5"),
     116352866: (21_000, "ЦУМ"),
 }
-SEARCH_REQUEST_ANNOUNCEMENT = """🔎 <b>Ищете квартиру?</b>
-
-Оставьте заявку через бота <b>@arenda312bot</b> — её увидят арендодатели и сами свяжутся с вами, если у них есть подходящая квартира.
-
-Мы не занимаемся подбором квартир и не обещаем найти вариант. Бот только публикует вашу заявку.
-
-👇 Нажмите кнопку ниже, чтобы оставить заявку."""
+SEARCH_REQUEST_ANNOUNCEMENT = (
+    "🔎 Заполните заявку на поиск квартиры через нашего бота "
+    "<b>@arenda312bot</b>."
+)
 
 
 @dataclass(frozen=True)
@@ -205,7 +202,7 @@ async def _publish_search_request_announcement(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="🔎 Оставить заявку на поиск квартиры",
+                    text="🔎 Заполнить заявку",
                     url="https://t.me/arenda312bot",
                 )
             ]
