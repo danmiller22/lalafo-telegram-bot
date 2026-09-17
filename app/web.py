@@ -29,6 +29,7 @@ from app.telegram.formatting import format_admin_card, format_apartment, room_ti
 from app.telegram.keyboards import admin_keyboard, paid_keyboard
 from app.telegram.miniapp import mini_app_html, verify_telegram_init_data
 from app.lalafo.phone import display_phone
+from app.lalafo.mcp_server import lalafo_mcp, lalafo_mcp_app
 
 logger = logging.getLogger(__name__)
 app = FastAPI(title="Lalafo Telegram service", docs_url=None, redoc_url=None)
@@ -46,6 +47,7 @@ _apartment_scheduler_task: asyncio.Task[None] | None = None
 _service_keepalive_task: asyncio.Task[None] | None = None
 _background_watchdog_task: asyncio.Task[None] | None = None
 _shutting_down = False
+_lalafo_mcp_context: Any | None = None
 _bot_setup_state: dict[str, Any] = {
     "state": "pending",
     "last_configured_at": None,
@@ -559,6 +561,7 @@ async def startup() -> None:
     global _keyboard_sync_task, _lalafo_auto_responder
     global _lalafo_watchdog_task, _apartment_scheduler_task
     global _service_keepalive_task, _background_watchdog_task, _shutting_down
+    global _lalafo_mcp_context
     settings = get_settings()
     _shutting_down = False
     logging.basicConfig(
@@ -568,6 +571,8 @@ async def startup() -> None:
     # httpx logs every proxy probe at INFO. On the 0.1-vCPU free instance this
     # noise can consume more CPU than the actual recovery work.
     logging.getLogger("httpx").setLevel(logging.WARNING)
+    _lalafo_mcp_context = lalafo_mcp.session_manager.run()
+    await _lalafo_mcp_context.__aenter__()
     settings.require_run_trigger_secret()
     if settings.run_bot:
         # Validate configuration synchronously, but do not wait for Telegram
@@ -622,7 +627,11 @@ async def shutdown() -> None:
     global _keyboard_sync_task, _lalafo_auto_responder
     global _lalafo_watchdog_task, _apartment_scheduler_task
     global _service_keepalive_task, _background_watchdog_task, _shutting_down
+    global _lalafo_mcp_context
     _shutting_down = True
+    if _lalafo_mcp_context is not None:
+        await _lalafo_mcp_context.__aexit__(None, None, None)
+        _lalafo_mcp_context = None
     if _background_watchdog_task is not None and not _background_watchdog_task.done():
         _background_watchdog_task.cancel()
         with suppress(asyncio.CancelledError):
@@ -1026,3 +1035,7 @@ async def trigger_scraper(authorization: str | None = Header(default=None)) -> d
         return {"status": "already_running"}
     exit_code = await _execute_scraper()
     return {"status": "completed", "exit_code": exit_code}
+
+
+# Keep this catch-all mount last so the existing Telegram and service routes win.
+app.mount("/", lalafo_mcp_app)
