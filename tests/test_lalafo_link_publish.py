@@ -11,6 +11,25 @@ from app.config import Settings
 from tests.helpers import make_ad
 
 
+class FakeState:
+    def __init__(self, data=None):
+        self.data = dict(data or {})
+        self.state = None
+
+    async def set_state(self, state):
+        self.state = state
+
+    async def update_data(self, **values):
+        self.data.update(values)
+
+    async def get_data(self):
+        return dict(self.data)
+
+    async def clear(self):
+        self.data.clear()
+        self.state = None
+
+
 def test_extract_lalafo_url_from_message() -> None:
     url = "https://lalafo.kg/bishkek/ads/kvartira-id-116352866?feed_id=5012"
 
@@ -29,7 +48,28 @@ def test_repeat_is_blocked_for_48_hours() -> None:
 
 
 @pytest.mark.asyncio
-async def test_admin_can_publish_a_lalafo_link(monkeypatch) -> None:
+async def test_link_prompts_admin_for_district() -> None:
+    url = "https://lalafo.kg/bishkek/ads/kvartira-id-116352866"
+    message = SimpleNamespace(
+        text=url,
+        from_user=SimpleNamespace(id=777),
+        answer=AsyncMock(),
+    )
+    state = FakeState()
+
+    await lalafo_links.request_lalafo_district(
+        message,
+        state,
+        Settings(admin_user_id=777),
+    )
+
+    assert state.data == {"source_url": url}
+    assert state.state == lalafo_links.ManualLalafoPublish.waiting_for_district
+    message.answer.assert_awaited_once_with("Какой район написать в заголовке карточки?")
+
+
+@pytest.mark.asyncio
+async def test_admin_can_publish_a_lalafo_link_with_selected_district(monkeypatch) -> None:
     url = "https://lalafo.kg/bishkek/ads/kvartira-id-116352866"
     ad = make_ad(
         lalafo_id=116352866,
@@ -78,15 +118,21 @@ async def test_admin_can_publish_a_lalafo_link(monkeypatch) -> None:
     monkeypatch.setattr(lalafo_links, "TelegramPublisher", FakePublisher)
 
     settings = Settings(admin_user_id=777)
-    await lalafo_links.publish_lalafo_link(
+    await lalafo_links._publish_lalafo_url(
         message,
-        settings,
-        apartments,
+        url=url,
+        district="Восток-5",
+        settings=settings,
+        apartments=apartments,
         signer=SimpleNamespace(),
         bot=SimpleNamespace(),
     )
 
-    publish.assert_awaited_once_with(42, ad)
+    published_ad = publish.await_args.args[1]
+    assert publish.await_args.args[0] == 42
+    assert published_ad.district == "Восток-5"
+    apartments.upsert_discovered.assert_awaited_once()
+    assert apartments.upsert_discovered.await_args.args[0].district == "Восток-5"
     apartments.mark_published.assert_awaited_once_with(
         42,
         chat_id=settings.telegram_group_id,
@@ -104,13 +150,13 @@ async def test_non_admin_lalafo_link_is_ignored() -> None:
         answer=AsyncMock(),
     )
     apartments = SimpleNamespace()
+    state = FakeState()
 
-    await lalafo_links.publish_lalafo_link(
+    await lalafo_links.request_lalafo_district(
         message,
+        state,
         Settings(admin_user_id=777),
-        apartments,
-        signer=SimpleNamespace(),
-        bot=SimpleNamespace(),
     )
 
     message.answer.assert_not_awaited()
+    assert state.state is None

@@ -6,6 +6,8 @@ import logging
 import re
 
 from aiogram import Bot, F, Router
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message
 
 from app.config import Settings
@@ -26,6 +28,11 @@ _LALAFO_URL = re.compile(
 _TRAILING_PUNCTUATION = ").,;!?]}>\"'"
 _publish_lock = asyncio.Lock()
 REPOST_AFTER = timedelta(hours=48)
+MAX_DISTRICT_LENGTH = 60
+
+
+class ManualLalafoPublish(StatesGroup):
+    waiting_for_district = State()
 
 
 def extract_lalafo_url(text: str | None) -> str | None:
@@ -45,23 +52,94 @@ def repost_available_at(
     return available_at if available_at > current else None
 
 
-@router.message(F.chat.type == "private", F.text)
-async def publish_lalafo_link(
+def _is_admin(message: Message, settings: Settings) -> bool:
+    return bool(
+        settings.admin_user_id
+        and message.from_user is not None
+        and message.from_user.id == settings.admin_user_id
+    )
+
+
+def normalize_district(text: str | None) -> str | None:
+    district = " ".join((text or "").split())
+    if not district or len(district) > MAX_DISTRICT_LENGTH:
+        return None
+    return district
+
+
+@router.message(ManualLalafoPublish.waiting_for_district, F.chat.type == "private", F.text)
+async def receive_lalafo_district(
     message: Message,
+    state: FSMContext,
     settings: Settings,
     apartments: ApartmentRepository,
     signer: TokenSigner,
     bot: Bot,
 ) -> None:
-    url = extract_lalafo_url(message.text)
+    if not _is_admin(message, settings):
+        await state.clear()
+        return
+
+    replacement_url = extract_lalafo_url(message.text)
+    if replacement_url is not None:
+        await state.update_data(source_url=replacement_url)
+        await message.answer("Ссылка обновлена. Какой район написать в заголовке?")
+        return
+
+    if (message.text or "").strip().casefold() in {"отмена", "cancel"}:
+        await state.clear()
+        await message.answer("Публикация отменена.")
+        return
+
+    district = normalize_district(message.text)
+    if district is None:
+        await message.answer(
+            f"Напишите район текстом — не больше {MAX_DISTRICT_LENGTH} символов."
+        )
+        return
+
+    data = await state.get_data()
+    url = extract_lalafo_url(data.get("source_url"))
+    await state.clear()
     if url is None:
+        await message.answer("Ссылка потерялась. Пришлите объявление Lalafo ещё раз.")
         return
-    if (
-        not settings.admin_user_id
-        or message.from_user is None
-        or message.from_user.id != settings.admin_user_id
-    ):
+
+    await _publish_lalafo_url(
+        message,
+        url=url,
+        district=district,
+        settings=settings,
+        apartments=apartments,
+        signer=signer,
+        bot=bot,
+    )
+
+
+@router.message(F.chat.type == "private", F.text.regexp(_LALAFO_URL))
+async def request_lalafo_district(
+    message: Message,
+    state: FSMContext,
+    settings: Settings,
+) -> None:
+    url = extract_lalafo_url(message.text)
+    if url is None or not _is_admin(message, settings):
         return
+    await state.set_state(ManualLalafoPublish.waiting_for_district)
+    await state.update_data(source_url=url)
+    await message.answer("Какой район написать в заголовке карточки?")
+
+
+async def _publish_lalafo_url(
+    message: Message,
+    *,
+    url: str,
+    district: str,
+    settings: Settings,
+    apartments: ApartmentRepository,
+    signer: TokenSigner,
+    bot: Bot,
+) -> None:
 
     async with _publish_lock:
         await message.answer("⏳ Проверяю квартиру…")
@@ -79,6 +157,8 @@ async def publish_lalafo_link(
             logger.exception("Admin Lalafo link could not be loaded")
             await message.answer("⚠️ Не удалось загрузить Lalafo. Попробуйте ещё раз.")
             return
+
+        ad = ad.model_copy(update={"district": district})
 
         valid, reason = _valid(ad, settings)
         if not valid:
