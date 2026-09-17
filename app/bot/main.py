@@ -9,7 +9,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from app.bot import admin, handlers
+from app.bot import admin, handlers, lalafo_links
 from app.config import get_settings
 from app.database import create_engine_and_session, init_db
 from app.payments.repository import ApartmentRepository, PaymentRepository
@@ -48,6 +48,7 @@ async def create_runtime() -> BotRuntime:
     dispatcher = Dispatcher(storage=MemoryStorage())
     dispatcher.include_router(wanted_admin.router)
     dispatcher.include_router(admin.router)
+    dispatcher.include_router(lalafo_links.router)
     dispatcher.include_router(support_handlers.router)
     dispatcher.include_router(wanted_handlers.router)
     dispatcher.include_router(handlers.router)
