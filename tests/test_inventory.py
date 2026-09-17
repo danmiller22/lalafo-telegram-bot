@@ -31,7 +31,7 @@ def _apartments(count: int, *, central: bool, start_id: int, owner: bool = True)
     ]
 
 
-def test_two_periods_plan_36_cards_with_32_central_and_fewer_two_bedrooms():
+def test_two_periods_plan_42_cards_with_36_central_and_fewer_two_bedrooms():
     stock = _apartments(60, central=True, start_id=1) + _apartments(
         40, central=False, start_id=100
     )
@@ -44,15 +44,15 @@ def test_two_periods_plan_36_cards_with_32_central_and_fewer_two_bedrooms():
         rng=random.Random(8),
     )
     all_items = first + second
-    assert len(all_items) == 36
-    assert sum("золотой" in item.apartment.district.casefold() for item in all_items) == 32
+    assert len(all_items) == 42
+    assert sum("золотой" in item.apartment.district.casefold() for item in all_items) == 36
     assert 5 <= sum(item.apartment.rooms == "2" for item in all_items) <= 10
 
     for planned in (first, second):
         windows = {}
         for item in planned:
             windows.setdefault(item.window_key, []).append(item)
-        assert sorted(len(items) for items in windows.values()) == [3, 3, 4, 4, 4]
+        assert sorted(len(items) for items in windows.values()) == [4, 4, 4, 4, 5]
         starts = []
         for items in windows.values():
             ordered = sorted(items, key=lambda item: item.sequence)
@@ -60,7 +60,7 @@ def test_two_periods_plan_36_cards_with_32_central_and_fewer_two_bedrooms():
             central_count = sum(
                 "золотой" in item.apartment.district.casefold() for item in items
             )
-            assert central_count == len(items) if len(items) == 3 else central_count >= 3
+            assert central_count >= 3
             assert sum(item.apartment.rooms == "2" for item in items) <= 1
             for before, after in zip(ordered, ordered[1:]):
                 assert (
@@ -78,21 +78,41 @@ def test_period_uses_broader_stock_when_no_central_apartments_exist():
 
     planned = plan_period(stock, period_start=period_start, rng=random.Random(9))
 
-    assert len(planned) == 18
+    assert len(planned) == 21
     assert all(not "золотой" in item.apartment.district.casefold() for item in planned)
     assert 5 <= sum(item.apartment.rooms == "2" for item in planned) <= 10
 
 
 def test_period_keeps_single_central_card_and_fills_with_realtors():
     stock = _apartments(1, central=True, start_id=1) + _apartments(
-        20, central=False, start_id=100, owner=False
+        30, central=False, start_id=100, owner=False
     )
     period_start = datetime(2026, 9, 13, 12, tzinfo=timezone(timedelta(hours=6)))
 
     planned = plan_period(stock, period_start=period_start, rng=random.Random(10))
 
-    assert len(planned) == 18
+    assert len(planned) == 21
     assert sum("золотой" in item.apartment.district.casefold() for item in planned) == 1
+
+
+def test_period_spreads_random_reposts_across_separate_windows():
+    fresh = _apartments(40, central=True, start_id=1)
+    repeats = _apartments(8, central=True, start_id=100)
+    repeat_ids = {item.id for item in repeats}
+    period_start = datetime(2026, 9, 13, 0, tzinfo=timezone(timedelta(hours=6)))
+
+    planned = plan_period(
+        fresh + repeats,
+        period_start=period_start,
+        repeat_apartment_ids=repeat_ids,
+        rng=random.Random(11),
+    )
+
+    planned_repeats = [
+        item for item in planned if item.apartment.id in repeat_ids
+    ]
+    assert len(planned_repeats) == 3
+    assert len({item.window_key for item in planned_repeats}) == 3
 
 
 @pytest.mark.asyncio

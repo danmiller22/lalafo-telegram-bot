@@ -60,6 +60,7 @@ async def run() -> int:
         return 0
 
     apartment = item.apartment
+    is_repeat = apartment.publication_status == "published"
     stored = apartment_to_ad(apartment).model_copy(
         update={"owner_listing": apartment.owner_listing}
     )
@@ -92,7 +93,7 @@ async def run() -> int:
         await inventory.finish_item(item.id, status="skipped", error=reason)
         await engine.dispose()
         return 0
-    if await apartments.is_duplicate(ad):
+    if not is_repeat and await apartments.is_duplicate(ad):
         await inventory.finish_item(item.id, status="skipped", error="duplicate")
         await engine.dispose()
         return 0

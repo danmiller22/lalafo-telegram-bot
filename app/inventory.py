@@ -13,14 +13,17 @@ from app.models import Apartment, ApartmentDiscoveryRun, ApartmentInventoryQueue
 
 
 BISHKEK = ZoneInfo("Asia/Bishkek")
-BATCH_SIZES = (4, 4, 4, 3, 3)
+BATCH_SIZES = (5, 4, 4, 4, 4)
 # Keep the catalogue strongly centre-focused without increasing the overall
 # publication rate: 16 central cards per half-day, 32 of 36 per full day when
 # enough suitable inventory is available.
-FIRST_HALF_CENTRAL = (4, 3, 3, 3, 3)
-SECOND_HALF_CENTRAL = (4, 3, 3, 3, 3)
+FIRST_HALF_CENTRAL = (4, 4, 4, 3, 3)
+SECOND_HALF_CENTRAL = (4, 4, 4, 3, 3)
 MAX_TWO_BEDROOMS_PER_WINDOW = 1
 MAX_TWO_BEDROOMS_PER_DAY = 10
+MAX_PUBLICATIONS_PER_DAY = 42
+REPOST_AFTER_HOURS = 48
+MAX_REPOSTS_PER_PERIOD = 3
 DISCOVERY_RETRY_MINUTES = 30
 
 
@@ -115,17 +118,35 @@ def plan_period(
     *,
     period_start: datetime,
     already_two_bedrooms_today: int = 0,
+    repeat_apartment_ids: set[int] | None = None,
     rng: random.Random | None = None,
 ) -> list[PlannedApartment]:
     """Create five immutable random windows for one 12-hour period."""
     rng = rng or random.SystemRandom()
+    repeat_ids = set(repeat_apartment_ids or ())
     central_pool = sorted(
-        [item for item in apartments if is_central(item.district)],
+        [
+            item
+            for item in apartments
+            if is_central(item.district) and item.id not in repeat_ids
+        ],
         key=lambda item: _candidate_key(item, central=True),
     )
     other_pool = sorted(
-        [item for item in apartments if not is_central(item.district)],
+        [
+            item
+            for item in apartments
+            if not is_central(item.district) and item.id not in repeat_ids
+        ],
         key=lambda item: _candidate_key(item, central=False),
+    )
+    repeat_pool = [item for item in apartments if item.id in repeat_ids]
+    rng.shuffle(repeat_pool)
+    repeat_windows = set(
+        rng.sample(
+            range(len(BATCH_SIZES)),
+            k=min(MAX_REPOSTS_PER_PERIOD, len(repeat_pool), len(BATCH_SIZES)),
+        )
     )
     central_targets = (
         FIRST_HALF_CENTRAL if period_start.astimezone(BISHKEK).hour == 0 else SECOND_HALF_CENTRAL
@@ -140,17 +161,45 @@ def plan_period(
     for index, (batch_size, central_target, start) in enumerate(
         zip(BATCH_SIZES, central_targets, starts)
     ):
-        central_count = min(central_target, len(central_pool), batch_size)
-        selected = _pick_for_window(
-            central_pool,
-            central_count,
-            room_counts,
-            two_bedroom_allowance=min(1, two_allowance),
-            central=True,
-            prefer_two=True,
+        selected: list[Apartment] = []
+        window_two = 0
+        if index in repeat_windows and repeat_pool:
+            eligible_repeats = [
+                item
+                for item in repeat_pool
+                if item.rooms != "2" or two_allowance > 0
+            ]
+            if eligible_repeats:
+                central_repeats = [
+                    item for item in eligible_repeats if is_central(item.district)
+                ]
+                repeat = rng.choice(central_repeats or eligible_repeats)
+                repeat_pool.remove(repeat)
+                selected.append(repeat)
+                room_counts[repeat.rooms] = room_counts.get(repeat.rooms, 0) + 1
+                if repeat.rooms == "2":
+                    window_two = 1
+                    two_allowance -= 1
+
+        selected_central = sum(is_central(item.district) for item in selected)
+        central_count = min(
+            max(0, central_target - selected_central),
+            len(central_pool),
+            batch_size - len(selected),
         )
-        window_two = sum(item.rooms == "2" for item in selected)
-        two_allowance -= window_two
+        selected.extend(
+            _pick_for_window(
+                central_pool,
+                central_count,
+                room_counts,
+                two_bedroom_allowance=min(1 - window_two, two_allowance),
+                central=True,
+                prefer_two=window_two == 0,
+            )
+        )
+        newly_selected_two = sum(item.rooms == "2" for item in selected) - window_two
+        window_two += newly_selected_two
+        two_allowance -= newly_selected_two
         remaining = batch_size - len(selected)
         others = _pick_for_window(
             other_pool,
@@ -168,10 +217,10 @@ def plan_period(
         # A centre shortage must never stop the publisher completely: after
         # taking every available central card, fill the remaining places from
         # the broader owner/realtor stock gathered by discovery.
-        if len(selected) < batch_size and central_count < batch_size:
+        if len(selected) < batch_size:
             extras = _pick_for_window(
                 central_pool,
-                min(batch_size - central_count, batch_size - len(selected)),
+                batch_size - len(selected),
                 room_counts,
                 two_bedroom_allowance=min(1 - window_two, two_allowance),
                 central=True,
@@ -308,18 +357,20 @@ class InventoryRepository:
                 or 0
             )
             already_two = published_two + reserved_two
-            queued_apartment_ids = select(ApartmentInventoryQueue.apartment_id)
+            active_queue_ids = select(ApartmentInventoryQueue.apartment_id).where(
+                ApartmentInventoryQueue.status.in_(("queued", "publishing"))
+            )
             queued_fingerprints = select(Apartment.fingerprint).join(
                 ApartmentInventoryQueue,
                 ApartmentInventoryQueue.apartment_id == Apartment.id,
-            )
-            stock = list(
+            ).where(ApartmentInventoryQueue.status.in_(("queued", "publishing")))
+            fresh_stock = list(
                 (
                     await session.scalars(
                         select(Apartment).where(
                             Apartment.active.is_(True),
                             Apartment.publication_status != "published",
-                            Apartment.id.not_in(queued_apartment_ids),
+                            Apartment.id.not_in(active_queue_ids),
                             Apartment.fingerprint.not_in(queued_fingerprints),
                             Apartment.price.between(20_000, 40_000),
                             Apartment.rooms.in_(("1", "2", "studio")),
@@ -327,11 +378,34 @@ class InventoryRepository:
                     )
                 ).all()
             )
+            repeat_stock = list(
+                (
+                    await session.scalars(
+                        select(Apartment).where(
+                            Apartment.active.is_(True),
+                            Apartment.publication_status == "published",
+                            Apartment.published_at.is_not(None),
+                            Apartment.published_at
+                            <= now - timedelta(hours=REPOST_AFTER_HOURS),
+                            Apartment.id.not_in(active_queue_ids),
+                            Apartment.price.between(20_000, 40_000),
+                            Apartment.rooms.in_(("1", "2", "studio")),
+                        )
+                    )
+                ).all()
+            )
+            chooser = rng or random.SystemRandom()
+            chosen_repeats = chooser.sample(
+                repeat_stock,
+                k=min(MAX_REPOSTS_PER_PERIOD, len(repeat_stock)),
+            )
+            stock = fresh_stock + chosen_repeats
             planned = plan_period(
                 stock,
                 period_start=period,
                 already_two_bedrooms_today=already_two,
-                rng=rng,
+                repeat_apartment_ids={item.id for item in chosen_repeats},
+                rng=chooser,
             )
             if planned and planned[0].scheduled_at < now + timedelta(minutes=2):
                 shift = now + timedelta(minutes=2) - planned[0].scheduled_at
@@ -344,16 +418,38 @@ class InventoryRepository:
                     )
                     for item in planned
                 ]
-            for item in planned:
-                session.add(
-                    ApartmentInventoryQueue(
-                        apartment_id=item.apartment.id,
-                        scheduled_at=item.scheduled_at,
-                        window_key=item.window_key,
-                        sequence=item.sequence,
-                        status="queued",
+            planned_ids = [item.apartment.id for item in planned]
+            existing_rows = {
+                row.apartment_id: row
+                for row in (
+                    await session.scalars(
+                        select(ApartmentInventoryQueue).where(
+                            ApartmentInventoryQueue.apartment_id.in_(planned_ids)
+                        )
                     )
-                )
+                ).all()
+            }
+            for item in planned:
+                existing = existing_rows.get(item.apartment.id)
+                if existing is None:
+                    session.add(
+                        ApartmentInventoryQueue(
+                            apartment_id=item.apartment.id,
+                            scheduled_at=item.scheduled_at,
+                            window_key=item.window_key,
+                            sequence=item.sequence,
+                            status="queued",
+                        )
+                    )
+                    continue
+                existing.scheduled_at = item.scheduled_at
+                existing.window_key = item.window_key
+                existing.sequence = item.sequence
+                existing.status = "queued"
+                existing.claimed_at = None
+                existing.published_at = None
+                existing.attempts = 0
+                existing.last_error = None
             return len(planned)
 
     async def claim_due(self, *, now: datetime | None = None) -> ApartmentInventoryQueue | None:
@@ -375,7 +471,7 @@ class InventoryRepository:
                 )
                 or 0
             )
-            if published_today >= 36:
+            if published_today >= MAX_PUBLICATIONS_PER_DAY:
                 return None
             await session.execute(
                 update(ApartmentInventoryQueue)
