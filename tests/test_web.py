@@ -464,7 +464,7 @@ async def test_miniapp_page_is_public_but_session_requires_telegram_auth(
         "title": "1-комнатная квартира",
         "details": "📍 ЦУМ\n🏙 Бишкек\n💰 25 000 сом",
         "photo_url": "https://img.example/apartment.jpg",
-        "price": 500,
+        "price": 599,
     }
     service.contact_status.assert_awaited_once_with(778899, 42)
 
