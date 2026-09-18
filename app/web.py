@@ -720,7 +720,15 @@ async def lalafo_webhook(
     if secret_token != settings.require_telegram_webhook_secret():
         return Response(status_code=status.HTTP_403_FORBIDDEN)
     update = Update.model_validate(await request.json(), context={"bot": runtime.bot})
-    await runtime.dispatcher.feed_update(runtime.bot, update)
+    try:
+        await runtime.dispatcher.feed_update(runtime.bot, update)
+    except Exception as exc:
+        logger.exception("Dedicated Lalafo webhook update failed")
+        if update.message is not None:
+            await runtime.bot.send_message(
+                update.message.chat.id,
+                f"⚠️ Ошибка обработки ссылки: {exc}",
+            )
     return Response(content="ok")
 
 
