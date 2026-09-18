@@ -257,6 +257,25 @@ class InventoryRepository:
             async with self.sessions.begin() as session:
                 row = await session.get(ApartmentDiscoveryRun, key)
                 if row is None:
+                    # A failed slot must be retried even when the wall clock
+                    # has crossed into the next discovery period.
+                    retry_cutoff = as_utc(now) - timedelta(minutes=DISCOVERY_RETRY_MINUTES)
+                    failed = await session.scalar(
+                        select(ApartmentDiscoveryRun)
+                        .where(
+                            ApartmentDiscoveryRun.status == "failed",
+                            ApartmentDiscoveryRun.completed_at <= retry_cutoff,
+                        )
+                        .order_by(ApartmentDiscoveryRun.completed_at.asc())
+                        .limit(1)
+                    )
+                    if failed is not None:
+                        failed.status = "running"
+                        failed.lease_until = lease_until
+                        failed.started_at = as_utc(now)
+                        failed.completed_at = None
+                        failed.last_error = None
+                        return failed.period_key
                     session.add(
                         ApartmentDiscoveryRun(
                             period_key=key,
