@@ -116,6 +116,7 @@ async def test_admin_can_publish_a_lalafo_link_with_selected_district(monkeypatc
 
     monkeypatch.setattr(lalafo_links, "LalafoClient", FakeClient)
     monkeypatch.setattr(lalafo_links, "TelegramPublisher", FakePublisher)
+    monkeypatch.setattr(lalafo_links, "find_working_proxies", AsyncMock(return_value=[]))
 
     settings = Settings(admin_user_id=777)
     await lalafo_links._publish_lalafo_url(

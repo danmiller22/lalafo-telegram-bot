@@ -17,6 +17,7 @@ from app.payments.repository import ApartmentRepository
 from app.security import TokenSigner
 from app.telegram.publisher import TelegramPublishError, TelegramPublisher
 from scripts.publish_inventory import _valid
+from scripts.select_lalafo_proxy import find_working_proxies
 
 
 router = Router(name="admin-lalafo-links")
@@ -29,6 +30,7 @@ _TRAILING_PUNCTUATION = ").,;!?]}>\"'"
 _publish_lock = asyncio.Lock()
 REPOST_AFTER = timedelta(hours=48)
 MAX_DISTRICT_LENGTH = 60
+PROXY_DISCOVERY_TIMEOUT = 20.0
 
 
 class ManualLalafoPublish(StatesGroup):
@@ -143,14 +145,28 @@ async def _publish_lalafo_url(
 
     async with _publish_lock:
         await message.answer("⏳ Проверяю квартиру…")
+        proxy_url = settings.lalafo_proxy_url.strip()
+        if not proxy_url:
+            try:
+                selected = await asyncio.wait_for(
+                    find_working_proxies(), timeout=PROXY_DISCOVERY_TIMEOUT
+                )
+            except Exception:
+                logger.exception("Could not discover a Lalafo proxy for manual link")
+                selected = []
+            proxy_url = ",".join(selected)
+            if proxy_url:
+                logger.info(
+                    "Using %d discovered Lalafo proxy route(s) for manual link",
+                    len(selected),
+                )
+            else:
+                logger.warning("No Lalafo proxy discovered; trying direct connection")
         try:
             async with LalafoClient(
                 timeout=settings.http_timeout_seconds,
                 max_retries=settings.http_max_retries,
-                # Manual admin links use the direct API route. Hosted proxy
-                # pools are rotated for bulk scraping and can be rejected by
-                # Lalafo even when the direct detail endpoint is available.
-                proxy_url="",
+                proxy_url=proxy_url,
             ) as client:
                 ad = await client.detail(url)
         except LalafoNotFound:
