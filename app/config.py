@@ -126,6 +126,8 @@ class Settings(BaseSettings):
 
     telegram_bot_token: str = ""
     lalafo_bot_token: str = ""
+    lalafo_relay_url: str = ""
+    lalafo_relay_secret: str = ""
     telegram_group_id: int = -1004389602150
     telegram_bot_username: str = "arenda312bot"
     admin_user_id: int = 0

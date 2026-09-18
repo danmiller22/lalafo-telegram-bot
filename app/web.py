@@ -23,10 +23,12 @@ from pydantic import BaseModel
 from app.bot.main import BotRuntime, configure_bot_profile, create_runtime
 from app.config import get_settings
 from app.lalafo.auto_reply import LalafoAutoResponder
+from app.lalafo.models import LalafoAd
 from app.payment_plans import WEEK_PLAN, WEEK_PRICE
 from app.security import TokenSigner
 from app.telegram.formatting import format_admin_card, format_apartment, room_title
 from app.telegram.keyboards import admin_keyboard, paid_keyboard
+from app.telegram.publisher import TelegramPublisher
 from app.telegram.miniapp import mini_app_html, verify_telegram_init_data
 from app.lalafo.phone import display_phone
 from app.lalafo.mcp_server import lalafo_mcp, lalafo_mcp_app
@@ -88,6 +90,11 @@ _background_watchdog_state: dict[str, Any] = {
 
 class MiniAppRequest(BaseModel):
     init_data: str
+
+
+class LalafoRelayRequest(BaseModel):
+    ad: LalafoAd
+    district: str | None = None
     start_param: str
 
 
@@ -734,6 +741,39 @@ async def lalafo_webhook(
                 f"⚠️ Ошибка обработки ссылки: {exc}",
             )
     return Response(content="ok")
+
+
+@app.post("/internal/lalafo/publish")
+async def relay_lalafo_publish(
+    payload: LalafoRelayRequest,
+    relay_secret: str | None = Header(default=None, alias="X-Lalafo-Relay-Secret"),
+) -> JSONResponse:
+    settings = get_settings()
+    expected = settings.lalafo_relay_secret or settings.callback_secret
+    if not expected or not secrets.compare_digest(relay_secret or "", expected):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid relay secret")
+    runtime = _bot_runtime
+    if runtime is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Bot is starting")
+    ad = payload.ad.model_copy(update={"district": payload.district or payload.ad.district})
+    apartments = runtime.workflow_data["apartments"]
+    signer = runtime.workflow_data["signer"]
+    apartment = await apartments.upsert_discovered(ad, discovery_priority=True)
+    publisher = TelegramPublisher(
+        runtime.bot,
+        chat_id=settings.telegram_group_id,
+        signer=signer,
+        bot_username=settings.telegram_bot_username,
+        support_url=settings.support_bot_url,
+        max_photos=settings.max_photos_per_apartment,
+    )
+    published = await publisher.publish(apartment.id, ad)
+    await apartments.mark_published(
+        apartment.id,
+        chat_id=settings.telegram_group_id,
+        message_id=published.message_id,
+    )
+    return JSONResponse({"ok": True, "lalafo_id": ad.lalafo_id, "message_id": published.message_id})
 
 
 @app.get("/health")

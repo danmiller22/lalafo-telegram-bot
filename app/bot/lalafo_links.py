@@ -4,6 +4,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 import logging
 import re
+import httpx
 
 from aiogram import Bot, F, Router
 from aiogram.fsm.context import FSMContext
@@ -209,6 +210,22 @@ async def _publish_lalafo_url(
         valid, reason = _valid(ad, settings)
         if not valid:
             await message.answer(f"❌ Квартира не прошла фильтр: {reason}.")
+            return
+
+        if settings.lalafo_relay_url.strip():
+            try:
+                async with httpx.AsyncClient(timeout=45.0) as relay_client:
+                    response = await relay_client.post(
+                        settings.lalafo_relay_url.rstrip("/") + "/internal/lalafo/publish",
+                        headers={"X-Lalafo-Relay-Secret": settings.lalafo_relay_secret},
+                        json={"ad": ad.model_dump(mode="json"), "district": district},
+                    )
+                    response.raise_for_status()
+            except (httpx.HTTPError, ValueError) as exc:
+                logger.exception("Main Arenda bot relay failed")
+                await message.answer(f"⚠️ Основной бот не принял карточку: {exc}")
+                return
+            await message.answer(f"✅ Передал карточку основному боту. ID: {ad.lalafo_id}.")
             return
 
         # Manual admin submissions are explicit overrides: publish immediately
