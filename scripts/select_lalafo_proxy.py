@@ -28,6 +28,8 @@ HEADERS = {
     "language": "ru_RU",
     "country-id": "12",
     "content-type": "application/json",
+    "Origin": "https://lalafo.kg",
+    "Referer": "https://lalafo.kg/",
 }
 # Keep several independently verified routes. Lalafo can accept the probe and
 # then rate-limit that IP on the real multi-page search; LalafoClient rotates

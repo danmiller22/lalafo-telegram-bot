@@ -58,6 +58,8 @@ class LalafoClient:
             "user-hash": self._user_hash,
             "content-type": "application/json",
             "X-Cache-Bypass": "yes",
+            "Origin": "https://lalafo.kg",
+            "Referer": "https://lalafo.kg/",
         }
         self._client = self._make_client()
 
@@ -96,6 +98,24 @@ class LalafoClient:
     async def close(self) -> None:
         await self._client.aclose()
 
+    async def _get_json_via_relay(self, url: str) -> dict[str, Any] | None:
+        """Use an HTTPS relay when Lalafo blocks the cloud egress address."""
+        relay_url = "https://r.jina.ai/http://" + url.removeprefix("https://")
+        try:
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(min(self._timeout, 20.0)),
+                follow_redirects=True,
+                headers={"Accept": "application/json", "User-Agent": self._headers["User-Agent"]},
+            ) as relay:
+                response = await relay.get(relay_url)
+                if response.status_code != 200:
+                    return None
+                payload = response.json()
+                return payload if isinstance(payload, dict) else None
+        except (httpx.HTTPError, ValueError):
+            logger.warning("Lalafo HTTPS relay failed", exc_info=True)
+            return None
+
     async def _get_json(self, url: str) -> dict[str, Any]:
         last_error: Exception | None = None
         for attempt in range(self.max_retries + 2):
@@ -108,6 +128,10 @@ class LalafoClient:
                         if self._proxy_urls:
                             await self._use_direct_connection()
                             continue
+                        relayed = await self._get_json_via_relay(url)
+                        if relayed is not None:
+                            logger.warning("Loaded Lalafo JSON through HTTPS relay")
+                            return relayed
                         raise LalafoAccessError(
                             f"Lalafo returned HTTP {response.status_code}; access was not bypassed"
                         )

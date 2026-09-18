@@ -49,6 +49,12 @@ def test_primary_search_uses_the_operator_owner_one_bedroom_and_price_filters():
     assert params["price[to]"] == "43000"
 
 
+def test_client_sends_browser_context_headers():
+    client = LalafoClient()
+    assert client._headers["Origin"] == "https://lalafo.kg"
+    assert client._headers["Referer"] == "https://lalafo.kg/"
+
+
 def test_supplementary_search_reserves_owner_and_realtor_pools():
     assert len(ADDITIONAL_SEARCH_URLS) == 2
     for url, expected_offerer in zip(ADDITIONAL_SEARCH_URLS, ("19057", "42340")):
