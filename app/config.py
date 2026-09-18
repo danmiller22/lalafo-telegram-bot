@@ -83,7 +83,7 @@ DEFAULT_SEARCH_URL = (
     "dolgosrochnaya-arenda-kvartir/1-bedroom/2-bedrooms/studio/owner/"
     "semeynym/param-bez-detey/studentam/bez-podseleniya/"
     "mozhno-s-zhivotnymi"
-    "?price[from]=20000&price[to]=40000"
+    "?price[from]=20000&price[to]=43000"
 )
 
 # Keep separate fallback pools so realtor inventory always gets reserved search
@@ -91,10 +91,10 @@ DEFAULT_SEARCH_URL = (
 ADDITIONAL_SEARCH_URLS: tuple[str, ...] = (
     "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
     "dolgosrochnaya-arenda-kvartir/1-bedroom/2-bedrooms/studio/owner"
-    "?price[from]=20000&price[to]=40000",
+    "?price[from]=20000&price[to]=43000",
     "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
     "dolgosrochnaya-arenda-kvartir/1-bedroom/2-bedrooms/studio/real-estate-agency"
-    "?price[from]=20000&price[to]=40000",
+    "?price[from]=20000&price[to]=43000",
 )
 
 _CENTER_PATH = (
@@ -110,10 +110,10 @@ _INVENTORY_BASE = (
 # The twice-daily collector deliberately checks these four pools separately,
 # so broad owner results cannot crowd out central or realtor inventory.
 INVENTORY_SEARCH_URLS: tuple[str, ...] = (
-    f"{_INVENTORY_BASE}{_CENTER_PATH}/owner?price[from]=20000&price[to]=40000",
-    f"{_INVENTORY_BASE}owner?price[from]=20000&price[to]=40000",
-    f"{_INVENTORY_BASE}{_CENTER_PATH}/real-estate-agency?price[from]=20000&price[to]=40000",
-    f"{_INVENTORY_BASE}real-estate-agency?price[from]=20000&price[to]=40000",
+    f"{_INVENTORY_BASE}{_CENTER_PATH}/owner?price[from]=20000&price[to]=43000",
+    f"{_INVENTORY_BASE}owner?price[from]=20000&price[to]=43000",
+    f"{_INVENTORY_BASE}{_CENTER_PATH}/real-estate-agency?price[from]=20000&price[to]=43000",
+    f"{_INVENTORY_BASE}real-estate-agency?price[from]=20000&price[to]=43000",
 )
 
 APARTMENT_PUBLISH_INTERVAL_MINUTES = 90
@@ -173,7 +173,7 @@ class Settings(BaseSettings):
     apartment_publication_heartbeat_seconds: float = 60.0
     city: str = "Бишкек"
     min_price: int = 20_000
-    max_price: int = 40_000
+    max_price: int = 43_000
     rooms: str = "1"
     max_new_posts_per_run: int = 18
     max_search_pages: int = 36
