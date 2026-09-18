@@ -60,6 +60,13 @@ class LalafoClient:
             "X-Cache-Bypass": "yes",
             "Origin": "https://lalafo.kg",
             "Referer": "https://lalafo.kg/",
+            "sec-ch-ua": '"Chromium";v="140", "Not=A?Brand";v="24"',
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-platform": '"Windows"',
+            "sec-fetch-dest": "empty",
+            "sec-fetch-mode": "cors",
+            "sec-fetch-site": "same-origin",
+            "x-requested-with": "XMLHttpRequest",
         }
         self._client = self._make_client()
 

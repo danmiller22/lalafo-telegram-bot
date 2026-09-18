@@ -30,6 +30,13 @@ HEADERS = {
     "content-type": "application/json",
     "Origin": "https://lalafo.kg",
     "Referer": "https://lalafo.kg/",
+    "sec-ch-ua": '"Chromium";v="140", "Not=A?Brand";v="24"',
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": '"Windows"',
+    "sec-fetch-dest": "empty",
+    "sec-fetch-mode": "cors",
+    "sec-fetch-site": "same-origin",
+    "x-requested-with": "XMLHttpRequest",
 }
 # Keep several independently verified routes. Lalafo can accept the probe and
 # then rate-limit that IP on the real multi-page search; LalafoClient rotates
