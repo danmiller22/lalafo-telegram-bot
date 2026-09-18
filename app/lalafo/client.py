@@ -10,7 +10,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import httpx
 
 from app.config import LALAFO_DISTRICT_FILTERS
-from app.lalafo.parser import parse_detail_page, parse_search_data
+from app.lalafo.parser import parse_detail_data, parse_search_data
 
 logger = logging.getLogger(__name__)
 
@@ -258,8 +258,18 @@ class LalafoClient:
         if not match:
             raise LalafoError("Lalafo detail URL has no advertisement id")
         expected_id = int(match.group(1))
-        html = await self._get_text(detail_url)
-        ad = parse_detail_page(html, source_url=detail_url)
+        parts = urlsplit(detail_url)
+        api_url = urlunsplit(
+            (
+                parts.scheme,
+                parts.netloc,
+                f"/api/search/v3/feed/details/{expected_id}",
+                "expand=url",
+                "",
+            )
+        )
+        payload = await self._get_json(api_url)
+        ad = parse_detail_data(payload, source_url=detail_url)
         if ad.lalafo_id != expected_id:
             raise LalafoError(
                 f"Lalafo detail mismatch: expected {expected_id}, received {ad.lalafo_id}"
