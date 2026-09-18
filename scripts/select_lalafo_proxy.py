@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import sys
 import uuid
 from typing import Any
@@ -54,12 +55,19 @@ async def _works(proxy_url: str) -> str | None:
             items = payload["items"]
             if items and isinstance(items[0], dict) and items[0].get("url"):
                 detail_url = str(items[0]["url"])
-                if detail_url.startswith("/"):
-                    detail_url = "https://lalafo.kg" + detail_url
-                detail = await client.get(
-                    detail_url, headers={"request-id": str(uuid.uuid4())}
+                match = re.search(r"-id-(\d+)(?:$|[/?#])", detail_url)
+                if not match:
+                    return None
+                detail_api_url = (
+                    f"https://lalafo.kg/api/search/v3/feed/details/{match.group(1)}?expand=url"
                 )
-                if detail.status_code != 200 or "__NEXT_DATA__" not in detail.text:
+                detail = await client.get(
+                    detail_api_url, headers={"request-id": str(uuid.uuid4())}
+                )
+                if detail.status_code != 200:
+                    return None
+                detail_payload = detail.json()
+                if not isinstance(detail_payload, dict):
                     return None
             return proxy_url
     except (httpx.HTTPError, json.JSONDecodeError, ValueError):
