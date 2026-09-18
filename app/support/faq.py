@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from app.payment_plans import WEEK_PRICE
+from app.payment_plans import WANTED_SEARCH_PRICE, WEEK_PRICE
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,7 +41,7 @@ FAQ_ITEMS = (
             "сколько стоит доступ",
             "цена доступа",
             "тариф",
-            "500 сом",
+            "599 сом",
         ),
         answer=(
             f"⭐ Недельный доступ стоит {WEEK_PRICE} сом и работает ровно 7 дней "
@@ -97,7 +97,7 @@ FAQ_ITEMS = (
         ),
         answer=(
             "🔎 В главном меню нажмите «Разместить „Ищу квартиру“», заполните "
-            "короткую анкету и оплатите 100 сом. После подтверждения заявка будет "
+            f"короткую анкету и оплатите {WANTED_SEARCH_PRICE} сом. После подтверждения заявка будет "
             "опубликована в группе."
         ),
     ),

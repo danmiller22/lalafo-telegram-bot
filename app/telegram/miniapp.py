@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from html import escape
 from urllib.parse import parse_qsl
 
+from app.payment_plans import WEEK_PRICE
+
 
 @dataclass(frozen=True, slots=True)
 class TelegramMiniAppUser:
@@ -89,7 +91,7 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     <div id="details" class="details"></div>
     <div id="status" class="status">Проверяем доступ…</div>
     <div id="phone" class="phone hidden"></div>
-    <button id="pay" class="primary hidden">Оплатить неделю — 500 сом</button>
+    <button id="pay" class="primary hidden">Оплатить неделю — {WEEK_PRICE} сом</button>
     <button id="check" class="secondary hidden">Я оплатил(а)</button>
     <button id="checking" class="secondary hidden" disabled>⏳ Статус: оплата проверяется</button>
     <button id="refresh" class="secondary">Обновить статус</button>
@@ -137,7 +139,7 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     }} else if (data.status === "rejected") {{
       message("Оплата не подтверждена. Можно повторить оплату и отправить новый чек.");
     }} else {{
-      message("Неделя доступа ко всем номерам — 500 сом.");
+      message("Неделя доступа ко всем номерам — {WEEK_PRICE} сом.");
     }}
   }}
   async function load() {{

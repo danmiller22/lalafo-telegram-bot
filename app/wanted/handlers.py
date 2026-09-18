@@ -9,6 +9,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from app.config import Settings
+from app.payment_plans import WANTED_SEARCH_PRICE
 from app.security import TokenSigner
 from app.wanted.formatting import format_wanted_admin, format_wanted_ad, format_wanted_preview
 from app.wanted.keyboards import (
@@ -220,7 +221,7 @@ async def wanted_create(
     await callback.answer()
     if callback.message:
         await callback.message.edit_text(
-            "Заявка сохранена. Стоимость публикации — 100 сом.\n\n"
+            f"Заявка сохранена. Стоимость публикации — {WANTED_SEARCH_PRICE} сом.\n\n"
             + format_wanted_ad(ad)
             + "\n\nПосле оплаты нажмите «Проверить оплату».",
             reply_markup=wanted_payment_keyboard(

@@ -3,6 +3,7 @@ from __future__ import annotations
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from app.models import WantedAd
+from app.payment_plans import WANTED_SEARCH_PRICE
 from app.security import TokenSigner
 
 
@@ -93,7 +94,11 @@ def wanted_payment_keyboard(
     token = signer.sign_id("wanted-paid", ad_id)
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="💳 Оплатить 100 сом", url=payment_url)],
+            [
+                InlineKeyboardButton(
+                    text=f"💳 Оплатить {WANTED_SEARCH_PRICE} сом", url=payment_url
+                )
+            ],
             [
                 InlineKeyboardButton(
                     text="⏳ Оплата проверяется" if pending else "✅ Проверить оплату",

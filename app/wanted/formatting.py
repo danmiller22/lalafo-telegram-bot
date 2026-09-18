@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from app.models import WantedAd
+from app.payment_plans import WANTED_SEARCH_PRICE
 from app.telegram.formatting import format_money
 
 
@@ -54,7 +55,7 @@ def format_wanted_admin(ad: WantedAd) -> str:
     user = f"@{ad.username}" if ad.username else f"{ad.first_name or 'Клиент'} ({ad.telegram_user_id})"
     return "\n".join(
         [
-            "💳 Проверка оплаты заявки — 100 сом",
+            f"💳 Проверка оплаты заявки — {WANTED_SEARCH_PRICE} сом",
             f"👤 {user}",
             f"🆔 Заявка #{ad.id}",
             "",
