@@ -147,7 +147,10 @@ async def _publish_lalafo_url(
             async with LalafoClient(
                 timeout=settings.http_timeout_seconds,
                 max_retries=settings.http_max_retries,
-                proxy_url=settings.lalafo_proxy_url,
+                # Manual admin links use the direct API route. Hosted proxy
+                # pools are rotated for bulk scraping and can be rejected by
+                # Lalafo even when the direct detail endpoint is available.
+                proxy_url="",
             ) as client:
                 ad = await client.detail(url)
         except LalafoNotFound:
