@@ -1,13 +1,12 @@
 Arenda.KG Lalafo link bot - Windows portable package
 
 1. Распакуйте папку в постоянное место, например C:\ArendaKG.
-2. Откройте PowerShell в этой папке и выполните:
-   powershell -ExecutionPolicy Bypass -File .\install.ps1
+2. Дважды кликните `start.bat`.
 3. В автономном архиве `.env` уже заполнен для `@personn22bot`; ничего
    дополнительно вводить не нужно.
 4. Запустите .\start_background.vbs. Окно не появится, лог будет в logs\bot.log.
 
-install.ps1 добавляет запуск в автозагрузку текущего пользователя Windows.
+`start.bat` устанавливает зависимости, запускает бота и добавляет его в автозагрузку текущего пользователя Windows.
 Остановка: powershell -ExecutionPolicy Bypass -File .\stop.ps1
 Удаление автозапуска: powershell -ExecutionPolicy Bypass -File .\uninstall.ps1
 
