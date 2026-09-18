@@ -63,7 +63,7 @@ def _is_admin(message: Message, settings: Settings) -> bool:
         return True
     return bool(
         settings.admin_username
-        and user.username
+        and getattr(user, "username", None)
         and user.username.casefold() == settings.admin_username.lstrip("@").casefold()
     )
 
