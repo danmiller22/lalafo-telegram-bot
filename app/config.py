@@ -125,6 +125,7 @@ class Settings(BaseSettings):
     )
 
     telegram_bot_token: str = ""
+    lalafo_bot_token: str = ""
     telegram_group_id: int = -1004389602150
     telegram_bot_username: str = "arenda312bot"
     admin_user_id: int = 0
@@ -234,6 +235,11 @@ class Settings(BaseSettings):
         if not self.telegram_bot_token:
             raise RuntimeError("TELEGRAM_BOT_TOKEN is required for this operation")
         return self.telegram_bot_token
+
+    def require_lalafo_bot_token(self) -> str:
+        if not self.lalafo_bot_token:
+            raise RuntimeError("LALAFO_BOT_TOKEN is not configured")
+        return self.lalafo_bot_token
 
     def require_lalafo_auto_reply_credentials(self) -> tuple[str, str]:
         if not self.lalafo_login or not self.lalafo_password:

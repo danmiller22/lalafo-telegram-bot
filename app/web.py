@@ -37,6 +37,7 @@ app = FastAPI(title="Lalafo Telegram service", docs_url=None, redoc_url=None)
 _run_lock = asyncio.Lock()
 _scraper_task: asyncio.Task[None] | None = None
 _bot_runtime: BotRuntime | None = None
+_lalafo_bot_runtime: BotRuntime | None = None
 _bot_setup_task: asyncio.Task[None] | None = None
 _legacy_featured_cleanup_task: asyncio.Task[None] | None = None
 _keyboard_sync_task: asyncio.Task[None] | None = None
@@ -155,6 +156,22 @@ async def _configure_main_bot() -> None:
             logger.exception("Telegram background setup failed; retrying")
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 60.0)
+
+
+async def _configure_lalafo_bot_once() -> None:
+    runtime = _lalafo_bot_runtime
+    settings = get_settings()
+    if runtime is None or not settings.lalafo_bot_token:
+        return
+    webhook_url = settings.require_telegram_webhook_url().replace(
+        "/telegram/webhook", "/telegram/lalafo-webhook"
+    )
+    await runtime.bot.set_webhook(
+        webhook_url,
+        secret_token=settings.require_telegram_webhook_secret(),
+        allowed_updates=runtime.dispatcher.resolve_used_update_types(),
+        drop_pending_updates=True,
+    )
 
 
 async def _keep_service_awake() -> None:
@@ -557,7 +574,7 @@ async def _watch_background_tasks() -> None:
 
 @app.on_event("startup")
 async def startup() -> None:
-    global _bot_runtime, _bot_setup_task, _legacy_featured_cleanup_task
+    global _bot_runtime, _lalafo_bot_runtime, _bot_setup_task, _legacy_featured_cleanup_task
     global _keyboard_sync_task, _lalafo_auto_responder
     global _lalafo_watchdog_task, _apartment_scheduler_task
     global _service_keepalive_task, _background_watchdog_task, _shutting_down
@@ -580,10 +597,18 @@ async def startup() -> None:
         settings.require_telegram_webhook_url()
         settings.require_telegram_webhook_secret()
         _bot_runtime = await create_runtime()
+        if settings.lalafo_bot_token:
+            _lalafo_bot_runtime = await create_runtime(
+                bot_token=settings.require_lalafo_bot_token(), lalafo_only=True
+            )
         _bot_setup_state.update(state="configuring", last_error=None)
         _bot_setup_task = asyncio.create_task(
             _configure_main_bot(), name="telegram-setup-maintainer"
         )
+        if _lalafo_bot_runtime is not None:
+            asyncio.create_task(
+                _configure_lalafo_bot_once(), name="lalafo-telegram-setup"
+            )
         logger.info("Telegram runtime ready; network setup continues in background")
         _keyboard_sync_task = asyncio.create_task(
             _sync_outdated_keyboards(), name="keyboard-sync"
@@ -623,7 +648,7 @@ async def startup() -> None:
 
 @app.on_event("shutdown")
 async def shutdown() -> None:
-    global _bot_runtime, _bot_setup_task, _legacy_featured_cleanup_task
+    global _bot_runtime, _lalafo_bot_runtime, _bot_setup_task, _legacy_featured_cleanup_task
     global _keyboard_sync_task, _lalafo_auto_responder
     global _lalafo_watchdog_task, _apartment_scheduler_task
     global _service_keepalive_task, _background_watchdog_task, _shutting_down
@@ -676,6 +701,27 @@ async def shutdown() -> None:
     if _bot_runtime is not None:
         await _bot_runtime.close()
         _bot_runtime = None
+    if _lalafo_bot_runtime is not None:
+        await _lalafo_bot_runtime.close()
+        _lalafo_bot_runtime = None
+
+
+@app.post("/telegram/lalafo-webhook")
+async def lalafo_webhook(
+    request: Request,
+    secret_token: str | None = Header(
+        default=None, alias="X-Telegram-Bot-Api-Secret-Token"
+    ),
+) -> Response:
+    runtime = _lalafo_bot_runtime
+    settings = get_settings()
+    if runtime is None or not settings.lalafo_bot_token:
+        return Response(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
+    if secret_token != settings.require_telegram_webhook_secret():
+        return Response(status_code=status.HTTP_403_FORBIDDEN)
+    update = Update.model_validate(await request.json(), context={"bot": runtime.bot})
+    await runtime.dispatcher.feed_update(runtime.bot, update)
+    return Response(content="ok")
 
 
 @app.get("/health")

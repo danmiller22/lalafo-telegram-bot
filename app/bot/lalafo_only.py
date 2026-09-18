@@ -29,7 +29,7 @@ async def run() -> None:
     engine, sessions = create_engine_and_session(settings.database_url)
     await init_db(engine)
     apartments = ApartmentRepository(sessions)
-    bot = Bot(token=settings.require_bot_token())
+    bot = Bot(token=settings.lalafo_bot_token or settings.require_bot_token())
     dispatcher = Dispatcher(storage=MemoryStorage())
     dispatcher.include_router(lalafo_links.router)
 

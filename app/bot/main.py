@@ -34,7 +34,7 @@ class BotRuntime:
         await self.engine.dispose()
 
 
-async def create_runtime() -> BotRuntime:
+async def create_runtime(*, bot_token: str | None = None, lalafo_only: bool = False) -> BotRuntime:
     settings = get_settings()
     signer = TokenSigner(settings.require_callback_secret())
     engine, sessions = create_engine_and_session(settings.database_url)
@@ -44,14 +44,17 @@ async def create_runtime() -> BotRuntime:
     wanted_ads = WantedAdRepository(sessions)
     support_tickets = SupportTicketRepository(sessions)
     service = PaymentService(apartments, payments, admin_user_id=settings.admin_user_id)
-    bot = Bot(token=settings.require_bot_token())
+    bot = Bot(token=bot_token or settings.require_bot_token())
     dispatcher = Dispatcher(storage=MemoryStorage())
-    dispatcher.include_router(wanted_admin.router)
-    dispatcher.include_router(admin.router)
-    dispatcher.include_router(lalafo_links.router)
-    dispatcher.include_router(support_handlers.router)
-    dispatcher.include_router(wanted_handlers.router)
-    dispatcher.include_router(handlers.router)
+    if lalafo_only:
+        dispatcher.include_router(lalafo_links.router)
+    else:
+        dispatcher.include_router(wanted_admin.router)
+        dispatcher.include_router(admin.router)
+        dispatcher.include_router(lalafo_links.router)
+        dispatcher.include_router(support_handlers.router)
+        dispatcher.include_router(wanted_handlers.router)
+        dispatcher.include_router(handlers.router)
     workflow_data = {
         "settings": settings,
         "signer": signer,
