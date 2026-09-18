@@ -10,7 +10,12 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import httpx
 
 from app.config import LALAFO_DISTRICT_FILTERS
-from app.lalafo.parser import parse_detail_data, parse_search_data
+from app.lalafo.parser import (
+    LalafoParseError,
+    parse_detail_data,
+    parse_detail_page,
+    parse_search_data,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -310,6 +315,16 @@ class LalafoClient:
         if not match:
             raise LalafoError("Lalafo detail URL has no advertisement id")
         expected_id = int(match.group(1))
+        # The browser-facing listing page is available even when Lalafo blocks
+        # the JSON details endpoint for cloud egress addresses. Prefer it for
+        # manual links, then retain the API path as a fallback.
+        try:
+            html = await self._get_text(detail_url)
+            ad = parse_detail_page(html, source_url=detail_url)
+            if ad.lalafo_id == expected_id:
+                return ad
+        except (LalafoError, LalafoParseError) as exc:
+            logger.info("Lalafo HTML detail path unavailable; trying JSON API: %s", exc)
         parts = urlsplit(detail_url)
         api_url = urlunsplit(
             (
