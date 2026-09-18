@@ -51,7 +51,8 @@ async def create_runtime(*, bot_token: str | None = None, lalafo_only: bool = Fa
     else:
         dispatcher.include_router(wanted_admin.router)
         dispatcher.include_router(admin.router)
-        dispatcher.include_router(lalafo_links.router)
+        if not settings.lalafo_bot_token:
+            dispatcher.include_router(lalafo_links.router)
         dispatcher.include_router(support_handlers.router)
         dispatcher.include_router(wanted_handlers.router)
         dispatcher.include_router(handlers.router)
