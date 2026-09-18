@@ -1,4 +1,3 @@
-import json
 from unittest.mock import AsyncMock
 
 import pytest
@@ -47,7 +46,7 @@ def test_primary_search_uses_the_operator_owner_one_bedroom_and_price_filters():
         params[key] for key in params if key.startswith("parameters[2149]")
     ] == ["19057"]
     assert params["price[from]"] == "20000"
-    assert params["price[to]"] == "40000"
+    assert params["price[to]"] == "43000"
 
 
 def test_supplementary_search_reserves_owner_and_realtor_pools():
@@ -62,7 +61,7 @@ def test_supplementary_search_reserves_owner_and_realtor_pools():
         ] == [expected_offerer]
         assert not any(key.startswith("parameters[946]") for key in params)
         assert params["price[from]"] == "20000"
-        assert params["price[to]"] == "40000"
+        assert params["price[to]"] == "43000"
 
 
 @pytest.mark.parametrize(
@@ -98,46 +97,27 @@ async def test_search_retries_without_long_district_filter_after_access_error():
     assert "price%5Bto%5D=35000" in second_url
 
 
-def detail_html(ad_id: int, phone: str) -> str:
-    payload = {
-        "props": {
-            "pageProps": {
-                "dehydratedState": {
-                    "queries": [
-                        {
-                            "queryKey": ["detail", 12, "ru_RU", ad_id],
-                            "state": {
-                                "data": {
-                                    "id": ad_id,
-                                    "category_id": 2044,
-                                    "mobile": phone,
-                                    "price": 30000,
-                                    "currency": "KGS",
-                                    "city": "Бишкек",
-                                    "params": [
-                                        {"name": "Количество комнат", "value": "1 комната"},
-                                        {"name": "Для кого", "value": "Без подселения"},
-                                        {"name": "Кто предлагает", "value": "Собственник"},
-                                    ],
-                                    "images": [{"original_url": "https://img.example/1.jpg"}],
-                                }
-                            },
-                        }
-                    ]
-                }
-            }
-        }
+def detail_payload(ad_id: int, phone: str) -> dict:
+    return {
+        "id": ad_id,
+        "category_id": 2044,
+        "mobile": phone,
+        "price": 30000,
+        "currency": "KGS",
+        "city": "Бишкек",
+        "params": [
+            {"name": "Количество комнат", "value": "1 комната"},
+            {"name": "Для кого", "value": "Без подселения"},
+            {"name": "Кто предлагает", "value": "Собственник"},
+        ],
+        "images": [{"original_url": "https://img.example/1.jpg"}],
     }
-    return (
-        '<html><script id="__NEXT_DATA__" type="application/json">'
-        f"{json.dumps(payload)}</script></html>"
-    )
 
 
 @pytest.mark.asyncio
 async def test_detail_uses_matching_page_phone():
     client = LalafoClient()
-    client._get_text = AsyncMock(return_value=detail_html(77701377, "+996554252534"))
+    client._get_json = AsyncMock(return_value=detail_payload(77701377, "+996554252534"))
     try:
         ad = await client.detail("https://lalafo.kg/bishkek/ads/example-id-77701377")
     finally:
@@ -150,7 +130,7 @@ async def test_detail_uses_matching_page_phone():
 @pytest.mark.asyncio
 async def test_detail_rejects_mismatched_page():
     client = LalafoClient()
-    client._get_text = AsyncMock(return_value=detail_html(43393050, "+996555000617"))
+    client._get_json = AsyncMock(return_value=detail_payload(43393050, "+996555000617"))
     try:
         with pytest.raises(LalafoError, match="detail mismatch"):
             await client.detail("https://lalafo.kg/bishkek/ads/example-id-77701377")
