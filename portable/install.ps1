@@ -26,5 +26,7 @@ $Shortcut.WindowStyle = 7
 $Shortcut.Description = 'Arenda.KG Lalafo publisher'
 $Shortcut.Save()
 
-Write-Host "Установлено. Заполните $Root\.env и запустите start_background.vbs."
+Start-Process -FilePath (Join-Path $Root 'start_background.vbs') -WorkingDirectory $Root
+
+Write-Host "Установлено и запущено в фоне. Лог: $Root\logs\bot.log"
 Write-Host "Автозапуск создан: $ShortcutPath"
