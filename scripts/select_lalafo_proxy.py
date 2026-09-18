@@ -95,13 +95,21 @@ async def find_working_proxies() -> list[str]:
         return []
 
     selected: list[str] = []
-    for offset in range(0, len(proxies), 25):
-        results = await asyncio.gather(
-            *(_works(proxy) for proxy in proxies[offset : offset + 25])
-        )
-        selected.extend(result for result in results if result)
-        if len(selected) >= TARGET_PROXY_COUNT:
-            return selected[:TARGET_PROXY_COUNT]
+    tasks = [asyncio.create_task(_works(proxy)) for proxy in proxies]
+    try:
+        for task in asyncio.as_completed(tasks, timeout=25.0):
+            result = await task
+            if result:
+                selected.append(result)
+                if len(selected) >= TARGET_PROXY_COUNT:
+                    return selected[:TARGET_PROXY_COUNT]
+    except asyncio.TimeoutError:
+        pass
+    finally:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
     return selected[:TARGET_PROXY_COUNT]
 
 

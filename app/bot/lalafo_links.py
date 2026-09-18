@@ -30,7 +30,7 @@ _TRAILING_PUNCTUATION = ").,;!?]}>\"'"
 _publish_lock = asyncio.Lock()
 REPOST_AFTER = timedelta(hours=48)
 MAX_DISTRICT_LENGTH = 60
-PROXY_DISCOVERY_TIMEOUT = 90.0
+PROXY_DISCOVERY_TIMEOUT = 30.0
 _manual_proxy_pool: list[str] = []
 
 
