@@ -3,9 +3,8 @@ Arenda.KG Lalafo link bot - Windows portable package
 1. Распакуйте папку в постоянное место, например C:\ArendaKG.
 2. Откройте PowerShell в этой папке и выполните:
    powershell -ExecutionPolicy Bypass -File .\install.ps1
-3. Откройте созданный файл .env и заполните LALAFO_BOT_TOKEN,
-   ADMIN_USER_ID и CALLBACK_SECRET. Токен возьмите у нового бота BotFather,
-   чтобы не отключать webhook основного облачного Arenda.KG.
+3. В автономном архиве `.env` уже заполнен для `@personn22bot`; ничего
+   дополнительно вводить не нужно.
 4. Запустите .\start_background.vbs. Окно не появится, лог будет в logs\bot.log.
 
 install.ps1 добавляет запуск в автозагрузку текущего пользователя Windows.

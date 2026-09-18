@@ -56,10 +56,15 @@ def repost_available_at(
 
 
 def _is_admin(message: Message, settings: Settings) -> bool:
+    user = message.from_user
+    if user is None:
+        return False
+    if settings.admin_user_id and user.id == settings.admin_user_id:
+        return True
     return bool(
-        settings.admin_user_id
-        and message.from_user is not None
-        and message.from_user.id == settings.admin_user_id
+        settings.admin_username
+        and user.username
+        and user.username.casefold() == settings.admin_username.lstrip("@").casefold()
     )
 
 
