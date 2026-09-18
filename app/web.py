@@ -749,7 +749,11 @@ async def relay_lalafo_publish(
     relay_secret: str | None = Header(default=None, alias="X-Lalafo-Relay-Secret"),
 ) -> JSONResponse:
     settings = get_settings()
-    expected = settings.lalafo_relay_secret or settings.callback_secret
+    expected = (
+        settings.lalafo_relay_secret
+        or settings.callback_secret
+        or settings.lalafo_bot_token
+    )
     if not expected or not secrets.compare_digest(relay_secret or "", expected):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid relay secret")
     runtime = _bot_runtime
