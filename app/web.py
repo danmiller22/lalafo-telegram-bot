@@ -721,7 +721,11 @@ async def lalafo_webhook(
         return Response(status_code=status.HTTP_403_FORBIDDEN)
     update = Update.model_validate(await request.json(), context={"bot": runtime.bot})
     try:
-        await runtime.dispatcher.feed_update(runtime.bot, update)
+        await runtime.dispatcher.feed_update(
+            runtime.bot,
+            update,
+            **runtime.workflow_data,
+        )
     except Exception as exc:
         logger.exception("Dedicated Lalafo webhook update failed")
         if update.message is not None:
