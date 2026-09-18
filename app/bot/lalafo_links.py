@@ -165,21 +165,8 @@ async def _publish_lalafo_url(
             await message.answer(f"❌ Квартира не прошла фильтр: {reason}.")
             return
 
-        existing = await apartments.get_by_lalafo(ad.lalafo_id)
-        available_at = repost_available_at(existing.published_at if existing else None)
-        if available_at is not None:
-            remaining = available_at - datetime.now(timezone.utc)
-            hours = max(1, int(remaining.total_seconds() // 3600) + 1)
-            await message.answer(
-                f"♻️ Эта квартира уже была в группе. "
-                f"Повтор будет доступен примерно через {hours} ч."
-            )
-            return
-        is_repeat = bool(existing and existing.publication_status == "published")
-        if not is_repeat and await apartments.is_duplicate(ad):
-            await message.answer("♻️ Эта квартира уже опубликована под другой ссылкой.")
-            return
-
+        # Manual admin submissions are explicit overrides: publish immediately
+        # even when the automatic parser has already seen the same apartment.
         apartment = await apartments.upsert_discovered(ad, discovery_priority=True)
         publisher = TelegramPublisher(
             bot,
