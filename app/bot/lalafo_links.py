@@ -165,13 +165,31 @@ async def _publish_lalafo_url(
                 )
             else:
                 logger.warning("No Lalafo proxy discovered; trying direct connection")
-        try:
-            async with LalafoClient(
-                timeout=settings.http_timeout_seconds,
-                max_retries=settings.http_max_retries,
-                proxy_url=proxy_url,
-            ) as client:
-                ad = await client.detail(url)
+        ad = None
+        for load_attempt in range(2):
+            try:
+                async with LalafoClient(
+                    timeout=settings.http_timeout_seconds,
+                    max_retries=settings.http_max_retries,
+                    proxy_url=proxy_url,
+                ) as client:
+                    ad = await client.detail(url)
+                break
+            except LalafoAccessError:
+                if load_attempt:
+                    raise
+                logger.warning("Lalafo access denied; refreshing manual proxy pool")
+                try:
+                    selected = await asyncio.wait_for(
+                        find_working_proxies(), timeout=PROXY_DISCOVERY_TIMEOUT
+                    )
+                except Exception:
+                    logger.exception("Could not refresh Lalafo proxy pool")
+                    selected = []
+                _manual_proxy_pool = selected
+                proxy_url = ",".join(selected)
+        if ad is None:
+            raise LalafoAccessError("Lalafo access was not bypassed")
         except LalafoNotFound:
             await message.answer("❌ Объявление удалено или больше недоступно.")
             return
