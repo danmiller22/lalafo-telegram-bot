@@ -100,7 +100,7 @@ def test_callback_data_is_short_and_contains_no_phone():
         assert keyboard.inline_keyboard[-1][0].url == support_url
 
     assert [row[0].text for row in private_payment.inline_keyboard] == [
-        "⭐ Неделя доступа — 599 сом",
+        "⭐ Неделя доступа — 499 сом",
         "🛟 Техподдержка",
     ]
     assert receipt.inline_keyboard[0][0].text == "💳 Ссылка на оплату"

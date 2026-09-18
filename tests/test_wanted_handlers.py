@@ -258,7 +258,7 @@ async def test_payment_check_notifies_admin_once():
     wanted_ads.claim_admin_notification.assert_awaited_once_with(ad.id)
     bot.send_message.assert_awaited_once()
     assert bot.send_message.await_args.args[0] == 999
-    assert "50 сом" in bot.send_message.await_args.args[1]
+    assert "100 сом" in bot.send_message.await_args.args[1]
     wanted_ads.finish_admin_notification.assert_awaited_once_with(ad.id, 901)
 
 

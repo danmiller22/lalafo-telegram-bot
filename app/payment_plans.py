@@ -4,8 +4,8 @@ from datetime import datetime, timedelta
 
 
 WEEK_PLAN = "week"
-WEEK_PRICE = 599
-WANTED_SEARCH_PRICE = 50
+WEEK_PRICE = 499
+WANTED_SEARCH_PRICE = 100
 WEEK_DURATION = timedelta(days=7)
 
 
