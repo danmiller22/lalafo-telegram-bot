@@ -78,6 +78,15 @@ class LalafoClient:
         self._client = self._make_client()
         logger.warning("Rotated to another verified Lalafo proxy")
 
+    async def _use_direct_connection(self) -> None:
+        if not self._proxy_urls:
+            return
+        await self._client.aclose()
+        self._proxy_urls = []
+        self._proxy_index = 0
+        self._client = self._make_client()
+        logger.warning("Lalafo proxy failed; retrying through direct connection")
+
     async def __aenter__(self) -> "LalafoClient":
         return self
 
@@ -96,10 +105,16 @@ class LalafoClient:
                 )
                 if response.status_code in (403, 429):
                     if attempt >= self.max_retries:
+                        if self._proxy_urls:
+                            await self._use_direct_connection()
+                            continue
                         raise LalafoAccessError(
                             f"Lalafo returned HTTP {response.status_code}; access was not bypassed"
                         )
                     retry_after = float(response.headers.get("Retry-After", 0) or 0)
+                    if attempt >= self.max_retries and self._proxy_urls:
+                        await self._use_direct_connection()
+                        continue
                     await self._rotate_proxy()
                     await asyncio.sleep(max(retry_after, 2**attempt))
                     continue
@@ -121,7 +136,13 @@ class LalafoClient:
             except (httpx.TransportError, httpx.HTTPStatusError) as exc:
                 last_error = exc
                 if attempt >= self.max_retries:
+                    if self._proxy_urls:
+                        await self._use_direct_connection()
+                        continue
                     break
+                if attempt >= self.max_retries and self._proxy_urls:
+                    await self._use_direct_connection()
+                    continue
                 await self._rotate_proxy()
                 await asyncio.sleep(2**attempt)
         raise LalafoError(f"Lalafo request failed after retries: {type(last_error).__name__}")

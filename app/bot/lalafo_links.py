@@ -153,9 +153,9 @@ async def _publish_lalafo_url(
         except LalafoNotFound:
             await message.answer("❌ Объявление удалено или больше недоступно.")
             return
-        except (LalafoError, LalafoParseError, ValueError):
+        except (LalafoError, LalafoParseError, ValueError) as exc:
             logger.exception("Admin Lalafo link could not be loaded")
-            await message.answer("⚠️ Не удалось загрузить Lalafo. Попробуйте ещё раз.")
+            await message.answer(f"⚠️ Не удалось загрузить Lalafo: {exc}")
             return
 
         ad = ad.model_copy(update={"district": district})
