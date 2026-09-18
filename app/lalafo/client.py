@@ -98,7 +98,7 @@ class LalafoClient:
 
     async def _get_json(self, url: str) -> dict[str, Any]:
         last_error: Exception | None = None
-        for attempt in range(self.max_retries + 1):
+        for attempt in range(self.max_retries + 2):
             try:
                 response = await self._client.get(
                     url, headers={"request-id": str(uuid.uuid4())}
@@ -149,7 +149,7 @@ class LalafoClient:
 
     async def _get_text(self, url: str) -> str:
         last_error: Exception | None = None
-        for attempt in range(self.max_retries + 1):
+        for attempt in range(self.max_retries + 2):
             try:
                 response = await self._client.get(
                     url,
