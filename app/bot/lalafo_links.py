@@ -30,7 +30,8 @@ _TRAILING_PUNCTUATION = ").,;!?]}>\"'"
 _publish_lock = asyncio.Lock()
 REPOST_AFTER = timedelta(hours=48)
 MAX_DISTRICT_LENGTH = 60
-PROXY_DISCOVERY_TIMEOUT = 20.0
+PROXY_DISCOVERY_TIMEOUT = 90.0
+_manual_proxy_pool: list[str] = []
 
 
 class ManualLalafoPublish(StatesGroup):
@@ -145,7 +146,8 @@ async def _publish_lalafo_url(
 
     async with _publish_lock:
         await message.answer("⏳ Проверяю квартиру…")
-        proxy_url = settings.lalafo_proxy_url.strip()
+        global _manual_proxy_pool
+        proxy_url = settings.lalafo_proxy_url.strip() or ",".join(_manual_proxy_pool)
         if not proxy_url:
             try:
                 selected = await asyncio.wait_for(
@@ -156,6 +158,7 @@ async def _publish_lalafo_url(
                 selected = []
             proxy_url = ",".join(selected)
             if proxy_url:
+                _manual_proxy_pool = selected
                 logger.info(
                     "Using %d discovered Lalafo proxy route(s) for manual link",
                     len(selected),
