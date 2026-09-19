@@ -55,6 +55,10 @@ async def create_runtime(*, bot_token: str | None = None, lalafo_only: bool = Fa
         # it can exhaust the payment web instance's CPU and memory.
         dispatcher.include_router(support_handlers.router)
         dispatcher.include_router(wanted_handlers.router)
+        # The owner-only Lalafo link/forward flow also works on the primary
+        # payment bot, so a private forwarded card can be copied to the group
+        # even when the dedicated manual bot is offline.
+        dispatcher.include_router(lalafo_links.main_router)
         dispatcher.include_router(handlers.router)
     workflow_data = {
         "settings": settings,

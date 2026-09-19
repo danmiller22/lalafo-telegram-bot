@@ -15,7 +15,7 @@ def _apartments(count: int, *, central: bool, start_id: int, owner: bool = True)
     from types import SimpleNamespace
 
     now = datetime.now(timezone.utc)
-    rooms = ("studio", "1", "2")
+    rooms = ("1", "2")
     return [
         SimpleNamespace(
             id=start_id + index,
@@ -31,9 +31,9 @@ def _apartments(count: int, *, central: bool, start_id: int, owner: bool = True)
     ]
 
 
-def test_two_periods_plan_35_cards_across_every_hour():
-    stock = _apartments(60, central=True, start_id=1) + _apartments(
-        40, central=False, start_id=100
+def test_two_periods_plan_96_cards_across_every_hour():
+    stock = _apartments(220, central=True, start_id=1) + _apartments(
+        100, central=False, start_id=300
     )
     first_start = datetime(2026, 9, 13, 0, tzinfo=timezone(timedelta(hours=6)))
     first = plan_period(stock, period_start=first_start, rng=random.Random(7))
@@ -44,8 +44,8 @@ def test_two_periods_plan_35_cards_across_every_hour():
         rng=random.Random(8),
     )
     all_items = first + second
-    assert len(all_items) == 35
-    assert sum("золотой" in item.apartment.district.casefold() for item in all_items) == 35
+    assert len(all_items) == 96
+    assert sum("золотой" in item.apartment.district.casefold() for item in all_items) == 96
     assert 5 <= sum(item.apartment.rooms == "2" for item in all_items) <= 10
 
     for planned in (first, second):
@@ -53,7 +53,7 @@ def test_two_periods_plan_35_cards_across_every_hour():
         for item in planned:
             windows.setdefault(item.window_key, []).append(item)
         assert len(windows) == 12
-        assert all(len(items) in {1, 2} for items in windows.values())
+        assert all(len(items) == 4 for items in windows.values())
         starts = []
         for items in windows.values():
             ordered = sorted(items, key=lambda item: item.sequence)
@@ -74,30 +74,30 @@ def test_two_periods_plan_35_cards_across_every_hour():
 
 
 def test_period_uses_broader_stock_when_no_central_apartments_exist():
-    stock = _apartments(24, central=False, start_id=1, owner=False)
+    stock = _apartments(100, central=False, start_id=1, owner=False)
     period_start = datetime(2026, 9, 13, 0, tzinfo=timezone(timedelta(hours=6)))
 
     planned = plan_period(stock, period_start=period_start, rng=random.Random(9))
 
-    assert len(planned) == 18
+    assert len(planned) == 48
     assert all(not "золотой" in item.apartment.district.casefold() for item in planned)
     assert 5 <= sum(item.apartment.rooms == "2" for item in planned) <= 10
 
 
 def test_period_keeps_single_central_card_and_fills_with_realtors():
     stock = _apartments(1, central=True, start_id=1) + _apartments(
-        30, central=False, start_id=100, owner=False
+        100, central=False, start_id=100, owner=False
     )
     period_start = datetime(2026, 9, 13, 12, tzinfo=timezone(timedelta(hours=6)))
 
     planned = plan_period(stock, period_start=period_start, rng=random.Random(10))
 
-    assert len(planned) == 17
+    assert len(planned) == 48
     assert sum("золотой" in item.apartment.district.casefold() for item in planned) == 1
 
 
 def test_period_spreads_random_reposts_across_separate_windows():
-    fresh = _apartments(40, central=True, start_id=1)
+    fresh = _apartments(100, central=True, start_id=1)
     repeats = _apartments(8, central=True, start_id=100)
     for item in repeats:
         item.rooms = "1"
@@ -119,7 +119,7 @@ def test_period_spreads_random_reposts_across_separate_windows():
 
 
 def test_hourly_period_can_be_filled_from_48_hour_reposts():
-    repeats = _apartments(24, central=True, start_id=500)
+    repeats = _apartments(48, central=True, start_id=500)
     for item in repeats:
         item.rooms = "1"
     period_start = datetime(2026, 9, 13, 0, tzinfo=timezone(timedelta(hours=6)))
@@ -131,7 +131,7 @@ def test_hourly_period_can_be_filled_from_48_hour_reposts():
         rng=random.Random(12),
     )
 
-    assert len(planned) == 18
+    assert len(planned) == 48
     assert len({item.window_key for item in planned}) == 12
 
 

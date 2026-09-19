@@ -30,6 +30,7 @@ class TelegramPublisher:
         bot_username: str,
         support_url: str,
         max_photos: int = 5,
+        include_duplicate: bool = True,
     ) -> None:
         self.bot = bot
         self.chat_id = chat_id
@@ -40,6 +41,7 @@ class TelegramPublisher:
         # deployments. Public apartment cards now always use every photo that
         # Lalafo returned; Telegram albums are split into groups of ten.
         self.max_photos = max_photos
+        self.include_duplicate = include_duplicate
         self._retry_not_before = 0.0
         self._rate_limit_lock = asyncio.Lock()
 
@@ -145,6 +147,7 @@ class TelegramPublisher:
                     signer=self.signer,
                     bot_username=self.bot_username,
                     support_url=self.support_url,
+                    include_duplicate=self.include_duplicate,
                 ),
             )
         except Exception as exc:

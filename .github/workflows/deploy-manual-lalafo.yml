@@ -1,0 +1,64 @@
+name: Deploy isolated manual Lalafo bot
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-manual-lalafo
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      LALAFO_BOT_TOKEN: ${{ secrets.LALAFO_BOT_TOKEN }}
+      ADMIN_USER_ID: ${{ secrets.ADMIN_USER_ID }}
+      CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - name: Configure and deploy only the independent manual service
+        shell: python
+        run: |
+          import json, os, secrets, urllib.request
+          required = ['RENDER_API_KEY', 'LALAFO_BOT_TOKEN', 'ADMIN_USER_ID', 'CALLBACK_SECRET', 'DATABASE_URL']
+          for key in required:
+              if not os.environ.get(key):
+                  raise SystemExit('Missing repository secret: ' + key)
+          def api(url, method='GET', data=None, render=False):
+              headers = {'Content-Type': 'application/json'}
+              if render:
+                  headers['Authorization'] = 'Bearer ' + os.environ['RENDER_API_KEY']
+              request = urllib.request.Request(url, method=method, headers=headers,
+                  data=json.dumps(data).encode() if data is not None else None)
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  body = response.read()
+                  return json.loads(body) if body else None
+          me = api('https://api.telegram.org/bot' + os.environ['LALAFO_BOT_TOKEN'] + '/getMe')
+          assert me['ok'] and me['result']['username'] == 'personn22bot', 'Unexpected bot identity'
+          base = 'https://api.render.com/v1/services/srv-damule2jnfac73engc8g'
+          service = api(base, render=True)
+          assert service['name'] == 'arenda-lalafo-manual', 'Refusing to modify another service'
+          current = api(base + '/env-vars', render=True)
+          values = {item['envVar']['key']: item['envVar']['value'] for item in current}
+          values.update({key: os.environ[key] for key in required if key != 'RENDER_API_KEY'})
+          values.update({
+              'LALAFO_WEBHOOK_URL': 'https://arenda-lalafo-manual.onrender.com/telegram/manual-webhook',
+              'TELEGRAM_GROUP_ID': '-1004389602150',
+              'TELEGRAM_BOT_USERNAME': 'arenda312bot',
+              'RUN_BOT': 'false',
+              'HOSTED_APARTMENT_SCHEDULER_ENABLED': 'false',
+              'LALAFO_AUTO_REPLY_ENABLED': 'false',
+              'SERVICE_KEEPALIVE_ENABLED': 'false',
+              'WEB_CONCURRENCY': '1',
+          })
+          values.setdefault('LALAFO_WEBHOOK_SECRET', secrets.token_urlsafe(32))
+          values.pop('TELEGRAM_BOT_TOKEN', None)
+          api(base + '/env-vars', method='PUT', data=[{'key': k, 'value': v} for k,v in values.items()], render=True)
+          deployment = api(base + '/deploys', method='POST', data={'clearCache': 'do_not_clear'}, render=True)
+          print('Configured arenda-lalafo-manual; dedicated bot identity verified.')
+          print('Render deployment:', deployment['id'])

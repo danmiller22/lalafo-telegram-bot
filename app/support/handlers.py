@@ -75,7 +75,21 @@ async def support_close(
     if callback.message:
         await callback.message.edit_text(
             "Главное меню:",
-            reply_markup=main_menu_keyboard(settings.support_bot_url),
+            reply_markup=main_menu_keyboard(
+                settings.support_bot_url,
+                include_admin=bool(
+                    (
+                        settings.admin_user_id
+                        and callback.from_user.id == settings.admin_user_id
+                    )
+                    or (
+                        settings.admin_username
+                        and callback.from_user.username
+                        and callback.from_user.username.casefold()
+                        == settings.admin_username.lstrip("@").casefold()
+                    )
+                ),
+            ),
         )
 
 

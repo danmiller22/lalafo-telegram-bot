@@ -6,7 +6,7 @@ from app.security import TokenSigner
 from app.payment_plans import WEEK_PRICE
 
 
-APARTMENT_KEYBOARD_VERSION = 10
+APARTMENT_KEYBOARD_VERSION = 11
 MINI_APP_SHORT_NAME = "access"
 
 
@@ -15,13 +15,17 @@ def _support_row(support_url: str) -> list[InlineKeyboardButton]:
 
 
 def apartment_keyboard(
-    apartment_id: int, *, signer: TokenSigner, bot_username: str, support_url: str
+    apartment_id: int,
+    *,
+    signer: TokenSigner,
+    bot_username: str,
+    support_url: str,
+    include_duplicate: bool = False,
 ) -> InlineKeyboardMarkup:
     payment_token = signer.sign_start_id("miniapp-apartment", apartment_id)
     bot_url = f"https://t.me/{bot_username.lstrip('@')}"
     mini_app_url = f"{bot_url}/{MINI_APP_SHORT_NAME}?startapp={payment_token}"
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
+    rows = [
             [
                 InlineKeyboardButton(
                     text="Получить номер",
@@ -34,9 +38,18 @@ def apartment_keyboard(
                     url=f"{bot_url}?start=want",
                 )
             ],
-            _support_row(support_url),
         ]
-    )
+    if include_duplicate:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="🔁 Получить копию в личку",
+                    callback_data=f"dup:{signer.sign_id('duplicate', apartment_id)}",
+                )
+            ]
+        )
+    rows.append(_support_row(support_url))
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def payment_keyboard(

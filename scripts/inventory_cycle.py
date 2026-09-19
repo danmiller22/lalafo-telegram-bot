@@ -7,15 +7,12 @@ import os
 
 from app.config import get_settings
 from app.database import create_engine_and_session, init_db
-from app.inventory import InventoryRepository
+from app.inventory import InventoryRepository, MIN_HEALTHY_PERIOD_QUEUE
 from scripts.publish_inventory import run as publish_one_due
 from scripts.scrape_publish import run as discover
 
 
 logger = logging.getLogger(__name__)
-MIN_HEALTHY_PERIOD_QUEUE = 15
-
-
 def _truthy(value: str | None) -> bool:
     return (value or "").strip().casefold() in {"1", "true", "yes", "on"}
 

@@ -7,9 +7,10 @@ from app.payment_plans import WANTED_SEARCH_PRICE
 from app.security import TokenSigner
 
 
-def main_menu_keyboard(support_url: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
+def main_menu_keyboard(
+    support_url: str, *, include_admin: bool = False
+) -> InlineKeyboardMarkup:
+    rows = [
             [
                 InlineKeyboardButton(
                     text="🔎 Подать заявку на поиск квартиры",
@@ -22,7 +23,12 @@ def main_menu_keyboard(support_url: str) -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="✅ Проверить бота", callback_data="menu:status"),
             ],
         ]
-    )
+    if include_admin:
+        rows.insert(
+            0,
+            [InlineKeyboardButton(text="➕ Добавить карточку", callback_data="manual:add")],
+        )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def rooms_keyboard() -> InlineKeyboardMarkup:

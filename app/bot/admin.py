@@ -8,14 +8,14 @@ from aiogram import Bot, F, Router
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 
-from app.bot.callbacks import ADMIN_PREFIX
+from app.bot.callbacks import ADMIN_PREFIX, DUPLICATE_PREFIX
 from app.config import Settings
 from app.payments.repository import ApartmentRepository, PaymentRepository
 from app.payments.service import PaymentService
 from app.security import TokenSigner
 from app.telegram.formatting import format_admin_decision, user_label
 from app.telegram.keyboards import private_payment_keyboard
-from app.telegram.private_delivery import send_private_contact
+from app.telegram.private_delivery import send_private_contact, send_private_public_card
 from app.payment_plans import WEEK_PLAN
 from app.wanted.repository import WantedAdRepository
 
@@ -25,6 +25,48 @@ logger = logging.getLogger(__name__)
 
 def _is_admin(user_id: int, settings: Settings) -> bool:
     return bool(settings.admin_user_id and user_id == settings.admin_user_id)
+
+
+@router.callback_query(F.data.startswith(DUPLICATE_PREFIX))
+async def duplicate_apartment_callback(
+    callback: CallbackQuery,
+    settings: Settings,
+    apartments: ApartmentRepository,
+    signer: TokenSigner,
+    bot: Bot,
+) -> None:
+    """Send an original apartment card to the admin's private bot chat.
+
+    This deliberately uploads fresh photos and text instead of forwarding the
+    old Telegram message. The callback is signed and rejected for every
+    non-admin user, so the control is harmless when visible in a public card.
+    """
+    if not _is_admin(callback.from_user.id, settings):
+        await callback.answer("Недостаточно прав.", show_alert=True)
+        return
+    token = (callback.data or "").removeprefix(DUPLICATE_PREFIX)
+    apartment_id = signer.verify_id("duplicate", token)
+    if apartment_id is None:
+        await callback.answer("Недействительная подпись.", show_alert=True)
+        return
+    apartment = await apartments.get(apartment_id)
+    if apartment is None or not apartment.photo_urls:
+        await callback.answer("Квартира больше недоступна.", show_alert=True)
+        return
+    try:
+        await send_private_public_card(
+            bot,
+            user_id=callback.from_user.id,
+            apartment=apartment,
+            signer=signer,
+            bot_username=settings.telegram_bot_username,
+            support_url=settings.support_bot_url,
+        )
+    except Exception:
+        logger.exception("Could not duplicate apartment %s", apartment.id)
+        await callback.answer("Не удалось опубликовать карточку.", show_alert=True)
+        return
+    await callback.answer("✅ Оригинальная карточка отправлена вам в личный чат бота.")
 
 
 @router.message(Command("admin"))

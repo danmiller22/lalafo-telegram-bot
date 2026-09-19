@@ -40,4 +40,8 @@ def test_empty_inventory_discovery_stays_retryable() -> None:
         False,
         "ThinInventory",
     )
-    assert discovery_outcome(exit_code=0, queued_count=18) == (True, None)
+    assert discovery_outcome(exit_code=0, queued_count=18) == (
+        False,
+        "ThinInventory",
+    )
+    assert discovery_outcome(exit_code=0, queued_count=48) == (True, None)

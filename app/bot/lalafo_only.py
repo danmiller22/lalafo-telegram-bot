@@ -29,11 +29,17 @@ async def run() -> None:
     engine, sessions = create_engine_and_session(settings.database_url)
     await init_db(engine)
     apartments = ApartmentRepository(sessions)
-    bot = Bot(token=settings.lalafo_bot_token or settings.require_bot_token())
+    token = settings.require_lalafo_bot_token()
+    if token == settings.telegram_bot_token or token.split(":", 1)[0] == "8867149259":
+        raise RuntimeError("Payment bot token is forbidden in the manual worker")
+    bot = Bot(token=token)
     dispatcher = Dispatcher(storage=MemoryStorage())
     dispatcher.include_router(lalafo_links.router)
 
     try:
+        me = await bot.get_me()
+        if me.username != "personn22bot":
+            raise RuntimeError("Expected @personn22bot; refusing to change another bot webhook")
         await bot.delete_webhook(drop_pending_updates=False)
         await dispatcher.start_polling(
             bot,

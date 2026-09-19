@@ -56,7 +56,21 @@ async def wanted_cancel(
     if callback.message:
         await callback.message.edit_text(
             "Создание заявки отменено.",
-            reply_markup=main_menu_keyboard(settings.support_bot_url),
+            reply_markup=main_menu_keyboard(
+                settings.support_bot_url,
+                include_admin=bool(
+                    (
+                        settings.admin_user_id
+                        and callback.from_user.id == settings.admin_user_id
+                    )
+                    or (
+                        settings.admin_username
+                        and callback.from_user.username
+                        and callback.from_user.username.casefold()
+                        == settings.admin_username.lstrip("@").casefold()
+                    )
+                ),
+            ),
         )
 
 
@@ -327,7 +341,25 @@ async def _send_my_wanted_ads(
     }
     if not rows:
         await message.answer(
-            "У вас пока нет заявок.", reply_markup=main_menu_keyboard(settings.support_bot_url)
+            "У вас пока нет заявок.",
+            reply_markup=main_menu_keyboard(
+                settings.support_bot_url,
+                include_admin=bool(
+                    message.from_user
+                    and (
+                        (
+                            settings.admin_user_id
+                            and message.from_user.id == settings.admin_user_id
+                        )
+                        or (
+                            settings.admin_username
+                            and message.from_user.username
+                            and message.from_user.username.casefold()
+                            == settings.admin_username.lstrip("@").casefold()
+                        )
+                    )
+                ),
+            ),
         )
         return
     await message.answer("Ваши последние заявки:")
@@ -348,5 +380,22 @@ async def _send_my_wanted_ads(
         )
     await message.answer(
         "Чтобы разместить новую заявку, нажмите кнопку ниже.",
-        reply_markup=main_menu_keyboard(settings.support_bot_url),
+        reply_markup=main_menu_keyboard(
+            settings.support_bot_url,
+            include_admin=bool(
+                message.from_user
+                and (
+                    (
+                        settings.admin_user_id
+                        and message.from_user.id == settings.admin_user_id
+                    )
+                    or (
+                        settings.admin_username
+                        and message.from_user.username
+                        and message.from_user.username.casefold()
+                        == settings.admin_username.lstrip("@").casefold()
+                    )
+                )
+            ),
+        ),
     )

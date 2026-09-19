@@ -42,7 +42,24 @@ async def _show_main_menu(message: Message, settings: Settings) -> None:
         "🏠 Сервис аренды квартир\n\n"
         "Здесь можно получить контакт собственника из группы или разместить "
         "собственную заявку «Ищу квартиру».",
-        reply_markup=main_menu_keyboard(settings.support_bot_url),
+        reply_markup=main_menu_keyboard(
+            settings.support_bot_url,
+            include_admin=bool(
+                message.from_user
+                and (
+                    (
+                        settings.admin_user_id
+                        and message.from_user.id == settings.admin_user_id
+                    )
+                    or (
+                        settings.admin_username
+                        and message.from_user.username
+                        and message.from_user.username.casefold()
+                        == settings.admin_username.lstrip("@").casefold()
+                    )
+                )
+            ),
+        ),
     )
 
 
