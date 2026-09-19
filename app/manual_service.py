@@ -31,6 +31,7 @@ from app.telegram.publisher import TelegramPublisher
 from scripts.publish_inventory import _valid
 
 logger = logging.getLogger(__name__)
+PERSONAL_BOT_DISABLED = True
 metadata = MetaData()
 jobs = Table(
     "manual_lalafo_updates", metadata,
@@ -217,6 +218,17 @@ async def lifespan(app: FastAPI):
         me = await bot.get_me()
         if me.username != "personn22bot":
             raise RuntimeError("Expected @personn22bot; refusing to change another bot webhook")
+        if PERSONAL_BOT_DISABLED:
+            # The owner workflow now lives exclusively in the main payment bot.
+            # Remove Telegram delivery from the retired personal bot before
+            # keeping the Render health endpoint alive for observability.
+            await bot.delete_webhook(drop_pending_updates=True)
+            app.state.disabled = True
+            app.state.runtime = None
+            app.state.worker = None
+            app.state.secret = ""
+            yield
+            return
         async with engine.begin() as conn:
             await conn.run_sync(metadata.create_all)
         runtime = ManualPublisher(settings, bot, engine, sessions)
@@ -242,6 +254,13 @@ app = FastAPI(title="Arenda.KG manual Lalafo publisher", lifespan=lifespan)
 
 @app.get("/health")
 async def health():
+    if getattr(app.state, "disabled", False):
+        return {
+            "status": "ok",
+            "bot": "personn22bot",
+            "worker": "disabled",
+            "last_error": None,
+        }
     runtime = getattr(app.state, "runtime", None)
     worker = getattr(app.state, "worker", None)
     ready = runtime is not None and worker is not None and not worker.done()
@@ -254,6 +273,8 @@ async def health():
 
 @app.post("/telegram/manual-webhook")
 async def webhook(request: Request, x_telegram_bot_api_secret_token: str = Header(default="")):
+    if getattr(app.state, "disabled", False):
+        raise HTTPException(410, "Personal bot is disabled; use the main bot")
     expected = getattr(app.state, "secret", "")
     if not expected or not secrets.compare_digest(expected, x_telegram_bot_api_secret_token):
         raise HTTPException(401)

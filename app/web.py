@@ -883,9 +883,7 @@ async def health() -> JSONResponse:
                 and settings.lalafo_bot_token
                 and settings.lalafo_bot_cloud_enabled
                 else (
-                    "remote"
-                    if settings.run_bot and settings.lalafo_bot_token
-                    else "disabled"
+                    "disabled"
                 )
             ),
             "free_cloud_keepalive": (
