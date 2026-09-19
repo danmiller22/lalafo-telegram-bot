@@ -84,7 +84,7 @@ async def support_close(
                     )
                     or (
                         settings.admin_username
-                        and callback.from_user.username
+                        and getattr(callback.from_user, "username", None)
                         and callback.from_user.username.casefold()
                         == settings.admin_username.lstrip("@").casefold()
                     )

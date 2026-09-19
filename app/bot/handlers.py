@@ -53,7 +53,7 @@ async def _show_main_menu(message: Message, settings: Settings) -> None:
                     )
                     or (
                         settings.admin_username
-                        and message.from_user.username
+                        and getattr(message.from_user, "username", None)
                         and message.from_user.username.casefold()
                         == settings.admin_username.lstrip("@").casefold()
                     )

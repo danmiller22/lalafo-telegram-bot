@@ -65,7 +65,7 @@ async def wanted_cancel(
                     )
                     or (
                         settings.admin_username
-                        and callback.from_user.username
+                        and getattr(callback.from_user, "username", None)
                         and callback.from_user.username.casefold()
                         == settings.admin_username.lstrip("@").casefold()
                     )
@@ -345,7 +345,7 @@ async def _send_my_wanted_ads(
             reply_markup=main_menu_keyboard(
                 settings.support_bot_url,
                 include_admin=bool(
-                    message.from_user
+                    getattr(message, "from_user", None)
                     and (
                         (
                             settings.admin_user_id
@@ -353,7 +353,7 @@ async def _send_my_wanted_ads(
                         )
                         or (
                             settings.admin_username
-                            and message.from_user.username
+                            and getattr(message.from_user, "username", None)
                             and message.from_user.username.casefold()
                             == settings.admin_username.lstrip("@").casefold()
                         )
@@ -383,7 +383,7 @@ async def _send_my_wanted_ads(
         reply_markup=main_menu_keyboard(
             settings.support_bot_url,
             include_admin=bool(
-                message.from_user
+                getattr(message, "from_user", None)
                 and (
                     (
                         settings.admin_user_id
@@ -391,7 +391,7 @@ async def _send_my_wanted_ads(
                     )
                     or (
                         settings.admin_username
-                        and message.from_user.username
+                        and getattr(message.from_user, "username", None)
                         and message.from_user.username.casefold()
                         == settings.admin_username.lstrip("@").casefold()
                     )
