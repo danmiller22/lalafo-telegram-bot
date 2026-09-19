@@ -22,6 +22,7 @@ from scripts.select_lalafo_proxy import find_working_proxies
 
 
 router = Router(name="admin-lalafo-links")
+main_router = Router(name="main-admin-lalafo-links")
 logger = logging.getLogger(__name__)
 _LALAFO_URL = re.compile(
     r"https://(?:www\.)?lalafo\.kg/[^\s<>]+-id-\d+(?:\?[^\s<>]*)?",
@@ -142,6 +143,22 @@ async def request_lalafo_district(
     await state.set_state(ManualLalafoPublish.waiting_for_district)
     await state.update_data(source_url=url)
     await message.answer("Какой район написать в заголовке карточки?")
+
+
+# Aiogram does not allow one Router instance to be attached to two
+# dispatchers. Register the same flow on a separate router so the main Arenda
+# bot remains a working fallback when the dedicated link-bot token is revoked.
+main_router.message.register(
+    receive_lalafo_district,
+    ManualLalafoPublish.waiting_for_district,
+    F.chat.type == "private",
+    F.text,
+)
+main_router.message.register(
+    request_lalafo_district,
+    F.chat.type == "private",
+    has_lalafo_url,
+)
 
 
 async def _publish_lalafo_url(

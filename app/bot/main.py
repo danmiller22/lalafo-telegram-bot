@@ -51,11 +51,10 @@ async def create_runtime(*, bot_token: str | None = None, lalafo_only: bool = Fa
     else:
         dispatcher.include_router(wanted_admin.router)
         dispatcher.include_router(admin.router)
-        # A Router instance can belong to only one Dispatcher. When the
-        # dedicated link bot is configured it owns this router; otherwise the
-        # main bot remains the fallback for manual Lalafo links.
-        if not settings.lalafo_bot_token:
-            dispatcher.include_router(lalafo_links.router)
+        # Keep the manual link flow on the main bot as a durable fallback. It
+        # uses a separate Router instance because the dedicated link bot owns
+        # ``lalafo_links.router``.
+        dispatcher.include_router(lalafo_links.main_router)
         dispatcher.include_router(support_handlers.router)
         dispatcher.include_router(wanted_handlers.router)
         dispatcher.include_router(handlers.router)

@@ -57,6 +57,11 @@ _bot_setup_state: dict[str, Any] = {
     "last_configured_at": None,
     "last_error": None,
 }
+_lalafo_bot_setup_state: dict[str, Any] = {
+    "state": "pending",
+    "last_configured_at": None,
+    "last_error": None,
+}
 _run_state: dict[str, Any] = {
     "running": False,
     "last_started_at": None,
@@ -190,12 +195,21 @@ async def _configure_lalafo_bot() -> None:
             if _lalafo_bot_runtime is None:
                 return
             await _configure_lalafo_bot_once()
+            _lalafo_bot_setup_state.update(
+                state="ready",
+                last_configured_at=_now(),
+                last_error=None,
+            )
             logger.info("Dedicated Lalafo link bot webhook is ready")
             backoff = 2.0
             await asyncio.sleep(6 * 60 * 60)
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception as exc:
+            _lalafo_bot_setup_state.update(
+                state="recovering",
+                last_error=type(exc).__name__,
+            )
             logger.exception("Dedicated Lalafo link bot setup failed; retrying")
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 60.0)
@@ -854,6 +868,11 @@ async def health() -> JSONResponse:
             "bot": "running" if settings.run_bot else "disabled",
             "telegram_setup": (
                 dict(_bot_setup_state) if settings.run_bot else "disabled"
+            ),
+            "lalafo_link_bot": (
+                dict(_lalafo_bot_setup_state)
+                if settings.run_bot and settings.lalafo_bot_token
+                else "disabled"
             ),
             "free_cloud_keepalive": (
                 dict(_service_keepalive_state)

@@ -98,6 +98,7 @@ async def test_health_and_authentication() -> None:
             "status": "ok",
             "bot": "disabled",
             "telegram_setup": "disabled",
+            "lalafo_link_bot": "disabled",
             "free_cloud_keepalive": "disabled",
             "background_watchdog": {
                 "state": "pending",

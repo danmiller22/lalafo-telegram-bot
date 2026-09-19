@@ -38,6 +38,12 @@ def test_extract_lalafo_url_from_message() -> None:
     assert lalafo_links.extract_lalafo_url("https://example.com/ad-id-123") is None
 
 
+def test_main_and_dedicated_bots_use_separate_routers() -> None:
+    assert lalafo_links.main_router is not lalafo_links.router
+    assert lalafo_links.main_router.parent_router is None
+    assert lalafo_links.router.parent_router is None
+
+
 def test_repeat_is_blocked_for_48_hours() -> None:
     now = datetime(2026, 9, 17, 12, tzinfo=timezone.utc)
 
