@@ -3,7 +3,7 @@ $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $Root
 
 if (-not (Get-Command py -ErrorAction SilentlyContinue) -and -not (Get-Command python -ErrorAction SilentlyContinue)) {
-    throw 'Python 3.12+ не найден. Установите Python с python.org и повторите install.ps1.'
+    throw 'Python 3.12 or newer was not found. Install it from python.org and run this script again.'
 }
 
 $Python = if (Get-Command py -ErrorAction SilentlyContinue) { 'py' } else { 'python' }
@@ -28,5 +28,5 @@ $Shortcut.Save()
 
 Start-Process -FilePath (Join-Path $Root 'start_background.vbs') -WorkingDirectory $Root
 
-Write-Host "Установлено и запущено в фоне. Лог: $Root\logs\bot.log"
-Write-Host "Автозапуск создан: $ShortcutPath"
+Write-Host "Installed and started in background. Log: $Root\logs\bot.log"
+Write-Host "Startup shortcut: $ShortcutPath"
