@@ -84,7 +84,7 @@ CENTRAL_DISTRICT_TERMS = (
 # The fallback search includes owners and real-estate agents; detail-level
 # checks still remove shared housing and all public cards omit offerer type.
 SOURCE_MIN_PRICE = 20_000
-SOURCE_MAX_PRICE = 45_000
+SOURCE_MAX_PRICE = 40_000
 SOURCE_ALLOWED_ROOMS = ("1", "2")
 SOURCE_MIN_PHOTOS = 2
 SOURCE_MAX_POSTS_PER_RUN = 18

@@ -115,7 +115,7 @@ def test_expanded_source_keeps_reposts_strictly_limited():
     assert TWO_BEDROOM_MAX_PER_RUN == 2
     assert settings.rooms == "1"
     assert settings.min_price == 20_000
-    assert settings.max_price == 45_000
+    assert settings.max_price == 40_000
     assert settings.max_new_posts_per_run == 18
     assert settings.max_search_pages == 36
     assert settings.allow_no_district is True
@@ -129,12 +129,12 @@ def test_source_urls_follow_the_operator_filters():
     assert "/semeynym/param-bez-detey/studentam/" in DEFAULT_SEARCH_URL
     assert "/bez-podseleniya/mozhno-s-zhivotnymi" in DEFAULT_SEARCH_URL
     assert "bez-zhivotnyh" not in DEFAULT_SEARCH_URL
-    assert "price[from]=20000&price[to]=45000" in DEFAULT_SEARCH_URL
+    assert "price[from]=20000&price[to]=40000" in DEFAULT_SEARCH_URL
     assert len(ADDITIONAL_SEARCH_URLS) == 2
     assert "/1-bedroom/2-bedrooms/owner" in ADDITIONAL_SEARCH_URLS[0]
     assert "/1-bedroom/2-bedrooms/real-estate-agency" in ADDITIONAL_SEARCH_URLS[1]
     assert all("bez-podseleniya" not in url for url in ADDITIONAL_SEARCH_URLS)
-    assert all("price[from]=20000&price[to]=45000" in url for url in ADDITIONAL_SEARCH_URLS)
+    assert all("price[from]=20000&price[to]=40000" in url for url in ADDITIONAL_SEARCH_URLS)
 
 
 def test_realtor_fallback_reserves_nearly_half_of_discovery_pool():

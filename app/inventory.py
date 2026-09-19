@@ -438,7 +438,7 @@ class InventoryRepository:
                             Apartment.publication_status != "published",
                             Apartment.id.not_in(active_queue_ids),
                             Apartment.fingerprint.not_in(queued_fingerprints),
-                            Apartment.price.between(20_000, 45_000),
+                            Apartment.price.between(20_000, 40_000),
                             Apartment.rooms.in_(("1", "2")),
                         )
                     )
@@ -454,7 +454,7 @@ class InventoryRepository:
                             Apartment.published_at
                             <= now - timedelta(hours=REPOST_AFTER_HOURS),
                             Apartment.id.not_in(active_queue_ids),
-                            Apartment.price.between(20_000, 45_000),
+                            Apartment.price.between(20_000, 40_000),
                             Apartment.rooms.in_(("1", "2")),
                         )
                     )

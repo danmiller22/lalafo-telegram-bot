@@ -2,10 +2,10 @@ from app.telegram.source_filter import extract_kgs_price, is_apartment_offer, is
 
 
 def test_accepts_owner_rental_under_limit():
-    text = "Сдается 1-комн квартира, собственник, 43 000 сом"
+    text = "Сдается 1-комн квартира, собственник, 39 000 сом"
     assert is_apartment_offer(text)
     assert is_owner_offer(text)
-    assert extract_kgs_price(text) == 43_000
+    assert extract_kgs_price(text) == 39_000
 
 
 def test_rejects_people_looking_for_housing():
@@ -13,5 +13,5 @@ def test_rejects_people_looking_for_housing():
 
 
 def test_rejects_over_limit():
-    assert is_apartment_offer("Сдам квартиру, хозяин, 45 000 сом")
+    assert not is_apartment_offer("Сдам квартиру, хозяин, 45 000 сом")
     assert not is_apartment_offer("Сдам квартиру, хозяин, 46 000 сом")

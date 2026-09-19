@@ -466,8 +466,8 @@ async def manual_card_price(
         price = int(digits)
     except ValueError:
         price = 0
-    if not 20_000 <= price <= 45_000:
-        await message.answer("Укажите цену от 20 000 до 45 000 сом.")
+    if not 20_000 <= price <= 40_000:
+        await message.answer("Укажите цену от 20 000 до 40 000 сом.")
         return
     data = await state.get_data()
     await state.clear()
