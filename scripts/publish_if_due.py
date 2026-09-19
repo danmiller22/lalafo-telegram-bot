@@ -114,12 +114,12 @@ async def run(
     max_attempts: int | None = None,
     wait_for_active_lease: bool | None = None,
 ) -> int:
-    # The old implementation below is retained temporarily for compatibility
-    # with imported helpers, but all production entry points now use the split
-    # discovery/queue publisher. It atomically publishes at most one due card.
-    from scripts.inventory_cycle import run as run_inventory_cycle
+    # The old implementation below is retained temporarily for compatibility.
+    # Production drains one complete six-card, two-hour inventory window so a
+    # delayed cloud tick cannot reduce the group to one apartment per run.
+    from scripts.publish_inventory_batch import run as run_inventory_batch
 
-    return await run_inventory_cycle()
+    return await run_inventory_batch()
 
     # Legacy combined scrape-and-publish path (intentionally unreachable).
     logging.basicConfig(

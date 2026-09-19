@@ -47,14 +47,14 @@ def _valid(ad, settings) -> tuple[bool, str]:
     return True, "ok"
 
 
-async def run() -> int:
+async def run(*, eligible_until: datetime | None = None) -> int:
     """Atomically claim and publish at most one due inventory card."""
     settings = get_settings()
     engine, sessions = create_engine_and_session(settings.database_url)
     await init_db(engine)
     inventory = InventoryRepository(sessions)
     apartments = ApartmentRepository(sessions)
-    item = await inventory.claim_due()
+    item = await inventory.claim_due(eligible_until=eligible_until)
     if item is None:
         await engine.dispose()
         return 0

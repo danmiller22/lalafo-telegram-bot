@@ -13,9 +13,9 @@ from app.models import Apartment, ApartmentDiscoveryRun, ApartmentInventoryQueue
 
 
 BISHKEK = ZoneInfo("Asia/Bishkek")
-FIRST_HALF_BATCH_SIZES = (4,) * 12
-SECOND_HALF_BATCH_SIZES = (4,) * 12
-# One persisted four-card window per clock hour. Centre stock is preferred,
+FIRST_HALF_BATCH_SIZES = (6,) * 6
+SECOND_HALF_BATCH_SIZES = (6,) * 6
+# One persisted six-card window every two hours. Centre stock is preferred,
 # but any suitable owner/realtor stock fills gaps so an empty centre pool does
 # not stall publication.
 FIRST_HALF_CENTRAL = FIRST_HALF_BATCH_SIZES
@@ -23,11 +23,11 @@ SECOND_HALF_CENTRAL = SECOND_HALF_BATCH_SIZES
 MAX_TWO_BEDROOMS_PER_WINDOW = 1
 MAX_TWO_BEDROOMS_PER_DAY = 10
 MAX_TWO_BEDROOMS_PER_PERIOD = 5
-MAX_PUBLICATIONS_PER_DAY = 96
+MAX_PUBLICATIONS_PER_DAY = 72
 REPOST_AFTER_HOURS = 48
-MAX_REPOSTS_PER_PERIOD = 18
+MAX_REPOSTS_PER_PERIOD = 36
 DISCOVERY_RETRY_MINUTES = 30
-MIN_HEALTHY_PERIOD_QUEUE = 40
+MIN_HEALTHY_PERIOD_QUEUE = 30
 
 
 def as_utc(value: datetime) -> datetime:
@@ -67,10 +67,10 @@ def _candidate_key(item: Apartment, *, central: bool) -> tuple[object, ...]:
     favorable = central and item.price <= 32_000
     return (
         not item.discovery_priority,
-        not item.owner_listing,
         not favorable,
-        -(as_utc(item.last_seen_at or item.updated_at).timestamp()),
         item.price,
+        not item.owner_listing,
+        -(as_utc(item.last_seen_at or item.updated_at).timestamp()),
         item.id,
     )
 
@@ -103,7 +103,7 @@ def _pick_for_window(
                 # After the single two-bedroom slot, fill with one-bedroom
                 # apartments first and use studios only as a fallback.
                 room_rank = {"1": 0, "studio": 1, "2": 2}.get(item.rooms, 3)
-            return (*base[:3], room_rank, room_counts.get(item.rooms, 0), *base[3:])
+            return (*base[:2], room_rank, room_counts.get(item.rooms, 0), *base[2:])
 
         eligible.sort(key=selection_key)
         item = eligible[0]
@@ -124,7 +124,7 @@ def plan_period(
     repeat_apartment_ids: set[int] | None = None,
     rng: random.Random | None = None,
 ) -> list[PlannedApartment]:
-    """Create one immutable publication window for every hour."""
+    """Create one immutable six-card publication window every two hours."""
     rng = rng or random.SystemRandom()
     # The public catalogue is intentionally limited to ordinary one- and
     # two-bedroom apartments. Old studio rows may remain in the database but
@@ -158,10 +158,10 @@ def plan_period(
         )
     )
     central_targets = FIRST_HALF_CENTRAL if first_half else SECOND_HALF_CENTRAL
-    # Every hour gets a stable slot with a small persisted jitter. Four cards
-    # remain 8-15 minutes apart and still finish inside their clock hour.
+    # Every two hours gets a stable slot with a small persisted jitter. Six
+    # cards remain 8-15 minutes apart and finish well inside their window.
     starts = [
-        period_start + timedelta(minutes=5 + 60 * index + rng.randint(0, 4))
+        period_start + timedelta(minutes=5 + 120 * index + rng.randint(0, 4))
         for index in range(len(batch_sizes))
     ]
     planned: list[PlannedApartment] = []
@@ -518,8 +518,14 @@ class InventoryRepository:
                 existing.last_error = None
             return len(planned)
 
-    async def claim_due(self, *, now: datetime | None = None) -> ApartmentInventoryQueue | None:
+    async def claim_due(
+        self,
+        *,
+        now: datetime | None = None,
+        eligible_until: datetime | None = None,
+    ) -> ApartmentInventoryQueue | None:
         now = as_utc(now or datetime.now(timezone.utc))
+        eligible_until = as_utc(eligible_until or now)
         stale = now - timedelta(minutes=20)
         local = now.astimezone(BISHKEK)
         day_start = local.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
@@ -551,7 +557,7 @@ class InventoryRepository:
                 select(ApartmentInventoryQueue.id)
                 .where(
                     ApartmentInventoryQueue.status == "queued",
-                    ApartmentInventoryQueue.scheduled_at <= now,
+                    ApartmentInventoryQueue.scheduled_at <= eligible_until,
                 )
                 .order_by(ApartmentInventoryQueue.scheduled_at, ApartmentInventoryQueue.id)
                 .limit(1)
