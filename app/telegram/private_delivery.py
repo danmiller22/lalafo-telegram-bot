@@ -100,7 +100,7 @@ async def send_private_public_card(
         signer=signer,
         bot_username=bot_username,
         support_url=support_url,
-        include_duplicate=True,
+        include_duplicate=False,
     )
     text = format_public_apartment(apartment, bot_username=bot_username)
     if len(urls) == 1:

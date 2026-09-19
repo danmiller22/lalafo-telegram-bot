@@ -30,7 +30,7 @@ class TelegramPublisher:
         bot_username: str,
         support_url: str,
         max_photos: int = 5,
-        include_duplicate: bool = True,
+        include_duplicate: bool = False,
     ) -> None:
         self.bot = bot
         self.chat_id = chat_id

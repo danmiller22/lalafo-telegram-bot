@@ -50,6 +50,12 @@ async def test_public_album_uses_fast_direct_telegram_urls() -> None:
     result = await publisher.publish(77, make_ad())
 
     assert result is card
+    keyboard = bot.send_message.await_args.kwargs["reply_markup"]
+    assert [button.text for row in keyboard.inline_keyboard for button in row] == [
+        "Получить номер",
+        "Подать заявку на поиск квартиры",
+        "🛟 Техподдержка",
+    ]
     media = bot.send_media_group.await_args.kwargs["media"]
     assert [item.media for item in media] == [
         "https://img.example/1.jpg",
