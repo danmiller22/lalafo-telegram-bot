@@ -51,8 +51,10 @@ async def create_runtime(*, bot_token: str | None = None, lalafo_only: bool = Fa
     else:
         dispatcher.include_router(wanted_admin.router)
         dispatcher.include_router(admin.router)
-        if not settings.lalafo_bot_token:
-            dispatcher.include_router(lalafo_links.router)
+        # Keep manual Lalafo publishing available in the main Arenda bot even
+        # when a dedicated link bot is configured. Both routes share the same
+        # database and atomic publisher, so this is a safe operational fallback.
+        dispatcher.include_router(lalafo_links.router)
         dispatcher.include_router(support_handlers.router)
         dispatcher.include_router(wanted_handlers.router)
         dispatcher.include_router(handlers.router)

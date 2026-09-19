@@ -46,6 +46,7 @@ def configure(monkeypatch: pytest.MonkeyPatch) -> None:
     web._scraper_task = None
     web._bot_runtime = None
     web._bot_setup_task = None
+    web._lalafo_bot_setup_task = None
     web._legacy_featured_cleanup_task = None
     web._keyboard_sync_task = None
     web._lalafo_auto_responder = None
@@ -371,6 +372,31 @@ async def test_hosted_scheduler_runs_due_check_without_forcing_duplicates(
     assert web._apartment_scheduler_state["recent_published_count"] == 5
     assert web._apartment_scheduler_state["last_exit_code"] == 0
     assert web._apartment_scheduler_state["running_cycle"] is False
+
+
+@pytest.mark.asyncio
+async def test_dedicated_lalafo_webhook_keeps_pending_updates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LALAFO_BOT_TOKEN", "123456:lalafo-test-token")
+    monkeypatch.setenv(
+        "TELEGRAM_WEBHOOK_URL",
+        "https://service.example/telegram/webhook",
+    )
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", "w" * 32)
+    get_settings.cache_clear()
+    bot = SimpleNamespace(set_webhook=AsyncMock())
+    dispatcher = SimpleNamespace(resolve_used_update_types=lambda: ["message"])
+    web._lalafo_bot_runtime = SimpleNamespace(bot=bot, dispatcher=dispatcher)
+
+    await web._configure_lalafo_bot_once()
+
+    bot.set_webhook.assert_awaited_once_with(
+        "https://service.example/telegram/lalafo-webhook",
+        secret_token="w" * 32,
+        allowed_updates=["message"],
+        drop_pending_updates=False,
+    )
 
 
 @pytest.mark.asyncio

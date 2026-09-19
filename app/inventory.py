@@ -13,17 +13,18 @@ from app.models import Apartment, ApartmentDiscoveryRun, ApartmentInventoryQueue
 
 
 BISHKEK = ZoneInfo("Asia/Bishkek")
-BATCH_SIZES = (5, 4, 4, 4, 4)
-# Keep the catalogue strongly centre-focused without increasing the overall
-# publication rate: 16 central cards per half-day, 32 of 36 per full day when
-# enough suitable inventory is available.
-FIRST_HALF_CENTRAL = (4, 4, 4, 3, 3)
-SECOND_HALF_CENTRAL = (4, 4, 4, 3, 3)
+FIRST_HALF_BATCH_SIZES = (2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1)
+SECOND_HALF_BATCH_SIZES = (2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 1, 1)
+# One persisted window per clock hour: 18 cards in the first half-day and 17
+# in the second. Centre stock is preferred, but any suitable stock fills gaps.
+FIRST_HALF_CENTRAL = FIRST_HALF_BATCH_SIZES
+SECOND_HALF_CENTRAL = SECOND_HALF_BATCH_SIZES
 MAX_TWO_BEDROOMS_PER_WINDOW = 1
 MAX_TWO_BEDROOMS_PER_DAY = 10
-MAX_PUBLICATIONS_PER_DAY = 42
+MAX_TWO_BEDROOMS_PER_PERIOD = 5
+MAX_PUBLICATIONS_PER_DAY = 35
 REPOST_AFTER_HOURS = 48
-MAX_REPOSTS_PER_PERIOD = 3
+MAX_REPOSTS_PER_PERIOD = 18
 DISCOVERY_RETRY_MINUTES = 30
 
 
@@ -121,7 +122,7 @@ def plan_period(
     repeat_apartment_ids: set[int] | None = None,
     rng: random.Random | None = None,
 ) -> list[PlannedApartment]:
-    """Create five immutable random windows for one 12-hour period."""
+    """Create one immutable publication window for every hour."""
     rng = rng or random.SystemRandom()
     repeat_ids = set(repeat_apartment_ids or ())
     central_pool = sorted(
@@ -142,24 +143,30 @@ def plan_period(
     )
     repeat_pool = [item for item in apartments if item.id in repeat_ids]
     rng.shuffle(repeat_pool)
+    first_half = period_start.astimezone(BISHKEK).hour == 0
+    batch_sizes = FIRST_HALF_BATCH_SIZES if first_half else SECOND_HALF_BATCH_SIZES
     repeat_windows = set(
         rng.sample(
-            range(len(BATCH_SIZES)),
-            k=min(MAX_REPOSTS_PER_PERIOD, len(repeat_pool), len(BATCH_SIZES)),
+            range(len(batch_sizes)),
+            k=min(MAX_REPOSTS_PER_PERIOD, len(repeat_pool), len(batch_sizes)),
         )
     )
-    central_targets = (
-        FIRST_HALF_CENTRAL if period_start.astimezone(BISHKEK).hour == 0 else SECOND_HALF_CENTRAL
-    )
-    # Fixed broad slots plus jitter give five random windows whose starts remain
-    # at least 110 minutes apart. The exact card times are persisted in the DB.
-    starts = [period_start + timedelta(minutes=25 + 135 * index + rng.randint(0, 25)) for index in range(5)]
+    central_targets = FIRST_HALF_CENTRAL if first_half else SECOND_HALF_CENTRAL
+    # Every hour gets a stable slot with a small persisted jitter. A two-card
+    # window finishes within fifteen minutes and cannot overlap the next hour.
+    starts = [
+        period_start + timedelta(minutes=10 + 60 * index + rng.randint(0, 10))
+        for index in range(len(batch_sizes))
+    ]
     planned: list[PlannedApartment] = []
     room_counts: dict[str, int] = {}
-    two_allowance = max(0, MAX_TWO_BEDROOMS_PER_DAY - already_two_bedrooms_today)
+    two_allowance = min(
+        MAX_TWO_BEDROOMS_PER_PERIOD,
+        max(0, MAX_TWO_BEDROOMS_PER_DAY - already_two_bedrooms_today),
+    )
 
     for index, (batch_size, central_target, start) in enumerate(
-        zip(BATCH_SIZES, central_targets, starts)
+        zip(batch_sizes, central_targets, starts)
     ):
         selected: list[Apartment] = []
         window_two = 0
@@ -227,6 +234,25 @@ def plan_period(
             )
             two_allowance -= sum(item.rooms == "2" for item in extras)
             selected.extend(extras)
+        # Fresh cards have priority. If they run out, use randomly ordered
+        # cards whose previous post is at least 48 hours old so no hourly slot
+        # disappears merely because Lalafo has little new stock.
+        while len(selected) < batch_size and repeat_pool:
+            eligible_repeats = [
+                item
+                for item in repeat_pool
+                if item.rooms != "2"
+                or (window_two < MAX_TWO_BEDROOMS_PER_WINDOW and two_allowance > 0)
+            ]
+            if not eligible_repeats:
+                break
+            repeat = eligible_repeats[0]
+            repeat_pool.remove(repeat)
+            selected.append(repeat)
+            room_counts[repeat.rooms] = room_counts.get(repeat.rooms, 0) + 1
+            if repeat.rooms == "2":
+                window_two += 1
+                two_allowance -= 1
         if not selected:
             continue
         rng.shuffle(selected)
@@ -286,7 +312,13 @@ class InventoryRepository:
                     )
                     return key
                 lease = as_utc(row.lease_until) if row.lease_until else None
-                if not force and (row.status == "succeeded" or (row.status == "running" and lease and lease > as_utc(now))):
+                if row.status == "running" and lease and lease > as_utc(now):
+                    return None
+                if (
+                    not force
+                    and row.status == "succeeded"
+                    and row.queued_count >= 15
+                ):
                     return None
                 completed = as_utc(row.completed_at) if row.completed_at else None
                 if (

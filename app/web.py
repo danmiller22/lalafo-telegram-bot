@@ -41,6 +41,7 @@ _scraper_task: asyncio.Task[None] | None = None
 _bot_runtime: BotRuntime | None = None
 _lalafo_bot_runtime: BotRuntime | None = None
 _bot_setup_task: asyncio.Task[None] | None = None
+_lalafo_bot_setup_task: asyncio.Task[None] | None = None
 _legacy_featured_cleanup_task: asyncio.Task[None] | None = None
 _keyboard_sync_task: asyncio.Task[None] | None = None
 _lalafo_auto_responder: LalafoAutoResponder | None = None
@@ -177,8 +178,27 @@ async def _configure_lalafo_bot_once() -> None:
         webhook_url,
         secret_token=settings.require_telegram_webhook_secret(),
         allowed_updates=runtime.dispatcher.resolve_used_update_types(),
-        drop_pending_updates=True,
+        drop_pending_updates=False,
     )
+
+
+async def _configure_lalafo_bot() -> None:
+    """Continuously restore the dedicated manual-link bot webhook."""
+    backoff = 2.0
+    while True:
+        try:
+            if _lalafo_bot_runtime is None:
+                return
+            await _configure_lalafo_bot_once()
+            logger.info("Dedicated Lalafo link bot webhook is ready")
+            backoff = 2.0
+            await asyncio.sleep(6 * 60 * 60)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Dedicated Lalafo link bot setup failed; retrying")
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, 60.0)
 
 
 async def _keep_service_awake() -> None:
@@ -490,7 +510,7 @@ def _task_error_name(task: asyncio.Task[None] | None) -> str | None:
 
 async def _repair_background_tasks_once() -> int:
     """Restart only stopped workers; never replace the payment runtime."""
-    global _bot_setup_task, _lalafo_watchdog_task
+    global _bot_setup_task, _lalafo_bot_setup_task, _lalafo_watchdog_task
     global _apartment_scheduler_task, _service_keepalive_task
     settings = get_settings()
     if _shutting_down:
@@ -504,6 +524,20 @@ async def _repair_background_tasks_once() -> int:
         )
         _bot_setup_task = asyncio.create_task(
             _configure_main_bot(), name="telegram-setup-maintainer"
+        )
+        restarted += 1
+
+    if (
+        settings.run_bot
+        and settings.lalafo_bot_token
+        and _task_stopped(_lalafo_bot_setup_task)
+    ):
+        logger.error(
+            "Restarting dedicated Lalafo bot setup after %s",
+            _task_error_name(_lalafo_bot_setup_task) or "stop",
+        )
+        _lalafo_bot_setup_task = asyncio.create_task(
+            _configure_lalafo_bot(), name="lalafo-telegram-setup-maintainer"
         )
         restarted += 1
 
@@ -581,7 +615,8 @@ async def _watch_background_tasks() -> None:
 
 @app.on_event("startup")
 async def startup() -> None:
-    global _bot_runtime, _lalafo_bot_runtime, _bot_setup_task, _legacy_featured_cleanup_task
+    global _bot_runtime, _lalafo_bot_runtime, _bot_setup_task, _lalafo_bot_setup_task
+    global _legacy_featured_cleanup_task
     global _keyboard_sync_task, _lalafo_auto_responder
     global _lalafo_watchdog_task, _apartment_scheduler_task
     global _service_keepalive_task, _background_watchdog_task, _shutting_down
@@ -613,8 +648,8 @@ async def startup() -> None:
             _configure_main_bot(), name="telegram-setup-maintainer"
         )
         if _lalafo_bot_runtime is not None:
-            asyncio.create_task(
-                _configure_lalafo_bot_once(), name="lalafo-telegram-setup"
+            _lalafo_bot_setup_task = asyncio.create_task(
+                _configure_lalafo_bot(), name="lalafo-telegram-setup-maintainer"
             )
         logger.info("Telegram runtime ready; network setup continues in background")
         _keyboard_sync_task = asyncio.create_task(
@@ -655,7 +690,8 @@ async def startup() -> None:
 
 @app.on_event("shutdown")
 async def shutdown() -> None:
-    global _bot_runtime, _lalafo_bot_runtime, _bot_setup_task, _legacy_featured_cleanup_task
+    global _bot_runtime, _lalafo_bot_runtime, _bot_setup_task, _lalafo_bot_setup_task
+    global _legacy_featured_cleanup_task
     global _keyboard_sync_task, _lalafo_auto_responder
     global _lalafo_watchdog_task, _apartment_scheduler_task
     global _service_keepalive_task, _background_watchdog_task, _shutting_down
@@ -679,6 +715,14 @@ async def shutdown() -> None:
         with suppress(asyncio.CancelledError):
             await _bot_setup_task
     _bot_setup_task = None
+    if (
+        _lalafo_bot_setup_task is not None
+        and not _lalafo_bot_setup_task.done()
+    ):
+        _lalafo_bot_setup_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await _lalafo_bot_setup_task
+    _lalafo_bot_setup_task = None
     if (
         _legacy_featured_cleanup_task is not None
         and not _legacy_featured_cleanup_task.done()

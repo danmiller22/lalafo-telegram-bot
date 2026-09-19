@@ -44,6 +44,11 @@ def extract_lalafo_url(text: str | None) -> str | None:
     return match.group(0).rstrip(_TRAILING_PUNCTUATION) if match else None
 
 
+def has_lalafo_url(message: Message) -> bool:
+    """Match a Lalafo link anywhere in the admin's message text."""
+    return extract_lalafo_url(message.text) is not None
+
+
 def repost_available_at(
     published_at: datetime | None, *, now: datetime | None = None
 ) -> datetime | None:
@@ -125,7 +130,7 @@ async def receive_lalafo_district(
     )
 
 
-@router.message(F.chat.type == "private", F.text.regexp(_LALAFO_URL))
+@router.message(F.chat.type == "private", has_lalafo_url)
 async def request_lalafo_district(
     message: Message,
     state: FSMContext,

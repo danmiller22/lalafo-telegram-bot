@@ -31,7 +31,7 @@ def _apartments(count: int, *, central: bool, start_id: int, owner: bool = True)
     ]
 
 
-def test_two_periods_plan_42_cards_with_36_central_and_fewer_two_bedrooms():
+def test_two_periods_plan_35_cards_across_every_hour():
     stock = _apartments(60, central=True, start_id=1) + _apartments(
         40, central=False, start_id=100
     )
@@ -44,15 +44,16 @@ def test_two_periods_plan_42_cards_with_36_central_and_fewer_two_bedrooms():
         rng=random.Random(8),
     )
     all_items = first + second
-    assert len(all_items) == 42
-    assert sum("золотой" in item.apartment.district.casefold() for item in all_items) == 36
+    assert len(all_items) == 35
+    assert sum("золотой" in item.apartment.district.casefold() for item in all_items) == 35
     assert 5 <= sum(item.apartment.rooms == "2" for item in all_items) <= 10
 
     for planned in (first, second):
         windows = {}
         for item in planned:
             windows.setdefault(item.window_key, []).append(item)
-        assert sorted(len(items) for items in windows.values()) == [4, 4, 4, 4, 5]
+        assert len(windows) == 12
+        assert all(len(items) in {1, 2} for items in windows.values())
         starts = []
         for items in windows.values():
             ordered = sorted(items, key=lambda item: item.sequence)
@@ -60,7 +61,7 @@ def test_two_periods_plan_42_cards_with_36_central_and_fewer_two_bedrooms():
             central_count = sum(
                 "золотой" in item.apartment.district.casefold() for item in items
             )
-            assert central_count >= 3
+            assert central_count == len(items)
             assert sum(item.apartment.rooms == "2" for item in items) <= 1
             for before, after in zip(ordered, ordered[1:]):
                 assert (
@@ -69,7 +70,7 @@ def test_two_periods_plan_42_cards_with_36_central_and_fewer_two_bedrooms():
                     <= timedelta(minutes=15)
                 )
         for before, after in zip(sorted(starts), sorted(starts)[1:]):
-            assert after - before >= timedelta(minutes=90)
+            assert timedelta(minutes=50) <= after - before <= timedelta(minutes=70)
 
 
 def test_period_uses_broader_stock_when_no_central_apartments_exist():
@@ -78,7 +79,7 @@ def test_period_uses_broader_stock_when_no_central_apartments_exist():
 
     planned = plan_period(stock, period_start=period_start, rng=random.Random(9))
 
-    assert len(planned) == 21
+    assert len(planned) == 18
     assert all(not "золотой" in item.apartment.district.casefold() for item in planned)
     assert 5 <= sum(item.apartment.rooms == "2" for item in planned) <= 10
 
@@ -91,13 +92,15 @@ def test_period_keeps_single_central_card_and_fills_with_realtors():
 
     planned = plan_period(stock, period_start=period_start, rng=random.Random(10))
 
-    assert len(planned) == 21
+    assert len(planned) == 17
     assert sum("золотой" in item.apartment.district.casefold() for item in planned) == 1
 
 
 def test_period_spreads_random_reposts_across_separate_windows():
     fresh = _apartments(40, central=True, start_id=1)
     repeats = _apartments(8, central=True, start_id=100)
+    for item in repeats:
+        item.rooms = "1"
     repeat_ids = {item.id for item in repeats}
     period_start = datetime(2026, 9, 13, 0, tzinfo=timezone(timedelta(hours=6)))
 
@@ -111,8 +114,25 @@ def test_period_spreads_random_reposts_across_separate_windows():
     planned_repeats = [
         item for item in planned if item.apartment.id in repeat_ids
     ]
-    assert len(planned_repeats) == 3
-    assert len({item.window_key for item in planned_repeats}) == 3
+    assert len(planned_repeats) == 8
+    assert len({item.window_key for item in planned_repeats}) == 8
+
+
+def test_hourly_period_can_be_filled_from_48_hour_reposts():
+    repeats = _apartments(24, central=True, start_id=500)
+    for item in repeats:
+        item.rooms = "1"
+    period_start = datetime(2026, 9, 13, 0, tzinfo=timezone(timedelta(hours=6)))
+
+    planned = plan_period(
+        repeats,
+        period_start=period_start,
+        repeat_apartment_ids={item.id for item in repeats},
+        rng=random.Random(12),
+    )
+
+    assert len(planned) == 18
+    assert len({item.window_key for item in planned}) == 12
 
 
 @pytest.mark.asyncio
@@ -196,3 +216,20 @@ async def test_failed_empty_discovery_retries_after_cooldown(repositories):
         )
         == key
     )
+
+
+@pytest.mark.asyncio
+async def test_thin_successful_discovery_is_rebuilt(repositories):
+    _, _, sessions = repositories
+    inventory = InventoryRepository(sessions)
+    now = datetime.now(timezone.utc)
+    key = await inventory.claim_discovery(now=now)
+    assert key is not None
+    await inventory.finish_discovery(
+        key,
+        success=True,
+        discovered=6,
+        queued=6,
+    )
+
+    assert await inventory.claim_discovery(now=now) == key

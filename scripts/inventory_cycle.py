@@ -13,6 +13,7 @@ from scripts.scrape_publish import run as discover
 
 
 logger = logging.getLogger(__name__)
+MIN_HEALTHY_PERIOD_QUEUE = 15
 
 
 def _truthy(value: str | None) -> bool:
@@ -29,6 +30,8 @@ def discovery_outcome(*, exit_code: int, queued_count: int) -> tuple[bool, str |
         return False, f"ExitCode{exit_code}"
     if queued_count <= 0:
         return False, "EmptyInventory"
+    if queued_count < MIN_HEALTHY_PERIOD_QUEUE:
+        return False, "ThinInventory"
     return True, None
 
 
