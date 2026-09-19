@@ -315,16 +315,34 @@ class LalafoClient:
         if not match:
             raise LalafoError("Lalafo detail URL has no advertisement id")
         expected_id = int(match.group(1))
-        # Manual links are read from the browser-facing listing page only.
-        # Deliberately do not fall back to Lalafo JSON/API endpoints.
+        # Prefer the browser-facing page because it usually contains the most
+        # complete current listing. Cloud addresses are frequently blocked
+        # with HTTP 403, so retain the JSON detail endpoint as a strict-ID
+        # fallback; _get_json can also use the HTTPS relay.
         try:
             html = await self._get_text(detail_url)
             ad = parse_detail_page(html, source_url=detail_url)
         except (LalafoError, LalafoParseError) as exc:
-            logger.info("Lalafo browser detail page unavailable: %s", exc)
-            raise LalafoAccessError(
-                "Lalafo browser page is unavailable; API fallback is disabled"
-            ) from exc
+            logger.info("Lalafo browser detail page unavailable; trying API: %s", exc)
+        else:
+            if ad.lalafo_id != expected_id:
+                raise LalafoError(
+                    f"Lalafo detail mismatch: expected {expected_id}, received {ad.lalafo_id}"
+                )
+            return ad
+
+        parts = urlsplit(detail_url)
+        api_url = urlunsplit(
+            (
+                parts.scheme,
+                parts.netloc,
+                f"/api/search/v3/feed/details/{expected_id}",
+                "expand=url",
+                "",
+            )
+        )
+        payload = await self._get_json(api_url)
+        ad = parse_detail_data(payload, source_url=detail_url)
         if ad.lalafo_id != expected_id:
             raise LalafoError(
                 f"Lalafo detail mismatch: expected {expected_id}, received {ad.lalafo_id}"

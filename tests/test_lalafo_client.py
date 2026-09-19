@@ -155,3 +155,38 @@ async def test_detail_rejects_mismatched_page():
                 await client.detail("https://lalafo.kg/bishkek/ads/example-id-77701377")
     finally:
         await client.close()
+
+
+@pytest.mark.asyncio
+async def test_detail_falls_back_to_api_when_browser_is_blocked():
+    client = LalafoClient()
+    client._get_text = AsyncMock(side_effect=LalafoAccessError("HTTP 403"))
+    client._get_json = AsyncMock(
+        return_value=detail_payload(77701377, "+996554252534")
+    )
+    try:
+        ad = await client.detail(
+            "https://lalafo.kg/bishkek/ads/example-id-77701377?feed_id=5012"
+        )
+    finally:
+        await client.close()
+
+    assert ad.lalafo_id == 77701377
+    assert ad.phone == "+996554252534"
+    assert "/api/search/v3/feed/details/77701377" in client._get_json.await_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_detail_api_fallback_rejects_mismatched_id():
+    client = LalafoClient()
+    client._get_text = AsyncMock(side_effect=LalafoAccessError("HTTP 403"))
+    client._get_json = AsyncMock(
+        return_value=detail_payload(43393050, "+996555000617")
+    )
+    try:
+        with pytest.raises(LalafoError, match="detail mismatch"):
+            await client.detail(
+                "https://lalafo.kg/bishkek/ads/example-id-77701377"
+            )
+    finally:
+        await client.close()
