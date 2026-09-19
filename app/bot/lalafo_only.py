@@ -34,6 +34,7 @@ async def run() -> None:
         raise RuntimeError("Payment bot token is forbidden in the manual worker")
     bot = Bot(token=token)
     dispatcher = Dispatcher(storage=MemoryStorage())
+    dispatcher.include_router(lalafo_links.owner_router)
     dispatcher.include_router(lalafo_links.router)
 
     try:

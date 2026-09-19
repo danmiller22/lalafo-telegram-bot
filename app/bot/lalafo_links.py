@@ -25,6 +25,7 @@ from scripts.select_lalafo_proxy import find_working_proxies
 
 
 router = Router(name="admin-lalafo-links")
+owner_router = Router(name="owner-manual-card")
 main_router = Router(name="main-admin-lalafo-links")
 logger = logging.getLogger(__name__)
 _LALAFO_URL = re.compile(
@@ -107,7 +108,7 @@ def normalize_district(text: str | None) -> str | None:
     return district
 
 
-@router.message(F.chat.type == "private", F.forward_origin)
+@owner_router.message(F.chat.type == "private", F.forward_origin)
 async def duplicate_forwarded_card(
     message: Message,
     settings: Settings,
@@ -137,7 +138,7 @@ async def duplicate_forwarded_card(
     await message.answer("✅ Карточка продублирована в группе.")
 
 
-@router.message(Command("addcard"), F.chat.type == "private")
+@owner_router.message(Command("addcard"), F.chat.type == "private")
 async def start_manual_card(
     message: Message,
     state: FSMContext,
@@ -154,7 +155,7 @@ async def start_manual_card(
     )
 
 
-@router.callback_query(F.data == "manual:add")
+@owner_router.callback_query(F.data == "manual:add")
 async def start_manual_card_button(
     callback: CallbackQuery,
     state: FSMContext,
@@ -184,7 +185,7 @@ async def start_manual_card_button(
     await callback.answer()
 
 
-@router.message(ManualCardPublish.waiting_for_photos, F.chat.type == "private", F.photo)
+@owner_router.message(ManualCardPublish.waiting_for_photos, F.chat.type == "private", F.photo)
 async def manual_card_photo(
     message: Message,
     state: FSMContext,
@@ -203,7 +204,7 @@ async def manual_card_photo(
     await message.answer(f"Фото добавлено: {len(photos)}. Ещё фото или «готово».")
 
 
-@router.message(ManualCardPublish.waiting_for_photos, F.chat.type == "private", F.text)
+@owner_router.message(ManualCardPublish.waiting_for_photos, F.chat.type == "private", F.text)
 async def manual_card_photos_done(
     message: Message,
     state: FSMContext,
@@ -223,7 +224,7 @@ async def manual_card_photos_done(
     await message.answer("Введите номер хозяина, например +996 700 123 456.")
 
 
-@router.message(ManualCardPublish.waiting_for_phone, F.chat.type == "private", F.text)
+@owner_router.message(ManualCardPublish.waiting_for_phone, F.chat.type == "private", F.text)
 async def manual_card_phone(
     message: Message,
     state: FSMContext,
@@ -242,7 +243,7 @@ async def manual_card_phone(
     await message.answer("Сколько комнат? Напишите 1 или 2.")
 
 
-@router.message(ManualCardPublish.waiting_for_rooms, F.chat.type == "private", F.text)
+@owner_router.message(ManualCardPublish.waiting_for_rooms, F.chat.type == "private", F.text)
 async def manual_card_rooms(
     message: Message,
     state: FSMContext,
@@ -268,7 +269,7 @@ async def manual_card_rooms(
     await message.answer("Какой район указать в карточке?")
 
 
-@router.message(ManualCardPublish.waiting_for_district, F.chat.type == "private", F.text)
+@owner_router.message(ManualCardPublish.waiting_for_district, F.chat.type == "private", F.text)
 async def manual_card_district(
     message: Message,
     state: FSMContext,
@@ -286,7 +287,7 @@ async def manual_card_district(
     await message.answer("Какая цена в сомах? Например: 28000")
 
 
-@router.message(ManualCardPublish.waiting_for_price, F.chat.type == "private", F.text)
+@owner_router.message(ManualCardPublish.waiting_for_price, F.chat.type == "private", F.text)
 async def manual_card_price(
     message: Message,
     state: FSMContext,
