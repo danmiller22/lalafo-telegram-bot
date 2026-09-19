@@ -544,6 +544,7 @@ async def _repair_background_tasks_once() -> int:
     if (
         settings.run_bot
         and settings.lalafo_bot_token
+        and settings.lalafo_bot_cloud_enabled
         and _task_stopped(_lalafo_bot_setup_task)
     ):
         logger.error(
@@ -653,7 +654,7 @@ async def startup() -> None:
         settings.require_telegram_webhook_url()
         settings.require_telegram_webhook_secret()
         _bot_runtime = await create_runtime()
-        if settings.lalafo_bot_token:
+        if settings.lalafo_bot_token and settings.lalafo_bot_cloud_enabled:
             _lalafo_bot_runtime = await create_runtime(
                 bot_token=settings.require_lalafo_bot_token(), lalafo_only=True
             )
@@ -807,12 +808,19 @@ async def relay_lalafo_publish(
     relay_secret: str | None = Header(default=None, alias="X-Lalafo-Relay-Secret"),
 ) -> JSONResponse:
     settings = get_settings()
-    expected = (
-        settings.lalafo_relay_secret
-        or settings.callback_secret
-        or settings.lalafo_bot_token
+    expected_secrets = tuple(
+        value
+        for value in (
+            settings.lalafo_relay_secret,
+            settings.callback_secret,
+            settings.lalafo_bot_token,
+        )
+        if value
     )
-    if not expected or not secrets.compare_digest(relay_secret or "", expected):
+    if not expected_secrets or not any(
+        secrets.compare_digest(relay_secret or "", expected)
+        for expected in expected_secrets
+    ):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid relay secret")
     runtime = _bot_runtime
     if runtime is None:
@@ -871,8 +879,14 @@ async def health() -> JSONResponse:
             ),
             "lalafo_link_bot": (
                 dict(_lalafo_bot_setup_state)
-                if settings.run_bot and settings.lalafo_bot_token
-                else "disabled"
+                if settings.run_bot
+                and settings.lalafo_bot_token
+                and settings.lalafo_bot_cloud_enabled
+                else (
+                    "remote"
+                    if settings.run_bot and settings.lalafo_bot_token
+                    else "disabled"
+                )
             ),
             "free_cloud_keepalive": (
                 dict(_service_keepalive_state)

@@ -131,6 +131,9 @@ class Settings(BaseSettings):
 
     telegram_bot_token: str = ""
     lalafo_bot_token: str = ""
+    # The dedicated link bot runs on the always-on residential Windows PC.
+    # Koyeb keeps payment and the main bot only, avoiding webhook/polling races.
+    lalafo_bot_cloud_enabled: bool = False
     lalafo_relay_url: str = ""
     lalafo_relay_secret: str = ""
     telegram_group_id: int = -1004389602150
