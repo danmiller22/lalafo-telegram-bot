@@ -53,6 +53,100 @@ def test_repeat_is_blocked_for_48_hours() -> None:
     assert lalafo_links.repost_available_at(now - timedelta(hours=48), now=now) is None
 
 
+def test_forwarded_card_fields_are_parsed_from_public_text() -> None:
+    assert lalafo_links._forwarded_card_fields(
+        "🏠 1-комнатная квартира\n"
+        "📍 Восток-5\n"
+        "🏙 Бишкек\n"
+        "💰 28 000 сом\n\n"
+        "🔎 Ищете квартиру? Подайте заявку: @arenda312bot"
+    ) == ("1", "Восток-5", 28_000)
+
+
+@pytest.mark.asyncio
+async def test_forwarded_album_is_rebuilt_with_normal_publisher(monkeypatch) -> None:
+    apartment = SimpleNamespace(
+        id=42,
+        photo_urls=["file-1", "file-2", "file-3"],
+    )
+    answer = AsyncMock()
+    messages = [
+        SimpleNamespace(answer=AsyncMock()),
+        SimpleNamespace(answer=answer),
+    ]
+    apartments = SimpleNamespace(mark_published=AsyncMock())
+    publish = AsyncMock(return_value=SimpleNamespace(message_id=987))
+
+    class FakePublisher:
+        def __init__(self, *args, **kwargs):
+            self.kwargs = kwargs
+
+        async def publish(self, apartment_id, listing):
+            return await publish(apartment_id, listing)
+
+    monkeypatch.setattr(
+        lalafo_links,
+        "_resolve_forwarded_apartment",
+        AsyncMock(return_value=apartment),
+    )
+    monkeypatch.setattr(lalafo_links, "TelegramPublisher", FakePublisher)
+    settings = Settings(admin_user_id=777)
+
+    await lalafo_links._publish_forwarded_batch(
+        messages,
+        settings=settings,
+        apartments=apartments,
+        signer=SimpleNamespace(),
+        bot=SimpleNamespace(),
+    )
+
+    publish.assert_awaited_once_with(42, apartment)
+    apartments.mark_published.assert_awaited_once_with(
+        42,
+        chat_id=settings.telegram_group_id,
+        message_id=987,
+    )
+    answer.assert_awaited_once_with(
+        "✅ Карточка опубликована альбомом с рабочими кнопками."
+    )
+
+
+@pytest.mark.asyncio
+async def test_forwarded_card_resolves_stored_apartment_from_text() -> None:
+    origin_date = datetime(2026, 9, 19, 10, tzinfo=timezone.utc)
+    apartment = SimpleNamespace(id=42)
+    repository = SimpleNamespace(
+        get=AsyncMock(),
+        get_by_telegram_message=AsyncMock(),
+        find_forwarded_card=AsyncMock(return_value=apartment),
+    )
+    message = SimpleNamespace(
+        text=(
+            "🏠 2-комнатная квартира\n"
+            "📍 Филармония\n"
+            "🏙 Бишкек\n"
+            "💰 35 000 сом"
+        ),
+        caption=None,
+        reply_markup=None,
+        forward_origin=SimpleNamespace(date=origin_date),
+    )
+
+    result = await lalafo_links._resolve_forwarded_apartment(
+        [message],
+        apartments=repository,
+        signer=SimpleNamespace(),
+    )
+
+    assert result is apartment
+    repository.find_forwarded_card.assert_awaited_once_with(
+        rooms="2",
+        district="Филармония",
+        price=35_000,
+        origin_date=origin_date,
+    )
+
+
 @pytest.mark.asyncio
 async def test_link_prompts_admin_for_district() -> None:
     url = "https://lalafo.kg/bishkek/ads/kvartira-id-116352866"

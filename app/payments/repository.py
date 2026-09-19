@@ -47,6 +47,64 @@ class ApartmentRepository:
             )
             return result.scalar_one_or_none()
 
+    async def get_by_telegram_message(
+        self, *, chat_id: int, message_id: int
+    ) -> Apartment | None:
+        async with self.sessions() as session:
+            return await session.scalar(
+                select(Apartment).where(
+                    Apartment.telegram_chat_id == chat_id,
+                    Apartment.telegram_message_id == message_id,
+                )
+            )
+
+    async def find_forwarded_card(
+        self,
+        *,
+        rooms: str,
+        district: str,
+        price: int,
+        origin_date: datetime | None = None,
+    ) -> Apartment | None:
+        """Resolve a forwarded public card without trusting its lost buttons."""
+        normalized_district = " ".join(district.split()).casefold().replace("ё", "е")
+        async with self.sessions() as session:
+            rows = list(
+                (
+                    await session.scalars(
+                        select(Apartment)
+                        .where(
+                            Apartment.rooms == rooms,
+                            Apartment.price == price,
+                            Apartment.publication_status == "published",
+                            Apartment.active.is_(True),
+                        )
+                        .order_by(Apartment.published_at.desc(), Apartment.id.desc())
+                        .limit(100)
+                    )
+                ).all()
+            )
+        matches = [
+            item
+            for item in rows
+            if " ".join((item.district or "").split()).casefold().replace("ё", "е")
+            == normalized_district
+        ]
+        if not matches:
+            return None
+        if origin_date is None:
+            return matches[0]
+        if origin_date.tzinfo is None:
+            origin_date = origin_date.replace(tzinfo=timezone.utc)
+
+        def distance(item: Apartment) -> float:
+            published = item.published_at or item.updated_at
+            if published.tzinfo is None:
+                published = published.replace(tzinfo=timezone.utc)
+            return abs((published.astimezone(timezone.utc) - origin_date).total_seconds())
+
+        return min(matches, key=distance)
+
     async def curated_rotation_apartments(
         self, specs: tuple[tuple[str, int], ...]
     ) -> list[Apartment]:

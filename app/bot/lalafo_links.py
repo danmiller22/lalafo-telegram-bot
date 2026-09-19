@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 import logging
 import re
+from urllib.parse import parse_qs, urlsplit
 import httpx
 
 from aiogram import Bot, F, Router
@@ -34,10 +36,21 @@ _LALAFO_URL = re.compile(
 )
 _TRAILING_PUNCTUATION = ").,;!?]}>\"'"
 _publish_lock = asyncio.Lock()
+_forward_batch_lock = asyncio.Lock()
 REPOST_AFTER = timedelta(hours=48)
 MAX_DISTRICT_LENGTH = 60
 PROXY_DISCOVERY_TIMEOUT = 30.0
+FORWARD_BATCH_DELAY_SECONDS = 1.5
 _manual_proxy_pool: list[str] = []
+
+
+@dataclass
+class _ForwardBatch:
+    messages: list[Message] = field(default_factory=list)
+    task: asyncio.Task[None] | None = None
+
+
+_forward_batches: dict[tuple[int, int, int], _ForwardBatch] = {}
 
 
 class ManualLalafoPublish(StatesGroup):
@@ -108,34 +121,183 @@ def normalize_district(text: str | None) -> str | None:
     return district
 
 
+def _forwarded_card_fields(text: str | None) -> tuple[str, str, int] | None:
+    value = text or ""
+    room_match = re.search(r"🏠\s*([12])-комнатная\s+квартира", value, re.IGNORECASE)
+    district_match = re.search(r"^📍\s*(.+?)\s*$", value, re.MULTILINE)
+    price_match = re.search(r"^💰\s*([\d\s]+)\s*сом\s*$", value, re.MULTILINE)
+    if not room_match or not district_match or not price_match:
+        return None
+    district = normalize_district(district_match.group(1))
+    if district is None:
+        return None
+    price = int(re.sub(r"\D", "", price_match.group(1)))
+    return room_match.group(1), district, price
+
+
+def _forwarded_apartment_id(message: Message, signer: TokenSigner) -> int | None:
+    markup = message.reply_markup
+    if markup is None:
+        return None
+    for row in markup.inline_keyboard:
+        for button in row:
+            callback = button.callback_data or ""
+            if callback.startswith("dup:"):
+                apartment_id = signer.verify_id("duplicate", callback.removeprefix("dup:"))
+                if apartment_id is not None:
+                    return apartment_id
+            if callback.startswith("view:"):
+                apartment_id = signer.verify_id("view", callback.removeprefix("view:"))
+                if apartment_id is not None:
+                    return apartment_id
+            if button.url:
+                start_token = parse_qs(urlsplit(button.url).query).get("startapp", [None])[0]
+                if start_token:
+                    apartment_id = signer.decode_public_start_id(start_token)
+                    if apartment_id is not None:
+                        return apartment_id
+    return None
+
+
+async def _resolve_forwarded_apartment(
+    messages: list[Message],
+    *,
+    apartments: ApartmentRepository,
+    signer: TokenSigner,
+):
+    for message in messages:
+        apartment_id = _forwarded_apartment_id(message, signer)
+        if apartment_id is not None:
+            apartment = await apartments.get(apartment_id)
+            if apartment is not None:
+                return apartment
+
+    for message in messages:
+        origin = message.forward_origin
+        origin_message_id = getattr(origin, "message_id", None)
+        origin_chat_id = getattr(getattr(origin, "chat", None), "id", None)
+        if origin_message_id is None or origin_chat_id is None:
+            continue
+        apartment = await apartments.get_by_telegram_message(
+            chat_id=origin_chat_id,
+            message_id=origin_message_id,
+        )
+        if apartment is not None:
+            return apartment
+
+    text_message = next(
+        (message for message in messages if _forwarded_card_fields(message.text or message.caption)),
+        None,
+    )
+    if text_message is None:
+        return None
+    fields = _forwarded_card_fields(text_message.text or text_message.caption)
+    assert fields is not None
+    rooms, district, price = fields
+    origin_date = getattr(text_message.forward_origin, "date", None)
+    return await apartments.find_forwarded_card(
+        rooms=rooms,
+        district=district,
+        price=price,
+        origin_date=origin_date,
+    )
+
+
+async def _publish_forwarded_batch(
+    messages: list[Message],
+    *,
+    settings: Settings,
+    apartments: ApartmentRepository,
+    signer: TokenSigner,
+    bot: Bot,
+) -> None:
+    reply_to = messages[-1]
+    apartment = await _resolve_forwarded_apartment(
+        messages,
+        apartments=apartments,
+        signer=signer,
+    )
+    if apartment is None or not apartment.photo_urls:
+        await reply_to.answer(
+            "⚠️ Не удалось распознать исходную карточку. "
+            "Перешлите вместе фотографии и текст карточки одним действием."
+        )
+        return
+    publisher = TelegramPublisher(
+        bot,
+        chat_id=settings.telegram_group_id,
+        signer=signer,
+        bot_username=settings.telegram_bot_username,
+        support_url=settings.support_bot_url,
+        max_photos=settings.max_photos_per_apartment,
+    )
+    try:
+        published = await publisher.publish(apartment.id, apartment)
+        await apartments.mark_published(
+            apartment.id,
+            chat_id=settings.telegram_group_id,
+            message_id=published.message_id,
+        )
+    except Exception:
+        logger.exception("Could not rebuild admin-forwarded Telegram card")
+        await reply_to.answer("⚠️ Не удалось опубликовать карточку. Попробуйте ещё раз.")
+        return
+    await reply_to.answer("✅ Карточка опубликована альбомом с рабочими кнопками.")
+
+
+async def _flush_forward_batch(
+    key: tuple[int, int, int],
+    *,
+    settings: Settings,
+    apartments: ApartmentRepository,
+    signer: TokenSigner,
+    bot: Bot,
+) -> None:
+    try:
+        await asyncio.sleep(FORWARD_BATCH_DELAY_SECONDS)
+    except asyncio.CancelledError:
+        return
+    async with _forward_batch_lock:
+        batch = _forward_batches.pop(key, None)
+    if batch is None:
+        return
+    await _publish_forwarded_batch(
+        batch.messages,
+        settings=settings,
+        apartments=apartments,
+        signer=signer,
+        bot=bot,
+    )
+
+
 @owner_router.message(F.chat.type == "private", F.forward_origin)
 async def duplicate_forwarded_card(
     message: Message,
     settings: Settings,
+    apartments: ApartmentRepository,
+    signer: TokenSigner,
     bot: Bot,
 ) -> None:
-    """Let only the owner duplicate a forwarded card into the public group.
-
-    ``copy_message`` creates a fresh group message without the Telegram
-    "Forwarded from" header and preserves the original caption/buttons. The
-    admin can forward the photo/caption card (and any album items) from the
-    group to this bot; ordinary users receive no response.
-    """
+    """Buffer a complete forwarded card and rebuild it from stored source data."""
     # Forward-to-group is intentionally stricter than the legacy link flow:
     # only the configured numeric owner ID may trigger it.
     if not _is_owner(message, settings):
         return
-    try:
-        await bot.copy_message(
-            chat_id=settings.telegram_group_id,
-            from_chat_id=message.chat.id,
-            message_id=message.message_id,
+    key = (id(bot), message.chat.id, message.from_user.id)
+    async with _forward_batch_lock:
+        batch = _forward_batches.setdefault(key, _ForwardBatch())
+        batch.messages.append(message)
+        if batch.task is not None and not batch.task.done():
+            batch.task.cancel()
+        batch.task = asyncio.create_task(
+            _flush_forward_batch(
+                key,
+                settings=settings,
+                apartments=apartments,
+                signer=signer,
+                bot=bot,
+            )
         )
-    except Exception:
-        logger.exception("Could not duplicate admin-forwarded Telegram card")
-        await message.answer("⚠️ Не удалось продублировать карточку в группу.")
-        return
-    await message.answer("✅ Карточка продублирована в группе.")
 
 
 @owner_router.message(Command("addcard"), F.chat.type == "private")
