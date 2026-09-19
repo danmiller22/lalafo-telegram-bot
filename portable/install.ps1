@@ -2,13 +2,42 @@ $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $Root
 
-if (-not (Get-Command py -ErrorAction SilentlyContinue) -and -not (Get-Command python -ErrorAction SilentlyContinue)) {
-    throw 'Python 3.12 or newer was not found. Install it from python.org and run this script again.'
+function Find-Python {
+    $candidates = @(
+        (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python313\python.exe'),
+        (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python312\python.exe'),
+        (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python311\python.exe')
+    )
+    foreach ($candidate in $candidates) {
+        if (Test-Path $candidate) { return $candidate }
+    }
+    foreach ($name in @('python.exe', 'py.exe')) {
+        $command = Get-Command $name -ErrorAction SilentlyContinue
+        if ($command) {
+            try {
+                $null = & $command.Source --version 2>$null
+                if ($LASTEXITCODE -eq 0) { return $command.Source }
+            } catch {}
+        }
+    }
+    return $null
 }
 
-$Python = if (Get-Command py -ErrorAction SilentlyContinue) { 'py' } else { 'python' }
+$PythonExe = Find-Python
+if (-not $PythonExe) {
+    $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
+    if ($winget) {
+        Write-Host 'Python not found. Installing Python 3.12 automatically...'
+        & $winget.Source install --id Python.Python.3.12 -e --scope user --silent --accept-source-agreements --accept-package-agreements
+        $PythonExe = Find-Python
+    }
+}
+if (-not $PythonExe) {
+    throw 'Python could not be installed automatically. Install Python 3.12+ from python.org and run start.bat again.'
+}
+
 if (-not (Test-Path '.venv\Scripts\python.exe')) {
-    if ($Python -eq 'py') { & py -3 -m venv .venv } else { & python -m venv .venv }
+    & $PythonExe -m venv .venv
 }
 & .\.venv\Scripts\python.exe -m pip install --upgrade pip
 & .\.venv\Scripts\python.exe -m pip install -r requirements.txt
