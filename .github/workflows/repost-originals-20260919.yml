@@ -18,10 +18,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_BOT_TOKEN: \${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_GROUP_ID: "-1004389602150"
-      CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      CALLBACK_SECRET: \${{ secrets.CALLBACK_SECRET }}
+      DATABASE_URL: \${{ secrets.DATABASE_URL }}
       SELECTED_LALAFO_URLS: >-
         https://lalafo.kg/bishkek/ads/managed-id-114740296?codex_force_repost=1
         https://lalafo.kg/bishkek/ads/managed-id-111730695?codex_force_repost=1
@@ -57,16 +57,12 @@ jobs:
           import os
           from pathlib import PurePosixPath
           from urllib.parse import urlsplit
-
           from sqlalchemy import select
-
           from app.database import create_engine_and_session
           from app.models import Apartment
           from tools.publish_selected_apartments import MANAGED_KNOWN_PHOTO_URLS
-
           def key(url):
               return PurePosixPath(urlsplit(url).path).name.casefold()
-
           async def main():
               engine, sessions = create_engine_and_session(os.environ["DATABASE_URL"])
               try:
@@ -77,18 +73,9 @@ jobs:
                       for apartment in rows:
                           overlap = len(wanted & {key(url) for url in apartment.photo_urls})
                           if overlap:
-                              print(
-                                  "PHOTO_CANDIDATE",
-                                  f"managed={managed_id}",
-                                  f"source={apartment.lalafo_id}",
-                                  f"overlap={overlap}",
-                                  f"photos={len(apartment.photo_urls)}",
-                                  f"phone={bool(apartment.phone)}",
-                                  f"version={apartment.phone_source_version}",
-                              )
+                              print("PHOTO_CANDIDATE", f"managed={managed_id}", f"source={apartment.lalafo_id}", f"overlap={overlap}", f"photos={len(apartment.photo_urls)}", f"phone={bool(apartment.phone)}", f"version={apartment.phone_source_version}")
               finally:
                   await engine.dispose()
-
           asyncio.run(main())
           PY
       - name: Publish four cards from verified source records
