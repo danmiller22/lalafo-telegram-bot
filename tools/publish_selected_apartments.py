@@ -45,6 +45,36 @@ MANAGED_KNOWN_SOURCE_IDS = {
     114621485: 81141886,
 }
 MANAGED_KNOWN_PHOTO_URLS = {
+    114740296: [
+        "https://img5.lalafo.com/i/posters/api/7b/d6/f4/607bfc91bb9ac049678f820ae0.jpeg",
+        "https://img5.lalafo.com/i/posters/api/df/25/f2/c4acb5b116dfa40e04aa3e374b.jpeg",
+        "https://img5.lalafo.com/i/posters/api/f2/89/f6/266da6227c4f7e75481c33f6e3.jpeg",
+        "https://img5.lalafo.com/i/posters/api/cd/f2/9f/86b5c6c2dff4d6ab71e0435b19.jpeg",
+        "https://img5.lalafo.com/i/posters/api/14/3e/de/a37a9f5b9ad2a3a5244a0faa97.jpeg",
+    ],
+    111730695: [
+        "https://img5.lalafo.com/i/posters/api/ff/03/87/e53abcb56810b3de74e4715e45.jpeg",
+        "https://img5.lalafo.com/i/posters/api/b8/1e/31/5c50c36aeb07b5f7a2b87acf24.jpeg",
+        "https://img5.lalafo.com/i/posters/api/97/90/87/406e0164b08808e299e4d05c3b.jpeg",
+        "https://img5.lalafo.com/i/posters/api/4e/14/7a/348afb7ed50ef2a666ca47c01e.jpeg",
+    ],
+    116490287: [
+        "https://img5.lalafo.com/i/posters/api/49/fd/83/b96a7271adaa387f4fed92002a.jpeg",
+        "https://img5.lalafo.com/i/posters/api/1f/6d/19/8c9c48a1a4e4d1211dc497d40a.jpeg",
+        "https://img5.lalafo.com/i/posters/api/44/84/9c/7b70fe773cd8978b2984d27eda.jpeg",
+        "https://img5.lalafo.com/i/posters/api/4c/dd/f1/a99a3cc31ea426d99ae879688a.jpeg",
+        "https://img5.lalafo.com/i/posters/api/2a/46/f7/98b61b2ec3ee3eb8832d0f4289.jpeg",
+        "https://img5.lalafo.com/i/posters/api/bc/fa/bc/a877c7c1a95751b3af26a088ad.jpeg",
+        "https://img5.lalafo.com/i/posters/api/f0/e7/03/f880ec87fea2a4243a844359ce.jpeg",
+    ],
+    116490159: [
+        "https://img5.lalafo.com/i/posters/api/9d/1a/dd/a5e97d165aeffadaeaba90d014.jpeg",
+        "https://img5.lalafo.com/i/posters/api/e4/13/fc/486d13f7a5bd3def6a9abf5301.jpeg",
+        "https://img5.lalafo.com/i/posters/api/34/a4/73/779c671feeee8297b1ae15a527.jpeg",
+        "https://img5.lalafo.com/i/posters/api/82/19/58/0155a9a9d5be8196875cd983bf.jpeg",
+        "https://img5.lalafo.com/i/posters/api/36/de/2b/39c4b2908eab1e2137eca7f3a3.jpeg",
+        "https://img5.lalafo.com/i/posters/api/5a/68/cd/d1942c394e2ec6cb244b35c02d.jpeg",
+    ],
     116308426: [
         "https://img5.lalafo.com/i/posters/original/b5/40/1b/4a0b6ae6398e737c849fce2a97.jpeg",
         "https://img5.lalafo.com/i/posters/api/17/07/fc/14407976884fc70d579cc9e385.jpeg",
