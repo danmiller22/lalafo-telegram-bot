@@ -27,6 +27,7 @@ MAX_PUBLICATIONS_PER_DAY = 96
 REPOST_AFTER_HOURS = 48
 MAX_REPOSTS_PER_PERIOD = 18
 DISCOVERY_RETRY_MINUTES = 30
+MIN_HEALTHY_PERIOD_QUEUE = 40
 
 
 def as_utc(value: datetime) -> datetime:
@@ -331,7 +332,7 @@ class InventoryRepository:
                 if (
                     not force
                     and row.status == "succeeded"
-                    and row.queued_count >= 15
+                    and row.queued_count >= MIN_HEALTHY_PERIOD_QUEUE
                 ):
                     return None
                 completed = as_utc(row.completed_at) if row.completed_at else None
