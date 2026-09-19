@@ -13,16 +13,17 @@ from app.models import Apartment, ApartmentDiscoveryRun, ApartmentInventoryQueue
 
 
 BISHKEK = ZoneInfo("Asia/Bishkek")
-FIRST_HALF_BATCH_SIZES = (2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1)
-SECOND_HALF_BATCH_SIZES = (2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 1, 1)
-# One persisted window per clock hour: 18 cards in the first half-day and 17
-# in the second. Centre stock is preferred, but any suitable stock fills gaps.
+FIRST_HALF_BATCH_SIZES = (4,) * 12
+SECOND_HALF_BATCH_SIZES = (4,) * 12
+# One persisted four-card window per clock hour. Centre stock is preferred,
+# but any suitable owner/realtor stock fills gaps so an empty centre pool does
+# not stall publication.
 FIRST_HALF_CENTRAL = FIRST_HALF_BATCH_SIZES
 SECOND_HALF_CENTRAL = SECOND_HALF_BATCH_SIZES
 MAX_TWO_BEDROOMS_PER_WINDOW = 1
 MAX_TWO_BEDROOMS_PER_DAY = 10
 MAX_TWO_BEDROOMS_PER_PERIOD = 5
-MAX_PUBLICATIONS_PER_DAY = 35
+MAX_PUBLICATIONS_PER_DAY = 96
 REPOST_AFTER_HOURS = 48
 MAX_REPOSTS_PER_PERIOD = 18
 DISCOVERY_RETRY_MINUTES = 30
@@ -124,6 +125,10 @@ def plan_period(
 ) -> list[PlannedApartment]:
     """Create one immutable publication window for every hour."""
     rng = rng or random.SystemRandom()
+    # The public catalogue is intentionally limited to ordinary one- and
+    # two-bedroom apartments. Old studio rows may remain in the database but
+    # must never return through the 48-hour repost fallback.
+    apartments = [item for item in apartments if item.rooms in {"1", "2"}]
     repeat_ids = set(repeat_apartment_ids or ())
     central_pool = sorted(
         [
@@ -152,10 +157,10 @@ def plan_period(
         )
     )
     central_targets = FIRST_HALF_CENTRAL if first_half else SECOND_HALF_CENTRAL
-    # Every hour gets a stable slot with a small persisted jitter. A two-card
-    # window finishes within fifteen minutes and cannot overlap the next hour.
+    # Every hour gets a stable slot with a small persisted jitter. Four cards
+    # remain 8-15 minutes apart and still finish inside their clock hour.
     starts = [
-        period_start + timedelta(minutes=10 + 60 * index + rng.randint(0, 10))
+        period_start + timedelta(minutes=5 + 60 * index + rng.randint(0, 4))
         for index in range(len(batch_sizes))
     ]
     planned: list[PlannedApartment] = []
@@ -238,6 +243,15 @@ def plan_period(
         # cards whose previous post is at least 48 hours old so no hourly slot
         # disappears merely because Lalafo has little new stock.
         while len(selected) < batch_size and repeat_pool:
+            # Keep the random repost allocation spread across the remaining
+            # hours. Only consume surplus repeats here; otherwise a thin fresh
+            # pool would dump tomorrow's reserved repeats into this window.
+            future_repeat_windows = sum(
+                future_index in repeat_windows
+                for future_index in range(index + 1, len(batch_sizes))
+            )
+            if len(repeat_pool) <= future_repeat_windows:
+                break
             eligible_repeats = [
                 item
                 for item in repeat_pool
@@ -423,8 +437,8 @@ class InventoryRepository:
                             Apartment.publication_status != "published",
                             Apartment.id.not_in(active_queue_ids),
                             Apartment.fingerprint.not_in(queued_fingerprints),
-                            Apartment.price.between(20_000, 40_000),
-                            Apartment.rooms.in_(("1", "2", "studio")),
+                            Apartment.price.between(20_000, 45_000),
+                            Apartment.rooms.in_(("1", "2")),
                         )
                     )
                 ).all()
@@ -439,8 +453,8 @@ class InventoryRepository:
                             Apartment.published_at
                             <= now - timedelta(hours=REPOST_AFTER_HOURS),
                             Apartment.id.not_in(active_queue_ids),
-                            Apartment.price.between(20_000, 40_000),
-                            Apartment.rooms.in_(("1", "2", "studio")),
+                            Apartment.price.between(20_000, 45_000),
+                            Apartment.rooms.in_(("1", "2")),
                         )
                     )
                 ).all()
@@ -584,3 +598,4 @@ class InventoryRepository:
                     last_error=error,
                 )
             )
+
