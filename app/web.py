@@ -91,12 +91,12 @@ _background_watchdog_state: dict[str, Any] = {
 
 class MiniAppRequest(BaseModel):
     init_data: str
+    start_param: str
 
 
 class LalafoRelayRequest(BaseModel):
     ad: LalafoAd
     district: str | None = None
-    start_param: str
 
 
 class MiniAppReceiptRequest(MiniAppRequest):

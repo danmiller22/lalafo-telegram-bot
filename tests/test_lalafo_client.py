@@ -1,4 +1,5 @@
-from unittest.mock import AsyncMock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -41,12 +42,12 @@ def test_primary_search_uses_the_operator_owner_one_bedroom_and_price_filters():
     params = dict(LalafoClient._search_params(DEFAULT_SEARCH_URL, 1))
     assert set(
       params[key] for key in params if key.startswith("parameters[69]")
-    ) == {"15496", "2773", "2774"}
+    ) == {"2773", "2774"}
     assert [
         params[key] for key in params if key.startswith("parameters[2149]")
     ] == ["19057"]
     assert params["price[from]"] == "20000"
-    assert params["price[to]"] == "43000"
+    assert params["price[to]"] == "45000"
 
 
 def test_client_sends_browser_context_headers():
@@ -61,13 +62,13 @@ def test_supplementary_search_reserves_owner_and_realtor_pools():
         params = dict(LalafoClient._search_params(url, 1))
         assert set(
             params[key] for key in params if key.startswith("parameters[69]")
-        ) == {"15496", "2773", "2774"}
+        ) == {"2773", "2774"}
         assert [
             params[key] for key in params if key.startswith("parameters[2149]")
         ] == [expected_offerer]
         assert not any(key.startswith("parameters[946]") for key in params)
         assert params["price[from]"] == "20000"
-        assert params["price[to]"] == "43000"
+        assert params["price[to]"] == "45000"
 
 
 @pytest.mark.parametrize(
@@ -123,9 +124,15 @@ def detail_payload(ad_id: int, phone: str) -> dict:
 @pytest.mark.asyncio
 async def test_detail_uses_matching_page_phone():
     client = LalafoClient()
-    client._get_json = AsyncMock(return_value=detail_payload(77701377, "+996554252534"))
+    client._get_text = AsyncMock(return_value="<html></html>")
     try:
-        ad = await client.detail("https://lalafo.kg/bishkek/ads/example-id-77701377")
+        with patch(
+            "app.lalafo.client.parse_detail_page",
+            return_value=SimpleNamespace(
+                lalafo_id=77701377, phone="+996554252534"
+            ),
+        ):
+            ad = await client.detail("https://lalafo.kg/bishkek/ads/example-id-77701377")
     finally:
         await client.close()
 
@@ -136,9 +143,15 @@ async def test_detail_uses_matching_page_phone():
 @pytest.mark.asyncio
 async def test_detail_rejects_mismatched_page():
     client = LalafoClient()
-    client._get_json = AsyncMock(return_value=detail_payload(43393050, "+996555000617"))
+    client._get_text = AsyncMock(return_value="<html></html>")
     try:
-        with pytest.raises(LalafoError, match="detail mismatch"):
-            await client.detail("https://lalafo.kg/bishkek/ads/example-id-77701377")
+        with patch(
+            "app.lalafo.client.parse_detail_page",
+            return_value=SimpleNamespace(
+                lalafo_id=43393050, phone="+996555000617"
+            ),
+        ):
+            with pytest.raises(LalafoError, match="detail mismatch"):
+                await client.detail("https://lalafo.kg/bishkek/ads/example-id-77701377")
     finally:
         await client.close()

@@ -17,6 +17,7 @@ from app.config import (
     DEFAULT_SEARCH_URL,
     INVENTORY_SEARCH_URLS,
     get_settings,
+    TELEGRAM_SOURCE_CHANNELS,
 )
 from app.lalafo.client import LalafoClient, LalafoError, LalafoNotFound
 from app.lalafo.exclusions import is_permanently_excluded
@@ -26,6 +27,7 @@ from app.lalafo.phone import mask_phone
 from app.models import Apartment
 from app.state import PostedState, ad_fingerprint
 from app.telegram.formatting import format_apartment
+from app.telegram.sources import fetch_lalafo_urls
 
 logger = logging.getLogger(__name__)
 
@@ -82,8 +84,8 @@ CENTRAL_DISTRICT_TERMS = (
 # The fallback search includes owners and real-estate agents; detail-level
 # checks still remove shared housing and all public cards omit offerer type.
 SOURCE_MIN_PRICE = 20_000
-SOURCE_MAX_PRICE = 43_000
-SOURCE_ALLOWED_ROOMS = ("1", "studio", "2")
+SOURCE_MAX_PRICE = 45_000
+SOURCE_ALLOWED_ROOMS = ("1", "2")
 SOURCE_MIN_PHOTOS = 2
 SOURCE_MAX_POSTS_PER_RUN = 18
 SOURCE_PUBLISH_SPACING_SECONDS = 150
@@ -91,12 +93,13 @@ SOURCE_MAX_SEARCH_PAGES = 36
 # Published apartments are terminal: every cycle must use fresh inventory.
 SOURCE_REPOST_AFTER_HOURS = None
 MAX_REPOSTS_PER_RUN = 0
-CENTRAL_BATCH_SHARE = 0.50
-OWNER_OTHER_BATCH_SHARE = 0.50
+CENTRAL_BATCH_SHARE = 0.65
+OWNER_OTHER_BATCH_SHARE = 0.35
 MAX_CANDIDATE_POOL = 300
 # Keep nearly half of the discovery pool available for agents. This fallback
 # grows the catalogue after unique owner listings have been exhausted.
-REALTOR_CANDIDATE_RESERVE_SHARE = 0.45
+REALTOR_CANDIDATE_RESERVE_SHARE = 0.50
+REALTOR_BATCH_SHARE = 0.35
 # Two-bedroom cards are mixed into the normal stream instead of being sent as
 # a separate burst. Two per regular cycle reaches at most twenty per Bishkek day.
 TWO_BEDROOM_MIN_PRICE = 20_000
@@ -545,17 +548,31 @@ def select_owners_then_realtors(
     candidates: list[LalafoAd],
     limit: int,
 ) -> list[LalafoAd]:
-    """Fill with owners first and use realtor cards only for the shortage."""
+    """Keep a meaningful realtor slice while retaining owner preference."""
+    if limit <= 0:
+        return []
     owners = [ad for ad in candidates if ad.owner_listing]
     realtors = [ad for ad in candidates if not ad.owner_listing]
-    selected = select_publish_batch_with_reposts(owners, {}, limit)
-    selected.extend(
-        select_publish_batch_with_reposts(
-            realtors,
-            {},
-            max(0, limit - len(selected)),
+    realtor_target = min(len(realtors), math.ceil(limit * REALTOR_BATCH_SHARE))
+    owner_target = min(len(owners), limit - realtor_target)
+    selected = select_publish_batch_with_reposts(owners, {}, owner_target)
+    selected.extend(select_publish_batch_with_reposts(realtors, {}, realtor_target))
+    if len(selected) < limit:
+        selected_ids = {ad.lalafo_id for ad in selected}
+        remaining_owners = [ad for ad in owners if ad.lalafo_id not in selected_ids]
+        selected.extend(
+            select_publish_batch_with_reposts(
+                remaining_owners, {}, limit - len(selected)
+            )
         )
-    )
+    if len(selected) < limit:
+        selected_ids = {ad.lalafo_id for ad in selected}
+        remaining_realtors = [ad for ad in realtors if ad.lalafo_id not in selected_ids]
+        selected.extend(
+            select_publish_batch_with_reposts(
+                remaining_realtors, {}, limit - len(selected)
+            )
+        )
     return selected
 
 
@@ -822,6 +839,32 @@ async def run(*, discovery_only: bool = False) -> int:
             curated_ids.add(priority_id)
             direct_priority_count += 1
 
+        telegram_urls = await fetch_lalafo_urls(
+            TELEGRAM_SOURCE_CHANNELS, timeout=settings.http_timeout_seconds
+        )
+        for telegram_url in telegram_urls:
+            match = re.search(r"-id-(\d+)", telegram_url)
+            if match is None:
+                continue
+            telegram_id = int(match.group(1))
+            if telegram_id in candidate_ids or is_permanently_excluded(telegram_id) or state.contains(telegram_id):
+                continue
+            if apartments is not None and telegram_id in await apartments.published_lalafo_ids([telegram_id]):
+                continue
+            try:
+                telegram_ad = await client.detail(telegram_url)
+            except (LalafoError, LalafoParseError, ValueError):
+                continue
+            allowed, _ = is_allowed(telegram_ad, city=settings.city, max_price=SOURCE_MAX_PRICE, rooms=SOURCE_ALLOWED_ROOMS)
+            if not allowed or telegram_ad.price < max(settings.min_price, minimum_price_for_rooms(telegram_ad.rooms)):
+                continue
+            if len(telegram_ad.photo_urls) < SOURCE_MIN_PHOTOS or not telegram_ad.no_subletting or is_substandard_structure(telegram_ad):
+                continue
+            if apartments is not None and telegram_id in await apartments.duplicate_candidate_ids([telegram_ad]):
+                continue
+            candidates.append(telegram_ad)
+            candidate_ids.add(telegram_id)
+
         # Publish newly supplied cards and active originals from our own Lalafo
         # profile immediately. Once their source IDs are durable, later cycles
         # skip them and resume the full automatic catalogue search.
@@ -1068,7 +1111,7 @@ async def run(*, discovery_only: bool = False) -> int:
         two_bedroom_limit,
     )
     owner_middle = select_owners_then_realtors(
-        [ad for ad in regular_candidates if ad.rooms in {"1", "studio"}],
+        [ad for ad in regular_candidates if ad.rooms == "1"],
         max(
             0,
             limit

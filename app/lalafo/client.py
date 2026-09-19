@@ -320,10 +320,13 @@ class LalafoClient:
         try:
             html = await self._get_text(detail_url)
             ad = parse_detail_page(html, source_url=detail_url)
-            if ad.lalafo_id == expected_id:
-                return ad
         except (LalafoError, LalafoParseError) as exc:
             logger.info("Lalafo browser detail page unavailable: %s", exc)
-        raise LalafoAccessError(
-            "Lalafo browser page is unavailable; API fallback is disabled"
-        )
+            raise LalafoAccessError(
+                "Lalafo browser page is unavailable; API fallback is disabled"
+            ) from exc
+        if ad.lalafo_id != expected_id:
+            raise LalafoError(
+                f"Lalafo detail mismatch: expected {expected_id}, received {ad.lalafo_id}"
+            )
+        return ad

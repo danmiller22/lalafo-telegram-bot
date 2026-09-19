@@ -101,7 +101,7 @@ def test_missing_district_uses_labeled_demo_location_and_omits_deposit():
 def test_expanded_source_keeps_reposts_strictly_limited():
     settings = Settings(_env_file=None)
 
-    assert SOURCE_ALLOWED_ROOMS == ("1", "studio", "2")
+    assert SOURCE_ALLOWED_ROOMS == ("1", "2")
     assert SOURCE_MAX_POSTS_PER_RUN == 18
     assert SOURCE_PUBLISH_SPACING_SECONDS == 150
     assert SOURCE_MAX_SEARCH_PAGES == 36
@@ -115,7 +115,7 @@ def test_expanded_source_keeps_reposts_strictly_limited():
     assert TWO_BEDROOM_MAX_PER_RUN == 2
     assert settings.rooms == "1"
     assert settings.min_price == 20_000
-    assert settings.max_price == 43_000
+    assert settings.max_price == 45_000
     assert settings.max_new_posts_per_run == 18
     assert settings.max_search_pages == 36
     assert settings.allow_no_district is True
@@ -124,24 +124,25 @@ def test_expanded_source_keeps_reposts_strictly_limited():
 def test_source_urls_follow_the_operator_filters():
     assert "/1-bedroom/" in DEFAULT_SEARCH_URL
     assert "/owner" in DEFAULT_SEARCH_URL
-    assert "/1-bedroom/2-bedrooms/studio/owner/" in DEFAULT_SEARCH_URL
+    assert "/1-bedroom/2-bedrooms/owner/" in DEFAULT_SEARCH_URL
+    assert "/studio/" not in DEFAULT_SEARCH_URL
     assert "/semeynym/param-bez-detey/studentam/" in DEFAULT_SEARCH_URL
     assert "/bez-podseleniya/mozhno-s-zhivotnymi" in DEFAULT_SEARCH_URL
     assert "bez-zhivotnyh" not in DEFAULT_SEARCH_URL
-    assert "price[from]=20000&price[to]=43000" in DEFAULT_SEARCH_URL
+    assert "price[from]=20000&price[to]=45000" in DEFAULT_SEARCH_URL
     assert len(ADDITIONAL_SEARCH_URLS) == 2
-    assert "/1-bedroom/2-bedrooms/studio/owner" in ADDITIONAL_SEARCH_URLS[0]
-    assert "/1-bedroom/2-bedrooms/studio/real-estate-agency" in ADDITIONAL_SEARCH_URLS[1]
+    assert "/1-bedroom/2-bedrooms/owner" in ADDITIONAL_SEARCH_URLS[0]
+    assert "/1-bedroom/2-bedrooms/real-estate-agency" in ADDITIONAL_SEARCH_URLS[1]
     assert all("bez-podseleniya" not in url for url in ADDITIONAL_SEARCH_URLS)
-    assert all("price[from]=20000&price[to]=43000" in url for url in ADDITIONAL_SEARCH_URLS)
+    assert all("price[from]=20000&price[to]=45000" in url for url in ADDITIONAL_SEARCH_URLS)
 
 
 def test_realtor_fallback_reserves_nearly_half_of_discovery_pool():
     targets = source_candidate_targets(300, source_count=3, batch_limit=18)
 
-    assert REALTOR_CANDIDATE_RESERVE_SHARE == 0.45
-    assert targets == [82, 165, 300]
-    assert targets[-1] - targets[-2] == 135
+    assert REALTOR_CANDIDATE_RESERVE_SHARE == 0.50
+    assert targets == [75, 150, 300]
+    assert targets[-1] - targets[-2] == 150
 
 
 def test_all_room_types_have_twenty_thousand_price_floor():
@@ -400,7 +401,7 @@ def test_quality_puts_cheap_central_apartment_first():
     assert candidate_quality(central_bargain) > candidate_quality(cheap_outskirts)
 
 
-def test_publish_batch_targets_half_central_half_other_owners():
+def test_publish_batch_targets_sixty_five_percent_central():
     preferred = [
         make_ad(lalafo_id=index, district="ЦУМ", phone=f"+996555000{index:03d}")
         for index in range(1, 81)
@@ -413,11 +414,11 @@ def test_publish_batch_targets_half_central_half_other_owners():
     selected = select_publish_batch(preferred + other, 60)
 
     assert len(selected) == 60
-    assert sum(is_central_district(ad.district) for ad in selected) == 30
-    assert sum(ad.owner_listing and not is_central_district(ad.district) for ad in selected) == 30
+    assert sum(is_central_district(ad.district) for ad in selected) == 39
+    assert sum(ad.owner_listing and not is_central_district(ad.district) for ad in selected) == 21
 
 
-def test_publish_batch_targets_half_central_districts():
+def test_publish_batch_keeps_central_majority():
     central = [
         make_ad(lalafo_id=index, district="ЦУМ", phone=f"+996555100{index:03d}")
         for index in range(1, 31)
@@ -439,8 +440,20 @@ def test_publish_batch_targets_half_central_districts():
     selected = select_publish_batch(central + preferred + other, 25)
 
     assert len(selected) == 25
-    assert sum(is_central_district(ad.district) for ad in selected) == 13
-    assert sum(ad.owner_listing and not is_central_district(ad.district) for ad in selected) == 12
+    assert sum(is_central_district(ad.district) for ad in selected) == 17
+    assert sum(ad.owner_listing and not is_central_district(ad.district) for ad in selected) == 8
+
+
+def test_owner_realtor_refill_does_not_duplicate_cards():
+    owners = [
+        make_ad(lalafo_id=index, owner_listing=True, phone=f"+996700{index:06d}")
+        for index in (1, 2, 3)
+    ]
+
+    selected = select_owners_then_realtors(owners, limit=4)
+
+    assert len(selected) == 3
+    assert len({ad.lalafo_id for ad in selected}) == 3
 
 
 def test_publish_batch_fills_available_space_when_one_group_is_small():
