@@ -1,0 +1,53 @@
+name: Repost four verified original apartments
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/repost-originals-20260919.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-apartments
+  cancel-in-progress: false
+
+jobs:
+  repost-originals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_GROUP_ID: "-1004389602150"
+      CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SELECTED_LALAFO_URLS: >-
+        https://lalafo.kg/bishkek/ads/managed-id-114740296?codex_force_repost=1
+        https://lalafo.kg/bishkek/ads/managed-id-111730695?codex_force_repost=1
+        https://lalafo.kg/bishkek/ads/managed-id-116490287?codex_force_repost=1
+        https://lalafo.kg/bishkek/ads/managed-id-116490159?codex_force_repost=1
+      SELECTED_MANAGED_LALAFO_AD_IDS: "114740296,111730695,116490287,116490159"
+      CONFIRM_SELECTED_PUBLIC_SEND: "true"
+      DRY_RUN: "false"
+      MAX_PHOTOS_PER_APARTMENT: "10"
+      LOG_LEVEL: INFO
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - name: Select a working Lalafo route
+        shell: bash
+        run: |
+          if python -m scripts.select_lalafo_proxy > lalafo-proxy.env; then
+            cat lalafo-proxy.env >> "$GITHUB_ENV"
+          else
+            echo "LALAFO_PROXY_URL=" >> "$GITHUB_ENV"
+          fi
+      - run: alembic upgrade head
+      - name: Publish four cards from verified source records
+        run: python -m tools.publish_selected_apartments
+
