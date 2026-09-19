@@ -51,10 +51,8 @@ async def create_runtime(*, bot_token: str | None = None, lalafo_only: bool = Fa
     else:
         dispatcher.include_router(wanted_admin.router)
         dispatcher.include_router(admin.router)
-        # Keep the manual link flow on the main bot as a durable fallback. It
-        # uses a separate Router instance because the dedicated link bot owns
-        # ``lalafo_links.router``.
-        dispatcher.include_router(lalafo_links.main_router)
+        # Manual Lalafo fetching/proxy discovery must run in a separate service:
+        # it can exhaust the payment web instance's CPU and memory.
         dispatcher.include_router(support_handlers.router)
         dispatcher.include_router(wanted_handlers.router)
         dispatcher.include_router(handlers.router)
