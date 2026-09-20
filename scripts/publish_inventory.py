@@ -61,9 +61,7 @@ async def run(*, eligible_until: datetime | None = None) -> int:
 
     apartment = item.apartment
     is_repeat = apartment.publication_status == "published"
-    stored = apartment_to_ad(apartment).model_copy(
-        update={"owner_listing": apartment.owner_listing}
-    )
+    stored = apartment_to_ad(apartment)
     ad = None
     try:
         async with LalafoClient(

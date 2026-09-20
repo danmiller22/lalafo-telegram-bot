@@ -487,6 +487,7 @@ async def manual_card_price(
         category_id=2044,
         no_subletting=True,
         owner_listing=True,
+        seller_type="owner",
         source_title="Ручное объявление",
     )
     await message.answer("⏳ Публикую карточку в группу…")

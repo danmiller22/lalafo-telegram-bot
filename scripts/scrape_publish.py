@@ -192,7 +192,8 @@ def apartment_to_ad(apartment) -> LalafoAd:
         photo_urls=list(apartment.photo_urls),
         category_id=2044,
         no_subletting=apartment.no_subletting,
-        owner_listing=False,
+        owner_listing=apartment.owner_listing,
+        seller_type=apartment.seller_type,
         source_updated_at=apartment.source_updated_at,
     )
 

@@ -98,6 +98,7 @@ def test_parse_detail_page_uses_structured_fields_and_description_deposit():
     assert ad.phone == "+996555123456"
     assert ad.no_subletting
     assert ad.owner_listing
+    assert ad.seller_type == "owner"
 
 
 def test_realtor_service_is_not_an_owner_listing():
@@ -124,6 +125,7 @@ def test_realtor_service_is_not_an_owner_listing():
     )
 
     assert ad.owner_listing is False
+    assert ad.seller_type == "realtor"
 
 
 def test_regular_apartment_without_subletting_metadata_defaults_to_no_subletting():

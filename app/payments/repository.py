@@ -448,6 +448,11 @@ class ApartmentRepository:
                     deposit=ad.deposit,
                     no_subletting=ad.no_subletting,
                     owner_listing=ad.owner_listing,
+                    seller_type=(
+                        ad.seller_type
+                        if ad.seller_type != "unknown"
+                        else ("owner" if ad.owner_listing else "unknown")
+                    ),
                     discovery_priority=discovery_priority,
                     photo_urls=ad.photo_urls,
                     source_updated_at=ad.source_updated_at,
@@ -468,6 +473,11 @@ class ApartmentRepository:
                 apartment.deposit = ad.deposit
                 apartment.no_subletting = ad.no_subletting
                 apartment.owner_listing = ad.owner_listing
+                apartment.seller_type = (
+                    ad.seller_type
+                    if ad.seller_type != "unknown"
+                    else ("owner" if ad.owner_listing else "unknown")
+                )
                 apartment.discovery_priority = (
                     apartment.discovery_priority or discovery_priority
                 )

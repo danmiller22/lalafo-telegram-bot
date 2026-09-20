@@ -41,6 +41,9 @@ class Apartment(Base):
     deposit: Mapped[int | None] = mapped_column(Integer)
     no_subletting: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     owner_listing: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    seller_type: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="unknown"
+    )
     discovery_priority: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     photo_urls: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     telegram_message_id: Mapped[int | None] = mapped_column(BigInteger)

@@ -58,6 +58,7 @@ def owner_card(apartment: Apartment, managed_id: int) -> LalafoAd:
         category_id=2044,
         no_subletting=apartment.no_subletting,
         owner_listing=apartment.owner_listing,
+        seller_type=apartment.seller_type,
     )
 
 

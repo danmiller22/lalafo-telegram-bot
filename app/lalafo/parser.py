@@ -270,6 +270,14 @@ def parse_detail_data(raw: dict[str, Any], *, source_url: str) -> LalafoAd:
         deposit = None
     offerer = str(params.get("Кто предлагает") or "").strip().casefold()
     realtor_service = str(params.get("Услуги риэлтора") or "").strip()
+    if realtor_service or any(
+        marker in offerer for marker in ("риелтор", "риэлтор", "агент", "агентство")
+    ):
+        seller_type = "realtor"
+    elif offerer == "собственник":
+        seller_type = "owner"
+    else:
+        seller_type = "unknown"
     return LalafoAd(
         lalafo_id=int(raw["id"]),
         source_url=source_url,
@@ -283,7 +291,8 @@ def parse_detail_data(raw: dict[str, Any], *, source_url: str) -> LalafoAd:
         photo_urls=_image_urls(raw),
         category_id=int(raw.get("category_id") or 0),
         no_subletting=_is_without_subletting(raw, params),
-        owner_listing=offerer == "собственник" and not realtor_service,
+        owner_listing=seller_type == "owner",
+        seller_type=seller_type,
         source_title=str(raw.get("title") or "").strip(),
         source_description=str(raw.get("description") or "").strip(),
         source_params=[dict(item) for item in raw.get("params") or [] if isinstance(item, dict)],

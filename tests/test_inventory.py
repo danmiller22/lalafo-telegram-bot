@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 import random
 
 import pytest
+from sqlalchemy import func, select
 
 from app.inventory import DISCOVERY_RETRY_MINUTES, InventoryRepository, plan_period
 from app.models import ApartmentInventoryQueue
@@ -24,6 +25,7 @@ def _apartments(count: int, *, central: bool, start_id: int, owner: bool = True)
             district="Золотой квадрат" if central else "7 мкр",
             discovery_priority=False,
             owner_listing=owner,
+            seller_type="owner" if owner else "realtor",
             last_seen_at=now,
             updated_at=now,
         )
@@ -79,9 +81,10 @@ def test_period_uses_broader_stock_when_no_central_apartments_exist():
 
     planned = plan_period(stock, period_start=period_start, rng=random.Random(9))
 
-    assert len(planned) == 36
+    assert len(planned) == 4
+    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 4
     assert all(not "золотой" in item.apartment.district.casefold() for item in planned)
-    assert 5 <= sum(item.apartment.rooms == "2" for item in planned) <= 10
+    assert sum(item.apartment.rooms == "2" for item in planned) <= 4
 
 
 def test_period_keeps_single_central_card_and_fills_with_realtors():
@@ -92,8 +95,38 @@ def test_period_keeps_single_central_card_and_fills_with_realtors():
 
     planned = plan_period(stock, period_start=period_start, rng=random.Random(10))
 
-    assert len(planned) == 36
+    assert len(planned) == 5
     assert sum("золотой" in item.apartment.district.casefold() for item in planned) == 1
+    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 4
+
+
+def test_unknown_sellers_are_not_counted_as_realtors():
+    stock = _apartments(80, central=True, start_id=1)
+    for item in stock:
+        item.owner_listing = False
+        item.seller_type = "unknown"
+    period_start = datetime(2026, 9, 13, 0, tzinfo=timezone(timedelta(hours=6)))
+
+    planned = plan_period(stock, period_start=period_start, rng=random.Random(13))
+
+    assert len(planned) == 36
+    assert all(item.apartment.seller_type == "unknown" for item in planned)
+
+
+def test_period_keeps_realtors_at_target_when_mixed_stock_is_available():
+    owners = _apartments(80, central=True, start_id=1)
+    realtors = _apartments(40, central=True, start_id=200, owner=False)
+    period_start = datetime(2026, 9, 13, 0, tzinfo=timezone(timedelta(hours=6)))
+
+    planned = plan_period(
+        owners + realtors,
+        period_start=period_start,
+        realtor_target=4,
+        rng=random.Random(14),
+    )
+
+    assert len(planned) == 36
+    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 4
 
 
 def test_period_spreads_random_reposts_across_separate_windows():
@@ -192,6 +225,58 @@ async def test_concurrent_publishers_cannot_claim_the_same_card(repositories):
         inventory.claim_due(now=now), inventory.claim_due(now=now)
     )
     assert sum(item is not None for item in claims) == 1
+
+
+@pytest.mark.asyncio
+async def test_claim_due_never_publishes_ninth_realtor_in_a_day(repositories):
+    apartments, _, sessions = repositories
+    now = datetime.now(timezone.utc)
+    rows = []
+    for index in range(9):
+        apartment = await apartments.upsert_discovered(
+            make_ad(
+                lalafo_id=950 + index,
+                rooms="1",
+                seller_type="realtor",
+                owner_listing=False,
+            )
+        )
+        rows.append(apartment)
+    async with sessions.begin() as session:
+        session.add_all(
+            [
+                ApartmentInventoryQueue(
+                    apartment_id=apartment.id,
+                    scheduled_at=now - timedelta(minutes=1),
+                    window_key="realtor-cap",
+                    sequence=index,
+                )
+                for index, apartment in enumerate(rows, start=1)
+            ]
+        )
+
+    inventory = InventoryRepository(sessions)
+    for apartment in rows[:8]:
+        claimed = await inventory.claim_due(now=now)
+        assert claimed is not None
+        await apartments.mark_published(
+            apartment.id,
+            chat_id=-100,
+            message_id=apartment.id,
+        )
+        await inventory.finish_item(claimed.id, status="published")
+
+    assert await inventory.claim_due(now=now) is None
+    async with sessions() as session:
+        skipped = await session.scalar(
+            select(func.count())
+            .select_from(ApartmentInventoryQueue)
+            .where(
+                ApartmentInventoryQueue.status == "skipped",
+                ApartmentInventoryQueue.last_error == "daily_realtor_cap",
+            )
+        )
+    assert skipped == 1
 
 
 @pytest.mark.asyncio

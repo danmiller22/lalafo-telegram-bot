@@ -40,6 +40,7 @@ class LalafoAd(BaseModel):
     category_id: int
     no_subletting: bool
     owner_listing: bool
+    seller_type: str = "unknown"
     source_title: str = ""
     source_description: str = ""
     source_params: list[dict[str, Any]] = Field(default_factory=list)

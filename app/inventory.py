@@ -24,6 +24,9 @@ MAX_TWO_BEDROOMS_PER_WINDOW = 1
 MAX_TWO_BEDROOMS_PER_DAY = 10
 MAX_TWO_BEDROOMS_PER_PERIOD = 5
 MAX_PUBLICATIONS_PER_DAY = 72
+MIN_REALTORS_PER_DAY = 6
+MAX_REALTORS_PER_DAY = 8
+TARGET_REALTORS_PER_PERIOD = 4
 REPOST_AFTER_HOURS = 48
 MAX_REPOSTS_PER_PERIOD = 36
 DISCOVERY_RETRY_MINUTES = 30
@@ -75,6 +78,101 @@ def _candidate_key(item: Apartment, *, central: bool) -> tuple[object, ...]:
     )
 
 
+def _seller_type(item: Apartment) -> str:
+    value = getattr(item, "seller_type", "unknown")
+    return value if value in {"owner", "realtor", "unknown"} else "unknown"
+
+
+def _limit_realtors(
+    planned: list[PlannedApartment],
+    apartments: list[Apartment],
+    *,
+    target: int,
+) -> list[PlannedApartment]:
+    """Keep a period near its realtor quota without treating unknowns as agents."""
+    target = max(0, target)
+    result: list[PlannedApartment | None] = list(planned)
+    used_ids = {item.apartment.id for item in planned}
+    unused = [item for item in apartments if item.id not in used_ids]
+
+    realtor_indexes = [
+        index
+        for index, item in enumerate(result)
+        if item is not None and _seller_type(item.apartment) == "realtor"
+    ]
+    # Replace excess agents with an owner or an unspecified seller. Matching
+    # the room count preserves the per-window two-bedroom ceiling.
+    for index in realtor_indexes[target:]:
+        current = result[index]
+        if current is None:
+            continue
+        replacements = [
+            item
+            for item in unused
+            if _seller_type(item) != "realtor"
+            and item.rooms == current.apartment.rooms
+        ]
+        if replacements:
+            replacements.sort(
+                key=lambda item: (
+                    is_central(item.district) != is_central(current.apartment.district),
+                    _candidate_key(item, central=is_central(item.district)),
+                )
+            )
+            replacement = replacements[0]
+            unused.remove(replacement)
+            result[index] = PlannedApartment(
+                apartment=replacement,
+                scheduled_at=current.scheduled_at,
+                window_key=current.window_key,
+                sequence=current.sequence,
+            )
+        else:
+            # Never exceed the hard daily cap just to keep a window full.
+            result[index] = None
+
+    current_realtors = sum(
+        item is not None and _seller_type(item.apartment) == "realtor"
+        for item in result
+    )
+    if current_realtors < target:
+        realtor_candidates = [item for item in unused if _seller_type(item) == "realtor"]
+        realtor_candidates.sort(
+            key=lambda item: _candidate_key(item, central=is_central(item.district))
+        )
+        for realtor in realtor_candidates:
+            replaceable = [
+                index
+                for index, item in enumerate(result)
+                if item is not None
+                and _seller_type(item.apartment) != "realtor"
+                and not item.apartment.discovery_priority
+                and item.apartment.rooms == realtor.rooms
+            ]
+            if not replaceable:
+                continue
+            replaceable.sort(
+                key=lambda index: (
+                    is_central(result[index].apartment.district)
+                    != is_central(realtor.district),
+                    result[index].scheduled_at,
+                )
+            )
+            index = replaceable[0]
+            old = result[index]
+            result[index] = PlannedApartment(
+                apartment=realtor,
+                scheduled_at=old.scheduled_at,
+                window_key=old.window_key,
+                sequence=old.sequence,
+            )
+            current_realtors += 1
+            if current_realtors >= target:
+                break
+
+    return [item for item in result if item is not None]
+
+
 def _pick_for_window(
     pool: list[Apartment],
     count: int,
@@ -121,6 +219,7 @@ def plan_period(
     *,
     period_start: datetime,
     already_two_bedrooms_today: int = 0,
+    realtor_target: int = TARGET_REALTORS_PER_PERIOD,
     repeat_apartment_ids: set[int] | None = None,
     rng: random.Random | None = None,
 ) -> list[PlannedApartment]:
@@ -284,7 +383,7 @@ def plan_period(
                     sequence=sequence,
                 )
             )
-    return planned
+    return _limit_realtors(planned, apartments, target=realtor_target)
 
 
 class InventoryRepository:
@@ -423,6 +522,45 @@ class InventoryRepository:
                 or 0
             )
             already_two = published_two + reserved_two
+            published_realtors = int(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(Apartment)
+                    .where(
+                        Apartment.publication_status == "published",
+                        Apartment.published_at >= day_start,
+                        Apartment.published_at < day_end,
+                        Apartment.seller_type == "realtor",
+                    )
+                )
+                or 0
+            )
+            reserved_realtors = int(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(ApartmentInventoryQueue)
+                    .join(Apartment)
+                    .where(
+                        ApartmentInventoryQueue.scheduled_at >= day_start,
+                        ApartmentInventoryQueue.scheduled_at < day_end,
+                        ApartmentInventoryQueue.status.in_(("queued", "publishing")),
+                        Apartment.seller_type == "realtor",
+                    )
+                )
+                or 0
+            )
+            already_realtors = published_realtors + reserved_realtors
+            remaining_realtors = max(0, MAX_REALTORS_PER_DAY - already_realtors)
+            if period.astimezone(BISHKEK).hour == 0:
+                realtor_target = min(TARGET_REALTORS_PER_PERIOD, remaining_realtors)
+            else:
+                realtor_target = min(
+                    remaining_realtors,
+                    max(
+                        TARGET_REALTORS_PER_PERIOD,
+                        MIN_REALTORS_PER_DAY - already_realtors,
+                    ),
+                )
             active_queue_ids = select(ApartmentInventoryQueue.apartment_id).where(
                 ApartmentInventoryQueue.status.in_(("queued", "publishing"))
             )
@@ -470,6 +608,7 @@ class InventoryRepository:
                 stock,
                 period_start=period,
                 already_two_bedrooms_today=already_two,
+                realtor_target=realtor_target,
                 repeat_apartment_ids={item.id for item in chosen_repeats},
                 rng=chooser,
             )
@@ -545,6 +684,48 @@ class InventoryRepository:
             )
             if published_today >= MAX_PUBLICATIONS_PER_DAY:
                 return None
+            published_realtors = int(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(Apartment)
+                    .where(
+                        Apartment.publication_status == "published",
+                        Apartment.published_at >= day_start,
+                        Apartment.published_at < day_end,
+                        Apartment.seller_type == "realtor",
+                    )
+                )
+                or 0
+            )
+            publishing_realtors = int(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(ApartmentInventoryQueue)
+                    .join(Apartment)
+                    .where(
+                        ApartmentInventoryQueue.status == "publishing",
+                        ApartmentInventoryQueue.claimed_at >= day_start,
+                        ApartmentInventoryQueue.claimed_at < day_end,
+                        Apartment.seller_type == "realtor",
+                    )
+                )
+                or 0
+            )
+            if published_realtors + publishing_realtors >= MAX_REALTORS_PER_DAY:
+                excess_realtors = (
+                    select(ApartmentInventoryQueue.id)
+                    .join(Apartment)
+                    .where(
+                        ApartmentInventoryQueue.status == "queued",
+                        ApartmentInventoryQueue.scheduled_at <= eligible_until,
+                        Apartment.seller_type == "realtor",
+                    )
+                )
+                await session.execute(
+                    update(ApartmentInventoryQueue)
+                    .where(ApartmentInventoryQueue.id.in_(excess_realtors))
+                    .values(status="skipped", last_error="daily_realtor_cap")
+                )
             await session.execute(
                 update(ApartmentInventoryQueue)
                 .where(
