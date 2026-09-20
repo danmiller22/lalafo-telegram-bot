@@ -87,6 +87,7 @@ MANAGED_KNOWN_PHOTO_URLS = {
 SELECTED_CARD_CORRECTIONS = {
     114595809: (32_000, "Восток-5"),
     116352866: (21_000, "ЦУМ"),
+    113286525: (32_000, "ЦУМ"),
 }
 SEARCH_REQUEST_ANNOUNCEMENT = (
     "🔎 Заполните заявку на поиск квартиры через нашего бота "
@@ -534,6 +535,14 @@ async def run() -> int:
             try:
                 if managed is None:
                     ad = await client.detail(item.url)
+                    correction = SELECTED_CARD_CORRECTIONS.get(item.lalafo_id)
+                    if correction is not None:
+                        ad = ad.model_copy(
+                            update={
+                                "price": correction[0],
+                                "district": correction[1],
+                            }
+                        )
                 else:
                     managed_ad = None
                     if managed.managed_lalafo_ad_url:
