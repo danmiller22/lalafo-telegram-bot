@@ -128,6 +128,18 @@ CURATED_ROTATION_LALAFO_IDS = (
 PRIORITY_AD_SPECS = (
     (
         "https://lalafo.kg/bishkek/ads/"
+        "1-komnata-rieltor-bez-zivotnyh-ot-1-mesaca-"
+        "s-mebelu-polnostu-id-116518638",
+        "Восток-5",
+    ),
+    (
+        "https://lalafo.kg/bishkek/ads/"
+        "1-komnata-1000-melocej-rieltor-bez-zivotnyh-"
+        "s-mebelu-casticno-id-113286525",
+        "ЦУМ",
+    ),
+    (
+        "https://lalafo.kg/bishkek/ads/"
         "sdau-kvartira-otdelno-id-81141886",
         "Гоин",
     ),
@@ -164,6 +176,7 @@ PRIORITY_AD_SPECS = (
         "Филармония",
     ),
 )
+IMMEDIATE_PRIORITY_AD_IDS = frozenset({116518638, 113286525})
 
 # Cards currently visible in the operator's Lalafo account. Ads waiting for
 # payment are not publicly fetchable, so keep their account-visible terms here
