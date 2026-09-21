@@ -66,8 +66,10 @@ def test_mini_app_page_keeps_payment_and_receipt_in_one_window():
     assert "/miniapp/api/session" in html
     assert "/miniapp/api/start" in html
     assert "/miniapp/api/check" in html
-    assert "Базовая: 7 дней — 499 сом" in html
-    assert "Премиум: 30 дней — 999 сом" in html
+    assert "1 неделя доступа к номерам — 499 сом" in html
+    assert "1 месяц доступа к номерам — 999 сом" in html
+    assert 'id="hero"' not in html
+    assert 'id="details"' not in html
     assert "tg.openLink(data.payment_url)" in html
     assert "Выберите банк" not in html
     assert "Выберите доступ:" not in html

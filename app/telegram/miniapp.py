@@ -69,10 +69,7 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     body {{ margin: 0; background: var(--tg-theme-bg-color, #f4f6f7); color: var(--tg-theme-text-color, #15201d); }}
     main {{ max-width: 540px; margin: 0 auto; padding: 16px 14px 28px; }}
     .card {{ background: var(--tg-theme-secondary-bg-color, #fff); border-radius: 20px; padding: 16px; box-shadow: 0 8px 28px #00000012; }}
-    .hero {{ width: 100%; max-height: 260px; object-fit: cover; border-radius: 15px; display: none; margin-bottom: 14px; }}
     h1 {{ font-size: 21px; margin: 0 0 8px; }}
-    .details {{ line-height: 1.55; white-space: pre-line; margin: 10px 0 16px; }}
-    .price {{ font-size: 19px; font-weight: 750; margin: 12px 0 4px; }}
     .status {{ border-radius: 13px; padding: 12px; margin: 12px 0; background: #12856a18; line-height: 1.4; }}
     .phone {{ font-size: 22px; font-weight: 800; color: #079b79; word-break: break-word; }}
     button, .button {{ width: 100%; border: 0; border-radius: 14px; padding: 14px 16px; margin-top: 9px; font: inherit; font-weight: 750; text-align: center; cursor: pointer; text-decoration: none; display: block; }}
@@ -86,16 +83,14 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
 <body>
 <main>
   <section class="card">
-    <img id="hero" class="hero" alt="Квартира">
-    <h1 id="title">Загружаем квартиру…</h1>
-    <div id="details" class="details"></div>
+    <h1>Получить доступ</h1>
     <div id="status" class="status">Проверяем доступ…</div>
     <div id="phone" class="phone hidden"></div>
-    <button id="pay-week" class="primary hidden">Базовая: 7 дней — {WEEK_PRICE} сом</button>
-    <button id="pay-month" class="primary hidden">Премиум: 30 дней — {MONTH_PRICE} сом</button>
+    <button id="pay-week" class="primary hidden">1 неделя доступа к номерам — {WEEK_PRICE} сом</button>
+    <button id="pay-month" class="primary hidden">1 месяц доступа к номерам — {MONTH_PRICE} сом</button>
     <button id="check" class="secondary hidden">Я оплатил(а)</button>
     <button id="checking" class="secondary hidden" disabled>⏳ Статус: оплата проверяется</button>
-    <button id="refresh" class="secondary">Обновить статус</button>
+    <button id="refresh" class="secondary hidden">Обновить статус</button>
   </section>
   <div class="foot">Номер виден только пользователю с подтверждённым доступом</div>
 </main>
@@ -124,13 +119,11 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
   function render(data) {{
     lastState = data.status;
     show("status", true);
-    el("title").textContent = data.title || "Квартира";
-    el("details").textContent = data.details || "";
-    if (data.photo_url) {{ el("hero").src = data.photo_url; el("hero").style.display = "block"; }}
     show("phone", data.status === "approved");
-    const canPay = ["unpaid", "awaiting_receipt", "rejected"].includes(data.status);
+    const canPay = data.status !== "approved";
     show("pay-week", canPay);
     show("pay-month", canPay && Boolean(data.monthly_available));
+    show("refresh", data.status !== "unpaid");
     show("check", data.status === "awaiting_receipt");
     show("checking", data.status === "pending");
     if (data.status === "approved") {{

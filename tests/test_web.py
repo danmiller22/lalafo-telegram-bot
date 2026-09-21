@@ -488,12 +488,9 @@ async def test_miniapp_page_is_public_but_session_requires_telegram_auth(
     assert accepted.status_code == 200
     assert accepted.json() == {
         "status": "unpaid",
-        "title": "1-комнатная квартира",
-        "details": "📍 ЦУМ\n🏙 Бишкек\n💰 25 000 сом",
-            "photo_url": "https://img.example/apartment.jpg",
-            "price": 499,
-            "monthly_available": True,
-        }
+        "price": 499,
+        "monthly_available": True,
+    }
     service.contact_status.assert_awaited_once_with(778899, 42)
 
 

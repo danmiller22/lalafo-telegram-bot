@@ -26,7 +26,7 @@ from app.lalafo.auto_reply import LalafoAutoResponder
 from app.lalafo.models import LalafoAd
 from app.payment_plans import MONTH_PLAN, WEEK_PLAN, WEEK_PRICE
 from app.security import TokenSigner
-from app.telegram.formatting import format_admin_card, format_apartment, room_title
+from app.telegram.formatting import format_admin_card
 from app.telegram.keyboards import admin_keyboard, payment_keyboard
 from app.telegram.publisher import TelegramPublisher
 from app.telegram.miniapp import mini_app_html, verify_telegram_init_data
@@ -965,12 +965,8 @@ def _miniapp_result_payload(result) -> dict[str, Any]:
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Квартира больше недоступна.",
         )
-    formatted = format_apartment(apartment).splitlines()
     response: dict[str, Any] = {
         "status": result.status,
-        "title": room_title(apartment.rooms),
-        "details": "\n".join(formatted[1:]),
-        "photo_url": apartment.photo_urls[0] if apartment.photo_urls else None,
         "price": WEEK_PRICE,
     }
     if result.status == "approved":
