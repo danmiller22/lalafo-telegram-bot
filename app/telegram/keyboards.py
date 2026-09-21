@@ -89,6 +89,7 @@ def private_payment_keyboard(
     support_url: str,
     pending: bool = False,
     monthly_payment_url: str = "",
+    include_return: bool = False,
 ) -> InlineKeyboardMarkup:
     rows = [
             [
@@ -107,8 +108,103 @@ def private_payment_keyboard(
                 )
             ]
         )
+    if include_return:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="Вернуться к объявлению",
+                    callback_data=(
+                        f"paynav:listing:{signer.sign_id('paynav-listing', apartment_id)}"
+                    ),
+                )
+            ]
+        )
     rows.append(_support_row(support_url))
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def payment_method_keyboard(
+    apartment_id: int,
+    *,
+    plan: str,
+    signer: TokenSigner,
+) -> InlineKeyboardMarkup:
+    code = "w" if plan == "week" else "m"
+    purpose = f"paymethod-{code}"
+    token = signer.sign_id(purpose, apartment_id)
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="💳 Банки КР (QR-оплата)",
+                    callback_data=f"paymethod:bank:{code}:{token}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="◀️ Назад",
+                    callback_data=f"paynav:plans:{signer.sign_id('paynav-plans', apartment_id)}",
+                ),
+                InlineKeyboardButton(
+                    text="Вернуться к объявлению",
+                    callback_data=(
+                        f"paynav:listing:{signer.sign_id('paynav-listing', apartment_id)}"
+                    ),
+                ),
+            ],
+        ]
+    )
+
+
+def bank_payment_keyboard(
+    apartment_id: int,
+    *,
+    plan: str,
+    signer: TokenSigner,
+    bot_username: str,
+    payment_url: str,
+) -> InlineKeyboardMarkup:
+    purpose = "miniapp-week" if plan == "week" else "miniapp-month"
+    start_param = signer.sign_start_id(purpose, apartment_id)
+    mini_app_url = (
+        f"https://t.me/{bot_username.lstrip('@')}/{MINI_APP_SHORT_NAME}"
+        f"?startapp={start_param}"
+    )
+    code = "w" if plan == "week" else "m"
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="💳 Оплатить",
+                    url=mini_app_url,
+                )
+            ],
+            [InlineKeyboardButton(text="Открыть оплату по ссылке Finik", url=payment_url)],
+            [
+                InlineKeyboardButton(
+                    text="✅ Я оплатил",
+                    callback_data=f"paid:{signer.sign_id('paid', apartment_id)}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="◀️ Назад",
+                    callback_data=(
+                        f"plan:{code}:"
+                        f"{signer.sign_id('plan-' + ('week' if code == 'w' else 'month'), apartment_id)}"
+                    ),
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Вернуться к объявлению",
+                    callback_data=(
+                        f"paynav:listing:{signer.sign_id('paynav-listing', apartment_id)}"
+                    ),
+                )
+            ],
+        ]
+    )
 
 
 def receipt_payment_keyboard(

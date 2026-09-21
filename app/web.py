@@ -947,7 +947,16 @@ def _miniapp_context(payload: MiniAppRequest):
             detail="Не удалось подтвердить пользователя Telegram.",
         )
     signer = TokenSigner(settings.require_callback_secret())
-    apartment_id = signer.verify_start_id("miniapp-apartment", payload.start_param)
+    selected_plan = None
+    apartment_id = signer.verify_start_id("miniapp-week", payload.start_param)
+    if apartment_id is not None:
+        selected_plan = WEEK_PLAN
+    else:
+        apartment_id = signer.verify_start_id("miniapp-month", payload.start_param)
+        if apartment_id is not None:
+            selected_plan = MONTH_PLAN
+    if apartment_id is None:
+        apartment_id = signer.verify_start_id("miniapp-apartment", payload.start_param)
     if apartment_id is None:
         apartment_id = signer.decode_public_start_id(payload.start_param)
     if apartment_id is None:
@@ -955,7 +964,7 @@ def _miniapp_context(payload: MiniAppRequest):
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Ссылка на квартиру недействительна.",
         )
-    return settings, runtime, user, apartment_id
+    return settings, runtime, user, apartment_id, selected_plan
 
 
 def _miniapp_result_payload(result) -> dict[str, Any]:
@@ -1000,7 +1009,7 @@ async def telegram_mini_app() -> HTMLResponse:
 
 @app.post("/miniapp/api/session", include_in_schema=False)
 async def miniapp_session(payload: MiniAppRequest) -> dict[str, Any]:
-    settings, runtime, user, apartment_id = _miniapp_context(payload)
+    settings, runtime, user, apartment_id, selected_plan = _miniapp_context(payload)
     result = await runtime.workflow_data["service"].contact_status(user.id, apartment_id)
     if result.status == "unavailable":
         raise HTTPException(
@@ -1009,15 +1018,21 @@ async def miniapp_session(payload: MiniAppRequest) -> dict[str, Any]:
         )
     response = _miniapp_result_payload(result)
     response["monthly_available"] = bool(settings.monthly_finik_payment_url)
+    if selected_plan is not None:
+        response["selected_plan"] = selected_plan
     return response
 
 
 @app.post("/miniapp/api/start", include_in_schema=False)
 async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
-    settings, runtime, user, apartment_id = _miniapp_context(payload)
+    settings, runtime, user, apartment_id, selected_plan = _miniapp_context(payload)
     service = runtime.workflow_data["service"]
     result = await service.contact_status(user.id, apartment_id)
-    plan = payload.plan if payload.plan in {WEEK_PLAN, MONTH_PLAN} else WEEK_PLAN
+    plan = (
+        payload.plan
+        if payload.plan in {WEEK_PLAN, MONTH_PLAN}
+        else selected_plan or WEEK_PLAN
+    )
     payment_url = (
         settings.monthly_finik_payment_url if plan == MONTH_PLAN else settings.finik_payment_url
     )
@@ -1046,12 +1061,13 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
     response = _miniapp_result_payload(result)
     response["payment_url"] = payment_url
     response["monthly_available"] = bool(settings.monthly_finik_payment_url)
+    response["selected_plan"] = plan
     return response
 
 
 @app.post("/miniapp/api/check", include_in_schema=False)
 async def miniapp_check_payment(payload: MiniAppRequest) -> dict[str, Any]:
-    settings, runtime, user, apartment_id = _miniapp_context(payload)
+    settings, runtime, user, apartment_id, _selected_plan = _miniapp_context(payload)
     if not settings.admin_user_id:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -1102,7 +1118,7 @@ async def miniapp_check_payment(payload: MiniAppRequest) -> dict[str, Any]:
 
 @app.post("/miniapp/api/receipt", include_in_schema=False)
 async def miniapp_upload_receipt(payload: MiniAppReceiptRequest) -> dict[str, Any]:
-    settings, runtime, user, apartment_id = _miniapp_context(payload)
+    settings, runtime, user, apartment_id, _selected_plan = _miniapp_context(payload)
     if not settings.admin_user_id:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

@@ -7,7 +7,14 @@ from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
-from app.bot.callbacks import CONTACT_PREFIX, PAID_PREFIX, PLAN_PREFIX, VIEW_PREFIX
+from app.bot.callbacks import (
+    CONTACT_PREFIX,
+    PAID_PREFIX,
+    PAYMENT_METHOD_PREFIX,
+    PAYMENT_NAV_PREFIX,
+    PLAN_PREFIX,
+    VIEW_PREFIX,
+)
 from app.config import Settings
 from app.payments.repository import PaymentRepository
 from app.payment_plans import (
@@ -24,7 +31,9 @@ from app.telegram.formatting import format_admin_card, format_apartment
 from app.telegram.keyboards import (
     admin_keyboard,
     apartment_keyboard,
+    bank_payment_keyboard,
     payment_keyboard,
+    payment_method_keyboard,
     private_payment_keyboard,
     status_keyboard,
 )
@@ -214,6 +223,44 @@ async def plan_handler(
     if access.status == "pending":
         await callback.answer("⏳ Ваша оплата уже проверяется.", show_alert=True)
         return
+    text = (
+        "💳 Оплата\n\n"
+        f"Тариф: {plan_label(plan)}\n"
+        f"Сумма: {price} сом\n\n"
+        "Выберите способ оплаты:"
+    )
+    await callback.answer()
+    if callback.message:
+        await callback.message.edit_text(
+            text,
+            reply_markup=payment_method_keyboard(
+                apartment_id,
+                plan=plan,
+                signer=signer,
+            ),
+        )
+
+
+@router.callback_query(F.data.startswith(PAYMENT_METHOD_PREFIX))
+async def payment_method_handler(
+    callback: CallbackQuery,
+    service: PaymentService,
+    signer: TokenSigner,
+    settings: Settings,
+) -> None:
+    parts = (callback.data or "").split(":", 3)
+    if len(parts) != 4 or parts[1] != "bank" or parts[2] not in {"w", "m"}:
+        await callback.answer("Недействительная кнопка.", show_alert=True)
+        return
+    plan = WEEK_PLAN if parts[2] == "w" else MONTH_PLAN
+    apartment_id = signer.verify_id(f"paymethod-{parts[2]}", parts[3])
+    if apartment_id is None:
+        await callback.answer("Недействительная кнопка.", show_alert=True)
+        return
+    payment_url, price = _payment_details(plan, settings)
+    if not payment_url:
+        await callback.answer("Этот тариф временно недоступен.", show_alert=True)
+        return
     try:
         submission = await service.begin_payment(
             user_id=callback.from_user.id,
@@ -228,23 +275,62 @@ async def plan_handler(
     if submission.outcome == "approved":
         await callback.answer("✅ Этот номер уже доступен вам.", show_alert=True)
         return
-    text = (
-        f"💳 {plan_label(plan)} — {price} сом\n\n"
-        f"1. Нажмите «Оплатить {price} сом».\n"
-        "2. После оплаты нажмите «Я оплатил».\n"
-        "3. Мы проверим поступление и откроем номер.\n\n"
-        "Кнопка оплаты останется доступной после нажатия."
-    )
+    await callback.answer()
+    if callback.message:
+        await callback.message.edit_text(
+            "💳 Оплата\n\n"
+            f"Тариф: {plan_label(plan)}\n"
+            f"Сумма: {price} сом",
+            reply_markup=bank_payment_keyboard(
+                apartment_id,
+                plan=plan,
+                signer=signer,
+                bot_username=settings.telegram_bot_username,
+                payment_url=payment_url,
+            ),
+        )
+
+
+@router.callback_query(F.data.startswith(PAYMENT_NAV_PREFIX))
+async def payment_navigation_handler(
+    callback: CallbackQuery,
+    service: PaymentService,
+    signer: TokenSigner,
+    settings: Settings,
+) -> None:
+    parts = (callback.data or "").split(":", 2)
+    if len(parts) != 3 or parts[1] not in {"plans", "listing"}:
+        await callback.answer("Недействительная кнопка.", show_alert=True)
+        return
+    apartment_id = signer.verify_id(f"paynav-{parts[1]}", parts[2])
+    if apartment_id is None:
+        await callback.answer("Недействительная кнопка.", show_alert=True)
+        return
+    result = await service.contact_status(callback.from_user.id, apartment_id)
+    if not result.apartment:
+        await callback.answer("Квартира больше недоступна.", show_alert=True)
+        return
+    apartment_text = format_apartment(result.apartment)
+    if parts[1] == "plans":
+        text = (
+            "🔐 Контакты по подписке\n\n"
+            "Одна оплата открывает все доступные номера на выбранный срок.\n\n"
+            "Базовая: 7 дней — 399 сом\n"
+            "Премиум: 30 дней — 999 сом"
+        )
+    else:
+        text = apartment_text
     await callback.answer()
     if callback.message:
         await callback.message.edit_text(
             text,
-            reply_markup=payment_keyboard(
+            reply_markup=private_payment_keyboard(
                 apartment_id,
                 signer=signer,
-                payment_url=payment_url,
+                payment_url=settings.finik_payment_url,
                 support_url=settings.support_bot_url,
-                price=price,
+                monthly_payment_url=settings.monthly_finik_payment_url,
+                include_return=parts[1] == "plans",
             ),
         )
 

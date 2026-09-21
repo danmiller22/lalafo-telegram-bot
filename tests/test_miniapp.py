@@ -68,6 +68,11 @@ def test_mini_app_page_keeps_payment_and_receipt_in_one_window():
     assert "/miniapp/api/check" in html
     assert "Базовая: 7 дней — 399 сом" in html
     assert "Премиум: 30 дней — 999 сом" in html
+    assert "MBANK" in html
+    assert "Элдик" in html
+    assert "Bakai" in html
+    assert "DantePay" in html
+    assert "Выберите доступ:" not in html
     assert "Я оплатил(а)" in html
     assert "Статус: оплата проверяется" in html
     assert "Оплата проверяется. Квартира сохранена" in html
