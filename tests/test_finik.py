@@ -106,3 +106,4 @@ async def test_checkout_uses_neutral_tariff_description(
         )
 
     assert captured["Data"]["description"] == expected_description
+    assert isinstance(captured["Data"]["endDate"], int)

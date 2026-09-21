@@ -72,7 +72,7 @@ def payment_succeeded(status: object) -> bool:
 
 def payment_configuration_id(*, api_url: str, account_id: str) -> str:
     """Return a non-secret marker used to invalidate links from an old merchant."""
-    value = f"{api_url.strip().lower()}|{account_id.strip()}".encode("utf-8")
+    value = f"{api_url.strip().lower()}|{account_id.strip()}|checkout-v2".encode("utf-8")
     return hashlib.sha256(value).hexdigest()[:12]
 
 
@@ -110,6 +110,7 @@ class FinikClient:
     ) -> FinikPayment:
         parsed = urlsplit(self.api_url)
         timestamp = str(int(time.time() * 1000))
+        expires_at = int(timestamp) + 30 * 60 * 1000
         description = "Месячный тариф" if amount == 999 else "Недельный тариф"
         body: dict[str, Any] = {
             "Amount": amount,
@@ -119,9 +120,10 @@ class FinikClient:
             "Lang": "ru",
             "Data": {
                 "accountId": self.account_id,
-                "name_en": "Arenda.KG",
+                "name_en": description,
                 "webhookUrl": webhook_url,
                 "description": description,
+                "endDate": expires_at,
             },
         }
         signing_headers = {

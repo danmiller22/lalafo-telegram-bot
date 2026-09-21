@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from app.lalafo.models import PHONE_SOURCE_VERSION, LalafoAd
-from app.models import Apartment, DailyFeaturedPublication, PaymentRequest
+from app.models import Apartment, DailyFeaturedPublication, PaymentHistory, PaymentRequest
 from app.payment_plans import MONTH_PLAN, WEEK_PLAN, expires_at_for, plan_price
 from app.state import ad_fingerprint
 from app.telegram.keyboards import APARTMENT_KEYBOARD_VERSION
@@ -608,6 +608,25 @@ class PaymentRepository:
             apartment = await session.get(Apartment, apartment_id)
             if apartment is None or not apartment.phone:
                 raise LookupError("Apartment is unavailable")
+            reusable = await session.execute(
+                select(PaymentRequest)
+                .where(
+                    PaymentRequest.telegram_user_id == user_id,
+                    PaymentRequest.plan == plan,
+                    PaymentRequest.status == "awaiting_receipt",
+                    PaymentRequest.provider_payment_id.is_not(None),
+                )
+                .order_by(PaymentRequest.created_at.desc())
+                .limit(1)
+            )
+            existing_checkout = reusable.scalar_one_or_none()
+            if existing_checkout is not None:
+                existing_checkout.username = username
+                existing_checkout.first_name = first_name
+                return PaymentSubmission(
+                    request=existing_checkout,
+                    outcome="awaiting_receipt",
+                )
             result = await session.execute(
                 select(PaymentRequest).where(
                     PaymentRequest.telegram_user_id == user_id,
@@ -873,8 +892,30 @@ class PaymentRepository:
             current.approved_at = now
             current.approved_by = None
             current.access_expires_at = expires_at_for(current.plan, now)
+            if current.access_expires_at is None:
+                return "failed", current
             current.rejected_at = None
             current.rejected_by = None
+            history = await session.execute(
+                select(PaymentHistory).where(
+                    PaymentHistory.provider_payment_id == payment_id
+                )
+            )
+            if history.scalar_one_or_none() is None:
+                session.add(
+                    PaymentHistory(
+                        payment_request_id=current.id,
+                        telegram_user_id=current.telegram_user_id,
+                        username=current.username,
+                        first_name=current.first_name,
+                        apartment_id=current.apartment_id,
+                        plan=current.plan,
+                        amount=expected,
+                        provider_payment_id=payment_id,
+                        paid_at=now,
+                        access_expires_at=current.access_expires_at,
+                    )
+                )
             await session.flush()
             request_id = current.id
         return "approved", await self.get_request(request_id)

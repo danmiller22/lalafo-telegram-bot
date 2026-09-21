@@ -1,10 +1,10 @@
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from sqlalchemy import update
+from sqlalchemy import func, select, update
 
 from app.payments.service import PaymentService
-from app.models import PaymentRequest
+from app.models import PaymentHistory, PaymentRequest
 from app.payment_plans import MONTH_PLAN, WEEK_PLAN
 from app.lalafo.models import PHONE_SOURCE_VERSION
 from app.telegram.keyboards import APARTMENT_KEYBOARD_VERSION
@@ -83,6 +83,43 @@ async def test_verified_finik_payment_grants_access_once_and_checks_amount(
     )
     assert repeated == "already_approved"
     assert (await service.contact_status(9191, apartment.id)).access_expires_at == expiry
+    async with repositories[2]() as session:
+        history_count = await session.scalar(select(func.count(PaymentHistory.id)))
+        history = await session.scalar(select(PaymentHistory))
+    assert history_count == 1
+    assert history is not None
+    assert history.telegram_user_id == 9191
+    assert history.plan == WEEK_PLAN
+    assert history.provider_payment_id == "payment-9191"
+    assert history.access_expires_at == expiry
+
+
+@pytest.mark.asyncio
+async def test_open_checkout_is_reused_for_same_customer_and_plan(
+    repositories, service
+):
+    apartments, payments, _ = repositories
+    first_apartment = await apartments.upsert_discovered(make_ad(lalafo_id=9301))
+    second_apartment = await apartments.upsert_discovered(make_ad(lalafo_id=9302))
+    first = await service.begin_payment(
+        user_id=9300,
+        apartment_id=first_apartment.id,
+        username="same_customer",
+        first_name="Same",
+        plan=WEEK_PLAN,
+    )
+    await payments.prepare_provider_payment(first.request.id, "stable-payment")
+
+    second = await service.begin_payment(
+        user_id=9300,
+        apartment_id=second_apartment.id,
+        username="same_customer",
+        first_name="Same",
+        plan=WEEK_PLAN,
+    )
+
+    assert second.request.id == first.request.id
+    assert second.request.provider_payment_id == "stable-payment"
 
 
 @pytest.mark.asyncio

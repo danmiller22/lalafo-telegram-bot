@@ -131,8 +131,8 @@ def _finik_payment_url(settings: Any, plan: str) -> str:
 
 
 def _uses_dynamic_finik(settings: Any, plan: str) -> bool:
-    """Create a one-off Finik only when no reusable tariff link exists."""
-    return bool(settings.finik_auto_enabled and not _finik_payment_url(settings, plan))
+    """Automatic access requires a unique PaymentId for Finik's webhook."""
+    return bool(settings.finik_auto_enabled)
 
 
 def _now() -> str:
@@ -1162,10 +1162,7 @@ async def miniapp_check_payment(payload: MiniAppRequest) -> dict[str, Any]:
     current = await service.contact_status(user.id, apartment_id)
     if current.status == "approved":
         return _miniapp_result_payload(current)
-    reusable_tariffs = bool(
-        settings.finik_payment_url and settings.monthly_finik_payment_url
-    )
-    if settings.finik_auto_enabled and not reusable_tariffs:
+    if settings.finik_auto_enabled:
         # Finik's verified webhook grants access. This button only refreshes UI.
         return _miniapp_result_payload(current)
     if current.status == "awaiting_receipt":

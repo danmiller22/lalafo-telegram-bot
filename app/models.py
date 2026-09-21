@@ -173,6 +173,28 @@ class PaymentRequest(Base):
     apartment: Mapped[Apartment] = relationship(back_populates="payments")
 
 
+class PaymentHistory(Base):
+    """Immutable ledger of verified payments, independent of checkout cleanup."""
+
+    __tablename__ = "payment_history"
+    __table_args__ = (
+        Index("ix_payment_history_user_paid", "telegram_user_id", "paid_at"),
+        Index("ix_payment_history_provider_id", "provider_payment_id", unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    payment_request_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    telegram_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    username: Mapped[str | None] = mapped_column(String(64))
+    first_name: Mapped[str | None] = mapped_column(String(255))
+    apartment_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    plan: Mapped[str] = mapped_column(String(16), nullable=False)
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    provider_payment_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    paid_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    access_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class SupportTicket(Base):
     __tablename__ = "support_tickets"
     __table_args__ = (
