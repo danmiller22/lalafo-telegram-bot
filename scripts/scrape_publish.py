@@ -96,9 +96,9 @@ MAX_REPOSTS_PER_RUN = 0
 CENTRAL_BATCH_SHARE = 0.65
 OWNER_OTHER_BATCH_SHARE = 0.35
 MAX_CANDIDATE_POOL = 300
-# Keep nearly half of the discovery pool available for agents. This fallback
-# grows the catalogue after unique owner listings have been exhausted.
-REALTOR_CANDIDATE_RESERVE_SHARE = 0.50
+# Owners fill most of the durable inventory. Agents keep a small fallback pool
+# so empty owner searches do not stop publication completely.
+REALTOR_CANDIDATE_RESERVE_SHARE = 0.20
 REALTOR_BATCH_SHARE = 0.35
 # Two-bedroom cards are mixed into the normal stream instead of being sent as
 # a separate burst. Two per regular cycle reaches at most twenty per Bishkek day.
@@ -399,20 +399,30 @@ def source_candidate_targets(
     pool_limit: int,
     source_count: int,
     batch_limit: int,
+    owner_source_count: int | None = None,
 ) -> list[int]:
-    """Reserve a large final slice for the realtor-only fallback source."""
+    """Give owner sources most of the pool and reserve a small agent fallback."""
     if source_count <= 1:
         return [pool_limit]
+    owner_source_count = min(
+        source_count,
+        max(1, owner_source_count if owner_source_count is not None else source_count - 1),
+    )
     realtor_start = max(
         batch_limit,
         math.floor(pool_limit * (1 - REALTOR_CANDIDATE_RESERVE_SHARE)),
     )
-    owner_source_count = source_count - 1
-    targets = [
+    owner_targets = [
         max(batch_limit, math.floor(realtor_start * (index + 1) / owner_source_count))
         for index in range(owner_source_count)
     ]
-    return [min(pool_limit, target) for target in targets] + [pool_limit]
+    realtor_source_count = source_count - owner_source_count
+    realtor_targets = [
+        realtor_start
+        + math.ceil((pool_limit - realtor_start) * (index + 1) / realtor_source_count)
+        for index in range(realtor_source_count)
+    ] if realtor_source_count else []
+    return [min(pool_limit, target) for target in owner_targets + realtor_targets]
 
 
 def mix_room_types(candidates: list[LalafoAd]) -> list[LalafoAd]:
@@ -603,7 +613,7 @@ async def run(*, discovery_only: bool = False) -> int:
     limit = 1 if settings.test_mode else SOURCE_MAX_POSTS_PER_RUN
     # The unfiltered source is large. Inspect several pages so central bargains
     # can outrank nearer but weaker results from the first page.
-    candidate_pool_limit = 120 if discovery_only else max(
+    candidate_pool_limit = 240 if discovery_only else max(
         limit, min(limit * 15, MAX_CANDIDATE_POOL)
     )
     candidates = []
@@ -895,6 +905,7 @@ async def run(*, discovery_only: bool = False) -> int:
             candidate_pool_limit,
             len(search_urls),
             limit,
+            owner_source_count=min(2, len(search_urls)),
         )
         source_candidate_limit = source_targets[search_index]
         page_number = 1
@@ -1081,7 +1092,7 @@ async def run(*, discovery_only: bool = False) -> int:
         assert apartments is not None
         from app.inventory import InventoryRepository
 
-        inventory_candidates = deduplicate_candidates(candidates)[:120]
+        inventory_candidates = deduplicate_candidates(candidates)[:240]
         priority_ids = managed_profile_ids | curated_ids
         for ad in inventory_candidates:
             await apartments.upsert_discovered(

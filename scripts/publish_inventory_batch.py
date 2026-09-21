@@ -60,8 +60,8 @@ async def _has_due_queue(now: datetime) -> bool:
 
 
 async def run() -> int:
-    """Publish six valid cards per cloud run, spaced to avoid a burst."""
-    target = max(1, min(12, int(os.getenv("PUBLISH_BATCH_SIZE", "6"))))
+    """Publish eight valid cards per cloud run, spaced to avoid a burst."""
+    target = max(1, min(12, int(os.getenv("PUBLISH_BATCH_SIZE", "8"))))
     spacing = max(0, min(900, int(os.getenv("PUBLISH_BATCH_SPACING_SECONDS", "480"))))
     max_attempts = target * 4
     started_at = datetime.now(timezone.utc)

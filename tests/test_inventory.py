@@ -33,7 +33,7 @@ def _apartments(count: int, *, central: bool, start_id: int, owner: bool = True)
     ]
 
 
-def test_two_periods_plan_72_cards_in_six_card_windows():
+def test_two_periods_plan_96_cards_in_eight_card_windows():
     stock = _apartments(220, central=True, start_id=1) + _apartments(
         100, central=False, start_id=300
     )
@@ -46,8 +46,8 @@ def test_two_periods_plan_72_cards_in_six_card_windows():
         rng=random.Random(8),
     )
     all_items = first + second
-    assert len(all_items) == 72
-    assert sum("золотой" in item.apartment.district.casefold() for item in all_items) == 72
+    assert len(all_items) == 96
+    assert sum("золотой" in item.apartment.district.casefold() for item in all_items) == 96
     assert 5 <= sum(item.apartment.rooms == "2" for item in all_items) <= 10
 
     for planned in (first, second):
@@ -55,7 +55,7 @@ def test_two_periods_plan_72_cards_in_six_card_windows():
         for item in planned:
             windows.setdefault(item.window_key, []).append(item)
         assert len(windows) == 6
-        assert all(len(items) == 6 for items in windows.values())
+        assert all(len(items) == 8 for items in windows.values())
         starts = []
         for items in windows.values():
             ordered = sorted(items, key=lambda item: item.sequence)
@@ -81,10 +81,10 @@ def test_period_uses_broader_stock_when_no_central_apartments_exist():
 
     planned = plan_period(stock, period_start=period_start, rng=random.Random(9))
 
-    assert len(planned) == 4
-    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 4
+    assert len(planned) == 2
+    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 2
     assert all(not "золотой" in item.apartment.district.casefold() for item in planned)
-    assert sum(item.apartment.rooms == "2" for item in planned) <= 4
+    assert sum(item.apartment.rooms == "2" for item in planned) <= 2
 
 
 def test_period_keeps_single_central_card_and_fills_with_realtors():
@@ -95,13 +95,13 @@ def test_period_keeps_single_central_card_and_fills_with_realtors():
 
     planned = plan_period(stock, period_start=period_start, rng=random.Random(10))
 
-    assert len(planned) == 5
+    assert len(planned) == 3
     assert sum("золотой" in item.apartment.district.casefold() for item in planned) == 1
-    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 4
+    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 2
 
 
 def test_unknown_sellers_are_not_counted_as_realtors():
-    stock = _apartments(80, central=True, start_id=1)
+    stock = _apartments(100, central=True, start_id=1)
     for item in stock:
         item.owner_listing = False
         item.seller_type = "unknown"
@@ -109,7 +109,7 @@ def test_unknown_sellers_are_not_counted_as_realtors():
 
     planned = plan_period(stock, period_start=period_start, rng=random.Random(13))
 
-    assert len(planned) == 36
+    assert len(planned) == 48
     assert all(item.apartment.seller_type == "unknown" for item in planned)
 
 
@@ -125,7 +125,7 @@ def test_period_keeps_realtors_at_target_when_mixed_stock_is_available():
         rng=random.Random(14),
     )
 
-    assert len(planned) == 36
+    assert len(planned) == 48
     assert sum(item.apartment.seller_type == "realtor" for item in planned) == 4
 
 
@@ -228,11 +228,11 @@ async def test_concurrent_publishers_cannot_claim_the_same_card(repositories):
 
 
 @pytest.mark.asyncio
-async def test_claim_due_never_publishes_ninth_realtor_in_a_day(repositories):
+async def test_claim_due_never_publishes_fifth_realtor_in_a_day(repositories):
     apartments, _, sessions = repositories
     now = datetime.now(timezone.utc)
     rows = []
-    for index in range(9):
+    for index in range(5):
         apartment = await apartments.upsert_discovered(
             make_ad(
                 lalafo_id=950 + index,
@@ -256,7 +256,7 @@ async def test_claim_due_never_publishes_ninth_realtor_in_a_day(repositories):
         )
 
     inventory = InventoryRepository(sessions)
-    for apartment in rows[:8]:
+    for apartment in rows[:4]:
         claimed = await inventory.claim_due(now=now)
         assert claimed is not None
         await apartments.mark_published(

@@ -13,9 +13,9 @@ from app.models import Apartment, ApartmentDiscoveryRun, ApartmentInventoryQueue
 
 
 BISHKEK = ZoneInfo("Asia/Bishkek")
-FIRST_HALF_BATCH_SIZES = (6,) * 6
-SECOND_HALF_BATCH_SIZES = (6,) * 6
-# One persisted six-card window every two hours. Centre stock is preferred,
+FIRST_HALF_BATCH_SIZES = (8,) * 6
+SECOND_HALF_BATCH_SIZES = (8,) * 6
+# One persisted eight-card window every two hours. Centre stock is preferred,
 # but any suitable owner/realtor stock fills gaps so an empty centre pool does
 # not stall publication.
 FIRST_HALF_CENTRAL = FIRST_HALF_BATCH_SIZES
@@ -23,14 +23,14 @@ SECOND_HALF_CENTRAL = SECOND_HALF_BATCH_SIZES
 MAX_TWO_BEDROOMS_PER_WINDOW = 1
 MAX_TWO_BEDROOMS_PER_DAY = 10
 MAX_TWO_BEDROOMS_PER_PERIOD = 5
-MAX_PUBLICATIONS_PER_DAY = 72
-MIN_REALTORS_PER_DAY = 6
-MAX_REALTORS_PER_DAY = 8
-TARGET_REALTORS_PER_PERIOD = 4
+MAX_PUBLICATIONS_PER_DAY = 96
+MIN_REALTORS_PER_DAY = 2
+MAX_REALTORS_PER_DAY = 4
+TARGET_REALTORS_PER_PERIOD = 2
 REPOST_AFTER_HOURS = 48
 MAX_REPOSTS_PER_PERIOD = 36
 DISCOVERY_RETRY_MINUTES = 30
-MIN_HEALTHY_PERIOD_QUEUE = 30
+MIN_HEALTHY_PERIOD_QUEUE = 40
 
 
 def as_utc(value: datetime) -> datetime:
@@ -223,7 +223,7 @@ def plan_period(
     repeat_apartment_ids: set[int] | None = None,
     rng: random.Random | None = None,
 ) -> list[PlannedApartment]:
-    """Create one immutable six-card publication window every two hours."""
+    """Create one immutable eight-card publication window every two hours."""
     rng = rng or random.SystemRandom()
     # The public catalogue is intentionally limited to ordinary one- and
     # two-bedroom apartments. Old studio rows may remain in the database but
@@ -257,7 +257,7 @@ def plan_period(
         )
     )
     central_targets = FIRST_HALF_CENTRAL if first_half else SECOND_HALF_CENTRAL
-    # Every two hours gets a stable slot with a small persisted jitter. Six
+    # Every two hours gets a stable slot with a small persisted jitter. Eight
     # cards remain 8-15 minutes apart and finish well inside their window.
     starts = [
         period_start + timedelta(minutes=5 + 120 * index + rng.randint(0, 4))
