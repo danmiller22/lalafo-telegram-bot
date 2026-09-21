@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -107,3 +108,5 @@ async def test_checkout_uses_neutral_tariff_description(
 
     assert captured["Data"]["description"] == expected_description
     assert isinstance(captured["Data"]["endDate"], int)
+    remaining_ms = captured["Data"]["endDate"] - int(time.time() * 1000)
+    assert 0 < remaining_ms <= 5 * 60 * 1000

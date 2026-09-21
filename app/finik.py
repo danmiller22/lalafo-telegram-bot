@@ -110,7 +110,10 @@ class FinikClient:
     ) -> FinikPayment:
         parsed = urlsplit(self.api_url)
         timestamp = str(int(time.time() * 1000))
-        expires_at = int(timestamp) + 30 * 60 * 1000
+        # Finik Web SDK has no documented delete endpoint. A short provider-side
+        # validity window keeps abandoned one-off checkouts from accumulating as
+        # active payment links while preserving unique PaymentIds for webhooks.
+        expires_at = int(timestamp) + 5 * 60 * 1000
         description = "Месячный тариф" if amount == 999 else "Недельный тариф"
         body: dict[str, Any] = {
             "Amount": amount,
