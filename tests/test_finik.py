@@ -3,7 +3,7 @@ from __future__ import annotations
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-from app.finik import canonical_request, sign_request, verify_request
+from app.finik import canonical_request, payment_succeeded, sign_request, verify_request
 
 
 def _keys() -> tuple[str, str]:
@@ -39,3 +39,11 @@ def test_finik_signature_matches_canonical_request() -> None:
     signature = sign_request(data, private_pem)
     assert verify_request(data, signature, public_pem)
     assert not verify_request(data + b"x", signature, public_pem)
+
+
+def test_finik_success_status_variants() -> None:
+    assert payment_succeeded("success")
+    assert payment_succeeded("SUCCEEDED")
+    assert payment_succeeded(" succeeded ")
+    assert not payment_succeeded("failed")
+    assert not payment_succeeded(None)

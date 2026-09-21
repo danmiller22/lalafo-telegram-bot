@@ -64,6 +64,11 @@ def decode_private_key(*, pem: str, encoded: str) -> str:
     raise RuntimeError("Finik private key is not configured")
 
 
+def payment_succeeded(status: object) -> bool:
+    """Accept both success values used by Finik webhook examples."""
+    return str(status or "").strip().casefold() in {"success", "succeeded"}
+
+
 @dataclass(frozen=True, slots=True)
 class FinikPayment:
     payment_id: str

@@ -31,6 +31,7 @@ from app.finik import (
     FinikClient,
     canonical_request,
     decode_private_key,
+    payment_succeeded,
     verify_request,
 )
 from app.security import TokenSigner
@@ -1202,13 +1203,13 @@ async def finik_webhook(request: Request) -> dict[str, str]:
 
     fields = body.get("fields") if isinstance(body.get("fields"), dict) else {}
     payment_id = str(fields.get("paymentId") or body.get("transactionId") or "")
-    provider_status = str(body.get("status") or "").casefold()
+    provider_status = body.get("status")
     amount = body.get("amount", fields.get("amount"))
     if not payment_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST)
     outcome, payment_request = await runtime.workflow_data["payments"].apply_provider_result(
         payment_id,
-        succeeded=provider_status == "succeeded",
+        succeeded=payment_succeeded(provider_status),
         amount=amount,
     )
     if outcome == "amount_mismatch":
