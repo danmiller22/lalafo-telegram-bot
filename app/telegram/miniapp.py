@@ -70,6 +70,7 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     main {{ max-width: 540px; margin: 0 auto; padding: 16px 14px 28px; }}
     .card {{ background: var(--tg-theme-secondary-bg-color, #fff); border-radius: 20px; padding: 16px; box-shadow: 0 8px 28px #00000012; }}
     h1 {{ font-size: 21px; margin: 0 0 8px; }}
+    .plans {{ white-space: pre-line; line-height: 1.6; margin: 14px 0 8px; }}
     .status {{ border-radius: 13px; padding: 12px; margin: 12px 0; background: #12856a18; line-height: 1.4; }}
     .phone {{ font-size: 22px; font-weight: 800; color: #079b79; word-break: break-word; }}
     button, .button {{ width: 100%; border: 0; border-radius: 14px; padding: 14px 16px; margin-top: 9px; font: inherit; font-weight: 750; text-align: center; cursor: pointer; text-decoration: none; display: block; }}
@@ -84,10 +85,12 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
 <main>
   <section class="card">
     <h1>Получить доступ</h1>
+    <div class="plans">1 неделя доступа к номерам — {WEEK_PRICE} сом
+1 месяц доступа к номерам — {MONTH_PRICE} сом</div>
     <div id="status" class="status">Проверяем доступ…</div>
     <div id="phone" class="phone hidden"></div>
-    <button id="pay-week" class="primary hidden">1 неделя доступа к номерам — {WEEK_PRICE} сом</button>
-    <button id="pay-month" class="primary hidden">1 месяц доступа к номерам — {MONTH_PRICE} сом</button>
+    <button id="pay-week" class="primary hidden">Оплатить неделю — {WEEK_PRICE} сом</button>
+    <button id="pay-month" class="primary hidden">Оплатить месяц — {MONTH_PRICE} сом</button>
     <button id="check" class="secondary hidden">Я оплатил(а)</button>
     <button id="checking" class="secondary hidden" disabled>⏳ Статус: оплата проверяется</button>
     <button id="refresh" class="secondary hidden">Обновить статус</button>
