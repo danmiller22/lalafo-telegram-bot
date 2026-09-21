@@ -24,9 +24,9 @@ MAX_TWO_BEDROOMS_PER_WINDOW = 1
 MAX_TWO_BEDROOMS_PER_DAY = 10
 MAX_TWO_BEDROOMS_PER_PERIOD = 5
 MAX_PUBLICATIONS_PER_DAY = 96
-MIN_REALTORS_PER_DAY = 2
-MAX_REALTORS_PER_DAY = 4
-TARGET_REALTORS_PER_PERIOD = 2
+MIN_REALTORS_PER_DAY = 72
+MAX_REALTORS_PER_DAY = MAX_PUBLICATIONS_PER_DAY
+TARGET_REALTORS_PER_PERIOD = 36
 REPOST_AFTER_HOURS = 48
 MAX_REPOSTS_PER_PERIOD = 36
 DISCOVERY_RETRY_MINUTES = 30
@@ -89,47 +89,11 @@ def _limit_realtors(
     *,
     target: int,
 ) -> list[PlannedApartment]:
-    """Keep a period near its realtor quota without treating unknowns as agents."""
+    """Keep at least the requested realtor share and allow every good agent card."""
     target = max(0, target)
     result: list[PlannedApartment | None] = list(planned)
     used_ids = {item.apartment.id for item in planned}
     unused = [item for item in apartments if item.id not in used_ids]
-
-    realtor_indexes = [
-        index
-        for index, item in enumerate(result)
-        if item is not None and _seller_type(item.apartment) == "realtor"
-    ]
-    # Replace excess agents with an owner or an unspecified seller. Matching
-    # the room count preserves the per-window two-bedroom ceiling.
-    for index in realtor_indexes[target:]:
-        current = result[index]
-        if current is None:
-            continue
-        replacements = [
-            item
-            for item in unused
-            if _seller_type(item) != "realtor"
-            and item.rooms == current.apartment.rooms
-        ]
-        if replacements:
-            replacements.sort(
-                key=lambda item: (
-                    is_central(item.district) != is_central(current.apartment.district),
-                    _candidate_key(item, central=is_central(item.district)),
-                )
-            )
-            replacement = replacements[0]
-            unused.remove(replacement)
-            result[index] = PlannedApartment(
-                apartment=replacement,
-                scheduled_at=current.scheduled_at,
-                window_key=current.window_key,
-                sequence=current.sequence,
-            )
-        else:
-            # Never exceed the hard daily cap just to keep a window full.
-            result[index] = None
 
     current_realtors = sum(
         item is not None and _seller_type(item.apartment) == "realtor"

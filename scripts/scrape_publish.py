@@ -96,10 +96,11 @@ MAX_REPOSTS_PER_RUN = 0
 CENTRAL_BATCH_SHARE = 0.65
 OWNER_OTHER_BATCH_SHARE = 0.35
 MAX_CANDIDATE_POOL = 300
-# Owners fill most of the durable inventory. Agents keep a small fallback pool
-# so empty owner searches do not stop publication completely.
-REALTOR_CANDIDATE_RESERVE_SHARE = 0.20
-REALTOR_BATCH_SHARE = 0.35
+# Reserve half of discovery for agents so good inexpensive realtor listings are
+# not crowded out by owner-only sources. A batch may be entirely realtor stock
+# when those cards rank best or owner supply is thin.
+REALTOR_CANDIDATE_RESERVE_SHARE = 0.50
+REALTOR_BATCH_SHARE = 0.75
 # Two-bedroom cards are mixed into the normal stream instead of being sent as
 # a separate burst. Two per regular cycle reaches at most twenty per Bishkek day.
 TWO_BEDROOM_MIN_PRICE = 20_000
@@ -401,7 +402,7 @@ def source_candidate_targets(
     batch_limit: int,
     owner_source_count: int | None = None,
 ) -> list[int]:
-    """Give owner sources most of the pool and reserve a small agent fallback."""
+    """Split discovery capacity evenly between owner and realtor sources."""
     if source_count <= 1:
         return [pool_limit]
     owner_source_count = min(
@@ -572,7 +573,7 @@ def select_owners_then_realtors(
     candidates: list[LalafoAd],
     limit: int,
 ) -> list[LalafoAd]:
-    """Keep a meaningful realtor slice while retaining owner preference."""
+    """Prefer a large realtor slice while allowing agents to fill the batch."""
     if limit <= 0:
         return []
     owners = [ad for ad in candidates if ad.owner_listing]

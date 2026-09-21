@@ -81,10 +81,10 @@ def test_period_uses_broader_stock_when_no_central_apartments_exist():
 
     planned = plan_period(stock, period_start=period_start, rng=random.Random(9))
 
-    assert len(planned) == 2
-    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 2
+    assert len(planned) == 48
+    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 48
     assert all(not "золотой" in item.apartment.district.casefold() for item in planned)
-    assert sum(item.apartment.rooms == "2" for item in planned) <= 2
+    assert sum(item.apartment.rooms == "2" for item in planned) <= 5
 
 
 def test_period_keeps_single_central_card_and_fills_with_realtors():
@@ -95,9 +95,9 @@ def test_period_keeps_single_central_card_and_fills_with_realtors():
 
     planned = plan_period(stock, period_start=period_start, rng=random.Random(10))
 
-    assert len(planned) == 3
+    assert len(planned) == 48
     assert sum("золотой" in item.apartment.district.casefold() for item in planned) == 1
-    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 2
+    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 47
 
 
 def test_unknown_sellers_are_not_counted_as_realtors():
@@ -113,7 +113,7 @@ def test_unknown_sellers_are_not_counted_as_realtors():
     assert all(item.apartment.seller_type == "unknown" for item in planned)
 
 
-def test_period_keeps_realtors_at_target_when_mixed_stock_is_available():
+def test_period_keeps_at_least_realtor_target_and_allows_more_good_cards():
     owners = _apartments(80, central=True, start_id=1)
     realtors = _apartments(40, central=True, start_id=200, owner=False)
     period_start = datetime(2026, 9, 13, 0, tzinfo=timezone(timedelta(hours=6)))
@@ -126,7 +126,7 @@ def test_period_keeps_realtors_at_target_when_mixed_stock_is_available():
     )
 
     assert len(planned) == 48
-    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 4
+    assert sum(item.apartment.seller_type == "realtor" for item in planned) >= 4
 
 
 def test_period_spreads_random_reposts_across_separate_windows():
@@ -228,7 +228,7 @@ async def test_concurrent_publishers_cannot_claim_the_same_card(repositories):
 
 
 @pytest.mark.asyncio
-async def test_claim_due_never_publishes_fifth_realtor_in_a_day(repositories):
+async def test_claim_due_allows_more_than_four_realtors_in_a_day(repositories):
     apartments, _, sessions = repositories
     now = datetime.now(timezone.utc)
     rows = []
@@ -256,7 +256,7 @@ async def test_claim_due_never_publishes_fifth_realtor_in_a_day(repositories):
         )
 
     inventory = InventoryRepository(sessions)
-    for apartment in rows[:4]:
+    for apartment in rows:
         claimed = await inventory.claim_due(now=now)
         assert claimed is not None
         await apartments.mark_published(
@@ -276,7 +276,7 @@ async def test_claim_due_never_publishes_fifth_realtor_in_a_day(repositories):
                 ApartmentInventoryQueue.last_error == "daily_realtor_cap",
             )
         )
-    assert skipped == 1
+    assert skipped == 0
 
 
 @pytest.mark.asyncio
