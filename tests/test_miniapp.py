@@ -78,6 +78,7 @@ def test_mini_app_page_keeps_payment_and_receipt_in_one_window():
     assert "Я оплатил(а)" in html
     assert "Статус: оплата проверяется" in html
     assert "Оплата проверяется. Квартира сохранена" in html
-    assert 'const canPay = data.status !== "approved";' in html
+    assert 'data.status !== "approved" && data.status !== "pending"' in html
+    assert "⚡ Открываю Finik…" in html
     assert "Без перехода в личный чат" not in html
     assert "команды /start" not in html

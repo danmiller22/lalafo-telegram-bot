@@ -62,6 +62,7 @@ _service_keepalive_task: asyncio.Task[None] | None = None
 _background_watchdog_task: asyncio.Task[None] | None = None
 _shutting_down = False
 _lalafo_mcp_context: Any | None = None
+_finik_http_client: httpx.AsyncClient | None = None
 _bot_setup_state: dict[str, Any] = {
     "state": "pending",
     "last_configured_at": None,
@@ -646,9 +647,15 @@ async def startup() -> None:
     global _keyboard_sync_task, _lalafo_auto_responder
     global _lalafo_watchdog_task, _apartment_scheduler_task
     global _service_keepalive_task, _background_watchdog_task, _shutting_down
-    global _lalafo_mcp_context
+    global _lalafo_mcp_context, _finik_http_client
     settings = get_settings()
     _shutting_down = False
+    if settings.finik_auto_enabled:
+        _finik_http_client = httpx.AsyncClient(
+            timeout=20.0,
+            follow_redirects=False,
+            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+        )
     logging.basicConfig(
         level=getattr(logging, settings.log_level.upper(), logging.INFO),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
@@ -721,8 +728,11 @@ async def shutdown() -> None:
     global _keyboard_sync_task, _lalafo_auto_responder
     global _lalafo_watchdog_task, _apartment_scheduler_task
     global _service_keepalive_task, _background_watchdog_task, _shutting_down
-    global _lalafo_mcp_context
+    global _lalafo_mcp_context, _finik_http_client
     _shutting_down = True
+    if _finik_http_client is not None:
+        await _finik_http_client.aclose()
+        _finik_http_client = None
     if _lalafo_mcp_context is not None:
         await _lalafo_mcp_context.__aexit__(None, None, None)
         _lalafo_mcp_context = None
@@ -1039,29 +1049,28 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Этот тариф временно недоступен.",
         )
-    if result.status not in {"approved", "pending"} and (
-        result.status != "awaiting_receipt" or result.plan != plan
-    ):
+    payment_request = None
+    if result.status != "approved":
         try:
-            await service.begin_payment(
+            submission = await service.begin_payment(
                 user_id=user.id,
                 apartment_id=apartment_id,
                 username=user.username,
                 first_name=user.first_name,
                 plan=plan,
             )
+            payment_request = submission.request
         except LookupError as exc:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Квартира больше недоступна.",
             ) from exc
-        result = await service.contact_status(user.id, apartment_id)
     payment_url = fallback_payment_url
     if settings.finik_auto_enabled and result.status != "approved":
         payments = runtime.workflow_data["payments"]
-        payment_request = await payments.get_access(user.id, apartment_id)
         if payment_request is None:
             raise HTTPException(status_code=409, detail="Не удалось создать оплату.")
+        checkout_plan = payment_request.plan
         configuration_id = payment_configuration_id(
             api_url=settings.finik_api_url,
             account_id=settings.finik_account_id,
@@ -1084,10 +1093,11 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
                         pem=settings.finik_private_key_pem,
                         encoded=settings.finik_private_key_b64,
                     ),
+                    client=_finik_http_client,
                 )
                 created = await client.create_payment(
                     payment_id=payment_request.provider_payment_id,
-                    amount=plan_price(plan),
+                    amount=plan_price(checkout_plan),
                     redirect_url=(
                         f"https://t.me/{settings.telegram_bot_username}"
                         f"?startapp={payload.start_param}"
@@ -1107,6 +1117,8 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
                     detail="Finik временно недоступен. Попробуйте ещё раз.",
                 ) from exc
     response = _miniapp_result_payload(result)
+    if payment_request is not None:
+        response["status"] = payment_request.status
     response["payment_url"] = payment_url
     response["automatic_payment"] = settings.finik_auto_enabled
     response["monthly_available"] = bool(

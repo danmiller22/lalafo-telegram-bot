@@ -91,12 +91,14 @@ class FinikClient:
         account_id: str,
         private_key_pem: str,
         timeout: float = 20.0,
+        client: httpx.AsyncClient | None = None,
     ) -> None:
         self.api_url = api_url
         self.api_key = api_key
         self.account_id = account_id
         self.private_key_pem = private_key_pem
         self.timeout = timeout
+        self.client = client
 
     async def create_payment(
         self,
@@ -136,8 +138,8 @@ class FinikClient:
             ),
             self.private_key_pem,
         )
-        async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=False) as client:
-            response = await client.post(
+        if self.client is not None:
+            response = await self.client.post(
                 self.api_url,
                 headers={
                     "content-type": "application/json",
@@ -147,6 +149,20 @@ class FinikClient:
                 },
                 json=body,
             )
+        else:
+            async with httpx.AsyncClient(
+                timeout=self.timeout, follow_redirects=False
+            ) as client:
+                response = await client.post(
+                    self.api_url,
+                    headers={
+                        "content-type": "application/json",
+                        "x-api-key": self.api_key,
+                        "x-api-timestamp": timestamp,
+                        "signature": signature,
+                    },
+                    json=body,
+                )
         location = response.headers.get("location")
         if not location and response.headers.get("content-type", "").startswith("application/json"):
             payload = response.json()

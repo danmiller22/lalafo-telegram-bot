@@ -106,6 +106,7 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
   const startParam = (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) || query.get("tgWebAppStartParam") || "";
   const el = id => document.getElementById(id);
   let lastState = "";
+  let paymentOpening = false;
 
   function show(id, visible) {{ el(id).classList.toggle("hidden", !visible); }}
   function message(text) {{ el("status").textContent = text; }}
@@ -123,7 +124,7 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     lastState = data.status;
     show("status", true);
     show("phone", data.status === "approved");
-    const canPay = data.status !== "approved";
+    const canPay = data.status !== "approved" && data.status !== "pending";
     show("pay-week", canPay);
     show("pay-month", canPay && Boolean(data.monthly_available));
     show("refresh", data.status !== "unpaid");
@@ -155,13 +156,23 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     catch (error) {{ message(error.message); }}
   }}
   async function startPayment(plan, buttonId) {{
-    el(buttonId).disabled = true;
+    if (paymentOpening) return;
+    paymentOpening = true;
+    const button = el(buttonId);
+    const originalText = button.textContent;
+    button.disabled = true;
+    button.textContent = "⚡ Открываю Finik…";
+    message("Создаём защищённую ссылку…");
     try {{
       const data = await api("/miniapp/api/start", {{plan}});
       render(data);
       if (tg) tg.openLink(data.payment_url); else location.href = data.payment_url;
     }} catch (error) {{ message(error.message); }}
-    finally {{ el(buttonId).disabled = false; }}
+    finally {{
+      button.disabled = false;
+      button.textContent = originalText;
+      paymentOpening = false;
+    }}
   }}
   el("pay-week").onclick = () => startPayment("week", "pay-week");
   el("pay-month").onclick = () => startPayment("month", "pay-month");
