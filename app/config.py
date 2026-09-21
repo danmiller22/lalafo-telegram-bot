@@ -143,9 +143,13 @@ class Settings(BaseSettings):
     finik_payment_url: str = (
         "https://qr.finik.kg/#00020101021232810011qr.finik.kg0114averspay-items1"
         "032f51f3d85c0da4eeab638f8ed65f0a3831202121302125204482953034175405"
-        "500005908Finik-QR6304e37c"
+        "399005908Finik-QR6304a49c"
     )
-    monthly_finik_payment_url: str = ""
+    monthly_finik_payment_url: str = (
+        "https://qr.finik.kg/#00020101021232810011qr.finik.kg0114averspay-items1"
+        "032e8767c964fbf4363b207fe0b2797d4451202121302125204482953034175405"
+        "999005908Finik-QR63045b1b"
+    )
     wanted_finik_payment_url: str = (
         "https://qr.finik.kg/#00020101021232810011qr.finik.kg0114averspay-items1"
         "032946f1ce95e414d5b965a9e8574a95f361202121302125204482953034175405"
