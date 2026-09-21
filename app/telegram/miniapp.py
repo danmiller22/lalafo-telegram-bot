@@ -155,8 +155,8 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
       }});
       show("photos", photos.childElementCount > 0);
       const price = Number(apartment.price || 0).toLocaleString("ru-RU");
-      const deposit = apartment.deposit ? "\n🔐 Депозит: " + Number(apartment.deposit).toLocaleString("ru-RU") + " сом" : "";
-      el("details").textContent = "🏠 " + (apartment.rooms || "—") + "-комнатная квартира\n📍 " + (apartment.district || "—") + "\n🏙 " + (apartment.city || "Бишкек") + "\n💰 " + price + " сом" + deposit;
+      const deposit = apartment.deposit ? "\\n🔐 Депозит: " + Number(apartment.deposit).toLocaleString("ru-RU") + " сом" : "";
+      el("details").textContent = "🏠 " + (apartment.rooms || "—") + "-комнатная квартира\\n📍 " + (apartment.district || "—") + "\\n🏙 " + (apartment.city || "Бишкек") + "\\n💰 " + price + " сом" + deposit;
       el("phone").textContent = "📞 " + data.phone;
       el("phone").href = "tel:" + String(data.phone || "").replace(/\\s+/g, "");
     }} else if (data.status === "pending") {{

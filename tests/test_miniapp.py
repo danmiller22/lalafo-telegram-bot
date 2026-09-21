@@ -85,5 +85,7 @@ def test_mini_app_page_keeps_payment_and_receipt_in_one_window():
     assert 'show("plans", !approved)' in html
     assert 'show("status", !approved)' in html
     assert 'show("refresh", !approved' in html
+    assert '"\n🔐 Депозит: "' not in html
+    assert '"\\n🔐 Депозит: "' in html
     assert "Без перехода в личный чат" not in html
     assert "команды /start" not in html
