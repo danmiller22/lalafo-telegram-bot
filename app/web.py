@@ -999,7 +999,7 @@ def _miniapp_result_payload(result) -> dict[str, Any]:
             "deposit": apartment.deposit,
             "photo_urls": [
                 url
-                for url in (apartment.photo_urls or [])[:10]
+                for url in (apartment.photo_urls or [])[:4]
                 if isinstance(url, str) and url.startswith(("https://", "http://"))
             ],
         }

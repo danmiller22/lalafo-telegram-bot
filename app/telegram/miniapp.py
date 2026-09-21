@@ -73,8 +73,8 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     .plans {{ white-space: pre-line; line-height: 1.6; margin: 14px 0 8px; }}
     .status {{ border-radius: 13px; padding: 12px; margin: 12px 0; background: #12856a18; line-height: 1.4; }}
     .phone {{ font-size: 22px; font-weight: 800; color: #079b79; word-break: break-word; }}
-    .photos {{ display: flex; gap: 8px; overflow-x: auto; scroll-snap-type: x mandatory; margin: 0 -4px 14px; }}
-    .photos img {{ width: 100%; min-width: 100%; max-height: 360px; object-fit: cover; border-radius: 15px; scroll-snap-align: start; }}
+    .photos {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin: 0 0 14px; }}
+    .photos img {{ width: 100%; height: 118px; object-fit: cover; border-radius: 11px; }}
     .details {{ white-space: pre-line; font-size: 16px; font-weight: 650; line-height: 1.55; margin: 4px 0 12px; }}
     button, .button {{ width: 100%; border: 0; border-radius: 14px; padding: 14px 16px; margin-top: 9px; font: inherit; font-weight: 750; text-align: center; cursor: pointer; text-decoration: none; display: block; }}
     .primary {{ background: var(--tg-theme-button-color, #079b79); color: var(--tg-theme-button-text-color, white); }}

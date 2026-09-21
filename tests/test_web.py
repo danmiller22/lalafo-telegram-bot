@@ -40,7 +40,13 @@ def test_approved_miniapp_payload_contains_apartment_card() -> None:
         city="Бишкек",
         price=35_000,
         deposit=5_000,
-        photo_urls=["https://img.example/flat.jpg"],
+        photo_urls=[
+            "https://img.example/1.jpg",
+            "https://img.example/2.jpg",
+            "https://img.example/3.jpg",
+            "https://img.example/4.jpg",
+            "https://img.example/5.jpg",
+        ],
         phone="+996555123456",
     )
     result = SimpleNamespace(
@@ -58,7 +64,12 @@ def test_approved_miniapp_payload_contains_apartment_card() -> None:
         "city": "Бишкек",
         "price": 35_000,
         "deposit": 5_000,
-        "photo_urls": ["https://img.example/flat.jpg"],
+        "photo_urls": [
+            "https://img.example/1.jpg",
+            "https://img.example/2.jpg",
+            "https://img.example/3.jpg",
+            "https://img.example/4.jpg",
+        ],
     }
 
 
