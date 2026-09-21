@@ -43,11 +43,7 @@ def user_label(request: PaymentRequest) -> str:
 
 def format_admin_card(request: PaymentRequest) -> str:
     apartment = request.apartment
-    payment_line = (
-        f"💰 Оплата: {plan_price(request.plan)} сом"
-        if request.plan == "week"
-        else "💰 Архивный тариф отключён"
-    )
+    payment_line = f"💰 Оплата: {plan_price(request.plan)} сом"
     lines = [
         "💳 Проверка оплаты",
         "",
@@ -68,11 +64,7 @@ def format_admin_card(request: PaymentRequest) -> str:
 
 
 def format_admin_decision(request: PaymentRequest, approved: bool) -> str:
-    plan_line = (
-        f"💳 {plan_label(request.plan)} · {plan_price(request.plan)} сом"
-        if request.plan == "week"
-        else "💳 Архивный тариф отключён"
-    )
+    plan_line = f"💳 {plan_label(request.plan)} · {plan_price(request.plan)} сом"
     return "\n".join(
         [
             "✅ Оплата подтверждена" if approved else "❌ Оплата отклонена",

@@ -24,10 +24,10 @@ from app.bot.main import BotRuntime, configure_bot_profile, create_runtime
 from app.config import get_settings
 from app.lalafo.auto_reply import LalafoAutoResponder
 from app.lalafo.models import LalafoAd
-from app.payment_plans import WEEK_PLAN, WEEK_PRICE
+from app.payment_plans import MONTH_PLAN, WEEK_PLAN, WEEK_PRICE
 from app.security import TokenSigner
 from app.telegram.formatting import format_admin_card, format_apartment, room_title
-from app.telegram.keyboards import admin_keyboard, paid_keyboard
+from app.telegram.keyboards import admin_keyboard, payment_keyboard
 from app.telegram.publisher import TelegramPublisher
 from app.telegram.miniapp import mini_app_html, verify_telegram_init_data
 from app.lalafo.phone import display_phone
@@ -97,6 +97,7 @@ _background_watchdog_state: dict[str, Any] = {
 class MiniAppRequest(BaseModel):
     init_data: str
     start_param: str
+    plan: str | None = None
 
 
 class LalafoRelayRequest(BaseModel):
@@ -999,14 +1000,16 @@ async def telegram_mini_app() -> HTMLResponse:
 
 @app.post("/miniapp/api/session", include_in_schema=False)
 async def miniapp_session(payload: MiniAppRequest) -> dict[str, Any]:
-    _, runtime, user, apartment_id = _miniapp_context(payload)
+    settings, runtime, user, apartment_id = _miniapp_context(payload)
     result = await runtime.workflow_data["service"].contact_status(user.id, apartment_id)
     if result.status == "unavailable":
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Квартира больше недоступна.",
         )
-    return _miniapp_result_payload(result)
+    response = _miniapp_result_payload(result)
+    response["monthly_available"] = bool(settings.monthly_finik_payment_url)
+    return response
 
 
 @app.post("/miniapp/api/start", include_in_schema=False)
@@ -1014,14 +1017,25 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
     settings, runtime, user, apartment_id = _miniapp_context(payload)
     service = runtime.workflow_data["service"]
     result = await service.contact_status(user.id, apartment_id)
-    if result.status not in {"approved", "pending", "awaiting_receipt"}:
+    plan = payload.plan if payload.plan in {WEEK_PLAN, MONTH_PLAN} else WEEK_PLAN
+    payment_url = (
+        settings.monthly_finik_payment_url if plan == MONTH_PLAN else settings.finik_payment_url
+    )
+    if not payment_url:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Этот тариф временно недоступен.",
+        )
+    if result.status not in {"approved", "pending"} and (
+        result.status != "awaiting_receipt" or result.plan != plan
+    ):
         try:
             await service.begin_payment(
                 user_id=user.id,
                 apartment_id=apartment_id,
                 username=user.username,
                 first_name=user.first_name,
-                plan=WEEK_PLAN,
+                plan=plan,
             )
         except LookupError as exc:
             raise HTTPException(
@@ -1030,7 +1044,8 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
             ) from exc
         result = await service.contact_status(user.id, apartment_id)
     response = _miniapp_result_payload(result)
-    response["payment_url"] = settings.finik_payment_url
+    response["payment_url"] = payment_url
+    response["monthly_available"] = bool(settings.monthly_finik_payment_url)
     return response
 
 
@@ -1188,9 +1203,10 @@ async def open_finik_payment(token: str) -> RedirectResponse:
         await runtime.bot.edit_message_reply_markup(
             chat_id=chat_id,
             message_id=message_id,
-            reply_markup=paid_keyboard(
+            reply_markup=payment_keyboard(
                 apartment_id,
                 signer=signer,
+                payment_url=settings.finik_payment_url,
                 support_url=settings.support_bot_url,
             ),
         )

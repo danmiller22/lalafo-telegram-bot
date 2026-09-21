@@ -6,7 +6,6 @@ from pathlib import Path
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 LALAFO_DISTRICT_FILTERS = (
     ("3-mkr", "30232"),
     ("4-mkr", "30233"),
@@ -146,6 +145,7 @@ class Settings(BaseSettings):
         "032f51f3d85c0da4eeab638f8ed65f0a3831202121302125204482953034175405"
         "500005908Finik-QR6304e37c"
     )
+    monthly_finik_payment_url: str = ""
     wanted_finik_payment_url: str = (
         "https://qr.finik.kg/#00020101021232810011qr.finik.kg0114averspay-items1"
         "032946f1ce95e414d5b965a9e8574a95f361202121302125204482953034175405"

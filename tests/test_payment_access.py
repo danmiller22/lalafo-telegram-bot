@@ -5,7 +5,7 @@ from sqlalchemy import update
 
 from app.payments.service import PaymentService
 from app.models import PaymentRequest
-from app.payment_plans import WEEK_PLAN
+from app.payment_plans import MONTH_PLAN, WEEK_PLAN
 from app.lalafo.models import PHONE_SOURCE_VERSION
 from app.telegram.keyboards import APARTMENT_KEYBOARD_VERSION
 from tests.helpers import make_ad
@@ -77,19 +77,22 @@ async def test_rejection_allows_resubmission(repositories, service):
 
 
 @pytest.mark.asyncio
-async def test_missing_or_inactive_apartment_denies_access(repositories, service):
+async def test_missing_apartment_is_denied_but_inactive_card_remains_payable(
+    repositories, service
+):
     apartments, _, _ = repositories
     assert (await service.contact_status(1, 999999)).status == "unavailable"
     apartment = await apartments.upsert_discovered(make_ad(lalafo_id=333))
     await apartments.mark_inactive(apartment.id)
-    with pytest.raises(LookupError):
-        await service.begin_payment(
-            user_id=1,
-            apartment_id=apartment.id,
-            username=None,
-            first_name="User",
-            plan=WEEK_PLAN,
-        )
+    assert (await service.contact_status(1, apartment.id)).status == "unpaid"
+    submission = await service.begin_payment(
+        user_id=1,
+        apartment_id=apartment.id,
+        username=None,
+        first_name="User",
+        plan=WEEK_PLAN,
+    )
+    assert submission.outcome == "created"
 
 
 @pytest.mark.asyncio
@@ -151,7 +154,7 @@ async def test_single_number_plan_is_not_available(repositories, service):
     apartments, _, _ = repositories
     apartment = await apartments.upsert_discovered(make_ad(lalafo_id=445))
 
-    with pytest.raises(ValueError, match="Only weekly access"):
+    with pytest.raises(ValueError, match="Unsupported access plan"):
         await service.begin_payment(
             user_id=301,
             apartment_id=apartment.id,
@@ -159,6 +162,28 @@ async def test_single_number_plan_is_not_available(repositories, service):
             first_name="Buyer",
             plan="single",
         )
+
+
+@pytest.mark.asyncio
+async def test_monthly_access_unlocks_all_apartments(repositories, service):
+    apartments, payments, _ = repositories
+    first = await apartments.upsert_discovered(make_ad(lalafo_id=451))
+    second = await apartments.upsert_discovered(
+        make_ad(lalafo_id=452, phone="+996555000452")
+    )
+    submission = await service.begin_payment(
+        user_id=451,
+        apartment_id=first.id,
+        username="monthly",
+        first_name="Monthly",
+        plan=MONTH_PLAN,
+    )
+    await payments.mark_payment_claimed(user_id=451, apartment_id=first.id)
+    assert await service.decide(submission.request.id, approve=True, actor_id=999) == "approved"
+    access = await service.contact_status(451, second.id)
+    assert access.status == "approved"
+    assert access.plan == MONTH_PLAN
+    assert access.access_expires_at is not None
 
 
 @pytest.mark.asyncio

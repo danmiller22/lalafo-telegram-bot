@@ -66,7 +66,8 @@ def test_mini_app_page_keeps_payment_and_receipt_in_one_window():
     assert "/miniapp/api/session" in html
     assert "/miniapp/api/start" in html
     assert "/miniapp/api/check" in html
-    assert "Оплатить неделю — 400 сом" in html
+    assert "Базовая: 7 дней — 400 сом" in html
+    assert "30 дней — 999 сом" in html
     assert "Я оплатил(а)" in html
     assert "Статус: оплата проверяется" in html
     assert "Оплата проверяется. Квартира сохранена" in html

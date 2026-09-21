@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from html import escape
 from urllib.parse import parse_qsl
 
-from app.payment_plans import WEEK_PRICE
+from app.payment_plans import MONTH_PRICE, WEEK_PRICE
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,7 +91,8 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     <div id="details" class="details"></div>
     <div id="status" class="status">Проверяем доступ…</div>
     <div id="phone" class="phone hidden"></div>
-    <button id="pay" class="primary hidden">Оплатить неделю — {WEEK_PRICE} сом</button>
+    <button id="pay-week" class="primary hidden">Базовая: 7 дней — {WEEK_PRICE} сом</button>
+    <button id="pay-month" class="primary hidden">30 дней — {MONTH_PRICE} сом</button>
     <button id="check" class="secondary hidden">Я оплатил(а)</button>
     <button id="checking" class="secondary hidden" disabled>⏳ Статус: оплата проверяется</button>
     <button id="refresh" class="secondary">Обновить статус</button>
@@ -126,7 +127,9 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     el("details").textContent = data.details || "";
     if (data.photo_url) {{ el("hero").src = data.photo_url; el("hero").style.display = "block"; }}
     show("phone", data.status === "approved");
-    show("pay", ["unpaid", "awaiting_receipt", "rejected"].includes(data.status));
+    const canPay = ["unpaid", "awaiting_receipt", "rejected"].includes(data.status);
+    show("pay-week", canPay);
+    show("pay-month", canPay && Boolean(data.monthly_available));
     show("check", data.status === "awaiting_receipt");
     show("checking", data.status === "pending");
     if (data.status === "approved") {{
@@ -139,7 +142,7 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     }} else if (data.status === "rejected") {{
       message("Оплата не подтверждена. Можно повторить оплату и отправить новый чек.");
     }} else {{
-      message("Неделя доступа ко всем номерам — {WEEK_PRICE} сом.");
+      message("Выберите доступ: 7 дней — {WEEK_PRICE} сом или 30 дней — {MONTH_PRICE} сом.");
     }}
   }}
   async function load() {{
@@ -151,15 +154,17 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     try {{ render(await api("/miniapp/api/session", {{}})); }}
     catch (error) {{ message(error.message); }}
   }}
-  el("pay").onclick = async () => {{
-    el("pay").disabled = true;
+  async function startPayment(plan, buttonId) {{
+    el(buttonId).disabled = true;
     try {{
-      const data = await api("/miniapp/api/start", {{}});
+      const data = await api("/miniapp/api/start", {{plan}});
       render(data);
       if (tg) tg.openLink(data.payment_url); else location.href = data.payment_url;
     }} catch (error) {{ message(error.message); }}
-    finally {{ el("pay").disabled = false; }}
-  }};
+    finally {{ el(buttonId).disabled = false; }}
+  }}
+  el("pay-week").onclick = () => startPayment("week", "pay-week");
+  el("pay-month").onclick = () => startPayment("month", "pay-month");
   el("check").onclick = async () => {{
     el("check").disabled = true;
     message("Проверяем заявку…");

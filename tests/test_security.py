@@ -100,10 +100,10 @@ def test_callback_data_is_short_and_contains_no_phone():
         assert keyboard.inline_keyboard[-1][0].url == support_url
 
     assert [row[0].text for row in private_payment.inline_keyboard] == [
-        "⭐ Неделя доступа — 400 сом",
+        "⭐ 7 дней — 400 сом",
         "🛟 Техподдержка",
     ]
-    assert receipt.inline_keyboard[0][0].text == "💳 Ссылка на оплату"
+    assert receipt.inline_keyboard[0][0].text == "💳 Оплатить 400 сом"
     assert receipt.inline_keyboard[1][0].text == "✅ Я оплатил(а)"
     assert receipt.inline_keyboard[1][0].callback_data == "receipt:send"
     assert len(receipt.inline_keyboard) == 3
@@ -126,13 +126,13 @@ def test_payment_and_status_keyboards_keep_recovery_actions():
         support_url="https://t.me/support_test",
     )
     assert [row[0].text for row in payment.inline_keyboard] == [
-        "💳 Ссылка на оплату",
+        "💳 Оплатить 400 сом",
         "✅ Я оплатил",
         "🔄 Проверить оплату / Получить номер",
         "🛟 Техподдержка",
     ]
     assert [row[0].text for row in status.inline_keyboard] == [
-        "💳 Ссылка на оплату",
+        "💳 Оплатить 400 сом",
         "⏳ Проверить оплату / Получить номер",
         "🛟 Техподдержка",
     ]

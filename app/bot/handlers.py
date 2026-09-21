@@ -10,7 +10,13 @@ from aiogram.types import CallbackQuery, Message
 from app.bot.callbacks import CONTACT_PREFIX, PAID_PREFIX, PLAN_PREFIX, VIEW_PREFIX
 from app.config import Settings
 from app.payments.repository import PaymentRepository
-from app.payment_plans import WEEK_PLAN, WEEK_PRICE, plan_label
+from app.payment_plans import (
+    MONTH_PLAN,
+    WEEK_PLAN,
+    WEEK_PRICE,
+    plan_label,
+    plan_price,
+)
 from app.payments.service import PaymentService
 from app.security import TokenSigner
 from app.support.handlers import begin_support
@@ -19,9 +25,7 @@ from app.telegram.keyboards import (
     admin_keyboard,
     apartment_keyboard,
     payment_keyboard,
-    pending_payment_keyboard,
     private_payment_keyboard,
-    receipt_payment_keyboard,
     status_keyboard,
 )
 from app.telegram.private_delivery import send_private_contact
@@ -30,6 +34,12 @@ from app.wanted.handlers import begin_wanted_form
 
 logger = logging.getLogger(__name__)
 router = Router(name="user")
+
+
+def _payment_details(plan: str | None, settings: Settings) -> tuple[str, int]:
+    if plan == MONTH_PLAN:
+        return settings.monthly_finik_payment_url, plan_price(MONTH_PLAN)
+    return settings.finik_payment_url, plan_price(WEEK_PLAN)
 
 
 def _start_payload(message: Message) -> str:
@@ -118,35 +128,38 @@ async def start_handler(
             )
         elif result.status == "awaiting_receipt":
             text = (
-                "🧾 Жду чек об оплате.\n\n"
+                "💳 Оплата ещё не отправлена на проверку.\n\n"
                 f"{apartment_text}\n\n"
-                "Оплатите недельный доступ и отправьте сюда фото или файл чека."
+                "Оплатите выбранный тариф и нажмите «Я оплатил»."
             )
         elif result.status == "rejected":
             text = (
                 "❌ Оплата не подтверждена.\n\n"
                 f"{apartment_text}\n\n"
-                "Оформите недельный доступ, оплатите и отправьте новый чек."
+                "Выберите тариф, оплатите и снова нажмите «Я оплатил»."
             )
         else:
             text = (
                 "🔐 Доступ к номерам собственников\n\n"
                 f"{apartment_text}\n\n"
-                f"Все номера на 7 дней — {WEEK_PRICE} сом.\n"
-                "Оформите недельный доступ ниже."
+                f"7 дней — {WEEK_PRICE} сом, 30 дней — 999 сом.\n"
+                "Выберите тариф ниже."
             )
         reply_markup = (
-            receipt_payment_keyboard(
+            payment_keyboard(
                 apartment_id,
                 signer=signer,
-                payment_url=settings.finik_payment_url,
+                payment_url=_payment_details(result.plan, settings)[0],
                 support_url=settings.support_bot_url,
+                price=_payment_details(result.plan, settings)[1],
             )
             if result.status == "awaiting_receipt"
-            else pending_payment_keyboard(
+            else status_keyboard(
                 apartment_id,
                 signer=signer,
+                payment_url=_payment_details(result.plan, settings)[0],
                 support_url=settings.support_bot_url,
+                price=_payment_details(result.plan, settings)[1],
             )
             if result.status == "pending"
             else private_payment_keyboard(
@@ -155,6 +168,7 @@ async def start_handler(
                 payment_url=settings.finik_payment_url,
                 support_url=settings.support_bot_url,
                 pending=result.status == "pending",
+                monthly_payment_url=settings.monthly_finik_payment_url,
             )
         )
         await message.answer(text, reply_markup=reply_markup)
@@ -171,11 +185,17 @@ async def plan_handler(
     bot: Bot,
 ) -> None:
     parts = (callback.data or "").split(":", 2)
-    if len(parts) != 3 or parts[1] != "w":
+    if len(parts) != 3 or parts[1] not in {"w", "m"}:
         await callback.answer("Недействительная кнопка.", show_alert=True)
         return
-    plan = WEEK_PLAN
-    purpose = "plan-week"
+    plan = WEEK_PLAN if parts[1] == "w" else MONTH_PLAN
+    purpose = "plan-week" if plan == WEEK_PLAN else "plan-month"
+    payment_url, price = _payment_details(plan, settings)
+    if not payment_url:
+        await callback.answer(
+            "Тариф на 30 дней подключается. Выберите 7 дней.", show_alert=True
+        )
+        return
     apartment_id = signer.verify_id(purpose, parts[2])
     if apartment_id is None:
         await callback.answer("Недействительная кнопка.", show_alert=True)
@@ -192,7 +212,7 @@ async def plan_handler(
         await callback.answer("✅ Карточка с номером отправлена вам.")
         return
     if access.status == "pending":
-        await callback.answer("⏳ Ваш чек уже проверяется.", show_alert=True)
+        await callback.answer("⏳ Ваша оплата уже проверяется.", show_alert=True)
         return
     try:
         submission = await service.begin_payment(
@@ -209,21 +229,22 @@ async def plan_handler(
         await callback.answer("✅ Этот номер уже доступен вам.", show_alert=True)
         return
     text = (
-        f"💳 {plan_label(plan)} — {WEEK_PRICE} сом\n\n"
-        "1. Откройте ссылку на оплату.\n"
-        "2. Оплатите указанную сумму.\n"
-        "3. Отправьте в этот чат фото или файл чека.\n\n"
-        "Без чека заявка на проверку не отправляется."
+        f"💳 {plan_label(plan)} — {price} сом\n\n"
+        f"1. Нажмите «Оплатить {price} сом».\n"
+        "2. После оплаты нажмите «Я оплатил».\n"
+        "3. Мы проверим поступление и откроем номер.\n\n"
+        "Кнопка оплаты останется доступной после нажатия."
     )
     await callback.answer()
     if callback.message:
         await callback.message.edit_text(
             text,
-            reply_markup=receipt_payment_keyboard(
+            reply_markup=payment_keyboard(
                 apartment_id,
                 signer=signer,
-                payment_url=settings.finik_payment_url,
+                payment_url=payment_url,
                 support_url=settings.support_bot_url,
+                price=price,
             ),
         )
 
@@ -331,6 +352,7 @@ async def contact_handler(
             )
         return
     if result.status == "pending":
+        payment_url, price = _payment_details(result.plan, settings)
         await callback.answer("⏳ Оплата уже отправлена на проверку.", show_alert=True)
         if callback.message:
             try:
@@ -338,8 +360,9 @@ async def contact_handler(
                     reply_markup=status_keyboard(
                         apartment_id,
                         signer=signer,
-                        payment_url=settings.finik_payment_url,
+                        payment_url=payment_url,
                         support_url=settings.support_bot_url,
+                        price=price,
                     )
                 )
             except Exception:
@@ -393,6 +416,7 @@ async def view_contact_handler(
             )
         return
     if result.status == "pending":
+        payment_url, price = _payment_details(result.plan, settings)
         await callback.answer(
             "⏳ Оплата ещё проверяется.\n\n"
             "Кнопка останется на месте. После подтверждения нажмите её ещё раз.",
@@ -401,33 +425,36 @@ async def view_contact_handler(
         if callback.message:
             try:
                 if callback.message.chat.type == "private":
-                    reply_markup = pending_payment_keyboard(
+                    reply_markup = status_keyboard(
                         apartment_id,
                         signer=signer,
+                        payment_url=payment_url,
                         support_url=settings.support_bot_url,
+                        price=price,
                     )
                 else:
                     reply_markup = status_keyboard(
                         apartment_id,
                         signer=signer,
-                        payment_url=settings.finik_payment_url,
+                        payment_url=payment_url,
                         support_url=settings.support_bot_url,
+                        price=price,
                     )
                 await callback.message.edit_reply_markup(reply_markup=reply_markup)
             except Exception:
                 logger.exception("Could not restore pending payment keyboard")
         return
     if result.status == "awaiting_receipt":
-        await callback.answer(
-            "🧾 Отправьте фото или файл чека в этот чат.", show_alert=True
-        )
+        payment_url, price = _payment_details(result.plan, settings)
+        await callback.answer("После оплаты нажмите «Я оплатил».", show_alert=True)
         if callback.message:
             await callback.message.edit_reply_markup(
-                reply_markup=receipt_payment_keyboard(
+                reply_markup=payment_keyboard(
                     apartment_id,
                     signer=signer,
-                    payment_url=settings.finik_payment_url,
+                    payment_url=payment_url,
                     support_url=settings.support_bot_url,
+                    price=price,
                 )
             )
         return
@@ -443,6 +470,7 @@ async def view_contact_handler(
                     signer=signer,
                     payment_url=settings.finik_payment_url,
                     support_url=settings.support_bot_url,
+                    monthly_payment_url=settings.monthly_finik_payment_url,
                 )
                 if callback.message.chat.type == "private"
                 else apartment_keyboard(
@@ -458,7 +486,7 @@ async def view_contact_handler(
         await callback.answer("Квартира больше недоступна.", show_alert=True)
         return
     await callback.answer(
-        "Оформите недельный доступ и после оплаты отправьте чек боту.",
+        "Выберите тариф и после оплаты нажмите «Я оплатил».",
         show_alert=True,
     )
     if callback.message:
@@ -469,6 +497,7 @@ async def view_contact_handler(
                     signer=signer,
                     payment_url=settings.finik_payment_url,
                     support_url=settings.support_bot_url,
+                    monthly_payment_url=settings.monthly_finik_payment_url,
                 )
                 if callback.message.chat.type == "private"
                 else apartment_keyboard(
@@ -515,6 +544,7 @@ async def paid_handler(
             )
         return
     if result.status == "pending":
+        payment_url, price = _payment_details(result.plan, settings)
         await callback.answer(
             "⏳ Оплата ещё проверяется. Повторно оплачивать не нужно.",
             show_alert=True,
@@ -522,34 +552,59 @@ async def paid_handler(
         if callback.message:
             try:
                 if callback.message.chat.type == "private":
-                    reply_markup = pending_payment_keyboard(
+                    reply_markup = status_keyboard(
                         apartment_id,
                         signer=signer,
+                        payment_url=payment_url,
                         support_url=settings.support_bot_url,
+                        price=price,
                     )
                 else:
                     reply_markup = status_keyboard(
                         apartment_id,
                         signer=signer,
-                        payment_url=settings.finik_payment_url,
+                        payment_url=payment_url,
                         support_url=settings.support_bot_url,
+                        price=price,
                     )
                 await callback.message.edit_reply_markup(reply_markup=reply_markup)
             except Exception:
                 logger.exception("Could not restore pending payment keyboard")
         return
     if result.status == "awaiting_receipt":
-        await callback.answer(
-            "🧾 После оплаты отправьте фото или файл чека в этот чат.",
-            show_alert=True,
+        payment_url, price = _payment_details(result.plan, settings)
+        request = await payments.mark_payment_claimed(
+            user_id=callback.from_user.id,
+            apartment_id=apartment_id,
         )
+        if request is None:
+            await callback.answer("Сначала откройте оплату.", show_alert=True)
+            return
+        if settings.admin_user_id and await payments.claim_admin_notification(request.id):
+            try:
+                admin_message = await bot.send_message(
+                    settings.admin_user_id,
+                    format_admin_card(request),
+                    reply_markup=admin_keyboard(request.id, signer=signer),
+                )
+            except Exception:
+                await payments.release_admin_notification(request.id)
+                logger.exception("Admin payment notification failed")
+                await callback.answer(
+                    "Не удалось отправить оплату на проверку. Нажмите ещё раз.",
+                    show_alert=True,
+                )
+                return
+            await payments.finish_admin_notification(request.id, admin_message.message_id)
+        await callback.answer("✅ Заявка на проверку отправлена.", show_alert=True)
         if callback.message:
             await callback.message.edit_reply_markup(
-                reply_markup=receipt_payment_keyboard(
+                reply_markup=status_keyboard(
                     apartment_id,
                     signer=signer,
-                    payment_url=settings.finik_payment_url,
+                    payment_url=payment_url,
                     support_url=settings.support_bot_url,
+                    price=price,
                 )
             )
         return
@@ -557,7 +612,7 @@ async def paid_handler(
         await callback.answer("Квартира больше недоступна.", show_alert=True)
         return
     await callback.answer(
-        "Оформите недельный доступ, оплатите и отправьте чек в этот чат.",
+        "Выберите тариф, оплатите и нажмите «Я оплатил».",
         show_alert=True,
     )
     if callback.message:
@@ -568,6 +623,7 @@ async def paid_handler(
                     signer=signer,
                     payment_url=settings.finik_payment_url,
                     support_url=settings.support_bot_url,
+                    monthly_payment_url=settings.monthly_finik_payment_url,
                 )
             )
         except Exception:

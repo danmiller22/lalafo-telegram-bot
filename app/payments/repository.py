@@ -12,7 +12,7 @@ from sqlalchemy.orm import selectinload
 
 from app.lalafo.models import PHONE_SOURCE_VERSION, LalafoAd
 from app.models import Apartment, DailyFeaturedPublication, PaymentRequest
-from app.payment_plans import WEEK_PLAN, expires_at_for
+from app.payment_plans import MONTH_PLAN, WEEK_PLAN, expires_at_for
 from app.state import ad_fingerprint
 from app.telegram.keyboards import APARTMENT_KEYBOARD_VERSION
 
@@ -555,7 +555,7 @@ class PaymentRepository:
                 select(PaymentRequest)
                 .where(
                     PaymentRequest.telegram_user_id == user_id,
-                    PaymentRequest.plan == WEEK_PLAN,
+                    PaymentRequest.plan.in_((WEEK_PLAN, MONTH_PLAN)),
                     PaymentRequest.status == "approved",
                     PaymentRequest.access_expires_at.is_not(None),
                     PaymentRequest.access_expires_at > now,
@@ -574,8 +574,8 @@ class PaymentRepository:
         first_name: str | None,
         plan: str = WEEK_PLAN,
     ) -> PaymentSubmission:
-        if plan != WEEK_PLAN:
-            raise ValueError("Only weekly access is available")
+        if plan not in {WEEK_PLAN, MONTH_PLAN}:
+            raise ValueError("Unsupported access plan")
         try:
             return await self._submit_once(
                 user_id=user_id,
@@ -606,7 +606,7 @@ class PaymentRepository:
     ) -> PaymentSubmission:
         async with self.sessions.begin() as session:
             apartment = await session.get(Apartment, apartment_id)
-            if apartment is None or not apartment.active or not apartment.phone:
+            if apartment is None or not apartment.phone:
                 raise LookupError("Apartment is unavailable")
             result = await session.execute(
                 select(PaymentRequest).where(
