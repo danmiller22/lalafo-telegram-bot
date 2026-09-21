@@ -797,6 +797,21 @@ class PaymentRepository:
                 current.approved_at = now
                 current.approved_by = admin_id
                 current.access_expires_at = expires_at_for(current.plan, now)
+                if current.access_expires_at is not None:
+                    session.add(
+                        PaymentHistory(
+                            payment_request_id=current.id,
+                            telegram_user_id=current.telegram_user_id,
+                            username=current.username,
+                            first_name=current.first_name,
+                            apartment_id=current.apartment_id,
+                            plan=current.plan,
+                            amount=plan_price(current.plan),
+                            provider_payment_id=f"manual-{current.id}-{int(now.timestamp())}",
+                            paid_at=now,
+                            access_expires_at=current.access_expires_at,
+                        )
+                    )
                 return "approved"
             current.status = "rejected"
             current.rejected_at = now
@@ -927,6 +942,15 @@ class PaymentRepository:
                 .options(selectinload(PaymentRequest.apartment))
                 .where(PaymentRequest.status == "pending")
                 .order_by(PaymentRequest.created_at.asc())
+                .limit(limit)
+            )
+            return list(result.scalars())
+
+    async def recent_paid(self, limit: int = 30) -> list[PaymentHistory]:
+        async with self.sessions() as session:
+            result = await session.execute(
+                select(PaymentHistory)
+                .order_by(PaymentHistory.paid_at.desc())
                 .limit(limit)
             )
             return list(result.scalars())

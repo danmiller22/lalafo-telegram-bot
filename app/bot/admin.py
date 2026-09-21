@@ -16,7 +16,7 @@ from app.security import TokenSigner
 from app.telegram.formatting import format_admin_decision, user_label
 from app.telegram.keyboards import private_payment_keyboard
 from app.telegram.private_delivery import send_private_contact, send_private_public_card
-from app.payment_plans import WEEK_PLAN
+from app.payment_plans import MONTH_PLAN, WEEK_PLAN
 from app.wanted.repository import WantedAdRepository
 
 router = Router(name="admin")
@@ -73,7 +73,38 @@ async def duplicate_apartment_callback(
 async def admin_handler(message: Message, settings: Settings) -> None:
     if not _is_admin(message.from_user.id, settings):
         return
-    await message.answer("Панель администратора: /pending /stats")
+    await message.answer("Панель администратора: /pending /stats /clients")
+
+
+@router.message(Command("clients"))
+async def paid_clients_handler(
+    message: Message,
+    settings: Settings,
+    payments: PaymentRepository,
+) -> None:
+    if not _is_admin(message.from_user.id, settings):
+        return
+    rows = await payments.recent_paid()
+    if not rows:
+        await message.answer("История подтверждённых оплат пока пуста.")
+        return
+    lines = ["✅ Последние подтверждённые оплаты:"]
+    for row in rows:
+        paid_at = row.paid_at
+        if paid_at.tzinfo is None:
+            paid_at = paid_at.replace(tzinfo=timezone.utc)
+        paid_local = paid_at.astimezone(ZoneInfo("Asia/Bishkek"))
+        expires = row.access_expires_at
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        expires_local = expires.astimezone(ZoneInfo("Asia/Bishkek"))
+        tariff = "месяц" if row.plan == MONTH_PLAN else "неделя"
+        client = f"@{row.username}" if row.username else str(row.telegram_user_id)
+        lines.append(
+            f"{client} · {tariff} · {row.amount} сом · "
+            f"{paid_local:%d.%m.%Y %H:%M} → {expires_local:%d.%m.%Y %H:%M}"
+        )
+    await message.answer("\n".join(lines))
 
 
 @router.message(Command("pending"))
