@@ -489,7 +489,7 @@ async def test_miniapp_page_is_public_but_session_requires_telegram_auth(
     assert accepted.json() == {
         "status": "unpaid",
         "price": 499,
-        "monthly_available": True,
+        "monthly_available": False,
     }
     service.contact_status.assert_awaited_once_with(778899, 42)
 

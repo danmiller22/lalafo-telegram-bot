@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import time
 from dataclasses import dataclass
@@ -67,6 +68,12 @@ def decode_private_key(*, pem: str, encoded: str) -> str:
 def payment_succeeded(status: object) -> bool:
     """Accept both success values used by Finik webhook examples."""
     return str(status or "").strip().casefold() in {"success", "succeeded"}
+
+
+def payment_configuration_id(*, api_url: str, account_id: str) -> str:
+    """Return a non-secret marker used to invalidate links from an old merchant."""
+    value = f"{api_url.strip().lower()}|{account_id.strip()}".encode("utf-8")
+    return hashlib.sha256(value).hexdigest()[:12]
 
 
 @dataclass(frozen=True, slots=True)

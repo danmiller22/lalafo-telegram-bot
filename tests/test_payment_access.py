@@ -86,6 +86,45 @@ async def test_verified_finik_payment_grants_access_once_and_checks_amount(
 
 
 @pytest.mark.asyncio
+async def test_finik_link_is_rotated_after_merchant_change(repositories, service):
+    apartments, payments, _ = repositories
+    apartment = await apartments.upsert_discovered(make_ad(lalafo_id=9292))
+    submission = await service.begin_payment(
+        user_id=9292,
+        apartment_id=apartment.id,
+        username="merchant_migration",
+        first_name="Migration",
+        plan=WEEK_PLAN,
+    )
+    old = await payments.prepare_provider_payment(
+        submission.request.id,
+        "old-payment",
+        configuration_id="old-account",
+    )
+    await payments.set_provider_payment_url(
+        old.id,
+        "https://qr.finik.kg/old-link",
+        configuration_id="old-account",
+    )
+
+    rotated = await payments.prepare_provider_payment(
+        old.id,
+        "new-payment",
+        configuration_id="corporate-account",
+    )
+    assert rotated.provider_payment_id == "new-payment"
+    assert rotated.provider_payment_url is None
+    assert rotated.provider_status == "created:corporate-account"
+
+    repeated = await payments.prepare_provider_payment(
+        old.id,
+        "must-not-replace",
+        configuration_id="corporate-account",
+    )
+    assert repeated.provider_payment_id == "new-payment"
+
+
+@pytest.mark.asyncio
 async def test_rejection_allows_resubmission(repositories, service):
     apartments, _, _ = repositories
     apartment = await apartments.upsert_discovered(make_ad(lalafo_id=222))

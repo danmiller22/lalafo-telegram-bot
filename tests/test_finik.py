@@ -3,7 +3,13 @@ from __future__ import annotations
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-from app.finik import canonical_request, payment_succeeded, sign_request, verify_request
+from app.finik import (
+    canonical_request,
+    payment_configuration_id,
+    payment_succeeded,
+    sign_request,
+    verify_request,
+)
 
 
 def _keys() -> tuple[str, str]:
@@ -47,3 +53,18 @@ def test_finik_success_status_variants() -> None:
     assert payment_succeeded(" succeeded ")
     assert not payment_succeeded("failed")
     assert not payment_succeeded(None)
+
+
+def test_payment_configuration_id_changes_with_merchant() -> None:
+    first = payment_configuration_id(
+        api_url="https://api.acquiring.averspay.kg/v1/payment",
+        account_id="corporate-account",
+    )
+    assert first == payment_configuration_id(
+        api_url="HTTPS://API.ACQUIRING.AVERSPAY.KG/v1/payment",
+        account_id="corporate-account",
+    )
+    assert first != payment_configuration_id(
+        api_url="https://api.acquiring.averspay.kg/v1/payment",
+        account_id="old-personal-account",
+    )

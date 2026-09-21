@@ -785,15 +785,35 @@ class PaymentRepository:
             current.access_expires_at = None
             return "rejected"
 
-    async def prepare_provider_payment(self, request_id: int, payment_id: str) -> PaymentRequest:
-        """Atomically reserve one stable Finik id for repeated customer taps."""
+    async def prepare_provider_payment(
+        self,
+        request_id: int,
+        payment_id: str,
+        *,
+        configuration_id: str | None = None,
+    ) -> PaymentRequest:
+        """Reserve a stable Finik id and replace links from an old merchant."""
         async with self.sessions.begin() as session:
             current = await session.get(PaymentRequest, request_id)
             if current is None:
                 raise LookupError("Payment request is unavailable")
-            if not current.provider_payment_id:
+            expected_statuses = (
+                {
+                    f"created:{configuration_id}",
+                    f"waiting:{configuration_id}",
+                }
+                if configuration_id
+                else set()
+            )
+            configuration_changed = bool(
+                configuration_id and current.provider_status not in expected_statuses
+            )
+            if not current.provider_payment_id or configuration_changed:
                 current.provider_payment_id = payment_id
-                current.provider_status = "created"
+                current.provider_payment_url = None
+                current.provider_status = (
+                    f"created:{configuration_id}" if configuration_id else "created"
+                )
                 await session.flush()
             reserved_id = current.id
         request = await self.get_request(reserved_id)
@@ -801,12 +821,23 @@ class PaymentRepository:
             raise LookupError("Payment request is unavailable")
         return request
 
-    async def set_provider_payment_url(self, request_id: int, payment_url: str) -> None:
+    async def set_provider_payment_url(
+        self,
+        request_id: int,
+        payment_url: str,
+        *,
+        configuration_id: str | None = None,
+    ) -> None:
         async with self.sessions.begin() as session:
             await session.execute(
                 update(PaymentRequest)
                 .where(PaymentRequest.id == request_id)
-                .values(provider_payment_url=payment_url, provider_status="waiting")
+                .values(
+                    provider_payment_url=payment_url,
+                    provider_status=(
+                        f"waiting:{configuration_id}" if configuration_id else "waiting"
+                    ),
+                )
             )
 
     async def get_by_provider_payment_id(self, payment_id: str) -> PaymentRequest | None:

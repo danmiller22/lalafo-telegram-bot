@@ -31,6 +31,7 @@ from app.finik import (
     FinikClient,
     canonical_request,
     decode_private_key,
+    payment_configuration_id,
     payment_succeeded,
     verify_request,
 )
@@ -1025,9 +1026,9 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
     service = runtime.workflow_data["service"]
     result = await service.contact_status(user.id, apartment_id)
     plan = payload.plan if payload.plan in {WEEK_PLAN, MONTH_PLAN} else WEEK_PLAN
-    # The fallback QR is configured only in the deployment environment.  It is
-    # tied to the same Arenda.KG merchant account and keeps checkout available
-    # if Finik's dynamic acquiring endpoint is temporarily unavailable.
+    # Static QR links remain available only when automatic acquiring is disabled.
+    # An automatic checkout must never fall back to a shared QR because that
+    # payment cannot be mapped safely to a specific Telegram customer.
     fallback_payment_url = (
         settings.monthly_finik_payment_url
         if plan == MONTH_PLAN
@@ -1061,10 +1062,15 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
         payment_request = await payments.get_access(user.id, apartment_id)
         if payment_request is None:
             raise HTTPException(status_code=409, detail="Не удалось создать оплату.")
-        if not payment_request.provider_payment_id:
-            payment_request = await payments.prepare_provider_payment(
-                payment_request.id, str(uuid.uuid4())
-            )
+        configuration_id = payment_configuration_id(
+            api_url=settings.finik_api_url,
+            account_id=settings.finik_account_id,
+        )
+        payment_request = await payments.prepare_provider_payment(
+            payment_request.id,
+            str(uuid.uuid4()),
+            configuration_id=configuration_id,
+        )
         if payment_request.provider_payment_url:
             payment_url = payment_request.provider_payment_url
         else:
@@ -1089,15 +1095,17 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
                     webhook_url=public_base + "/finik/webhook",
                 )
                 payment_url = created.url
-                await payments.set_provider_payment_url(payment_request.id, created.url)
+                await payments.set_provider_payment_url(
+                    payment_request.id,
+                    created.url,
+                    configuration_id=configuration_id,
+                )
             except Exception as exc:
                 logger.exception("Finik automatic payment creation failed")
-                if not fallback_payment_url:
-                    raise HTTPException(
-                        status_code=status.HTTP_502_BAD_GATEWAY,
-                        detail="Finik временно недоступен. Попробуйте ещё раз.",
-                    ) from exc
-                payment_url = fallback_payment_url
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail="Finik временно недоступен. Попробуйте ещё раз.",
+                ) from exc
     response = _miniapp_result_payload(result)
     response["payment_url"] = payment_url
     response["automatic_payment"] = settings.finik_auto_enabled

@@ -31,10 +31,10 @@ def make_ad(**overrides):
     return SimpleNamespace(**values)
 
 
-def test_wanted_payment_has_its_own_100_som_finik_link():
+def test_wanted_payment_link_must_be_configured_by_deployment():
     settings = Settings(finik_payment_url="https://qr.finik.kg/weekly-500")
     assert settings.wanted_finik_payment_url != settings.finik_payment_url
-    assert "540510000" in settings.wanted_finik_payment_url
+    assert settings.wanted_finik_payment_url == ""
 
 
 @pytest.mark.asyncio
