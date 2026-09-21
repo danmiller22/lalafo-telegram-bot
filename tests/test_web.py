@@ -492,7 +492,7 @@ async def test_miniapp_page_is_public_but_session_requires_telegram_auth(
         "details": "📍 ЦУМ\n🏙 Бишкек\n💰 25 000 сом",
             "photo_url": "https://img.example/apartment.jpg",
             "price": 399,
-            "monthly_available": False,
+            "monthly_available": True,
         }
     service.contact_status.assert_awaited_once_with(778899, 42)
 
