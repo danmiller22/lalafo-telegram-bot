@@ -282,6 +282,8 @@ async def receipt_handler(
         "✅ Чек получен и отправлен на проверку.\n\n"
         "Пожалуйста, подождите. После подтверждения бот сразу пришлёт карточку с номером."
     )
+    if request.status == "approved":
+        return
     if not settings.admin_user_id or not await payments.claim_admin_notification(request.id):
         return
     try:
@@ -353,6 +355,10 @@ async def contact_handler(
             )
         return
     if result.status == "pending":
+        await payments.mark_payment_claimed(
+            user_id=callback.from_user.id,
+            apartment_id=apartment_id,
+        )
         payment_url, price = _payment_details(result.plan, settings)
         await callback.answer("⏳ Оплата уже отправлена на проверку.", show_alert=True)
         if callback.message:
@@ -545,6 +551,10 @@ async def paid_handler(
             )
         return
     if result.status == "pending":
+        await payments.mark_payment_claimed(
+            user_id=callback.from_user.id,
+            apartment_id=apartment_id,
+        )
         payment_url, price = _payment_details(result.plan, settings)
         await callback.answer(
             "⏳ Оплата ещё проверяется. Повторно оплачивать не нужно.",
@@ -580,6 +590,18 @@ async def paid_handler(
         )
         if request is None:
             await callback.answer("Сначала откройте оплату.", show_alert=True)
+            return
+        if request.status == "approved":
+            approved = await service.contact_status(callback.from_user.id, apartment_id)
+            if approved.apartment:
+                await send_private_contact(
+                    bot,
+                    user_id=callback.from_user.id,
+                    apartment=approved.apartment,
+                    support_url=settings.support_bot_url,
+                    max_photos=settings.max_photos_per_apartment,
+                )
+            await callback.answer("✅ Полная карточка отправлена вам в этот чат.")
             return
         if settings.admin_user_id and await payments.claim_admin_notification(request.id):
             try:

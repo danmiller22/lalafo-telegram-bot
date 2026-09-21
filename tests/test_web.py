@@ -555,7 +555,7 @@ def test_manual_approval_uses_permanent_finik_links(
 
 
 @pytest.mark.asyncio
-async def test_miniapp_receipt_is_forwarded_to_admin_and_enters_pending_state(
+async def test_miniapp_receipt_auto_approves_without_admin_notification(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     bot_token = "123456:telegram-test-token"
@@ -578,8 +578,8 @@ async def test_miniapp_receipt_is_forwarded_to_admin_and_enters_pending_state(
     awaiting = SimpleNamespace(
         status="awaiting_receipt", apartment=apartment, access_expires_at=None
     )
-    pending = SimpleNamespace(
-        status="pending", apartment=apartment, access_expires_at=None
+    approved = SimpleNamespace(
+        status="approved", apartment=apartment, access_expires_at=None
     )
     request = SimpleNamespace(
         id=73,
@@ -587,10 +587,11 @@ async def test_miniapp_receipt_is_forwarded_to_admin_and_enters_pending_state(
         username="mini_user",
         first_name="Test",
         plan="week",
+        status="approved",
         apartment=apartment,
     )
     service = SimpleNamespace(
-        contact_status=AsyncMock(side_effect=[awaiting, pending]),
+        contact_status=AsyncMock(side_effect=[awaiting, approved]),
         begin_payment=AsyncMock(),
         submit_receipt=AsyncMock(return_value=request),
     )
@@ -626,18 +627,18 @@ async def test_miniapp_receipt_is_forwarded_to_admin_and_enters_pending_state(
         )
 
     assert response.status_code == 200
-    assert response.json()["status"] == "pending"
+    assert response.json()["status"] == "approved"
     service.begin_payment.assert_not_awaited()
     service.submit_receipt.assert_awaited_once()
-    payments.claim_admin_notification.assert_awaited_once_with(73)
-    payments.finish_admin_notification.assert_awaited_once_with(73, 515)
+    payments.claim_admin_notification.assert_not_awaited()
+    payments.finish_admin_notification.assert_not_awaited()
     payments.restore_receipt_upload.assert_not_awaited()
-    bot.send_photo.assert_awaited_once()
+    bot.send_photo.assert_not_awaited()
     bot.send_document.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_miniapp_payment_check_notifies_admin_and_returns_pending(
+async def test_miniapp_payment_check_auto_approves_without_admin_notification(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     bot_token = "123456:telegram-test-token"
@@ -660,8 +661,8 @@ async def test_miniapp_payment_check_notifies_admin_and_returns_pending(
     awaiting = SimpleNamespace(
         status="awaiting_receipt", apartment=apartment, access_expires_at=None
     )
-    pending = SimpleNamespace(
-        status="pending", apartment=apartment, access_expires_at=None
+    approved = SimpleNamespace(
+        status="approved", apartment=apartment, access_expires_at=None
     )
     request = SimpleNamespace(
         id=73,
@@ -669,11 +670,12 @@ async def test_miniapp_payment_check_notifies_admin_and_returns_pending(
         username="mini_user",
         first_name="Test",
         plan="week",
+        status="approved",
         apartment=apartment,
         receipt_file_id=None,
     )
     service = SimpleNamespace(
-        contact_status=AsyncMock(side_effect=[awaiting, pending]),
+        contact_status=AsyncMock(side_effect=[awaiting, approved]),
     )
     payments = SimpleNamespace(
         mark_payment_claimed=AsyncMock(return_value=request),
@@ -705,13 +707,13 @@ async def test_miniapp_payment_check_notifies_admin_and_returns_pending(
         )
 
     assert response.status_code == 200
-    assert response.json()["status"] == "pending"
+    assert response.json()["status"] == "approved"
     payments.mark_payment_claimed.assert_awaited_once_with(
         user_id=778899, apartment_id=42
     )
-    payments.claim_admin_notification.assert_awaited_once_with(73)
-    payments.finish_admin_notification.assert_awaited_once_with(73, 515)
-    bot.send_message.assert_awaited_once()
+    payments.claim_admin_notification.assert_not_awaited()
+    payments.finish_admin_notification.assert_not_awaited()
+    bot.send_message.assert_not_awaited()
 
 
 @pytest.mark.asyncio

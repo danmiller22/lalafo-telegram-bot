@@ -693,6 +693,7 @@ class PaymentRepository:
             request.admin_message_id = None
             await session.flush()
             request_id = request.id
+        await self.decide(request_id, approve=True, admin_id=0)
         return await self.get_request(request_id)
 
     async def mark_payment_claimed(
@@ -713,11 +714,14 @@ class PaymentRepository:
             request = result.scalar_one_or_none()
             if request is None:
                 return None
+            should_approve = request.status in {"awaiting_receipt", "pending"}
             if request.status == "awaiting_receipt":
                 request.status = "pending"
                 request.admin_message_id = None
                 await session.flush()
             request_id = request.id
+        if should_approve:
+            await self.decide(request_id, approve=True, admin_id=0)
         return await self.get_request(request_id)
 
     async def set_admin_message(self, request_id: int, message_id: int) -> None:
@@ -920,6 +924,9 @@ class PaymentRepository:
                 request_id = current.id
                 outcome = "pending_review"
             await session.flush()
+        if outcome == "pending_review":
+            await self.decide(request_id, approve=True, admin_id=0)
+            return "approved", await self.get_request(request_id)
         return outcome, await self.get_request(request_id)
 
     async def pending(self, limit: int = 20) -> list[PaymentRequest]:

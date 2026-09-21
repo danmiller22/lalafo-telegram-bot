@@ -1094,15 +1094,11 @@ async def miniapp_check_payment(payload: MiniAppRequest) -> dict[str, Any]:
     current = await service.contact_status(user.id, apartment_id)
     if current.status == "approved":
         return _miniapp_result_payload(current)
-    if current.status == "awaiting_receipt":
+    if current.status in {"awaiting_receipt", "pending"}:
         request = await payments.mark_payment_claimed(
             user_id=user.id,
             apartment_id=apartment_id,
         )
-    elif current.status == "pending":
-        # A repeated tap is harmless and can repair a previously failed admin
-        # notification without creating a second payment request.
-        request = await payments.get_access(user.id, apartment_id)
     else:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -1110,6 +1106,9 @@ async def miniapp_check_payment(payload: MiniAppRequest) -> dict[str, Any]:
         )
     if request is None:
         raise HTTPException(status_code=409, detail="Сначала откройте оплату.")
+    if request.status == "approved":
+        result = await service.contact_status(user.id, apartment_id)
+        return _miniapp_result_payload(result)
     if await payments.claim_admin_notification(request.id):
         try:
             admin_message = await runtime.bot.send_message(
@@ -1267,6 +1266,9 @@ async def miniapp_upload_receipt(payload: MiniAppReceiptRequest) -> dict[str, An
     )
     if request is None:
         raise HTTPException(status_code=409, detail="Сначала откройте оплату.")
+    if request.status == "approved":
+        result = await service.contact_status(user.id, apartment_id)
+        return _miniapp_result_payload(result)
     if not await payments.claim_admin_notification(request.id):
         result = await service.contact_status(user.id, apartment_id)
         return _miniapp_result_payload(result)

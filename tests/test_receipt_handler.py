@@ -8,13 +8,14 @@ from app.security import TokenSigner
 
 
 @pytest.mark.asyncio
-async def test_receipt_is_forwarded_to_admin_with_payer_and_plan():
+async def test_receipt_is_auto_approved_without_admin_notification():
     request = SimpleNamespace(
         id=17,
         telegram_user_id=555,
         username="buyer",
         first_name="Buyer",
         plan="week",
+        status="approved",
         apartment=SimpleNamespace(id=3, district="ЦУМ", city="Бишкек"),
     )
     message = SimpleNamespace(
@@ -44,10 +45,7 @@ async def test_receipt_is_forwarded_to_admin_with_payer_and_plan():
         bot,
     )
 
-    bot.send_photo.assert_awaited_once()
-    args = bot.send_photo.await_args
-    assert args.args[:2] == (999, "large")
-    assert "@buyer (ID 555)" in args.kwargs["caption"]
-    assert "Базовая: 7 дней" in args.kwargs["caption"]
-    assert "499 сом" in args.kwargs["caption"]
-    payments.finish_admin_notification.assert_awaited_once_with(17, 99)
+    bot.send_photo.assert_not_awaited()
+    bot.send_document.assert_not_awaited()
+    payments.claim_admin_notification.assert_not_awaited()
+    payments.finish_admin_notification.assert_not_awaited()
