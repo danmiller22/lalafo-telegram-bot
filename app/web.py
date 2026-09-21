@@ -1024,8 +1024,13 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
     service = runtime.workflow_data["service"]
     result = await service.contact_status(user.id, apartment_id)
     plan = payload.plan if payload.plan in {WEEK_PLAN, MONTH_PLAN} else WEEK_PLAN
+    # The fallback QR is configured only in the deployment environment.  It is
+    # tied to the same Arenda.KG merchant account and keeps checkout available
+    # if Finik's dynamic acquiring endpoint is temporarily unavailable.
     fallback_payment_url = (
-        settings.monthly_finik_payment_url if plan == MONTH_PLAN else settings.finik_payment_url
+        settings.monthly_finik_payment_url
+        if plan == MONTH_PLAN
+        else settings.finik_payment_url
     )
     if not fallback_payment_url and not settings.finik_auto_enabled:
         raise HTTPException(
@@ -1091,6 +1096,7 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
                         status_code=status.HTTP_502_BAD_GATEWAY,
                         detail="Finik временно недоступен. Попробуйте ещё раз.",
                     ) from exc
+                payment_url = fallback_payment_url
     response = _miniapp_result_payload(result)
     response["payment_url"] = payment_url
     response["automatic_payment"] = settings.finik_auto_enabled
