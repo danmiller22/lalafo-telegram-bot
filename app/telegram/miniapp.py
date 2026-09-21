@@ -73,6 +73,9 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     .plans {{ white-space: pre-line; line-height: 1.6; margin: 14px 0 8px; }}
     .status {{ border-radius: 13px; padding: 12px; margin: 12px 0; background: #12856a18; line-height: 1.4; }}
     .phone {{ font-size: 22px; font-weight: 800; color: #079b79; word-break: break-word; }}
+    .photos {{ display: flex; gap: 8px; overflow-x: auto; scroll-snap-type: x mandatory; margin: 0 -4px 14px; }}
+    .photos img {{ width: 100%; min-width: 100%; max-height: 360px; object-fit: cover; border-radius: 15px; scroll-snap-align: start; }}
+    .details {{ white-space: pre-line; font-size: 16px; font-weight: 650; line-height: 1.55; margin: 4px 0 12px; }}
     button, .button {{ width: 100%; border: 0; border-radius: 14px; padding: 14px 16px; margin-top: 9px; font: inherit; font-weight: 750; text-align: center; cursor: pointer; text-decoration: none; display: block; }}
     .primary {{ background: var(--tg-theme-button-color, #079b79); color: var(--tg-theme-button-text-color, white); }}
     .secondary {{ background: #12856a18; color: var(--tg-theme-link-color, #07866b); }}
@@ -84,18 +87,22 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
 <body>
 <main>
   <section class="card">
-    <h1>Получить доступ</h1>
-    <div class="plans">1 неделя доступа к номерам — {WEEK_PRICE} сом
+    <h1 id="title">Получить доступ</h1>
+    <div id="plans" class="plans">1 неделя доступа к номерам — {WEEK_PRICE} сом
 1 месяц доступа к номерам — {MONTH_PRICE} сом</div>
+    <div id="apartment" class="hidden">
+      <div id="photos" class="photos"></div>
+      <div id="details" class="details"></div>
+    </div>
     <div id="status" class="status">Проверяем доступ…</div>
-    <div id="phone" class="phone hidden"></div>
+    <a id="phone" class="phone hidden"></a>
     <button id="pay-week" class="primary hidden">Оплатить неделю — {WEEK_PRICE} сом</button>
     <button id="pay-month" class="primary hidden">Оплатить месяц — {MONTH_PRICE} сом</button>
     <button id="check" class="secondary hidden">Я оплатил(а)</button>
     <button id="checking" class="secondary hidden" disabled>⏳ Статус: оплата проверяется</button>
     <button id="refresh" class="secondary hidden">Обновить статус</button>
   </section>
-  <div class="foot">Номер виден только пользователю с подтверждённым доступом</div>
+  <div id="foot" class="foot">Номер виден только пользователю с подтверждённым доступом</div>
 </main>
 <script>
 (() => {{
@@ -122,17 +129,36 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
   }}
   function render(data) {{
     lastState = data.status;
-    show("status", true);
-    show("phone", data.status === "approved");
+    const approved = data.status === "approved";
+    el("title").textContent = approved ? "Квартира" : "Получить доступ";
+    show("plans", !approved);
+    show("apartment", approved);
+    show("foot", !approved);
+    show("status", !approved);
+    show("phone", approved);
     const canPay = data.status !== "approved" && data.status !== "pending";
     show("pay-week", canPay);
     show("pay-month", canPay && Boolean(data.monthly_available));
-    show("refresh", data.status !== "unpaid");
+    show("refresh", !approved && data.status !== "unpaid");
     show("check", data.status === "awaiting_receipt");
     show("checking", data.status === "pending");
-    if (data.status === "approved") {{
+    if (approved) {{
+      const apartment = data.apartment || {{}};
+      const photos = el("photos");
+      photos.replaceChildren();
+      (apartment.photo_urls || []).forEach(url => {{
+        const image = document.createElement("img");
+        image.src = url;
+        image.alt = "Фото квартиры";
+        image.loading = "eager";
+        photos.appendChild(image);
+      }});
+      show("photos", photos.childElementCount > 0);
+      const price = Number(apartment.price || 0).toLocaleString("ru-RU");
+      const deposit = apartment.deposit ? "\n🔐 Депозит: " + Number(apartment.deposit).toLocaleString("ru-RU") + " сом" : "";
+      el("details").textContent = "🏠 " + (apartment.rooms || "—") + "-комнатная квартира\n📍 " + (apartment.district || "—") + "\n🏙 " + (apartment.city || "Бишкек") + "\n💰 " + price + " сом" + deposit;
       el("phone").textContent = "📞 " + data.phone;
-      message("✅ Доступ активен" + (data.expires_at_text ? " до " + data.expires_at_text : ""));
+      el("phone").href = "tel:" + String(data.phone || "").replace(/\\s+/g, "");
     }} else if (data.status === "pending") {{
       message("⏳ Оплата проверяется. Квартира сохранена — номер появится здесь после подтверждения.");
     }} else if (data.status === "awaiting_receipt") {{

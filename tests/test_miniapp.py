@@ -71,7 +71,9 @@ def test_mini_app_page_keeps_payment_and_receipt_in_one_window():
     assert "Оплатить неделю — 499 сом" in html
     assert "Оплатить месяц — 999 сом" in html
     assert 'id="hero"' not in html
-    assert 'id="details"' not in html
+    assert 'id="apartment"' in html
+    assert 'id="photos"' in html
+    assert 'id="details"' in html
     assert "tg.openLink(data.payment_url)" in html
     assert "Выберите банк" not in html
     assert "Выберите доступ:" not in html
@@ -80,5 +82,8 @@ def test_mini_app_page_keeps_payment_and_receipt_in_one_window():
     assert "Оплата проверяется. Квартира сохранена" in html
     assert 'data.status !== "approved" && data.status !== "pending"' in html
     assert "⚡ Открываю Finik…" in html
+    assert 'show("plans", !approved)' in html
+    assert 'show("status", !approved)' in html
+    assert 'show("refresh", !approved' in html
     assert "Без перехода в личный чат" not in html
     assert "команды /start" not in html

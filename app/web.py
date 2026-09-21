@@ -991,6 +991,18 @@ def _miniapp_result_payload(result) -> dict[str, Any]:
     }
     if result.status == "approved":
         response["phone"] = display_phone(apartment.phone)
+        response["apartment"] = {
+            "rooms": apartment.rooms,
+            "district": apartment.district or "Район не указан",
+            "city": apartment.city,
+            "price": apartment.price,
+            "deposit": apartment.deposit,
+            "photo_urls": [
+                url
+                for url in (apartment.photo_urls or [])[:10]
+                if isinstance(url, str) and url.startswith(("https://", "http://"))
+            ],
+        }
         if result.access_expires_at is not None:
             local_expiry = result.access_expires_at.astimezone(ZoneInfo("Asia/Bishkek"))
             response["expires_at_text"] = local_expiry.strftime("%d.%m.%Y %H:%M")

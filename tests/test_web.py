@@ -33,6 +33,35 @@ def miniapp_init_data(*, bot_token: str, user_id: int) -> str:
     return urlencode(fields)
 
 
+def test_approved_miniapp_payload_contains_apartment_card() -> None:
+    apartment = SimpleNamespace(
+        rooms="2",
+        district="ЦУМ",
+        city="Бишкек",
+        price=35_000,
+        deposit=5_000,
+        photo_urls=["https://img.example/flat.jpg"],
+        phone="+996555123456",
+    )
+    result = SimpleNamespace(
+        status="approved",
+        apartment=apartment,
+        access_expires_at=None,
+    )
+
+    payload = web._miniapp_result_payload(result)
+
+    assert payload["phone"] == "+996 555 123 456"
+    assert payload["apartment"] == {
+        "rooms": "2",
+        "district": "ЦУМ",
+        "city": "Бишкек",
+        "price": 35_000,
+        "deposit": 5_000,
+        "photo_urls": ["https://img.example/flat.jpg"],
+    }
+
+
 @pytest.fixture(autouse=True)
 def configure(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("RUN_TRIGGER_SECRET", "x" * 32)
