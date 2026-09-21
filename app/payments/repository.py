@@ -807,7 +807,10 @@ class PaymentRepository:
                             apartment_id=current.apartment_id,
                             plan=current.plan,
                             amount=plan_price(current.plan),
-                            provider_payment_id=f"manual-{current.id}-{int(now.timestamp())}",
+                            provider_payment_id=(
+                                current.provider_payment_id
+                                or f"manual-{current.id}-{int(now.timestamp())}"
+                            ),
                             paid_at=now,
                             access_expires_at=current.access_expires_at,
                         )
@@ -884,11 +887,12 @@ class PaymentRepository:
     async def apply_provider_result(
         self, payment_id: str, *, succeeded: bool, amount: int | float | None
     ) -> tuple[str, PaymentRequest | None]:
-        """Apply a verified webhook once and reject mismatched payment amounts."""
-        now = datetime.now(timezone.utc)
+        """Verify a provider result and queue successful payments for manual review."""
         async with self.sessions.begin() as session:
             result = await session.execute(
-                select(PaymentRequest).where(PaymentRequest.provider_payment_id == payment_id)
+                select(PaymentRequest)
+                .where(PaymentRequest.provider_payment_id == payment_id)
+                .with_for_update()
             )
             current = result.scalar_one_or_none()
             if current is None:
@@ -902,38 +906,21 @@ class PaymentRepository:
             if not succeeded:
                 current.provider_status = "failed"
                 return "failed", current
-            current.status = "approved"
-            current.provider_status = "succeeded"
-            current.approved_at = now
-            current.approved_by = None
-            current.access_expires_at = expires_at_for(current.plan, now)
-            if current.access_expires_at is None:
-                return "failed", current
-            current.rejected_at = None
-            current.rejected_by = None
-            history = await session.execute(
-                select(PaymentHistory).where(
-                    PaymentHistory.provider_payment_id == payment_id
-                )
-            )
-            if history.scalar_one_or_none() is None:
-                session.add(
-                    PaymentHistory(
-                        payment_request_id=current.id,
-                        telegram_user_id=current.telegram_user_id,
-                        username=current.username,
-                        first_name=current.first_name,
-                        apartment_id=current.apartment_id,
-                        plan=current.plan,
-                        amount=expected,
-                        provider_payment_id=payment_id,
-                        paid_at=now,
-                        access_expires_at=current.access_expires_at,
-                    )
-                )
+            if current.status == "pending" and current.provider_status == "succeeded":
+                request_id = current.id
+                outcome = "already_pending"
+            else:
+                current.status = "pending"
+                current.provider_status = "succeeded"
+                current.approved_at = None
+                current.approved_by = None
+                current.access_expires_at = None
+                current.rejected_at = None
+                current.rejected_by = None
+                request_id = current.id
+                outcome = "pending_review"
             await session.flush()
-            request_id = current.id
-        return "approved", await self.get_request(request_id)
+        return outcome, await self.get_request(request_id)
 
     async def pending(self, limit: int = 20) -> list[PaymentRequest]:
         async with self.sessions() as session:

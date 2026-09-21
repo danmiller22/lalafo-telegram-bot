@@ -54,7 +54,11 @@ def format_admin_card(request: PaymentRequest) -> str:
         (
             "🧾 Чек прикреплён клиентом"
             if getattr(request, "receipt_file_id", None)
-            else "⏳ Клиент нажал «Я оплатил(а)» — проверьте поступление"
+            else (
+                "✅ Платёж подтверждён — выдайте доступ вручную"
+                if getattr(request, "provider_status", None) == "succeeded"
+                else "⏳ Клиент нажал «Я оплатил(а)» — проверьте поступление"
+            )
         ),
     ]
     if apartment.district:

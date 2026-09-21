@@ -52,7 +52,7 @@ async def test_payment_state_machine(repositories, service):
 
 
 @pytest.mark.asyncio
-async def test_verified_finik_payment_grants_access_once_and_checks_amount(
+async def test_verified_finik_payment_waits_for_manual_approval(
     repositories, service
 ):
     apartments, payments, _ = repositories
@@ -73,16 +73,26 @@ async def test_verified_finik_payment_grants_access_once_and_checks_amount(
     assert mismatch == "amount_mismatch"
     assert (await service.contact_status(9191, apartment.id)).status == "awaiting_receipt"
 
-    approved, _ = await payments.apply_provider_result(
+    pending, _ = await payments.apply_provider_result(
         "payment-9191", succeeded=True, amount=499
     )
-    assert approved == "approved"
-    expiry = (await service.contact_status(9191, apartment.id)).access_expires_at
+    assert pending == "pending_review"
+    waiting = await service.contact_status(9191, apartment.id)
+    assert waiting.status == "pending"
+    assert waiting.access_expires_at is None
+    async with repositories[2]() as session:
+        assert await session.scalar(select(func.count(PaymentHistory.id))) == 0
     repeated, _ = await payments.apply_provider_result(
         "payment-9191", succeeded=True, amount=499
     )
-    assert repeated == "already_approved"
-    assert (await service.contact_status(9191, apartment.id)).access_expires_at == expiry
+    assert repeated == "already_pending"
+    assert await service.decide(
+        submission.request.id, approve=True, actor_id=999
+    ) == "approved"
+    approved = await service.contact_status(9191, apartment.id)
+    assert approved.status == "approved"
+    expiry = approved.access_expires_at
+    assert expiry is not None
     async with repositories[2]() as session:
         history_count = await session.scalar(select(func.count(PaymentHistory.id)))
         history = await session.scalar(select(PaymentHistory))

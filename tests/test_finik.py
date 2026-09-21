@@ -16,7 +16,7 @@ from app.finik import (
     sign_request,
     verify_request,
 )
-from app.web import PAYMENT_SUCCESS_MESSAGE
+from app.web import PAYMENT_REVIEW_MESSAGE
 
 
 def _keys() -> tuple[str, str]:
@@ -77,9 +77,9 @@ def test_payment_configuration_id_changes_with_merchant() -> None:
     )
 
 
-def test_payment_success_message_explains_how_to_open_numbers() -> None:
-    assert "Оплата прошла" in PAYMENT_SUCCESS_MESSAGE
-    assert "Посмотреть номер" in PAYMENT_SUCCESS_MESSAGE
+def test_payment_review_message_explains_manual_confirmation() -> None:
+    assert "отправлена на проверку" in PAYMENT_REVIEW_MESSAGE
+    assert "После подтверждения" in PAYMENT_REVIEW_MESSAGE
 
 
 @pytest.mark.asyncio

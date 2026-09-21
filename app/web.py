@@ -46,10 +46,9 @@ from app.lalafo.mcp_server import lalafo_mcp, lalafo_mcp_app
 logger = logging.getLogger(__name__)
 app = FastAPI(title="Lalafo Telegram service", docs_url=None, redoc_url=None)
 
-PAYMENT_SUCCESS_MESSAGE = (
-    "✅ Оплата прошла. Доступ к номерам активирован.\n\n"
-    "Чтобы посмотреть номер, откройте нужную карточку и нажмите «Посмотреть "
-    "номер» — фотографии, описание и номер появятся сразу."
+PAYMENT_REVIEW_MESSAGE = (
+    "✅ Оплата получена и отправлена на проверку.\n\n"
+    "После подтверждения откройте нужную квартиру и нажмите «Посмотреть номер»."
 )
 
 _run_lock = asyncio.Lock()
@@ -1168,9 +1167,6 @@ async def miniapp_check_payment(payload: MiniAppRequest) -> dict[str, Any]:
     current = await service.contact_status(user.id, apartment_id)
     if current.status == "approved":
         return _miniapp_result_payload(current)
-    if settings.finik_auto_enabled:
-        # Finik's verified webhook grants access. This button only refreshes UI.
-        return _miniapp_result_payload(current)
     if current.status == "awaiting_receipt":
         request = await payments.mark_payment_claimed(
             user_id=user.id,
@@ -1211,7 +1207,7 @@ async def miniapp_check_payment(payload: MiniAppRequest) -> dict[str, Any]:
 
 @app.post("/finik/webhook", include_in_schema=False)
 async def finik_webhook(request: Request) -> dict[str, str]:
-    """Verify a Finik Web SDK callback and grant the purchased access once."""
+    """Verify a Finik callback and send successful payments for manual approval."""
     settings = get_settings()
     runtime = _bot_runtime
     if not settings.run_bot or runtime is None or not settings.finik_auto_enabled:
@@ -1263,12 +1259,31 @@ async def finik_webhook(request: Request) -> dict[str, str]:
     if outcome == "amount_mismatch":
         logger.error("Finik amount mismatch for payment request %s", payment_request.id)
         raise HTTPException(status_code=status.HTTP_409_CONFLICT)
-    if outcome == "approved" and payment_request is not None:
-        with suppress(Exception):
-            await runtime.bot.send_message(
-                payment_request.telegram_user_id,
-                PAYMENT_SUCCESS_MESSAGE,
-            )
+    if outcome in {"pending_review", "already_pending"} and payment_request is not None:
+        payments = runtime.workflow_data["payments"]
+        if await payments.claim_admin_notification(payment_request.id):
+            try:
+                admin_message = await runtime.bot.send_message(
+                    settings.admin_user_id,
+                    format_admin_card(payment_request),
+                    reply_markup=admin_keyboard(
+                        payment_request.id,
+                        signer=TokenSigner(settings.require_callback_secret()),
+                    ),
+                )
+            except Exception:
+                await payments.release_admin_notification(payment_request.id)
+                logger.exception("Finik payment review notification failed")
+            else:
+                await payments.finish_admin_notification(
+                    payment_request.id, admin_message.message_id
+                )
+        if outcome == "pending_review":
+            with suppress(Exception):
+                await runtime.bot.send_message(
+                    payment_request.telegram_user_id,
+                    PAYMENT_REVIEW_MESSAGE,
+                )
     return {"status": outcome}
 
 

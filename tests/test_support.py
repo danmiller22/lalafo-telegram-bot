@@ -35,8 +35,8 @@ def test_faq_answers_only_confident_common_questions():
 
 
 def test_payment_faq_gives_only_customer_facing_instructions():
-    assert "Чек отправлять не нужно" in FAQ_BY_KEY["payment"].answer
-    assert "Обновить статус" in FAQ_BY_KEY["review"].answer
+    assert "дождитесь подтверждения" in FAQ_BY_KEY["payment"].answer
+    assert "проверяется вручную" in FAQ_BY_KEY["review"].answer
     assert "автоматически" not in FAQ_BY_KEY["review"].answer
     assert "Finik" not in FAQ_BY_KEY["review"].answer
 
