@@ -143,6 +143,7 @@ class PaymentRequest(Base):
     __table_args__ = (
         UniqueConstraint("telegram_user_id", "apartment_id", name="uq_payment_access"),
         Index("ix_payment_status_created", "status", "created_at"),
+        Index("ix_payment_provider_id", "provider_payment_id", unique=True),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -165,6 +166,9 @@ class PaymentRequest(Base):
     rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     rejected_by: Mapped[int | None] = mapped_column(BigInteger)
     admin_message_id: Mapped[int | None] = mapped_column(BigInteger)
+    provider_payment_id: Mapped[str | None] = mapped_column(String(64))
+    provider_payment_url: Mapped[str | None] = mapped_column(Text)
+    provider_status: Mapped[str | None] = mapped_column(String(32))
 
     apartment: Mapped[Apartment] = relationship(back_populates="payments")
 

@@ -52,6 +52,40 @@ async def test_payment_state_machine(repositories, service):
 
 
 @pytest.mark.asyncio
+async def test_verified_finik_payment_grants_access_once_and_checks_amount(
+    repositories, service
+):
+    apartments, payments, _ = repositories
+    apartment = await apartments.upsert_discovered(make_ad(lalafo_id=9191))
+    submission = await service.begin_payment(
+        user_id=9191,
+        apartment_id=apartment.id,
+        username="finik_user",
+        first_name="Finik",
+        plan=WEEK_PLAN,
+    )
+    request = await payments.prepare_provider_payment(submission.request.id, "payment-9191")
+    assert request.provider_payment_id == "payment-9191"
+
+    mismatch, _ = await payments.apply_provider_result(
+        "payment-9191", succeeded=True, amount=1
+    )
+    assert mismatch == "amount_mismatch"
+    assert (await service.contact_status(9191, apartment.id)).status == "awaiting_receipt"
+
+    approved, _ = await payments.apply_provider_result(
+        "payment-9191", succeeded=True, amount=499
+    )
+    assert approved == "approved"
+    expiry = (await service.contact_status(9191, apartment.id)).access_expires_at
+    repeated, _ = await payments.apply_provider_result(
+        "payment-9191", succeeded=True, amount=499
+    )
+    assert repeated == "already_approved"
+    assert (await service.contact_status(9191, apartment.id)).access_expires_at == expiry
+
+
+@pytest.mark.asyncio
 async def test_rejection_allows_resubmission(repositories, service):
     apartments, _, _ = repositories
     apartment = await apartments.upsert_discovered(make_ad(lalafo_id=222))

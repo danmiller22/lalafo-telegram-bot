@@ -12,7 +12,7 @@ from sqlalchemy.orm import selectinload
 
 from app.lalafo.models import PHONE_SOURCE_VERSION, LalafoAd
 from app.models import Apartment, DailyFeaturedPublication, PaymentRequest
-from app.payment_plans import MONTH_PLAN, WEEK_PLAN, expires_at_for
+from app.payment_plans import MONTH_PLAN, WEEK_PLAN, expires_at_for, plan_price
 from app.state import ad_fingerprint
 from app.telegram.keyboards import APARTMENT_KEYBOARD_VERSION
 
@@ -644,6 +644,9 @@ class PaymentRepository:
                 request.rejected_at = None
                 request.rejected_by = None
                 request.admin_message_id = None
+                request.provider_payment_id = None
+                request.provider_payment_url = None
+                request.provider_status = None
                 outcome = "created"
             await session.flush()
             await session.refresh(request)
@@ -781,6 +784,69 @@ class PaymentRepository:
             current.rejected_by = admin_id
             current.access_expires_at = None
             return "rejected"
+
+    async def prepare_provider_payment(self, request_id: int, payment_id: str) -> PaymentRequest:
+        """Atomically reserve one stable Finik id for repeated customer taps."""
+        async with self.sessions.begin() as session:
+            current = await session.get(PaymentRequest, request_id)
+            if current is None:
+                raise LookupError("Payment request is unavailable")
+            if not current.provider_payment_id:
+                current.provider_payment_id = payment_id
+                current.provider_status = "created"
+                await session.flush()
+            reserved_id = current.id
+        request = await self.get_request(reserved_id)
+        if request is None:
+            raise LookupError("Payment request is unavailable")
+        return request
+
+    async def set_provider_payment_url(self, request_id: int, payment_url: str) -> None:
+        async with self.sessions.begin() as session:
+            await session.execute(
+                update(PaymentRequest)
+                .where(PaymentRequest.id == request_id)
+                .values(provider_payment_url=payment_url, provider_status="waiting")
+            )
+
+    async def get_by_provider_payment_id(self, payment_id: str) -> PaymentRequest | None:
+        async with self.sessions() as session:
+            result = await session.execute(
+                select(PaymentRequest).where(PaymentRequest.provider_payment_id == payment_id)
+            )
+            return result.scalar_one_or_none()
+
+    async def apply_provider_result(
+        self, payment_id: str, *, succeeded: bool, amount: int | float | None
+    ) -> tuple[str, PaymentRequest | None]:
+        """Apply a verified webhook once and reject mismatched payment amounts."""
+        now = datetime.now(timezone.utc)
+        async with self.sessions.begin() as session:
+            result = await session.execute(
+                select(PaymentRequest).where(PaymentRequest.provider_payment_id == payment_id)
+            )
+            current = result.scalar_one_or_none()
+            if current is None:
+                return "missing", None
+            expected = plan_price(current.plan)
+            if succeeded and (amount is None or float(amount) != float(expected)):
+                current.provider_status = "amount_mismatch"
+                return "amount_mismatch", current
+            if current.status == "approved":
+                return "already_approved", current
+            if not succeeded:
+                current.provider_status = "failed"
+                return "failed", current
+            current.status = "approved"
+            current.provider_status = "succeeded"
+            current.approved_at = now
+            current.approved_by = None
+            current.access_expires_at = expires_at_for(current.plan, now)
+            current.rejected_at = None
+            current.rejected_by = None
+            await session.flush()
+            request_id = current.id
+        return "approved", await self.get_request(request_id)
 
     async def pending(self, limit: int = 20) -> list[PaymentRequest]:
         async with self.sessions() as session:

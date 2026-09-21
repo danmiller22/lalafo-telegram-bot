@@ -1,0 +1,41 @@
+from __future__ import annotations
+
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+
+from app.finik import canonical_request, sign_request, verify_request
+
+
+def _keys() -> tuple[str, str]:
+    private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    private_pem = private.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    ).decode()
+    public_pem = private.public_key().public_bytes(
+        serialization.Encoding.PEM,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode()
+    return private_pem, public_pem
+
+
+def test_finik_signature_matches_canonical_request() -> None:
+    private_pem, public_pem = _keys()
+    data = canonical_request(
+        method="POST",
+        path="/v1/payment",
+        host="api.acquiring.averspay.kg",
+        headers={"x-api-timestamp": "123", "x-api-key": "test"},
+        body={"PaymentId": "id", "Amount": 499, "Data": {"z": 1, "a": 2}},
+    )
+    assert data.decode().startswith(
+        "post\n/v1/payment\nhost:api.acquiring.averspay.kg&x-api-key:test&x-api-timestamp:123\n"
+    )
+    # Only top-level JSON keys are sorted, matching Finik's official authorizer.
+    assert data.decode().endswith(
+        '{"Amount":499,"Data":{"z":1,"a":2},"PaymentId":"id"}'
+    )
+    signature = sign_request(data, private_pem)
+    assert verify_request(data, signature, public_pem)
+    assert not verify_request(data + b"x", signature, public_pem)

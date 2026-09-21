@@ -155,6 +155,13 @@ class Settings(BaseSettings):
         "032946f1ce95e414d5b965a9e8574a95f361202121302125204482953034175405"
         "100005908Finik-QR63042d14"
     )
+    # Finik Web SDK. Secrets are configured only in the deployment environment.
+    finik_api_url: str = "https://api.acquiring.averspay.kg/v1/payment"
+    finik_api_key: str = ""
+    finik_account_id: str = ""
+    finik_private_key_pem: str = ""
+    finik_private_key_b64: str = ""
+    finik_webhook_public_key_pem: str = ""
     callback_secret: str = "change-me-in-production"
 
     lalafo_proxy_url: str = ""
@@ -291,6 +298,15 @@ class Settings(BaseSettings):
         if not webhook_url.endswith(suffix):
             raise RuntimeError(f"TELEGRAM_WEBHOOK_URL must end with {suffix}")
         return webhook_url[: -len(suffix)]
+
+    @property
+    def finik_auto_enabled(self) -> bool:
+        return bool(
+            self.finik_api_key
+            and self.finik_account_id
+            and (self.finik_private_key_pem or self.finik_private_key_b64)
+            and self.telegram_webhook_url
+        )
 
 
 @lru_cache(maxsize=1)
