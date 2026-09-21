@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import json
+
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
+import httpx
+import pytest
 
 from app.finik import (
+    FinikClient,
     canonical_request,
     payment_configuration_id,
     payment_succeeded,
@@ -68,3 +73,36 @@ def test_payment_configuration_id_changes_with_merchant() -> None:
         api_url="https://api.acquiring.averspay.kg/v1/payment",
         account_id="old-personal-account",
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("amount", "expected_description"),
+    [(499, "Недельный тариф"), (999, "Месячный тариф")],
+)
+async def test_checkout_uses_neutral_tariff_description(
+    amount: int, expected_description: str
+) -> None:
+    private_pem, _ = _keys()
+    captured: dict = {}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        captured.update(json.loads(request.content))
+        return httpx.Response(201, json={"url": "https://qr.finik.kg/payment"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        client = FinikClient(
+            api_url="https://api.acquiring.averspay.kg/v1/payment",
+            api_key="test",
+            account_id="corporate",
+            private_key_pem=private_pem,
+            client=http,
+        )
+        await client.create_payment(
+            payment_id="payment-id",
+            amount=amount,
+            redirect_url="https://t.me/test_bot",
+            webhook_url="https://example.test/finik/webhook",
+        )
+
+    assert captured["Data"]["description"] == expected_description

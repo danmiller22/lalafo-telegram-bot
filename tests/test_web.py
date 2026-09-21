@@ -14,6 +14,7 @@ import httpx
 import pytest
 
 from app.config import get_settings
+from app.payment_plans import MONTH_PLAN, WEEK_PLAN
 from app.security import TokenSigner
 from app import web
 
@@ -532,6 +533,25 @@ async def test_miniapp_page_is_public_but_session_requires_telegram_auth(
         "monthly_available": False,
     }
     service.contact_status.assert_awaited_once_with(778899, 42)
+
+
+def test_reusable_finik_links_disable_one_off_checkout_creation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FINIK_PAYMENT_URL", "https://qr.finik.kg/weekly")
+    monkeypatch.setenv("MONTHLY_FINIK_PAYMENT_URL", "https://qr.finik.kg/monthly")
+    monkeypatch.setenv("FINIK_API_KEY", "configured")
+    monkeypatch.setenv("FINIK_ACCOUNT_ID", "corporate")
+    monkeypatch.setenv("FINIK_PRIVATE_KEY_PEM", "configured")
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_URL", "https://example.test/telegram/webhook")
+    get_settings.cache_clear()
+    settings = get_settings()
+
+    assert settings.finik_auto_enabled
+    assert not web._uses_dynamic_finik(settings, WEEK_PLAN)
+    assert not web._uses_dynamic_finik(settings, MONTH_PLAN)
+    assert web._finik_payment_url(settings, WEEK_PLAN).endswith("/weekly")
+    assert web._finik_payment_url(settings, MONTH_PLAN).endswith("/monthly")
 
 
 @pytest.mark.asyncio

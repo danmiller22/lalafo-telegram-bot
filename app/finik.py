@@ -110,6 +110,7 @@ class FinikClient:
     ) -> FinikPayment:
         parsed = urlsplit(self.api_url)
         timestamp = str(int(time.time() * 1000))
+        description = "Месячный тариф" if amount == 999 else "Недельный тариф"
         body: dict[str, Any] = {
             "Amount": amount,
             "CardType": "FINIK_QR",
@@ -120,7 +121,7 @@ class FinikClient:
                 "accountId": self.account_id,
                 "name_en": "Arenda.KG",
                 "webhookUrl": webhook_url,
-                "description": "Доступ к номерам квартир",
+                "description": description,
             },
         }
         signing_headers = {

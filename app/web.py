@@ -122,6 +122,19 @@ class MiniAppReceiptRequest(MiniAppRequest):
     file_base64: str
 
 
+def _finik_payment_url(settings: Any, plan: str) -> str:
+    return (
+        settings.monthly_finik_payment_url
+        if plan == MONTH_PLAN
+        else settings.finik_payment_url
+    )
+
+
+def _uses_dynamic_finik(settings: Any, plan: str) -> bool:
+    """Create a one-off Finik only when no reusable tariff link exists."""
+    return bool(settings.finik_auto_enabled and not _finik_payment_url(settings, plan))
+
+
 def _now() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -1051,11 +1064,8 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
     # Static QR links remain available only when automatic acquiring is disabled.
     # An automatic checkout must never fall back to a shared QR because that
     # payment cannot be mapped safely to a specific Telegram customer.
-    fallback_payment_url = (
-        settings.monthly_finik_payment_url
-        if plan == MONTH_PLAN
-        else settings.finik_payment_url
-    )
+    fallback_payment_url = _finik_payment_url(settings, plan)
+    dynamic_finik = _uses_dynamic_finik(settings, plan)
     if not fallback_payment_url and not settings.finik_auto_enabled:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -1078,7 +1088,7 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
                 detail="Квартира больше недоступна.",
             ) from exc
     payment_url = fallback_payment_url
-    if settings.finik_auto_enabled and result.status != "approved":
+    if dynamic_finik and result.status != "approved":
         payments = runtime.workflow_data["payments"]
         if payment_request is None:
             raise HTTPException(status_code=409, detail="Не удалось создать оплату.")
@@ -1132,7 +1142,7 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
     if payment_request is not None:
         response["status"] = payment_request.status
     response["payment_url"] = payment_url
-    response["automatic_payment"] = settings.finik_auto_enabled
+    response["automatic_payment"] = dynamic_finik
     response["monthly_available"] = bool(
         settings.monthly_finik_payment_url or settings.finik_auto_enabled
     )
@@ -1152,7 +1162,10 @@ async def miniapp_check_payment(payload: MiniAppRequest) -> dict[str, Any]:
     current = await service.contact_status(user.id, apartment_id)
     if current.status == "approved":
         return _miniapp_result_payload(current)
-    if settings.finik_auto_enabled:
+    reusable_tariffs = bool(
+        settings.finik_payment_url and settings.monthly_finik_payment_url
+    )
+    if settings.finik_auto_enabled and not reusable_tariffs:
         # Finik's verified webhook grants access. This button only refreshes UI.
         return _miniapp_result_payload(current)
     if current.status == "awaiting_receipt":
