@@ -93,7 +93,7 @@ def private_payment_keyboard(
     rows = [
             [
                 InlineKeyboardButton(
-                    text=f"⭐ 7 дней — {WEEK_PRICE} сом",
+                    text=f"Базовая: 7 дней — {WEEK_PRICE} сом",
                     callback_data=f"plan:w:{signer.sign_id('plan-week', apartment_id)}",
                 )
             ],
@@ -102,7 +102,7 @@ def private_payment_keyboard(
         rows.append(
             [
                 InlineKeyboardButton(
-                    text=f"🌟 30 дней — {MONTH_PRICE} сом",
+                    text=f"Премиум: 30 дней — {MONTH_PRICE} сом",
                     callback_data=f"plan:m:{signer.sign_id('plan-month', apartment_id)}",
                 )
             ]

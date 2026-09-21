@@ -48,6 +48,6 @@ async def test_receipt_is_forwarded_to_admin_with_payer_and_plan():
     args = bot.send_photo.await_args
     assert args.args[:2] == (999, "large")
     assert "@buyer (ID 555)" in args.kwargs["caption"]
-    assert "Базовая (7 дней)" in args.kwargs["caption"]
+    assert "Базовая: 7 дней" in args.kwargs["caption"]
     assert "399 сом" in args.kwargs["caption"]
     payments.finish_admin_notification.assert_awaited_once_with(17, 99)

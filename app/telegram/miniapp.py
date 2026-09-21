@@ -92,7 +92,7 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     <div id="status" class="status">Проверяем доступ…</div>
     <div id="phone" class="phone hidden"></div>
     <button id="pay-week" class="primary hidden">Базовая: 7 дней — {WEEK_PRICE} сом</button>
-    <button id="pay-month" class="primary hidden">30 дней — {MONTH_PRICE} сом</button>
+    <button id="pay-month" class="primary hidden">Премиум: 30 дней — {MONTH_PRICE} сом</button>
     <button id="check" class="secondary hidden">Я оплатил(а)</button>
     <button id="checking" class="secondary hidden" disabled>⏳ Статус: оплата проверяется</button>
     <button id="refresh" class="secondary">Обновить статус</button>

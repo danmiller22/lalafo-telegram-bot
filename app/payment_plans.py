@@ -21,7 +21,7 @@ def plan_price(plan: str) -> int:
 
 
 def plan_label(plan: str) -> str:
-    labels = {WEEK_PLAN: "Базовая (7 дней)", MONTH_PLAN: "Месяц (30 дней)"}
+    labels = {WEEK_PLAN: "Базовая: 7 дней", MONTH_PLAN: "Премиум: 30 дней"}
     return labels.get(plan, "Неизвестный тариф")
 
 
