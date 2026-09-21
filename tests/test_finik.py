@@ -16,6 +16,7 @@ from app.finik import (
     sign_request,
     verify_request,
 )
+from app.web import PAYMENT_SUCCESS_MESSAGE
 
 
 def _keys() -> tuple[str, str]:
@@ -74,6 +75,11 @@ def test_payment_configuration_id_changes_with_merchant() -> None:
         api_url="https://api.acquiring.averspay.kg/v1/payment",
         account_id="old-personal-account",
     )
+
+
+def test_payment_success_message_explains_how_to_open_numbers() -> None:
+    assert "Оплата прошла" in PAYMENT_SUCCESS_MESSAGE
+    assert "Посмотреть номер" in PAYMENT_SUCCESS_MESSAGE
 
 
 @pytest.mark.asyncio

@@ -30,7 +30,13 @@ def test_faq_answers_only_confident_common_questions():
     assert faq_for_text("Как получить номер собственника?").key == "phone"
     assert faq_for_text("куда отправить чек после оплаты").key == "payment"
     assert faq_for_text("сколько стоит тариф на неделю").key == "week"
+    assert faq_for_text("сколько ждать проверку оплаты").key == "review"
     assert faq_for_text("У меня необычная проблема с конкретной квартирой") is None
+
+
+def test_payment_faq_describes_automatic_access_without_receipt():
+    assert "Чек отправлять не нужно" in FAQ_BY_KEY["payment"].answer
+    assert "автоматически" in FAQ_BY_KEY["review"].answer
 
 
 def test_support_menu_contains_every_faq_and_close_button():

@@ -46,6 +46,12 @@ from app.lalafo.mcp_server import lalafo_mcp, lalafo_mcp_app
 logger = logging.getLogger(__name__)
 app = FastAPI(title="Lalafo Telegram service", docs_url=None, redoc_url=None)
 
+PAYMENT_SUCCESS_MESSAGE = (
+    "✅ Оплата прошла. Доступ к номерам активирован.\n\n"
+    "Чтобы посмотреть номер, откройте нужную карточку и нажмите «Посмотреть "
+    "номер» — фотографии, описание и номер появятся сразу."
+)
+
 _run_lock = asyncio.Lock()
 _scraper_task: asyncio.Task[None] | None = None
 _bot_runtime: BotRuntime | None = None
@@ -1261,7 +1267,7 @@ async def finik_webhook(request: Request) -> dict[str, str]:
         with suppress(Exception):
             await runtime.bot.send_message(
                 payment_request.telegram_user_id,
-                "✅ Оплата подтверждена. Доступ к номерам активирован автоматически.",
+                PAYMENT_SUCCESS_MESSAGE,
             )
     return {"status": outcome}
 
