@@ -187,8 +187,6 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     const button = el(buttonId);
     const originalText = button.textContent;
     button.disabled = true;
-    button.textContent = "⚡ Открываю Finik…";
-    message("Создаём защищённую ссылку…");
     try {{
       const data = await api("/miniapp/api/start", {{plan}});
       render(data);

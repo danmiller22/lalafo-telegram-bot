@@ -7,7 +7,6 @@ import logging
 import os
 import secrets
 import inspect
-import uuid
 from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import PurePath
@@ -25,13 +24,10 @@ from app.bot.main import BotRuntime, configure_bot_profile, create_runtime
 from app.config import get_settings
 from app.lalafo.auto_reply import LalafoAutoResponder
 from app.lalafo.models import LalafoAd
-from app.payment_plans import MONTH_PLAN, WEEK_PLAN, WEEK_PRICE, plan_price
+from app.payment_plans import MONTH_PLAN, WEEK_PLAN, WEEK_PRICE
 from app.finik import (
     PRODUCTION_WEBHOOK_PUBLIC_KEY,
-    FinikClient,
     canonical_request,
-    decode_private_key,
-    payment_configuration_id,
     payment_succeeded,
     verify_request,
 )
@@ -67,7 +63,6 @@ _service_keepalive_task: asyncio.Task[None] | None = None
 _background_watchdog_task: asyncio.Task[None] | None = None
 _shutting_down = False
 _lalafo_mcp_context: Any | None = None
-_finik_http_client: httpx.AsyncClient | None = None
 _bot_setup_state: dict[str, Any] = {
     "state": "pending",
     "last_configured_at": None,
@@ -136,8 +131,8 @@ def _finik_payment_url(settings: Any, plan: str) -> str:
 
 
 def _uses_dynamic_finik(settings: Any, plan: str) -> bool:
-    """Automatic access requires a unique PaymentId for Finik's webhook."""
-    return bool(settings.finik_auto_enabled)
+    """Manual approval uses permanent tariff links without creating extra Finiks."""
+    return False
 
 
 def _now() -> str:
@@ -665,15 +660,9 @@ async def startup() -> None:
     global _keyboard_sync_task, _lalafo_auto_responder
     global _lalafo_watchdog_task, _apartment_scheduler_task
     global _service_keepalive_task, _background_watchdog_task, _shutting_down
-    global _lalafo_mcp_context, _finik_http_client
+    global _lalafo_mcp_context
     settings = get_settings()
     _shutting_down = False
-    if settings.finik_auto_enabled:
-        _finik_http_client = httpx.AsyncClient(
-            timeout=20.0,
-            follow_redirects=False,
-            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
-        )
     logging.basicConfig(
         level=getattr(logging, settings.log_level.upper(), logging.INFO),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
@@ -746,11 +735,8 @@ async def shutdown() -> None:
     global _keyboard_sync_task, _lalafo_auto_responder
     global _lalafo_watchdog_task, _apartment_scheduler_task
     global _service_keepalive_task, _background_watchdog_task, _shutting_down
-    global _lalafo_mcp_context, _finik_http_client
+    global _lalafo_mcp_context
     _shutting_down = True
-    if _finik_http_client is not None:
-        await _finik_http_client.aclose()
-        _finik_http_client = None
     if _lalafo_mcp_context is not None:
         await _lalafo_mcp_context.__aexit__(None, None, None)
         _lalafo_mcp_context = None
@@ -1054,9 +1040,7 @@ async def miniapp_session(payload: MiniAppRequest) -> dict[str, Any]:
             detail="Квартира больше недоступна.",
         )
     response = _miniapp_result_payload(result)
-    response["monthly_available"] = bool(
-        settings.monthly_finik_payment_url or settings.finik_auto_enabled
-    )
+    response["monthly_available"] = bool(settings.monthly_finik_payment_url)
     return response
 
 
@@ -1066,12 +1050,8 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
     service = runtime.workflow_data["service"]
     result = await service.contact_status(user.id, apartment_id)
     plan = payload.plan if payload.plan in {WEEK_PLAN, MONTH_PLAN} else WEEK_PLAN
-    # Static QR links remain available only when automatic acquiring is disabled.
-    # An automatic checkout must never fall back to a shared QR because that
-    # payment cannot be mapped safely to a specific Telegram customer.
     fallback_payment_url = _finik_payment_url(settings, plan)
-    dynamic_finik = _uses_dynamic_finik(settings, plan)
-    if not fallback_payment_url and not settings.finik_auto_enabled:
+    if not fallback_payment_url:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Этот тариф временно недоступен.",
@@ -1092,65 +1072,12 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Квартира больше недоступна.",
             ) from exc
-    payment_url = fallback_payment_url
-    if dynamic_finik and result.status != "approved":
-        payments = runtime.workflow_data["payments"]
-        if payment_request is None:
-            raise HTTPException(status_code=409, detail="Не удалось создать оплату.")
-        checkout_plan = payment_request.plan
-        configuration_id = payment_configuration_id(
-            api_url=settings.finik_api_url,
-            account_id=settings.finik_account_id,
-        )
-        payment_request = await payments.prepare_provider_payment(
-            payment_request.id,
-            str(uuid.uuid4()),
-            configuration_id=configuration_id,
-        )
-        if payment_request.provider_payment_url:
-            payment_url = payment_request.provider_payment_url
-        else:
-            try:
-                public_base = settings.require_public_base_url()
-                client = FinikClient(
-                    api_url=settings.finik_api_url,
-                    api_key=settings.finik_api_key,
-                    account_id=settings.finik_account_id,
-                    private_key_pem=decode_private_key(
-                        pem=settings.finik_private_key_pem,
-                        encoded=settings.finik_private_key_b64,
-                    ),
-                    client=_finik_http_client,
-                )
-                created = await client.create_payment(
-                    payment_id=payment_request.provider_payment_id,
-                    amount=plan_price(checkout_plan),
-                    redirect_url=(
-                        f"https://t.me/{settings.telegram_bot_username}"
-                        f"?startapp={payload.start_param}"
-                    ),
-                    webhook_url=public_base + "/finik/webhook",
-                )
-                payment_url = created.url
-                await payments.set_provider_payment_url(
-                    payment_request.id,
-                    created.url,
-                    configuration_id=configuration_id,
-                )
-            except Exception as exc:
-                logger.exception("Finik automatic payment creation failed")
-                raise HTTPException(
-                    status_code=status.HTTP_502_BAD_GATEWAY,
-                    detail="Finik временно недоступен. Попробуйте ещё раз.",
-                ) from exc
     response = _miniapp_result_payload(result)
     if payment_request is not None:
         response["status"] = payment_request.status
-    response["payment_url"] = payment_url
-    response["automatic_payment"] = dynamic_finik
-    response["monthly_available"] = bool(
-        settings.monthly_finik_payment_url or settings.finik_auto_enabled
-    )
+    response["payment_url"] = fallback_payment_url
+    response["automatic_payment"] = False
+    response["monthly_available"] = bool(settings.monthly_finik_payment_url)
     return response
 
 

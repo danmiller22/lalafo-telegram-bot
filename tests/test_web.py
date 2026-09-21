@@ -535,7 +535,7 @@ async def test_miniapp_page_is_public_but_session_requires_telegram_auth(
     service.contact_status.assert_awaited_once_with(778899, 42)
 
 
-def test_automatic_finik_keeps_unique_checkout_for_verified_webhook(
+def test_manual_approval_uses_permanent_finik_links(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("FINIK_PAYMENT_URL", "https://qr.finik.kg/weekly")
@@ -548,8 +548,8 @@ def test_automatic_finik_keeps_unique_checkout_for_verified_webhook(
     settings = get_settings()
 
     assert settings.finik_auto_enabled
-    assert web._uses_dynamic_finik(settings, WEEK_PLAN)
-    assert web._uses_dynamic_finik(settings, MONTH_PLAN)
+    assert not web._uses_dynamic_finik(settings, WEEK_PLAN)
+    assert not web._uses_dynamic_finik(settings, MONTH_PLAN)
     assert web._finik_payment_url(settings, WEEK_PLAN).endswith("/weekly")
     assert web._finik_payment_url(settings, MONTH_PLAN).endswith("/monthly")
 
