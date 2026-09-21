@@ -34,9 +34,11 @@ def test_faq_answers_only_confident_common_questions():
     assert faq_for_text("У меня необычная проблема с конкретной квартирой") is None
 
 
-def test_payment_faq_describes_automatic_access_without_receipt():
+def test_payment_faq_gives_only_customer_facing_instructions():
     assert "Чек отправлять не нужно" in FAQ_BY_KEY["payment"].answer
-    assert "автоматически" in FAQ_BY_KEY["review"].answer
+    assert "Обновить статус" in FAQ_BY_KEY["review"].answer
+    assert "автоматически" not in FAQ_BY_KEY["review"].answer
+    assert "Finik" not in FAQ_BY_KEY["review"].answer
 
 
 def test_support_menu_contains_every_faq_and_close_button():
