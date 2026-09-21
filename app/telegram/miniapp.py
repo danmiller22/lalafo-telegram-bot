@@ -73,12 +73,6 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     h1 {{ font-size: 21px; margin: 0 0 8px; }}
     .details {{ line-height: 1.55; white-space: pre-line; margin: 10px 0 16px; }}
     .price {{ font-size: 19px; font-weight: 750; margin: 12px 0 4px; }}
-    .plan {{ border-radius: 18px; padding: 16px; margin: 12px 0; background: #12856a18; }}
-    .plan strong {{ display: block; font-size: 19px; margin-bottom: 10px; }}
-    .plan-line {{ display: flex; justify-content: space-between; margin-top: 6px; }}
-    .bank-title {{ font-size: 19px; font-weight: 800; margin: 18px 0 8px; }}
-    .bank {{ text-align: left; background: #063f38; color: white; padding: 13px 16px; }}
-    .bank small {{ display: block; opacity: .72; margin-top: 2px; font-weight: 500; }}
     .status {{ border-radius: 13px; padding: 12px; margin: 12px 0; background: #12856a18; line-height: 1.4; }}
     .phone {{ font-size: 22px; font-weight: 800; color: #079b79; word-break: break-word; }}
     button, .button {{ width: 100%; border: 0; border-radius: 14px; padding: 14px 16px; margin-top: 9px; font: inherit; font-weight: 750; text-align: center; cursor: pointer; text-decoration: none; display: block; }}
@@ -97,20 +91,8 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     <div id="details" class="details"></div>
     <div id="status" class="status">Проверяем доступ…</div>
     <div id="phone" class="phone hidden"></div>
-    <div id="plan" class="plan hidden">
-      <strong id="plan-name"></strong>
-      <div class="plan-line"><span>Срок</span><b id="plan-days"></b></div>
-      <div class="plan-line"><span>Цена</span><b id="plan-price"></b></div>
-    </div>
     <button id="pay-week" class="primary hidden">Базовая: 7 дней — {WEEK_PRICE} сом</button>
     <button id="pay-month" class="primary hidden">Премиум: 30 дней — {MONTH_PRICE} сом</button>
-    <div id="banks" class="hidden">
-      <div class="bank-title">Выберите банк или способ оплаты</div>
-      <button class="bank" data-bank="mbank">MBANK<small>Открыть приложение банка</small></button>
-      <button class="bank" data-bank="eldik">Элдик<small>Открыть оплату через Finik</small></button>
-      <button class="bank" data-bank="bakai">Bakai<small>Открыть оплату через Finik</small></button>
-      <button class="bank" data-bank="dantepay">DantePay<small>Открыть оплату через Finik</small></button>
-    </div>
     <button id="check" class="secondary hidden">Я оплатил(а)</button>
     <button id="checking" class="secondary hidden" disabled>⏳ Статус: оплата проверяется</button>
     <button id="refresh" class="secondary">Обновить статус</button>
@@ -126,31 +108,9 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
   const startParam = (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) || query.get("tgWebAppStartParam") || "";
   const el = id => document.getElementById(id);
   let lastState = "";
-  let selectedPlan = "";
-  let paymentUrl = "";
 
   function show(id, visible) {{ el(id).classList.toggle("hidden", !visible); }}
   function message(text) {{ el("status").textContent = text; }}
-  function showPaymentChoices(plan, url) {{
-    selectedPlan = plan;
-    paymentUrl = url || paymentUrl;
-    const monthly = plan === "month";
-    el("plan-name").textContent = monthly ? "Премиум: 30 дней" : "Базовая: 7 дней";
-    el("plan-days").textContent = monthly ? "30 дн." : "7 дн.";
-    el("plan-price").textContent = (monthly ? {MONTH_PRICE} : {WEEK_PRICE}) + " сом";
-    show("plan", true);
-    show("banks", true);
-    show("pay-week", false);
-    show("pay-month", false);
-  }}
-  function openPayment(bank) {{
-    if (!paymentUrl) return message("Ссылка на оплату ещё не загружена.");
-    let url = paymentUrl;
-    if (bank === "mbank" && url.startsWith("https://qr.finik.kg/#")) {{
-      url = url.replace("https://qr.finik.kg/#", "https://app.mbank.kg/qr/#");
-    }}
-    if (tg) tg.openLink(url); else location.href = url;
-  }}
   async function api(path, body) {{
     const response = await fetch(path, {{
       method: "POST",
@@ -169,12 +129,8 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     if (data.photo_url) {{ el("hero").src = data.photo_url; el("hero").style.display = "block"; }}
     show("phone", data.status === "approved");
     const canPay = ["unpaid", "awaiting_receipt", "rejected"].includes(data.status);
-    if (data.payment_url) paymentUrl = data.payment_url;
-    if (data.selected_plan && canPay) showPaymentChoices(data.selected_plan, data.payment_url);
-    else if (!selectedPlan) {{
-      show("pay-week", canPay);
-      show("pay-month", canPay && Boolean(data.monthly_available));
-    }}
+    show("pay-week", canPay);
+    show("pay-month", canPay && Boolean(data.monthly_available));
     show("check", data.status === "awaiting_receipt");
     show("checking", data.status === "pending");
     if (data.status === "approved") {{
@@ -198,11 +154,7 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
       return;
     }}
     try {{
-      const data = await api("/miniapp/api/session", {{}});
-      render(data);
-      if (data.selected_plan && data.status !== "approved" && data.status !== "pending") {{
-        render(await api("/miniapp/api/start", {{plan: data.selected_plan}}));
-      }}
+      render(await api("/miniapp/api/session", {{}}));
     }}
     catch (error) {{ message(error.message); }}
   }}
@@ -211,15 +163,12 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     try {{
       const data = await api("/miniapp/api/start", {{plan}});
       render(data);
-      showPaymentChoices(plan, data.payment_url);
+      if (tg) tg.openLink(data.payment_url); else location.href = data.payment_url;
     }} catch (error) {{ message(error.message); }}
     finally {{ el(buttonId).disabled = false; }}
   }}
   el("pay-week").onclick = () => startPayment("week", "pay-week");
   el("pay-month").onclick = () => startPayment("month", "pay-month");
-  document.querySelectorAll("[data-bank]").forEach(button => {{
-    button.onclick = () => openPayment(button.dataset.bank);
-  }});
   el("check").onclick = async () => {{
     el("check").disabled = true;
     message("Проверяем заявку…");

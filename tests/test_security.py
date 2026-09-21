@@ -4,9 +4,7 @@ from app.security import TokenSigner
 from app.telegram.keyboards import (
     admin_keyboard,
     apartment_keyboard,
-    bank_payment_keyboard,
     payment_keyboard,
-    payment_method_keyboard,
     pending_payment_keyboard,
     private_contact_keyboard,
     private_payment_keyboard,
@@ -102,10 +100,10 @@ def test_callback_data_is_short_and_contains_no_phone():
         assert keyboard.inline_keyboard[-1][0].url == support_url
 
     assert [row[0].text for row in private_payment.inline_keyboard] == [
-        "Базовая: 7 дней — 399 сом",
+        "Базовая: 7 дней — 499 сом",
         "🛟 Техподдержка",
     ]
-    assert receipt.inline_keyboard[0][0].text == "💳 Оплатить 399 сом"
+    assert receipt.inline_keyboard[0][0].text == "💳 Оплатить 499 сом"
     assert receipt.inline_keyboard[1][0].text == "✅ Я оплатил(а)"
     assert receipt.inline_keyboard[1][0].callback_data == "receipt:send"
     assert len(receipt.inline_keyboard) == 3
@@ -128,44 +126,16 @@ def test_payment_and_status_keyboards_keep_recovery_actions():
         support_url="https://t.me/support_test",
     )
     assert [row[0].text for row in payment.inline_keyboard] == [
-        "💳 Оплатить 399 сом",
+        "💳 Оплатить 499 сом",
         "✅ Я оплатил",
         "🔄 Проверить оплату / Получить номер",
         "🛟 Техподдержка",
     ]
     assert [row[0].text for row in status.inline_keyboard] == [
-        "💳 Оплатить 399 сом",
+        "💳 Оплатить 499 сом",
         "⏳ Проверить оплату / Получить номер",
         "🛟 Техподдержка",
     ]
-
-
-def test_subscription_payment_flow_has_signed_navigation_and_persistent_payment():
-    signer = TokenSigner("a-very-long-test-secret")
-    methods = payment_method_keyboard(123456789, plan="week", signer=signer)
-    bank = bank_payment_keyboard(
-        123456789,
-        plan="week",
-        signer=signer,
-        bot_username="arenda312bot",
-        payment_url="https://qr.finik.kg/#payment",
-    )
-
-    assert [row[0].text for row in methods.inline_keyboard] == [
-        "💳 Банки КР (QR-оплата)",
-        "◀️ Назад",
-    ]
-    assert methods.inline_keyboard[1][1].text == "Вернуться к объявлению"
-    assert bank.inline_keyboard[0][0].url.startswith(
-        "https://t.me/arenda312bot/access?startapp="
-    )
-    assert bank.inline_keyboard[1][0].url == "https://qr.finik.kg/#payment"
-    assert bank.inline_keyboard[2][0].text == "✅ Я оплатил"
-    for keyboard in (methods, bank):
-        for row in keyboard.inline_keyboard:
-            for button in row:
-                if button.callback_data:
-                    assert len(button.callback_data.encode()) <= 64
 
 
 def test_multi_value_signature_rejects_tampering():
