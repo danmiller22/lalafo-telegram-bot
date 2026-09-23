@@ -23,7 +23,7 @@ def format_private_contact(apartment: Apartment) -> str:
             "",
             format_apartment(apartment),
             "",
-            f"📞 Номер собственника: {display_phone(apartment.phone)}",
+            f"📞 Контакт по объявлению: {display_phone(apartment.phone)}",
             "🔒 Этот контакт доступен только вам.",
         ]
     )

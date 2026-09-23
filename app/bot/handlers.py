@@ -55,7 +55,7 @@ def _start_payload(message: Message) -> str:
 async def _show_main_menu(message: Message, settings: Settings) -> None:
     await message.answer(
         "🏠 Сервис аренды квартир\n\n"
-        "Здесь можно получить контакт собственника из группы или разместить "
+        "Здесь можно получить контакт по объявлению из группы или разместить "
         "собственную заявку «Ищу квартиру».",
         reply_markup=main_menu_keyboard(
             settings.support_bot_url,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+import math
 import random
 from zoneinfo import ZoneInfo
 
@@ -15,20 +16,23 @@ from app.models import Apartment, ApartmentDiscoveryRun, ApartmentInventoryQueue
 BISHKEK = ZoneInfo("Asia/Bishkek")
 FIRST_HALF_BATCH_SIZES = (8,) * 6
 SECOND_HALF_BATCH_SIZES = (8,) * 6
-# One persisted eight-card window every two hours. Centre stock is preferred,
-# but any suitable owner/realtor stock fills gaps so an empty centre pool does
-# not stall publication.
-FIRST_HALF_CENTRAL = FIRST_HALF_BATCH_SIZES
-SECOND_HALF_CENTRAL = SECOND_HALF_BATCH_SIZES
-MAX_TWO_BEDROOMS_PER_WINDOW = 1
-MAX_TWO_BEDROOMS_PER_DAY = 10
-MAX_TWO_BEDROOMS_PER_PERIOD = 5
+# Forty-three of forty-eight slots per half-day are central (89.6%). One
+# all-central window keeps the daily total as close as possible to the requested
+# 90% while still leaving a few places for exceptional bargains elsewhere.
+FIRST_HALF_CENTRAL = (8, 7, 7, 7, 7, 7)
+SECOND_HALF_CENTRAL = (8, 7, 7, 7, 7, 7)
+ALLOWED_ROOMS = frozenset({"studio", "1"})
+CENTRAL_DAILY_SHARE = 0.90
 MAX_PUBLICATIONS_PER_DAY = 96
-MIN_REALTORS_PER_DAY = 0
-MAX_REALTORS_PER_DAY = MAX_PUBLICATIONS_PER_DAY
-TARGET_REALTORS_PER_PERIOD = 0
+# Only verified owners fill the main catalogue. Realtors and authors whose
+# role is unknown share three or four explicitly unverified slots per day.
+MIN_NON_OWNERS_PER_DAY = 3
+MAX_NON_OWNERS_PER_DAY = 4
+TARGET_NON_OWNERS_PER_PERIOD = 2
 REPOST_AFTER_HOURS = 48
 MAX_REPOSTS_PER_PERIOD = 36
+MAX_FRESH_STOCK_LOAD = 600
+MAX_REPEAT_STOCK_LOAD = 240
 DISCOVERY_RETRY_MINUTES = 30
 MIN_HEALTHY_PERIOD_QUEUE = 40
 
@@ -70,7 +74,7 @@ def _candidate_key(item: Apartment, *, central: bool) -> tuple[object, ...]:
     favorable = central and item.price <= 32_000
     return (
         not item.discovery_priority,
-        {"owner": 0, "unknown": 1, "realtor": 2}[_seller_type(item)],
+        0 if _seller_type(item) == "owner" else 1,
         not favorable,
         item.price,
         -(as_utc(item.last_seen_at or item.updated_at).timestamp()),
@@ -83,55 +87,107 @@ def _seller_type(item: Apartment) -> str:
     return value if value in {"owner", "realtor", "unknown"} else "unknown"
 
 
-def _limit_realtors(
+def _limit_non_owners(
     planned: list[PlannedApartment],
     apartments: list[Apartment],
     *,
     target: int,
+    maximum: int,
 ) -> list[PlannedApartment]:
-    """Keep at least the requested realtor share and allow every good agent card."""
-    target = max(0, target)
+    """Keep a tiny unknown-status slice and fill every other slot with owners."""
+    maximum = max(0, maximum)
+    target = min(maximum, max(0, target))
     result: list[PlannedApartment | None] = list(planned)
     used_ids = {item.apartment.id for item in planned}
     unused = [item for item in apartments if item.id not in used_ids]
 
-    current_realtors = sum(
-        item is not None and _seller_type(item.apartment) == "realtor"
+    current_non_owners = sum(
+        item is not None and _seller_type(item.apartment) != "owner"
         for item in result
     )
-    if current_realtors < target:
-        realtor_candidates = [item for item in unused if _seller_type(item) == "realtor"]
-        realtor_candidates.sort(
+
+    # Replace surplus realtor/unknown cards with verified owners. If verified
+    # owner supply is thin, drop the surplus rather than misrepresenting it.
+    if current_non_owners > maximum:
+        owner_candidates = [item for item in unused if _seller_type(item) == "owner"]
+        owner_candidates.sort(
             key=lambda item: _candidate_key(item, central=is_central(item.district))
         )
-        for realtor in realtor_candidates:
+        surplus_indexes = [
+            index
+            for index, item in enumerate(result)
+            if item is not None and _seller_type(item.apartment) != "owner"
+        ][maximum:]
+        for index in surplus_indexes:
+            old = result[index]
+            replacement_index = next(
+                (
+                    candidate_index
+                    for candidate_index, owner in enumerate(owner_candidates)
+                    if owner.rooms == old.apartment.rooms
+                    and is_central(owner.district) == is_central(old.apartment.district)
+                ),
+                None,
+            )
+            if replacement_index is None:
+                replacement_index = next(
+                    (
+                        candidate_index
+                        for candidate_index, owner in enumerate(owner_candidates)
+                        if owner.rooms == old.apartment.rooms
+                    ),
+                    None,
+                )
+            if replacement_index is None:
+                result[index] = None
+            else:
+                owner = owner_candidates.pop(replacement_index)
+                result[index] = PlannedApartment(
+                    apartment=owner,
+                    scheduled_at=old.scheduled_at,
+                    window_key=old.window_key,
+                    sequence=old.sequence,
+                )
+        current_non_owners = sum(
+            item is not None and _seller_type(item.apartment) != "owner"
+            for item in result
+        )
+
+    if current_non_owners < target:
+        non_owner_candidates = [
+            item for item in unused if _seller_type(item) != "owner"
+        ]
+        non_owner_candidates.sort(
+            key=lambda item: _candidate_key(item, central=is_central(item.district))
+        )
+        for candidate in non_owner_candidates:
             replaceable = [
                 index
                 for index, item in enumerate(result)
                 if item is not None
-                and _seller_type(item.apartment) != "realtor"
+                and _seller_type(item.apartment) == "owner"
                 and not item.apartment.discovery_priority
-                and item.apartment.rooms == realtor.rooms
+                and item.apartment.rooms == candidate.rooms
             ]
             if not replaceable:
                 continue
             replaceable.sort(
                 key=lambda index: (
                     is_central(result[index].apartment.district)
-                    != is_central(realtor.district),
+                    != is_central(candidate.district),
                     result[index].scheduled_at,
                 )
             )
             index = replaceable[0]
             old = result[index]
             result[index] = PlannedApartment(
-                apartment=realtor,
+                apartment=candidate,
                 scheduled_at=old.scheduled_at,
                 window_key=old.window_key,
                 sequence=old.sequence,
             )
-            current_realtors += 1
-            if current_realtors >= target:
+            current_non_owners += 1
+            if current_non_owners >= target:
                 break
 
     return [item for item in result if item is not None]
@@ -142,39 +198,23 @@ def _pick_for_window(
     count: int,
     room_counts: dict[str, int],
     *,
-    two_bedroom_allowance: int,
     central: bool,
-    prefer_two: bool = False,
 ) -> list[Apartment]:
     picked: list[Apartment] = []
-    two_count = 0
     while len(picked) < count:
-        eligible = [
-            item
-            for item in pool
-            if item.rooms != "2"
-            or (two_count < MAX_TWO_BEDROOMS_PER_WINDOW and two_bedroom_allowance > 0)
-        ]
+        eligible = list(pool)
         if not eligible:
             break
         def selection_key(item: Apartment) -> tuple[object, ...]:
             base = _candidate_key(item, central=central)
-            if prefer_two and two_count == 0 and two_bedroom_allowance > 0:
-                room_rank = {"2": 0, "1": 1, "studio": 2}.get(item.rooms, 3)
-            else:
-                # After the single two-bedroom slot, fill with one-bedroom
-                # apartments first and use studios only as a fallback.
-                room_rank = {"1": 0, "studio": 1, "2": 2}.get(item.rooms, 3)
-            return (*base[:2], room_rank, room_counts.get(item.rooms, 0), *base[2:])
+            room_rank = {"1": 0, "studio": 1}.get(item.rooms, 2)
+            return (*base[:2], room_counts.get(item.rooms, 0), room_rank, *base[2:])
 
         eligible.sort(key=selection_key)
         item = eligible[0]
         pool.remove(item)
         picked.append(item)
         room_counts[item.rooms] = room_counts.get(item.rooms, 0) + 1
-        if item.rooms == "2":
-            two_count += 1
-            two_bedroom_allowance -= 1
     return picked
 
 
@@ -182,24 +222,20 @@ def plan_period(
     apartments: list[Apartment],
     *,
     period_start: datetime,
-    already_two_bedrooms_today: int = 0,
-    realtor_target: int = TARGET_REALTORS_PER_PERIOD,
+    non_owner_target: int = TARGET_NON_OWNERS_PER_PERIOD,
+    non_owner_limit: int = MAX_NON_OWNERS_PER_DAY,
     repeat_apartment_ids: set[int] | None = None,
     rng: random.Random | None = None,
 ) -> list[PlannedApartment]:
     """Create one immutable eight-card publication window every two hours."""
     rng = rng or random.SystemRandom()
-    # The public catalogue is intentionally limited to ordinary one- and
-    # two-bedroom apartments. Old studio rows may remain in the database but
-    # must never return through the 48-hour repost fallback.
-    apartments = [item for item in apartments if item.rooms in {"1", "2"}]
+    apartments = [item for item in apartments if item.rooms in ALLOWED_ROOMS]
     repeat_ids = set(repeat_apartment_ids or ())
     central_pool = sorted(
         [
             item
             for item in apartments
             if is_central(item.district)
-            and _seller_type(item) == "owner"
             and item.id not in repeat_ids
         ],
         key=lambda item: _candidate_key(item, central=True),
@@ -208,10 +244,10 @@ def plan_period(
         [
             item
             for item in apartments
-            if not (is_central(item.district) and _seller_type(item) == "owner")
+            if not is_central(item.district)
             and item.id not in repeat_ids
         ],
-        key=lambda item: _candidate_key(item, central=is_central(item.district)),
+        key=lambda item: _candidate_key(item, central=False),
     )
     repeat_pool = [item for item in apartments if item.id in repeat_ids]
     rng.shuffle(repeat_pool)
@@ -232,33 +268,19 @@ def plan_period(
     ]
     planned: list[PlannedApartment] = []
     room_counts: dict[str, int] = {}
-    two_allowance = min(
-        MAX_TWO_BEDROOMS_PER_PERIOD,
-        max(0, MAX_TWO_BEDROOMS_PER_DAY - already_two_bedrooms_today),
-    )
 
     for index, (batch_size, central_target, start) in enumerate(
         zip(batch_sizes, central_targets, starts)
     ):
         selected: list[Apartment] = []
-        window_two = 0
         if index in repeat_windows and repeat_pool:
-            eligible_repeats = [
-                item
-                for item in repeat_pool
-                if item.rooms != "2" or two_allowance > 0
+            central_repeats = [
+                item for item in repeat_pool if is_central(item.district)
             ]
-            if eligible_repeats:
-                central_repeats = [
-                    item for item in eligible_repeats if is_central(item.district)
-                ]
-                repeat = rng.choice(central_repeats or eligible_repeats)
-                repeat_pool.remove(repeat)
-                selected.append(repeat)
-                room_counts[repeat.rooms] = room_counts.get(repeat.rooms, 0) + 1
-                if repeat.rooms == "2":
-                    window_two = 1
-                    two_allowance -= 1
+            repeat = rng.choice(central_repeats or repeat_pool)
+            repeat_pool.remove(repeat)
+            selected.append(repeat)
+            room_counts[repeat.rooms] = room_counts.get(repeat.rooms, 0) + 1
 
         selected_central = sum(is_central(item.district) for item in selected)
         central_count = min(
@@ -271,26 +293,16 @@ def plan_period(
                 central_pool,
                 central_count,
                 room_counts,
-                two_bedroom_allowance=min(1 - window_two, two_allowance),
                 central=True,
-                prefer_two=window_two == 0,
             )
         )
-        newly_selected_two = sum(item.rooms == "2" for item in selected) - window_two
-        window_two += newly_selected_two
-        two_allowance -= newly_selected_two
         remaining = batch_size - len(selected)
         others = _pick_for_window(
             other_pool,
             remaining,
             room_counts,
-            two_bedroom_allowance=min(1 - window_two, two_allowance),
             central=False,
-            prefer_two=window_two == 0,
         )
-        other_two = sum(item.rooms == "2" for item in others)
-        window_two += other_two
-        two_allowance -= other_two
         selected.extend(others)
         # If non-central supply is short, fill the window from the central pool.
         # A centre shortage must never stop the publisher completely: after
@@ -301,10 +313,8 @@ def plan_period(
                 central_pool,
                 batch_size - len(selected),
                 room_counts,
-                two_bedroom_allowance=min(1 - window_two, two_allowance),
                 central=True,
             )
-            two_allowance -= sum(item.rooms == "2" for item in extras)
             selected.extend(extras)
         # Fresh cards have priority. If they run out, use randomly ordered
         # cards whose previous post is at least 48 hours old so no hourly slot
@@ -319,21 +329,10 @@ def plan_period(
             )
             if len(repeat_pool) <= future_repeat_windows:
                 break
-            eligible_repeats = [
-                item
-                for item in repeat_pool
-                if item.rooms != "2"
-                or (window_two < MAX_TWO_BEDROOMS_PER_WINDOW and two_allowance > 0)
-            ]
-            if not eligible_repeats:
-                break
-            repeat = eligible_repeats[0]
+            repeat = repeat_pool[0]
             repeat_pool.remove(repeat)
             selected.append(repeat)
             room_counts[repeat.rooms] = room_counts.get(repeat.rooms, 0) + 1
-            if repeat.rooms == "2":
-                window_two += 1
-                two_allowance -= 1
         if not selected:
             continue
         rng.shuffle(selected)
@@ -350,7 +349,12 @@ def plan_period(
                     sequence=sequence,
                 )
             )
-    return _limit_realtors(planned, apartments, target=realtor_target)
+    return _limit_non_owners(
+        planned,
+        apartments,
+        target=non_owner_target,
+        maximum=non_owner_limit,
+    )
 
 
 class InventoryRepository:
@@ -461,7 +465,18 @@ class InventoryRepository:
         day_start = day_start_local.astimezone(timezone.utc)
         day_end = (day_start_local + timedelta(days=1)).astimezone(timezone.utc)
         async with self.sessions.begin() as session:
-            published_two = int(
+            invalid_room_ids = select(Apartment.id).where(
+                Apartment.rooms.not_in(ALLOWED_ROOMS)
+            )
+            await session.execute(
+                update(ApartmentInventoryQueue)
+                .where(
+                    ApartmentInventoryQueue.status == "queued",
+                    ApartmentInventoryQueue.apartment_id.in_(invalid_room_ids),
+                )
+                .values(status="skipped", last_error="policy_room_filter")
+            )
+            published_non_owners = int(
                 await session.scalar(
                     select(func.count())
                     .select_from(Apartment)
@@ -469,12 +484,12 @@ class InventoryRepository:
                         Apartment.publication_status == "published",
                         Apartment.published_at >= day_start,
                         Apartment.published_at < day_end,
-                        Apartment.rooms == "2",
+                        func.coalesce(Apartment.seller_type, "unknown") != "owner",
                     )
                 )
                 or 0
             )
-            reserved_two = int(
+            reserved_non_owners = int(
                 await session.scalar(
                     select(func.count())
                     .select_from(ApartmentInventoryQueue)
@@ -483,49 +498,25 @@ class InventoryRepository:
                         ApartmentInventoryQueue.scheduled_at >= day_start,
                         ApartmentInventoryQueue.scheduled_at < day_end,
                         ApartmentInventoryQueue.status.in_(("queued", "publishing")),
-                        Apartment.rooms == "2",
+                        func.coalesce(Apartment.seller_type, "unknown") != "owner",
                     )
                 )
                 or 0
             )
-            already_two = published_two + reserved_two
-            published_realtors = int(
-                await session.scalar(
-                    select(func.count())
-                    .select_from(Apartment)
-                    .where(
-                        Apartment.publication_status == "published",
-                        Apartment.published_at >= day_start,
-                        Apartment.published_at < day_end,
-                        Apartment.seller_type == "realtor",
-                    )
-                )
-                or 0
+            already_non_owners = published_non_owners + reserved_non_owners
+            remaining_non_owners = max(
+                0, MAX_NON_OWNERS_PER_DAY - already_non_owners
             )
-            reserved_realtors = int(
-                await session.scalar(
-                    select(func.count())
-                    .select_from(ApartmentInventoryQueue)
-                    .join(Apartment)
-                    .where(
-                        ApartmentInventoryQueue.scheduled_at >= day_start,
-                        ApartmentInventoryQueue.scheduled_at < day_end,
-                        ApartmentInventoryQueue.status.in_(("queued", "publishing")),
-                        Apartment.seller_type == "realtor",
-                    )
-                )
-                or 0
-            )
-            already_realtors = published_realtors + reserved_realtors
-            remaining_realtors = max(0, MAX_REALTORS_PER_DAY - already_realtors)
             if period.astimezone(BISHKEK).hour == 0:
-                realtor_target = min(TARGET_REALTORS_PER_PERIOD, remaining_realtors)
+                non_owner_target = min(
+                    TARGET_NON_OWNERS_PER_PERIOD, remaining_non_owners
+                )
             else:
-                realtor_target = min(
-                    remaining_realtors,
+                non_owner_target = min(
+                    remaining_non_owners,
                     max(
-                        TARGET_REALTORS_PER_PERIOD,
-                        MIN_REALTORS_PER_DAY - already_realtors,
+                        TARGET_NON_OWNERS_PER_PERIOD,
+                        MIN_NON_OWNERS_PER_DAY - already_non_owners,
                     ),
                 )
             active_queue_ids = select(ApartmentInventoryQueue.apartment_id).where(
@@ -540,12 +531,18 @@ class InventoryRepository:
                     await session.scalars(
                         select(Apartment).where(
                             Apartment.active.is_(True),
-                            Apartment.publication_status != "published",
+                            Apartment.publication_status == "discovered",
                             Apartment.id.not_in(active_queue_ids),
                             Apartment.fingerprint.not_in(queued_fingerprints),
                             Apartment.price.between(20_000, 40_000),
-                            Apartment.rooms.in_(("1", "2")),
+                            Apartment.rooms.in_(ALLOWED_ROOMS),
                         )
+                        .order_by(
+                            Apartment.discovery_priority.desc(),
+                            Apartment.last_seen_at.desc(),
+                            Apartment.price.asc(),
+                        )
+                        .limit(MAX_FRESH_STOCK_LOAD)
                     )
                 ).all()
             )
@@ -560,8 +557,14 @@ class InventoryRepository:
                             <= now - timedelta(hours=REPOST_AFTER_HOURS),
                             Apartment.id.not_in(active_queue_ids),
                             Apartment.price.between(20_000, 40_000),
-                            Apartment.rooms.in_(("1", "2")),
+                            Apartment.rooms.in_(ALLOWED_ROOMS),
                         )
+                        .order_by(
+                            Apartment.discovery_priority.desc(),
+                            Apartment.published_at.asc(),
+                            Apartment.price.asc(),
+                        )
+                        .limit(MAX_REPEAT_STOCK_LOAD)
                     )
                 ).all()
             )
@@ -574,8 +577,8 @@ class InventoryRepository:
             planned = plan_period(
                 stock,
                 period_start=period,
-                already_two_bedrooms_today=already_two,
-                realtor_target=realtor_target,
+                non_owner_target=non_owner_target,
+                non_owner_limit=remaining_non_owners,
                 repeat_apartment_ids={item.id for item in chosen_repeats},
                 rng=chooser,
             )
@@ -637,6 +640,25 @@ class InventoryRepository:
         day_start = local.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
         day_end = (local.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)).astimezone(timezone.utc)
         async with self.sessions.begin() as session:
+            await session.execute(
+                update(ApartmentInventoryQueue)
+                .where(
+                    ApartmentInventoryQueue.status == "publishing",
+                    ApartmentInventoryQueue.claimed_at < stale,
+                )
+                .values(status="queued", claimed_at=None, last_error="stale_claim")
+            )
+            invalid_room_ids = select(Apartment.id).where(
+                Apartment.rooms.not_in(ALLOWED_ROOMS)
+            )
+            await session.execute(
+                update(ApartmentInventoryQueue)
+                .where(
+                    ApartmentInventoryQueue.status == "queued",
+                    ApartmentInventoryQueue.apartment_id.in_(invalid_room_ids),
+                )
+                .values(status="skipped", last_error="policy_room_filter")
+            )
             published_today = int(
                 await session.scalar(
                     select(func.count())
@@ -651,7 +673,7 @@ class InventoryRepository:
             )
             if published_today >= MAX_PUBLICATIONS_PER_DAY:
                 return None
-            published_realtors = int(
+            published_non_owners = int(
                 await session.scalar(
                     select(func.count())
                     .select_from(Apartment)
@@ -659,12 +681,12 @@ class InventoryRepository:
                         Apartment.publication_status == "published",
                         Apartment.published_at >= day_start,
                         Apartment.published_at < day_end,
-                        Apartment.seller_type == "realtor",
+                        func.coalesce(Apartment.seller_type, "unknown") != "owner",
                     )
                 )
                 or 0
             )
-            publishing_realtors = int(
+            publishing_non_owners = int(
                 await session.scalar(
                     select(func.count())
                     .select_from(ApartmentInventoryQueue)
@@ -673,49 +695,76 @@ class InventoryRepository:
                         ApartmentInventoryQueue.status == "publishing",
                         ApartmentInventoryQueue.claimed_at >= day_start,
                         ApartmentInventoryQueue.claimed_at < day_end,
-                        Apartment.seller_type == "realtor",
+                        func.coalesce(Apartment.seller_type, "unknown") != "owner",
                     )
                 )
                 or 0
             )
-            if published_realtors + publishing_realtors >= MAX_REALTORS_PER_DAY:
-                excess_realtors = (
+            non_owner_cap_reached = (
+                published_non_owners + publishing_non_owners
+                >= MAX_NON_OWNERS_PER_DAY
+            )
+            if non_owner_cap_reached:
+                excess_non_owners = (
                     select(ApartmentInventoryQueue.id)
                     .join(Apartment)
                     .where(
                         ApartmentInventoryQueue.status == "queued",
                         ApartmentInventoryQueue.scheduled_at <= eligible_until,
-                        Apartment.seller_type == "realtor",
+                        func.coalesce(Apartment.seller_type, "unknown") != "owner",
                     )
                 )
                 await session.execute(
                     update(ApartmentInventoryQueue)
-                    .where(ApartmentInventoryQueue.id.in_(excess_realtors))
-                    .values(status="skipped", last_error="daily_realtor_cap")
+                    .where(ApartmentInventoryQueue.id.in_(excess_non_owners))
+                    .values(status="skipped", last_error="daily_non_owner_cap")
                 )
-            await session.execute(
-                update(ApartmentInventoryQueue)
-                .where(
-                    ApartmentInventoryQueue.status == "publishing",
-                    ApartmentInventoryQueue.claimed_at < stale,
+            published_districts = (
+                await session.scalars(
+                    select(Apartment.district).where(
+                        Apartment.publication_status == "published",
+                        Apartment.published_at >= day_start,
+                        Apartment.published_at < day_end,
+                    )
                 )
-                .values(status="queued", claimed_at=None, last_error="stale_claim")
+            ).all()
+            published_central = sum(is_central(value) for value in published_districts)
+            due_rows = (
+                await session.execute(
+                    select(
+                        ApartmentInventoryQueue.id,
+                        Apartment.district,
+                    )
+                    .join(Apartment)
+                    .where(
+                        ApartmentInventoryQueue.status == "queued",
+                        ApartmentInventoryQueue.scheduled_at <= eligible_until,
+                    )
+                    .order_by(
+                        ApartmentInventoryQueue.scheduled_at,
+                        ApartmentInventoryQueue.id,
+                    )
+                    .limit(200)
+                )
+            ).all()
+            if not due_rows:
+                return None
+            central_needed = published_central < math.ceil(
+                (published_today + 1) * CENTRAL_DAILY_SHARE
             )
-            candidate = (
-                select(ApartmentInventoryQueue.id)
-                .where(
-                    ApartmentInventoryQueue.status == "queued",
-                    ApartmentInventoryQueue.scheduled_at <= eligible_until,
-                )
-                .order_by(ApartmentInventoryQueue.scheduled_at, ApartmentInventoryQueue.id)
-                .limit(1)
-                .scalar_subquery()
+            selected_id = next(
+                (
+                    queue_id
+                    for queue_id, district in due_rows
+                    if central_needed and is_central(district)
+                ),
+                due_rows[0][0],
             )
             row = (
                 await session.scalars(
                     update(ApartmentInventoryQueue)
                     .where(
-                        ApartmentInventoryQueue.id == candidate,
+                        ApartmentInventoryQueue.id == selected_id,
                         ApartmentInventoryQueue.status == "queued",
                     )
                     .values(status="publishing", claimed_at=now, attempts=ApartmentInventoryQueue.attempts + 1)

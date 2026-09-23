@@ -17,12 +17,22 @@ def room_title(rooms: str) -> str:
     }.get(rooms, "Квартира")
 
 
+def seller_status(ad: LalafoAd | Apartment) -> str:
+    """Expose only verified owners; every other seller stays unclaimed."""
+    seller_type = str(getattr(ad, "seller_type", "unknown") or "unknown")
+    verified_owner = seller_type == "owner" or (
+        seller_type == "unknown" and bool(getattr(ad, "owner_listing", False))
+    )
+    return "собственник" if verified_owner else "неизвестен"
+
+
 def format_apartment(ad: LalafoAd | Apartment) -> str:
     lines = [f"🏠 {room_title(ad.rooms)}"]
+    lines.append(f"👤 Статус: {seller_status(ad)}")
     if ad.district:
         lines.append(f"📍 {ad.district}")
     else:
-        lines.append("📍 Золотой Квадрат")
+        lines.append("📍 Район не указан")
     lines.append(f"🏙 {ad.city}")
     lines.append(f"💰 {format_money(ad.price)} сом")
     if ad.deposit is not None:

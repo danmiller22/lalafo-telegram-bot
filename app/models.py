@@ -28,6 +28,21 @@ class Base(DeclarativeBase):
 
 class Apartment(Base):
     __tablename__ = "apartments"
+    __table_args__ = (
+        Index(
+            "ix_apartment_inventory_fresh",
+            "active",
+            "publication_status",
+            "rooms",
+            "last_seen_at",
+        ),
+        Index(
+            "ix_apartment_published_day",
+            "publication_status",
+            "published_at",
+            "seller_type",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     lalafo_id: Mapped[int] = mapped_column(BigInteger, unique=True, nullable=False, index=True)

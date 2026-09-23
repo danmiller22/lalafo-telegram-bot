@@ -16,7 +16,7 @@ def _apartments(count: int, *, central: bool, start_id: int, owner: bool = True)
     from types import SimpleNamespace
 
     now = datetime.now(timezone.utc)
-    rooms = ("1", "2")
+    rooms = ("1", "studio")
     return [
         SimpleNamespace(
             id=start_id + index,
@@ -47,8 +47,8 @@ def test_two_periods_plan_96_cards_in_eight_card_windows():
     )
     all_items = first + second
     assert len(all_items) == 96
-    assert sum("золотой" in item.apartment.district.casefold() for item in all_items) == 96
-    assert 5 <= sum(item.apartment.rooms == "2" for item in all_items) <= 10
+    assert sum("золотой" in item.apartment.district.casefold() for item in all_items) == 86
+    assert {item.apartment.rooms for item in all_items} == {"1", "studio"}
 
     for planned in (first, second):
         windows = {}
@@ -63,8 +63,7 @@ def test_two_periods_plan_96_cards_in_eight_card_windows():
             central_count = sum(
                 "золотой" in item.apartment.district.casefold() for item in items
             )
-            assert central_count == len(items)
-            assert sum(item.apartment.rooms == "2" for item in items) <= 1
+            assert central_count >= 7
             for before, after in zip(ordered, ordered[1:]):
                 assert (
                     timedelta(minutes=8)
@@ -81,10 +80,9 @@ def test_period_uses_broader_stock_when_no_central_apartments_exist():
 
     planned = plan_period(stock, period_start=period_start, rng=random.Random(9))
 
-    assert len(planned) == 48
-    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 48
+    assert len(planned) == 4
+    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 4
     assert all(not "золотой" in item.apartment.district.casefold() for item in planned)
-    assert sum(item.apartment.rooms == "2" for item in planned) <= 5
 
 
 def test_period_keeps_single_central_card_and_fills_with_realtors():
@@ -95,9 +93,9 @@ def test_period_keeps_single_central_card_and_fills_with_realtors():
 
     planned = plan_period(stock, period_start=period_start, rng=random.Random(10))
 
-    assert len(planned) == 48
+    assert len(planned) == 5
     assert sum("золотой" in item.apartment.district.casefold() for item in planned) == 1
-    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 47
+    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 4
 
 
 def test_noncentral_owners_outrank_central_realtors():
@@ -108,11 +106,11 @@ def test_noncentral_owners_outrank_central_realtors():
     planned = plan_period(owners + realtors, period_start=period_start, rng=random.Random(15))
 
     assert len(planned) == 48
-    # The five two-bedroom slots leave only 45 eligible owner cards here.
-    assert sum(item.apartment.seller_type == "owner" for item in planned) == 45
+    assert sum(item.apartment.seller_type == "owner" for item in planned) == 44
+    assert sum(item.apartment.seller_type != "owner" for item in planned) == 4
 
 
-def test_unknown_sellers_are_not_counted_as_realtors():
+def test_unknown_sellers_share_the_non_owner_limit():
     stock = _apartments(100, central=True, start_id=1)
     for item in stock:
         item.owner_listing = False
@@ -121,11 +119,11 @@ def test_unknown_sellers_are_not_counted_as_realtors():
 
     planned = plan_period(stock, period_start=period_start, rng=random.Random(13))
 
-    assert len(planned) == 48
+    assert len(planned) == 4
     assert all(item.apartment.seller_type == "unknown" for item in planned)
 
 
-def test_period_keeps_at_least_realtor_target_and_allows_more_good_cards():
+def test_period_keeps_exact_non_owner_target_without_exceeding_limit():
     owners = _apartments(80, central=True, start_id=1)
     realtors = _apartments(40, central=True, start_id=200, owner=False)
     period_start = datetime(2026, 9, 13, 0, tzinfo=timezone(timedelta(hours=6)))
@@ -133,12 +131,13 @@ def test_period_keeps_at_least_realtor_target_and_allows_more_good_cards():
     planned = plan_period(
         owners + realtors,
         period_start=period_start,
-        realtor_target=4,
+        non_owner_target=4,
+        non_owner_limit=4,
         rng=random.Random(14),
     )
 
     assert len(planned) == 48
-    assert sum(item.apartment.seller_type == "realtor" for item in planned) >= 4
+    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 4
 
 
 def test_period_spreads_random_reposts_across_separate_windows():
@@ -240,7 +239,84 @@ async def test_concurrent_publishers_cannot_claim_the_same_card(repositories):
 
 
 @pytest.mark.asyncio
-async def test_claim_due_allows_more_than_four_realtors_in_a_day(repositories):
+async def test_claim_due_skips_old_two_room_queue_rows(repositories):
+    apartments, _, sessions = repositories
+    two_room = await apartments.upsert_discovered(
+        make_ad(lalafo_id=920, rooms="2", district="ЦУМ")
+    )
+    one_room = await apartments.upsert_discovered(
+        make_ad(lalafo_id=921, rooms="1", district="ЦУМ")
+    )
+    now = datetime.now(timezone.utc)
+    async with sessions.begin() as session:
+        session.add_all(
+            [
+                ApartmentInventoryQueue(
+                    apartment_id=two_room.id,
+                    scheduled_at=now - timedelta(minutes=2),
+                    window_key="room-policy",
+                    sequence=1,
+                ),
+                ApartmentInventoryQueue(
+                    apartment_id=one_room.id,
+                    scheduled_at=now - timedelta(minutes=1),
+                    window_key="room-policy",
+                    sequence=2,
+                ),
+            ]
+        )
+
+    claimed = await InventoryRepository(sessions).claim_due(now=now)
+
+    assert claimed is not None and claimed.apartment_id == one_room.id
+    async with sessions() as session:
+        skipped = await session.scalar(
+            select(func.count())
+            .select_from(ApartmentInventoryQueue)
+            .where(
+                ApartmentInventoryQueue.apartment_id == two_room.id,
+                ApartmentInventoryQueue.status == "skipped",
+                ApartmentInventoryQueue.last_error == "policy_room_filter",
+            )
+        )
+    assert skipped == 1
+
+
+@pytest.mark.asyncio
+async def test_claim_due_prioritizes_central_card_for_daily_share(repositories):
+    apartments, _, sessions = repositories
+    outskirts = await apartments.upsert_discovered(
+        make_ad(lalafo_id=930, rooms="1", district="Асанбай")
+    )
+    central = await apartments.upsert_discovered(
+        make_ad(lalafo_id=931, rooms="studio", district="ЦУМ")
+    )
+    now = datetime.now(timezone.utc)
+    async with sessions.begin() as session:
+        session.add_all(
+            [
+                ApartmentInventoryQueue(
+                    apartment_id=outskirts.id,
+                    scheduled_at=now - timedelta(minutes=2),
+                    window_key="central-share",
+                    sequence=1,
+                ),
+                ApartmentInventoryQueue(
+                    apartment_id=central.id,
+                    scheduled_at=now - timedelta(minutes=1),
+                    window_key="central-share",
+                    sequence=2,
+                ),
+            ]
+        )
+
+    claimed = await InventoryRepository(sessions).claim_due(now=now)
+
+    assert claimed is not None and claimed.apartment_id == central.id
+
+
+@pytest.mark.asyncio
+async def test_claim_due_caps_realtors_and_unknown_sellers_at_four_per_day(repositories):
     apartments, _, sessions = repositories
     now = datetime.now(timezone.utc)
     rows = []
@@ -268,7 +344,7 @@ async def test_claim_due_allows_more_than_four_realtors_in_a_day(repositories):
         )
 
     inventory = InventoryRepository(sessions)
-    for apartment in rows:
+    for apartment in rows[:4]:
         claimed = await inventory.claim_due(now=now)
         assert claimed is not None
         await apartments.mark_published(
@@ -285,10 +361,10 @@ async def test_claim_due_allows_more_than_four_realtors_in_a_day(repositories):
             .select_from(ApartmentInventoryQueue)
             .where(
                 ApartmentInventoryQueue.status == "skipped",
-                ApartmentInventoryQueue.last_error == "daily_realtor_cap",
+                ApartmentInventoryQueue.last_error == "daily_non_owner_cap",
             )
         )
-    assert skipped == 0
+    assert skipped == 1
 
 
 @pytest.mark.asyncio

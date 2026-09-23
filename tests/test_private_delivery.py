@@ -38,7 +38,7 @@ def test_private_contact_uses_labeled_demo_location_when_district_is_missing():
 
     text = format_private_contact(apartment)
 
-    assert "📍 Золотой Квадрат\n🏙 Бишкек" in text
+    assert "📍 Район не указан\n🏙 Бишкек" in text
     assert "Дем" not in text
 
 

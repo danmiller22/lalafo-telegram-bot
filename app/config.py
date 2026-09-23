@@ -79,7 +79,7 @@ LALAFO_DISTRICT_FILTERS = (
 
 DEFAULT_SEARCH_URL = (
     "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
-    "dolgosrochnaya-arenda-kvartir/1-bedroom/2-bedrooms/owner/"
+    "dolgosrochnaya-arenda-kvartir/studio/1-bedroom/owner/"
     "semeynym/param-bez-detey/studentam/bez-podseleniya/"
     "mozhno-s-zhivotnymi"
     "?price[from]=20000&price[to]=40000"
@@ -102,10 +102,10 @@ TELEGRAM_APARTMENT_CHANNELS: tuple[str, ...] = TELEGRAM_SOURCE_CHANNELS
 # capacity instead of being crowded out by the much larger owner result set.
 ADDITIONAL_SEARCH_URLS: tuple[str, ...] = (
     "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
-    "dolgosrochnaya-arenda-kvartir/1-bedroom/2-bedrooms/owner"
+    "dolgosrochnaya-arenda-kvartir/studio/1-bedroom/owner"
     "?price[from]=20000&price[to]=40000",
     "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
-    "dolgosrochnaya-arenda-kvartir/1-bedroom/2-bedrooms/real-estate-agency"
+    "dolgosrochnaya-arenda-kvartir/studio/1-bedroom/real-estate-agency"
     "?price[from]=20000&price[to]=40000",
 )
 
@@ -117,7 +117,7 @@ _CENTER_PATH = (
 )
 _INVENTORY_BASE = (
     "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
-    "dolgosrochnaya-arenda-kvartir/1-bedroom/2-bedrooms/"
+    "dolgosrochnaya-arenda-kvartir/studio/1-bedroom/"
 )
 # Split owner results by price as well as location. This exposes older affordable
 # ads that can be buried behind the newest broad-search results.
@@ -197,7 +197,7 @@ class Settings(BaseSettings):
     city: str = "Бишкек"
     min_price: int = 20_000
     max_price: int = 40_000
-    rooms: str = "1"
+    rooms: str = "studio,1"
     max_new_posts_per_run: int = 18
     max_search_pages: int = 36
     preferred_districts_only: bool = False

@@ -86,7 +86,7 @@ CENTRAL_DISTRICT_TERMS = (
 # checks still remove shared housing and all public cards omit offerer type.
 SOURCE_MIN_PRICE = 20_000
 SOURCE_MAX_PRICE = 40_000
-SOURCE_ALLOWED_ROOMS = ("1", "2")
+SOURCE_ALLOWED_ROOMS = ("studio", "1")
 SOURCE_MIN_PHOTOS = 2
 SOURCE_MAX_POSTS_PER_RUN = 18
 SOURCE_PUBLISH_SPACING_SECONDS = 150
@@ -94,16 +94,15 @@ SOURCE_MAX_SEARCH_PAGES = 36
 # Published apartments are terminal: every cycle must use fresh inventory.
 SOURCE_REPOST_AFTER_HOURS = None
 MAX_REPOSTS_PER_RUN = 0
-CENTRAL_BATCH_SHARE = 0.65
-OWNER_OTHER_BATCH_SHARE = 0.35
+CENTRAL_BATCH_SHARE = 0.90
+OWNER_OTHER_BATCH_SHARE = 0.10
 MAX_CANDIDATE_POOL = 300
-# Reserve half of discovery for agents so good inexpensive realtor listings are
-# not crowded out by owner-only sources. A batch may be entirely realtor stock
-# when those cards rank best or owner supply is thin.
-REALTOR_CANDIDATE_RESERVE_SHARE = 0.20
-REALTOR_BATCH_SHARE = 0.20
-# Two-bedroom cards are mixed into the normal stream instead of being sent as
-# a separate burst. Two per regular cycle reaches at most twenty per Bishkek day.
+# Keep a separate discovery reserve for agents so the daily 3-4 unknown-status
+# cards can still be selected, while the publication queue remains owner-led.
+REALTOR_CANDIDATE_RESERVE_SHARE = 0.08
+REALTOR_BATCH_SHARE = 0.04
+# Retained for historical reporting helpers; two-bedroom cards are no longer
+# eligible for discovery or publication.
 TWO_BEDROOM_MIN_PRICE = 20_000
 TWO_BEDROOM_MAX_PRICE = 40_000
 TWO_BEDROOM_DAILY_LIMIT = 20
@@ -591,14 +590,6 @@ def select_owners_then_realtors(
                 remaining_owners, {}, limit - len(selected)
             )
         )
-    if len(selected) < limit:
-        selected_ids = {ad.lalafo_id for ad in selected}
-        remaining_realtors = [ad for ad in realtors if ad.lalafo_id not in selected_ids]
-        selected.extend(
-            select_publish_batch_with_reposts(
-                remaining_realtors, {}, limit - len(selected)
-            )
-        )
     return selected
 
 
@@ -625,7 +616,6 @@ async def run(*, discovery_only: bool = False) -> int:
     managed_sources = []
     repost_candidate_ids: set[int] = set()
     repost_last_published_at: dict[int, datetime] = {}
-    two_bedrooms_published_today = 0
     direct_priority_count = 0
 
     engine = None
@@ -651,8 +641,6 @@ async def run(*, discovery_only: bool = False) -> int:
             await engine.dispose()
             return 2
         apartments = ApartmentRepository(sessions)
-        two_bedrooms_published_today = await published_two_bedrooms_today(sessions)
-
         curated_apartments = await apartments.curated_rotation_apartments(
             CURATED_ROTATION_SPECS
         )
@@ -1164,12 +1152,16 @@ async def run(*, discovery_only: bool = False) -> int:
         return 0
 
     managed_profile_candidates = [
-        ad for ad in candidates if ad.lalafo_id in managed_profile_ids
+        ad
+        for ad in candidates
+        if ad.lalafo_id in managed_profile_ids and ad.rooms in SOURCE_ALLOWED_ROOMS
     ]
     curated_candidates = [
         ad
         for ad in candidates
-        if ad.lalafo_id in curated_ids and ad.lalafo_id not in managed_profile_ids
+        if ad.lalafo_id in curated_ids
+        and ad.lalafo_id not in managed_profile_ids
+        and ad.rooms in SOURCE_ALLOWED_ROOMS
     ]
     regular_candidates = [
         ad for ad in candidates if ad.lalafo_id not in curated_ids
@@ -1181,27 +1173,17 @@ async def run(*, discovery_only: bool = False) -> int:
     profile_cards = deduplicate_candidates(curated_candidates)[
         : max(0, limit - len(managed_profile_cards))
     ]
-    two_bedroom_limit = min(
-        TWO_BEDROOM_MAX_PER_RUN,
-        max(0, TWO_BEDROOM_DAILY_LIMIT - two_bedrooms_published_today),
-        max(0, limit - len(profile_cards) - len(managed_profile_cards)),
-    )
-    two_bedroom_cards = select_owners_then_realtors(
-        [ad for ad in regular_candidates if ad.rooms == "2"],
-        two_bedroom_limit,
-    )
     owner_middle = select_owners_then_realtors(
-        [ad for ad in regular_candidates if ad.rooms == "1"],
+        [ad for ad in regular_candidates if ad.rooms in SOURCE_ALLOWED_ROOMS],
         max(
             0,
             limit
             - len(profile_cards)
-            - len(managed_profile_cards)
-            - len(two_bedroom_cards),
+            - len(managed_profile_cards),
         ),
     )
     candidates = insert_randomly(
-        mix_room_types(owner_middle + two_bedroom_cards + profile_cards),
+        mix_room_types(owner_middle + profile_cards),
         managed_profile_cards,
     )
     repost_candidate_ids.intersection_update(ad.lalafo_id for ad in candidates)

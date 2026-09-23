@@ -10,7 +10,7 @@ def make_ad(**overrides) -> LalafoAd:
         "phone": "+996555123456",
         "price": 35000,
         "currency": "KGS",
-        "rooms": "2",
+        "rooms": "1",
         "district": "7 мкр",
         "city": "Бишкек",
         "deposit": 20000,
@@ -18,6 +18,9 @@ def make_ad(**overrides) -> LalafoAd:
         "category_id": 2044,
         "no_subletting": True,
         "owner_listing": True,
+        "seller_type": "owner",
     }
     values.update(overrides)
+    if "owner_listing" in overrides and "seller_type" not in overrides:
+        values["seller_type"] = "owner" if overrides["owner_listing"] else "realtor"
     return LalafoAd(**values)
