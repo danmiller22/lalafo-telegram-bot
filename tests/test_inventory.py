@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 import random
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from app.inventory import (
     DISCOVERY_RETRY_MINUTES,
@@ -14,7 +14,7 @@ from app.inventory import (
     period_publication_targets,
     plan_period,
 )
-from app.models import ApartmentInventoryQueue
+from app.models import Apartment, ApartmentInventoryQueue
 from tests.helpers import make_ad
 
 
@@ -258,6 +258,38 @@ async def test_schedule_period_deletes_old_two_room_queue_rows(repositories):
         )
     assert deleted == 0
     assert retained == 1
+
+
+@pytest.mark.asyncio
+async def test_afternoon_schedule_fills_remaining_daily_target_today(repositories):
+    apartments, _, sessions = repositories
+    stored = [
+        await apartments.upsert_discovered(
+            make_ad(lalafo_id=10_000 + index, district="ЦУМ", rooms="1")
+        )
+        for index in range(90)
+    ]
+    now = datetime(2026, 9, 23, 10, 0, tzinfo=timezone.utc)
+    async with sessions.begin() as session:
+        await session.execute(
+            update(Apartment)
+            .where(Apartment.id.in_([item.id for item in stored[:18]]))
+            .values(publication_status="published", published_at=now - timedelta(hours=1))
+        )
+
+    queued = await InventoryRepository(sessions).schedule_period(
+        now=now, rng=random.Random(19)
+    )
+
+    assert queued == daily_publication_target(now) - 18
+    async with sessions() as session:
+        first = await session.scalar(
+            select(ApartmentInventoryQueue)
+            .order_by(ApartmentInventoryQueue.scheduled_at.asc())
+            .limit(1)
+        )
+    assert first is not None
+    assert first.scheduled_at <= now.replace(tzinfo=None)
 
 
 @pytest.mark.asyncio

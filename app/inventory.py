@@ -269,6 +269,8 @@ def plan_period(
     period_start: datetime,
     non_owner_target: int = TARGET_NON_OWNERS_PER_PERIOD,
     non_owner_limit: int = MAX_NON_OWNERS_PER_DAY,
+    target_count_override: int | None = None,
+    central_target_override: int | None = None,
     repeat_apartment_ids: set[int] | None = None,
     rng: random.Random | None = None,
 ) -> list[PlannedApartment]:
@@ -296,6 +298,10 @@ def plan_period(
     )
     repeat_pool = [item for item in apartments if item.id in repeat_ids]
     target_count, central_target = period_publication_targets(period_start)
+    if target_count_override is not None:
+        target_count = max(0, target_count_override)
+    if central_target_override is not None:
+        central_target = max(0, min(target_count, central_target_override))
     room_counts: dict[str, int] = {}
     selected = _pick_for_window(
         central_pool,
@@ -493,6 +499,58 @@ class InventoryRepository:
                 or 0
             )
             already_non_owners = published_non_owners + reserved_non_owners
+            published_today = int(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(Apartment)
+                    .where(
+                        Apartment.publication_status == "published",
+                        Apartment.published_at >= day_start,
+                        Apartment.published_at < day_end,
+                    )
+                )
+                or 0
+            )
+            reserved_today = int(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(ApartmentInventoryQueue)
+                    .where(
+                        ApartmentInventoryQueue.scheduled_at >= day_start,
+                        ApartmentInventoryQueue.scheduled_at < day_end,
+                        ApartmentInventoryQueue.status.in_(("queued", "publishing")),
+                    )
+                )
+                or 0
+            )
+            published_central = sum(
+                is_central(district)
+                for district in (
+                    await session.scalars(
+                        select(Apartment.district).where(
+                            Apartment.publication_status == "published",
+                            Apartment.published_at >= day_start,
+                            Apartment.published_at < day_end,
+                        )
+                    )
+                ).all()
+            )
+            reserved_central = sum(
+                is_central(district)
+                for district in (
+                    await session.scalars(
+                        select(Apartment.district)
+                        .join(ApartmentInventoryQueue)
+                        .where(
+                            ApartmentInventoryQueue.scheduled_at >= day_start,
+                            ApartmentInventoryQueue.scheduled_at < day_end,
+                            ApartmentInventoryQueue.status.in_(
+                                ("queued", "publishing")
+                            ),
+                        )
+                    )
+                ).all()
+            )
             remaining_non_owners = max(
                 0, MAX_NON_OWNERS_PER_DAY - already_non_owners
             )
@@ -536,15 +594,29 @@ class InventoryRepository:
                 ).all()
             )
             chooser = rng or random.SystemRandom()
+            target_override = None
+            central_override = None
+            if period.astimezone(BISHKEK).hour != 0:
+                daily_target = daily_publication_target(period)
+                target_override = max(
+                    0, daily_target - published_today - reserved_today
+                )
+                daily_central_target = round(daily_target * CENTRAL_DAILY_SHARE)
+                central_override = max(
+                    0,
+                    daily_central_target - published_central - reserved_central,
+                )
             planned = plan_period(
                 fresh_stock,
                 period_start=period,
                 non_owner_target=non_owner_target,
                 non_owner_limit=remaining_non_owners,
+                target_count_override=target_override,
+                central_target_override=central_override,
                 rng=chooser,
             )
             if planned and planned[0].scheduled_at < now + timedelta(minutes=2):
-                shift = now + timedelta(minutes=2) - planned[0].scheduled_at
+                shift = now - timedelta(seconds=1) - planned[0].scheduled_at
                 planned = [
                     PlannedApartment(
                         apartment=item.apartment,
@@ -561,16 +633,20 @@ class InventoryRepository:
                     + timedelta(days=1)
                 ).astimezone(timezone.utc)
                 if planned[-1].scheduled_at >= day_end:
-                    start = now + timedelta(minutes=2)
+                    start = now - timedelta(seconds=1)
                     usable_seconds = max(1.0, (day_end - start).total_seconds())
                     slot_seconds = usable_seconds / (len(planned) + 1)
                     planned = [
                         PlannedApartment(
                             apartment=item.apartment,
-                            scheduled_at=start
-                            + timedelta(
-                                seconds=slot_seconds
-                                * (index + chooser.uniform(0.15, 0.85))
+                            scheduled_at=(
+                                start
+                                if index == 0
+                                else start
+                                + timedelta(
+                                    seconds=slot_seconds
+                                    * (index + chooser.uniform(0.15, 0.85))
+                                )
                             ),
                             window_key=item.window_key,
                             sequence=item.sequence,
