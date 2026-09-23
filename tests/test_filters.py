@@ -121,7 +121,7 @@ def test_expanded_source_keeps_reposts_strictly_limited():
     assert SOURCE_PUBLISH_SPACING_SECONDS == 150
     assert SOURCE_MAX_SEARCH_PAGES == 12
     assert SOURCE_MIN_PRICE == 20_000
-    assert SOURCE_MIN_PHOTOS == 1
+    assert SOURCE_MIN_PHOTOS == 2
     assert MAX_REPOSTS_PER_RUN == 0
     assert SOURCE_REPOST_AFTER_HOURS is None
     assert TWO_BEDROOM_MIN_PRICE == 20_000

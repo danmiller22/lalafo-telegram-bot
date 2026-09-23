@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import re
 import sys
 import uuid
@@ -122,12 +121,6 @@ async def find_working_proxies() -> list[str]:
 
 
 async def run() -> int:
-    # GitHub runners are blocked by Lalafo and probing public proxies on every
-    # ten-minute tick only burns runner time.  Cloud inventory now comes from
-    # Joyka and Telegram; keep proxy discovery available for local workers.
-    if os.getenv("GITHUB_ACTIONS", "").casefold() == "true":
-        print("LALAFO_PROXY_URL=")
-        return 0
     selected = await find_working_proxies()
     if selected:
         print(f"LALAFO_PROXY_URL={','.join(selected)}")
