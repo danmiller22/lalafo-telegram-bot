@@ -1151,6 +1151,15 @@ async def run(*, discovery_only: bool = False) -> int:
                     continue
                 candidates.append(ad)
                 candidate_ids.add(ad.lalafo_id)
+                if discovery_only:
+                    # Make every fresh eligible search result available to the
+                    # minute dispatcher immediately. The rest of the source
+                    # crawl may continue without delaying Telegram delivery.
+                    assert apartments is not None
+                    from app.inventory import InventoryRepository
+
+                    await apartments.upsert_discovered(ad)
+                    await InventoryRepository(sessions).schedule_period()
                 if is_repost:
                     repost_candidate_ids.add(ad.lalafo_id)
             if len(candidates) >= source_candidate_limit:
