@@ -5,14 +5,17 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 import logging
 import re
+import secrets
+import time
 from urllib.parse import parse_qs, urlsplit
 import httpx
 
 from aiogram import Bot, F, Router
 from aiogram.filters import Command
+from aiogram.filters.state import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from app.config import Settings
 from app.lalafo.client import LalafoAccessError, LalafoClient, LalafoError, LalafoNotFound
@@ -28,6 +31,7 @@ from scripts.select_lalafo_proxy import find_working_proxies
 
 router = Router(name="admin-lalafo-links")
 owner_router = Router(name="owner-manual-card")
+manual_card_router = Router(name="main-manual-card")
 main_router = Router(name="main-admin-lalafo-links")
 logger = logging.getLogger(__name__)
 _LALAFO_URL = re.compile(
@@ -37,6 +41,8 @@ _LALAFO_URL = re.compile(
 _TRAILING_PUNCTUATION = ").,;!?]}>\"'"
 _publish_lock = asyncio.Lock()
 _forward_batch_lock = asyncio.Lock()
+_manual_photo_lock = asyncio.Lock()
+_manual_publish_lock = asyncio.Lock()
 REPOST_AFTER = timedelta(hours=48)
 MAX_DISTRICT_LENGTH = 60
 PROXY_DISCOVERY_TIMEOUT = 30.0
@@ -63,6 +69,9 @@ class ManualCardPublish(StatesGroup):
     waiting_for_rooms = State()
     waiting_for_district = State()
     waiting_for_price = State()
+    waiting_for_author = State()
+    waiting_for_confirmation = State()
+    publishing = State()
 
 
 def extract_lalafo_url(text: str | None) -> str | None:
@@ -111,6 +120,34 @@ def _is_owner(message: Message, settings: Settings) -> bool:
         settings.admin_username
         and user.username
         and user.username.casefold() == settings.admin_username.lstrip("@").casefold()
+    )
+
+
+def _is_manual_admin(message: Message, settings: Settings) -> bool:
+    user = message.from_user
+    return bool(user and settings.admin_user_id and user.id == settings.admin_user_id)
+
+
+def _manual_keyboard(nonce: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Опубликовать", callback_data=f"manual:publish:{nonce}")],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data=f"manual:cancel:{nonce}")],
+    ])
+
+
+def _manual_preview(data: dict) -> str:
+    title = "Студия" if data["rooms"] == "studio" else "1-комнатная квартира"
+    author = "собственник" if data["seller_type"] == "owner" else "не указан"
+    price = f"{data['price']:,}".replace(",", " ")
+    return (
+        "Проверьте карточку:\n\n"
+        f"🏠 {title}\n"
+        f"👤 Автор: {author}\n"
+        f"📍 {data['district']}\n"
+        f"💰 {price} сом\n"
+        f"📞 {data['phone']}\n"
+        f"📷 Фото: {len(data['photo_urls'])}\n\n"
+        "Опубликовать в группе?"
     )
 
 
@@ -300,24 +337,28 @@ async def duplicate_forwarded_card(
         )
 
 
-@owner_router.message(Command("addcard"), F.chat.type == "private")
+@manual_card_router.message(Command("addcard"), F.chat.type == "private")
 async def start_manual_card(
     message: Message,
     state: FSMContext,
     settings: Settings,
 ) -> None:
-    if not _is_owner(message, settings):
+    if not _is_manual_admin(message, settings):
         return
-    await state.clear()
-    await state.set_state(ManualCardPublish.waiting_for_photos)
-    await state.update_data(photo_urls=[])
+    async with _manual_publish_lock:
+        if await state.get_state() == ManualCardPublish.publishing.state:
+            await message.answer("Публикация уже выполняется. Дождитесь результата.")
+            return
+        await state.clear()
+        await state.set_state(ManualCardPublish.waiting_for_photos)
+        await state.update_data(photo_urls=[], nonce=secrets.token_hex(6))
     await message.answer(
         "Пришлите фотографии квартиры (можно несколько сообщений), "
         "затем отправьте «готово»."
     )
 
 
-@owner_router.callback_query(F.data == "manual:add")
+@manual_card_router.callback_query(F.data == "manual:add")
 async def start_manual_card_button(
     callback: CallbackQuery,
     state: FSMContext,
@@ -325,21 +366,18 @@ async def start_manual_card_button(
 ) -> None:
     if (
         callback.message is None
-        or not (
-            (settings.admin_user_id and callback.from_user.id == settings.admin_user_id)
-            or (
-                settings.admin_username
-                and callback.from_user.username
-                and callback.from_user.username.casefold()
-                == settings.admin_username.lstrip("@").casefold()
-            )
-        )
+        or callback.message.chat.type != "private"
+        or not (settings.admin_user_id and callback.from_user.id == settings.admin_user_id)
     ):
         await callback.answer("Недостаточно прав.", show_alert=True)
         return
-    await state.clear()
-    await state.set_state(ManualCardPublish.waiting_for_photos)
-    await state.update_data(photo_urls=[])
+    async with _manual_publish_lock:
+        if await state.get_state() == ManualCardPublish.publishing.state:
+            await callback.answer("Публикация уже выполняется.", show_alert=True)
+            return
+        await state.clear()
+        await state.set_state(ManualCardPublish.waiting_for_photos)
+        await state.update_data(photo_urls=[], nonce=secrets.token_hex(6))
     await callback.message.answer(
         "Пришлите фотографии квартиры (можно несколько сообщений), "
         "затем отправьте «готово»."
@@ -347,32 +385,76 @@ async def start_manual_card_button(
     await callback.answer()
 
 
-@owner_router.message(ManualCardPublish.waiting_for_photos, F.chat.type == "private", F.photo)
+@manual_card_router.message(
+    StateFilter(*ManualCardPublish.__all_states__),
+    F.chat.type == "private",
+    F.text.func(lambda text: text.strip().casefold() in {"/cancel", "отмена", "cancel"}),
+)
+async def cancel_manual_card(message: Message, state: FSMContext, settings: Settings) -> None:
+    if not _is_manual_admin(message, settings):
+        await state.clear()
+        return
+    async with _manual_publish_lock:
+        if await state.get_state() == ManualCardPublish.publishing.state:
+            await message.answer("Публикация уже выполняется. Дождитесь результата.")
+            return
+        await state.clear()
+    await message.answer("Публикация отменена.")
+
+
+@manual_card_router.callback_query(F.data.startswith("manual:cancel:"))
+async def cancel_manual_card_button(
+    callback: CallbackQuery, state: FSMContext, settings: Settings
+) -> None:
+    if not (settings.admin_user_id and callback.from_user.id == settings.admin_user_id):
+        await callback.answer("Недостаточно прав.", show_alert=True)
+        return
+    if callback.message is None or callback.message.chat.type != "private":
+        await callback.answer("Откройте личный чат с ботом.", show_alert=True)
+        return
+    async with _manual_publish_lock:
+        data = await state.get_data()
+        if (callback.data or "").removeprefix("manual:cancel:") != data.get("nonce"):
+            await callback.answer("Карточка уже обработана или отменена.", show_alert=True)
+            return
+        if await state.get_state() == ManualCardPublish.publishing.state:
+            await callback.answer("Публикация уже выполняется.", show_alert=True)
+            return
+        await state.clear()
+    await callback.message.answer("Публикация отменена.")
+    await callback.answer()
+
+
+@manual_card_router.message(ManualCardPublish.waiting_for_photos, F.chat.type == "private", F.photo)
 async def manual_card_photo(
     message: Message,
     state: FSMContext,
     settings: Settings,
 ) -> None:
-    if not _is_owner(message, settings):
+    if not _is_manual_admin(message, settings):
         await state.clear()
         return
-    data = await state.get_data()
-    photos = list(data.get("photo_urls") or [])
-    if len(photos) >= 10:
+    async with _manual_photo_lock:
+        data = await state.get_data()
+        photos = list(data.get("photo_urls") or [])
+        full = len(photos) >= 10
+        if not full:
+            photos.append(message.photo[-1].file_id)
+            await state.update_data(photo_urls=photos)
+    if full:
         await message.answer("Достаточно 10 фото. Напишите «готово».")
         return
-    photos.append(message.photo[-1].file_id)
-    await state.update_data(photo_urls=photos)
-    await message.answer(f"Фото добавлено: {len(photos)}. Ещё фото или «готово».")
+    if not message.media_group_id:
+        await message.answer(f"Фото добавлено: {len(photos)}. Ещё фото или «готово».")
 
 
-@owner_router.message(ManualCardPublish.waiting_for_photos, F.chat.type == "private", F.text)
+@manual_card_router.message(ManualCardPublish.waiting_for_photos, F.chat.type == "private", F.text)
 async def manual_card_photos_done(
     message: Message,
     state: FSMContext,
     settings: Settings,
 ) -> None:
-    if not _is_owner(message, settings):
+    if not _is_manual_admin(message, settings):
         await state.clear()
         return
     if (message.text or "").strip().casefold() not in {"готово", "готов", "done"}:
@@ -386,13 +468,13 @@ async def manual_card_photos_done(
     await message.answer("Введите номер хозяина, например +996 700 123 456.")
 
 
-@owner_router.message(ManualCardPublish.waiting_for_phone, F.chat.type == "private", F.text)
+@manual_card_router.message(ManualCardPublish.waiting_for_phone, F.chat.type == "private", F.text)
 async def manual_card_phone(
     message: Message,
     state: FSMContext,
     settings: Settings,
 ) -> None:
-    if not _is_owner(message, settings):
+    if not _is_manual_admin(message, settings):
         await state.clear()
         return
     try:
@@ -402,42 +484,42 @@ async def manual_card_phone(
         return
     await state.update_data(phone=phone)
     await state.set_state(ManualCardPublish.waiting_for_rooms)
-    await message.answer("Сколько комнат? Напишите 1 или 2.")
+    await message.answer("Тип квартиры: напишите «студия» или «1-комнатная».")
 
 
-@owner_router.message(ManualCardPublish.waiting_for_rooms, F.chat.type == "private", F.text)
+@manual_card_router.message(ManualCardPublish.waiting_for_rooms, F.chat.type == "private", F.text)
 async def manual_card_rooms(
     message: Message,
     state: FSMContext,
     settings: Settings,
 ) -> None:
-    if not _is_owner(message, settings):
+    if not _is_manual_admin(message, settings):
         await state.clear()
         return
     value = (message.text or "").strip().casefold()
     rooms = {
+        "студия": "studio",
+        "studio": "studio",
         "1": "1",
         "одна": "1",
+        "1-комнатная": "1",
         "однокомнатная": "1",
-        "2": "2",
-        "две": "2",
-        "двухкомнатная": "2",
     }.get(value)
     if rooms is None:
-        await message.answer("Напишите только 1 или 2 комнаты.")
+        await message.answer("Напишите «студия» или «1-комнатная».")
         return
     await state.update_data(rooms=rooms)
     await state.set_state(ManualCardPublish.waiting_for_district)
     await message.answer("Какой район указать в карточке?")
 
 
-@owner_router.message(ManualCardPublish.waiting_for_district, F.chat.type == "private", F.text)
+@manual_card_router.message(ManualCardPublish.waiting_for_district, F.chat.type == "private", F.text)
 async def manual_card_district(
     message: Message,
     state: FSMContext,
     settings: Settings,
 ) -> None:
-    if not _is_owner(message, settings):
+    if not _is_manual_admin(message, settings):
         await state.clear()
         return
     district = normalize_district(message.text)
@@ -449,36 +531,87 @@ async def manual_card_district(
     await message.answer("Какая цена в сомах? Например: 28000")
 
 
-@owner_router.message(ManualCardPublish.waiting_for_price, F.chat.type == "private", F.text)
+@manual_card_router.message(ManualCardPublish.waiting_for_price, F.chat.type == "private", F.text)
 async def manual_card_price(
     message: Message,
+    state: FSMContext,
+    settings: Settings,
+) -> None:
+    if not _is_manual_admin(message, settings):
+        await state.clear()
+        return
+    raw_price = (message.text or "").strip()
+    digits = re.sub(r"[\s\u00a0]", "", raw_price)
+    try:
+        price = int(digits) if digits.isdecimal() else 0
+    except ValueError:
+        price = 0
+    if not 20_000 <= price <= 40_000:
+        await message.answer("Укажите цену от 20 000 до 40 000 сом.")
+        return
+    await state.update_data(price=price)
+    await state.set_state(ManualCardPublish.waiting_for_author)
+    await message.answer("Кто автор объявления? Напишите «собственник» или «не указан».")
+
+
+@manual_card_router.message(ManualCardPublish.waiting_for_author, F.chat.type == "private", F.text)
+async def manual_card_author(message: Message, state: FSMContext, settings: Settings) -> None:
+    if not _is_manual_admin(message, settings):
+        await state.clear()
+        return
+    value = (message.text or "").strip().casefold()
+    seller_type = {
+        "собственник": "owner",
+        "владелец": "owner",
+        "не указан": "unknown",
+        "неизвестно": "unknown",
+    }.get(value)
+    if seller_type is None:
+        await message.answer("Напишите «собственник» или «не указан».")
+        return
+    await state.update_data(seller_type=seller_type)
+    await state.set_state(ManualCardPublish.waiting_for_confirmation)
+    data = await state.get_data()
+    await message.answer(_manual_preview(data), reply_markup=_manual_keyboard(data["nonce"]))
+
+
+@manual_card_router.callback_query(F.data.startswith("manual:publish:"))
+async def publish_manual_card(
+    callback: CallbackQuery,
     state: FSMContext,
     settings: Settings,
     apartments: ApartmentRepository,
     signer: TokenSigner,
     bot: Bot,
 ) -> None:
-    if not _is_owner(message, settings):
-        await state.clear()
+    if not (settings.admin_user_id and callback.from_user.id == settings.admin_user_id):
+        await callback.answer("Недостаточно прав.", show_alert=True)
         return
-    digits = re.sub(r"\D", "", message.text or "")
+    if callback.message is None or callback.message.chat.type != "private":
+        await callback.answer("Откройте личный чат с ботом.", show_alert=True)
+        return
+    async with _manual_publish_lock:
+        data = await state.get_data()
+        if (
+            await state.get_state() != ManualCardPublish.waiting_for_confirmation.state
+            or (callback.data or "").removeprefix("manual:publish:") != data.get("nonce")
+        ):
+            await callback.answer("Карточка уже обработана или отменена.", show_alert=True)
+            return
+        await state.set_state(ManualCardPublish.publishing)
     try:
-        price = int(digits)
-    except ValueError:
-        price = 0
-    if not 20_000 <= price <= 40_000:
-        await message.answer("Укажите цену от 20 000 до 40 000 сом.")
-        return
-    data = await state.get_data()
-    await state.clear()
+        await callback.answer()
+        await callback.message.answer("⏳ Публикую карточку в группу…")
+    except Exception:
+        logger.exception("Could not send manual publication progress message")
     # Negative IDs are reserved for bot-created cards and cannot collide with
     # numeric Lalafo advertisements.
-    lalafo_id = -int(datetime.now(timezone.utc).timestamp() * 1000)
+    lalafo_id = -time.time_ns()
     ad = LalafoAd(
         lalafo_id=lalafo_id,
         source_url=f"manual://telegram/{abs(lalafo_id)}",
         phone=data["phone"],
-        price=price,
+        price=data["price"],
         currency="KGS",
         rooms=data["rooms"],
         district=data["district"],
@@ -486,32 +619,44 @@ async def manual_card_price(
         photo_urls=list(data["photo_urls"]),
         category_id=2044,
         no_subletting=True,
-        owner_listing=True,
-        seller_type="owner",
+        owner_listing=data["seller_type"] == "owner",
+        seller_type=data["seller_type"],
         source_title="Ручное объявление",
     )
-    await message.answer("⏳ Публикую карточку в группу…")
-    apartment = await apartments.upsert_discovered(ad, discovery_priority=True)
-    publisher = TelegramPublisher(
-        bot,
-        chat_id=settings.telegram_group_id,
-        signer=signer,
-        bot_username=settings.telegram_bot_username,
-        support_url=settings.support_bot_url,
-        max_photos=settings.max_photos_per_apartment,
-    )
     try:
+        apartment = await apartments.upsert_discovered(ad, discovery_priority=True)
+        publisher = TelegramPublisher(
+            bot,
+            chat_id=settings.telegram_group_id,
+            signer=signer,
+            bot_username=settings.telegram_bot_username,
+            support_url=settings.support_bot_url,
+            max_photos=settings.max_photos_per_apartment,
+        )
         published = await publisher.publish(apartment.id, ad)
+    except Exception:
+        logger.exception("Could not publish manually created apartment")
+        await state.set_state(ManualCardPublish.waiting_for_confirmation)
+        await callback.message.answer(
+            "⚠️ Не удалось опубликовать карточку. Можно повторить или отменить.",
+            reply_markup=_manual_keyboard(data["nonce"]),
+        )
+        return
+    await state.clear()
+    try:
         await apartments.mark_published(
             apartment.id,
             chat_id=settings.telegram_group_id,
             message_id=published.message_id,
         )
     except Exception:
-        logger.exception("Could not publish manually created apartment")
-        await message.answer("⚠️ Не удалось опубликовать карточку. Проверьте группу.")
+        logger.exception("Published manual card metadata could not be saved")
+        await callback.message.answer(
+            "✅ Карточка опубликована, но отметка в базе не сохранилась. "
+            "Не публикуйте её повторно; проверьте базу."
+        )
         return
-    await message.answer("✅ Карточка опубликована в группе с кнопками оплаты.")
+    await callback.message.answer("✅ Карточка опубликована в группе с рабочими кнопками.")
 
 
 @router.message(ManualLalafoPublish.waiting_for_district, F.chat.type == "private", F.text)
@@ -590,48 +735,6 @@ main_router.message.register(
     duplicate_forwarded_card,
     F.chat.type == "private",
     F.forward_origin,
-)
-main_router.message.register(
-    start_manual_card,
-    Command("addcard"),
-    F.chat.type == "private",
-)
-main_router.callback_query.register(start_manual_card_button, F.data == "manual:add")
-main_router.message.register(
-    manual_card_photo,
-    ManualCardPublish.waiting_for_photos,
-    F.chat.type == "private",
-    F.photo,
-)
-main_router.message.register(
-    manual_card_photos_done,
-    ManualCardPublish.waiting_for_photos,
-    F.chat.type == "private",
-    F.text,
-)
-main_router.message.register(
-    manual_card_phone,
-    ManualCardPublish.waiting_for_phone,
-    F.chat.type == "private",
-    F.text,
-)
-main_router.message.register(
-    manual_card_rooms,
-    ManualCardPublish.waiting_for_rooms,
-    F.chat.type == "private",
-    F.text,
-)
-main_router.message.register(
-    manual_card_district,
-    ManualCardPublish.waiting_for_district,
-    F.chat.type == "private",
-    F.text,
-)
-main_router.message.register(
-    manual_card_price,
-    ManualCardPublish.waiting_for_price,
-    F.chat.type == "private",
-    F.text,
 )
 main_router.message.register(
     request_lalafo_district,

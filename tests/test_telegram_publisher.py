@@ -7,7 +7,7 @@ import pytest
 
 from app.lalafo.models import LalafoAd
 from app.security import TokenSigner
-from app.telegram.publisher import TelegramPublisher
+from app.telegram.publisher import TelegramPublishError, TelegramPublisher
 
 
 def make_ad() -> LalafoAd:
@@ -62,6 +62,70 @@ async def test_public_album_uses_fast_direct_telegram_urls() -> None:
         "https://img.example/2.jpg",
     ]
     bot.send_photo.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_manual_telegram_file_ids_form_album_with_working_card_keyboard() -> None:
+    bot = SimpleNamespace(
+        send_media_group=AsyncMock(
+            return_value=[SimpleNamespace(message_id=1), SimpleNamespace(message_id=2)]
+        ),
+        send_message=AsyncMock(return_value=SimpleNamespace(message_id=3)),
+        send_photo=AsyncMock(),
+        delete_message=AsyncMock(),
+    )
+    ad = make_ad().model_copy(
+        update={
+            "photo_urls": ["telegram-file-id-1", "telegram-file-id-2"],
+            "seller_type": "unknown",
+            "owner_listing": False,
+        }
+    )
+    signer = TokenSigner("s" * 32)
+    publisher = TelegramPublisher(
+        bot,
+        chat_id=-1001,
+        signer=signer,
+        bot_username="testbot",
+        support_url="https://t.me/support",
+    )
+
+    await publisher.publish(77, ad)
+
+    media = bot.send_media_group.await_args.kwargs["media"]
+    assert [item.media for item in media] == ad.photo_urls
+    card = bot.send_message.await_args.kwargs
+    assert "Автор: не указан" in card["text"]
+    keyboard = card["reply_markup"]
+    assert keyboard.inline_keyboard[0][0].url.startswith(
+        "https://t.me/testbot/access?startapp="
+    )
+    token = keyboard.inline_keyboard[0][0].url.split("startapp=", 1)[1]
+    assert signer.decode_public_start_id(token) == 77
+
+
+@pytest.mark.asyncio
+async def test_manual_file_id_publish_error_does_not_retry_as_url() -> None:
+    bot = SimpleNamespace(
+        send_media_group=AsyncMock(side_effect=RuntimeError("Telegram rejected file ID")),
+        send_message=AsyncMock(),
+        send_photo=AsyncMock(),
+        delete_message=AsyncMock(),
+    )
+    ad = make_ad().model_copy(update={"photo_urls": ["file-1", "file-2"]})
+    publisher = TelegramPublisher(
+        bot,
+        chat_id=-1001,
+        signer=TokenSigner("s" * 32),
+        bot_username="testbot",
+        support_url="https://t.me/support",
+    )
+
+    with pytest.raises(TelegramPublishError, match="photo file IDs"):
+        await publisher.publish(77, ad)
+
+    bot.send_media_group.assert_awaited_once()
+    bot.send_message.assert_not_awaited()
 
 
 @pytest.mark.asyncio

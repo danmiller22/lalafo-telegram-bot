@@ -78,16 +78,8 @@ async def support_close(
             reply_markup=main_menu_keyboard(
                 settings.support_bot_url,
                 include_admin=bool(
-                    (
-                        settings.admin_user_id
-                        and callback.from_user.id == settings.admin_user_id
-                    )
-                    or (
-                        settings.admin_username
-                        and getattr(callback.from_user, "username", None)
-                        and callback.from_user.username.casefold()
-                        == settings.admin_username.lstrip("@").casefold()
-                    )
+                    settings.admin_user_id
+                    and callback.from_user.id == settings.admin_user_id
                 ),
             ),
         )

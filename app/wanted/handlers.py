@@ -59,16 +59,8 @@ async def wanted_cancel(
             reply_markup=main_menu_keyboard(
                 settings.support_bot_url,
                 include_admin=bool(
-                    (
-                        settings.admin_user_id
-                        and callback.from_user.id == settings.admin_user_id
-                    )
-                    or (
-                        settings.admin_username
-                        and getattr(callback.from_user, "username", None)
-                        and callback.from_user.username.casefold()
-                        == settings.admin_username.lstrip("@").casefold()
-                    )
+                    settings.admin_user_id
+                    and callback.from_user.id == settings.admin_user_id
                 ),
             ),
         )
@@ -346,18 +338,8 @@ async def _send_my_wanted_ads(
                 settings.support_bot_url,
                 include_admin=bool(
                     getattr(message, "from_user", None)
-                    and (
-                        (
-                            settings.admin_user_id
-                            and message.from_user.id == settings.admin_user_id
-                        )
-                        or (
-                            settings.admin_username
-                            and getattr(message.from_user, "username", None)
-                            and message.from_user.username.casefold()
-                            == settings.admin_username.lstrip("@").casefold()
-                        )
-                    )
+                    and settings.admin_user_id
+                    and message.from_user.id == settings.admin_user_id
                 ),
             ),
         )
@@ -384,18 +366,8 @@ async def _send_my_wanted_ads(
             settings.support_bot_url,
             include_admin=bool(
                 getattr(message, "from_user", None)
-                and (
-                    (
-                        settings.admin_user_id
-                        and message.from_user.id == settings.admin_user_id
-                    )
-                    or (
-                        settings.admin_username
-                        and getattr(message.from_user, "username", None)
-                        and message.from_user.username.casefold()
-                        == settings.admin_username.lstrip("@").casefold()
-                    )
-                )
+                and settings.admin_user_id
+                and message.from_user.id == settings.admin_user_id
             ),
         ),
     )

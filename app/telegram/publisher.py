@@ -99,6 +99,17 @@ class TelegramPublisher:
                         )
                     )
             except Exception as direct_error:
+                # Manually supplied Telegram file IDs are already hosted by
+                # Telegram and cannot be downloaded as public URLs.
+                if not all(url.startswith(("http://", "https://")) for url in chunk):
+                    for message in album_messages:
+                        try:
+                            await self.bot.delete_message(self.chat_id, message.message_id)
+                        except Exception:
+                            pass
+                    raise TelegramPublishError(
+                        "Telegram could not publish the supplied photo file IDs"
+                    ) from direct_error
                 logger.warning(
                     "Direct Telegram photo batch failed; retrying all photos via streaming: %s",
                     type(direct_error).__name__,

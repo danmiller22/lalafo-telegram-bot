@@ -61,18 +61,8 @@ async def _show_main_menu(message: Message, settings: Settings) -> None:
             settings.support_bot_url,
             include_admin=bool(
                 message.from_user
-                and (
-                    (
-                        settings.admin_user_id
-                        and message.from_user.id == settings.admin_user_id
-                    )
-                    or (
-                        settings.admin_username
-                        and getattr(message.from_user, "username", None)
-                        and message.from_user.username.casefold()
-                        == settings.admin_username.lstrip("@").casefold()
-                    )
-                )
+                and settings.admin_user_id
+                and message.from_user.id == settings.admin_user_id
             ),
         ),
     )
