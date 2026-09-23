@@ -24,9 +24,9 @@ MAX_TWO_BEDROOMS_PER_WINDOW = 1
 MAX_TWO_BEDROOMS_PER_DAY = 10
 MAX_TWO_BEDROOMS_PER_PERIOD = 5
 MAX_PUBLICATIONS_PER_DAY = 96
-MIN_REALTORS_PER_DAY = 72
+MIN_REALTORS_PER_DAY = 0
 MAX_REALTORS_PER_DAY = MAX_PUBLICATIONS_PER_DAY
-TARGET_REALTORS_PER_PERIOD = 36
+TARGET_REALTORS_PER_PERIOD = 0
 REPOST_AFTER_HOURS = 48
 MAX_REPOSTS_PER_PERIOD = 36
 DISCOVERY_RETRY_MINUTES = 30
@@ -70,9 +70,9 @@ def _candidate_key(item: Apartment, *, central: bool) -> tuple[object, ...]:
     favorable = central and item.price <= 32_000
     return (
         not item.discovery_priority,
+        not item.owner_listing,
         not favorable,
         item.price,
-        not item.owner_listing,
         -(as_utc(item.last_seen_at or item.updated_at).timestamp()),
         item.id,
     )

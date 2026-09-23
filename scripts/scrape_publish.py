@@ -99,8 +99,8 @@ MAX_CANDIDATE_POOL = 300
 # Reserve half of discovery for agents so good inexpensive realtor listings are
 # not crowded out by owner-only sources. A batch may be entirely realtor stock
 # when those cards rank best or owner supply is thin.
-REALTOR_CANDIDATE_RESERVE_SHARE = 0.50
-REALTOR_BATCH_SHARE = 0.75
+REALTOR_CANDIDATE_RESERVE_SHARE = 0.20
+REALTOR_BATCH_SHARE = 0.20
 # Two-bedroom cards are mixed into the normal stream instead of being sent as
 # a separate burst. Two per regular cycle reaches at most twenty per Bishkek day.
 TWO_BEDROOM_MIN_PRICE = 20_000
@@ -402,7 +402,7 @@ def source_candidate_targets(
     batch_limit: int,
     owner_source_count: int | None = None,
 ) -> list[int]:
-    """Split discovery capacity evenly between owner and realtor sources."""
+    """Give owner searches most capacity while retaining an agent fallback."""
     if source_count <= 1:
         return [pool_limit]
     owner_source_count = min(
@@ -573,7 +573,7 @@ def select_owners_then_realtors(
     candidates: list[LalafoAd],
     limit: int,
 ) -> list[LalafoAd]:
-    """Prefer a large realtor slice while allowing agents to fill the batch."""
+    """Prefer owner cards while allowing agents to fill any shortage."""
     if limit <= 0:
         return []
     owners = [ad for ad in candidates if ad.owner_listing]
@@ -906,7 +906,10 @@ async def run(*, discovery_only: bool = False) -> int:
             candidate_pool_limit,
             len(search_urls),
             limit,
-            owner_source_count=min(2, len(search_urls)),
+            owner_source_count=(
+                sum("/owner?" in url for url in search_urls)
+                if discovery_only else min(2, len(search_urls))
+            ),
         )
         source_candidate_limit = source_targets[search_index]
         page_number = 1

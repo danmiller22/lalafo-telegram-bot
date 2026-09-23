@@ -111,10 +111,12 @@ _INVENTORY_BASE = (
     "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
     "dolgosrochnaya-arenda-kvartir/1-bedroom/2-bedrooms/"
 )
-# The twice-daily collector deliberately checks these four pools separately,
-# so broad owner results cannot crowd out central or realtor inventory.
+# Split owner results by price as well as location. This exposes older affordable
+# ads that can be buried behind the newest broad-search results.
 INVENTORY_SEARCH_URLS: tuple[str, ...] = (
     f"{_INVENTORY_BASE}{_CENTER_PATH}/owner?price[from]=20000&price[to]=40000",
+    f"{_INVENTORY_BASE}owner?price[from]=20000&price[to]=29999",
+    f"{_INVENTORY_BASE}owner?price[from]=30000&price[to]=40000",
     f"{_INVENTORY_BASE}owner?price[from]=20000&price[to]=40000",
     f"{_INVENTORY_BASE}{_CENTER_PATH}/real-estate-agency?price[from]=20000&price[to]=40000",
     f"{_INVENTORY_BASE}real-estate-agency?price[from]=20000&price[to]=40000",

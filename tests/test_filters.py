@@ -137,15 +137,15 @@ def test_source_urls_follow_the_operator_filters():
     assert all("price[from]=20000&price[to]=40000" in url for url in ADDITIONAL_SEARCH_URLS)
 
 
-def test_realtor_sources_receive_half_of_discovery_pool():
+def test_owner_sources_receive_most_of_discovery_pool():
     targets = source_candidate_targets(300, source_count=3, batch_limit=18)
 
-    assert REALTOR_CANDIDATE_RESERVE_SHARE == 0.50
-    assert targets == [75, 150, 300]
-    assert targets[-1] - targets[-2] == 150
+    assert REALTOR_CANDIDATE_RESERVE_SHARE == 0.20
+    assert targets == [120, 240, 300]
+    assert targets[-1] - targets[-2] == 60
 
 
-def test_inventory_sources_split_owner_and_realtor_capacity_evenly():
+def test_inventory_sources_reserve_smaller_realtor_fallback():
     targets = source_candidate_targets(
         240,
         source_count=4,
@@ -153,7 +153,7 @@ def test_inventory_sources_split_owner_and_realtor_capacity_evenly():
         owner_source_count=2,
     )
 
-    assert targets == [60, 120, 180, 240]
+    assert targets == [96, 192, 216, 240]
 
 
 def test_all_room_types_have_twenty_thousand_price_floor():
@@ -304,7 +304,7 @@ def test_publish_batch_accepts_realtors_without_public_label():
     assert "собственник" not in format_apartment(realtor).casefold()
 
 
-def test_realtors_fill_most_of_a_mixed_batch():
+def test_owners_lead_a_mixed_batch():
     owners = [
         make_ad(lalafo_id=index, owner_listing=True, phone=f"+996700{index:06d}")
         for index in (1, 2)
@@ -317,7 +317,7 @@ def test_realtors_fill_most_of_a_mixed_batch():
     selected = select_owners_then_realtors(owners + realtors, limit=4)
 
     assert len(selected) == 4
-    assert sum(not ad.owner_listing for ad in selected) == 3
+    assert sum(ad.owner_listing for ad in selected) == 2
 
 
 def test_permanently_excluded_source_never_enters_a_publish_batch():
