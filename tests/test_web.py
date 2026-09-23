@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+from datetime import UTC, datetime
 import hashlib
 import hmac
 import json
@@ -425,7 +426,9 @@ async def test_hosted_queue_dispatcher_publishes_without_proxy_discovery(
     import scripts.publish_inventory
 
     publish_one = AsyncMock(return_value=0)
-    window_status = AsyncMock(return_value=(7, None))
+    earlier = datetime(2026, 9, 23, 8, tzinfo=UTC)
+    published = datetime(2026, 9, 23, 9, tzinfo=UTC)
+    window_status = AsyncMock(side_effect=[(6, earlier), (7, published)])
     monkeypatch.setattr(scripts.publish_inventory, "run", publish_one)
     monkeypatch.setattr(
         scripts.publish_if_due, "publication_window_status", window_status
@@ -433,8 +436,9 @@ async def test_hosted_queue_dispatcher_publishes_without_proxy_discovery(
 
     assert await web._execute_queue_dispatch() == 0
 
-    publish_one.assert_awaited_once_with()
-    window_status.assert_awaited_once_with(window_minutes=180)
+    publish_one.assert_awaited_once()
+    assert publish_one.await_args.kwargs["eligible_until"] > datetime.now(UTC)
+    assert window_status.await_count == 2
     assert web._apartment_scheduler_state["recent_published_count"] == 7
     assert web._apartment_scheduler_state["running_cycle"] is False
 

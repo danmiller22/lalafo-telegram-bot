@@ -8,7 +8,7 @@ import os
 import secrets
 import inspect
 from contextlib import suppress
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import PurePath
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -532,10 +532,25 @@ async def _execute_queue_dispatch() -> int:
         last_check_at=_now(),
         last_error=None,
     )
-    exit_code = await publish_one_due()
-    recent_count, latest_published_at = await publication_window_status(
+    recent_count, previous_latest = await publication_window_status(
         window_minutes=180
     )
+    latest_published_at = previous_latest
+    exit_code = 0
+    # A queued source can disappear or fail validation between discovery and
+    # publication. Skip a few such rows in the same lightweight tick, but stop
+    # immediately after the first real Telegram publication.
+    eligible_until = datetime.now(UTC) + timedelta(minutes=10)
+    for _ in range(4):
+        exit_code = max(
+            exit_code,
+            await publish_one_due(eligible_until=eligible_until),
+        )
+        recent_count, latest_published_at = await publication_window_status(
+            window_minutes=180
+        )
+        if latest_published_at is not None and latest_published_at != previous_latest:
+            break
     _apartment_scheduler_state.update(
         running_cycle=False,
         last_exit_code=exit_code,
