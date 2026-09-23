@@ -883,6 +883,24 @@ async def run(*, discovery_only: bool = False) -> int:
             curated_ids.add(priority_id)
             direct_priority_count += 1
 
+        # Do not make current operator-approved cards wait for the complete
+        # catalogue crawl. Persist and schedule them immediately; the hosted
+        # minute dispatcher can start publishing while discovery continues.
+        if discovery_only and direct_priority_count:
+            assert apartments is not None
+            from app.inventory import InventoryRepository
+
+            for priority_ad in candidates:
+                if priority_ad.lalafo_id in curated_ids:
+                    await apartments.upsert_discovered(
+                        priority_ad, discovery_priority=True
+                    )
+            early_queued = await InventoryRepository(sessions).schedule_period()
+            logger.info(
+                "Priority inventory scheduled before catalogue crawl: queued=%d",
+                early_queued,
+            )
+
         telegram_ads = await fetch_telegram_apartments(
             TELEGRAM_APARTMENT_CHANNELS,
             timeout=settings.http_timeout_seconds,
