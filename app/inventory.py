@@ -32,6 +32,11 @@ MAX_FRESH_STOCK_LOAD = 600
 # Telegram reserve sources recover the queue on the next cloud tick.
 DISCOVERY_RETRY_MINUTES = 3
 MIN_HEALTHY_PERIOD_QUEUE = 20
+PUBLICATION_SPACING_MINUTES = 3
+# Five batches in each 12-hour discovery period. Together they cover the day
+# from 05:00 through 23:00 Bishkek time at an exact two-hour cadence.
+MORNING_BATCH_HOURS = (5, 7, 9, 11, 13)
+EVENING_BATCH_HOURS = (15, 17, 19, 21, 23)
 
 
 def as_utc(value: datetime) -> datetime:
@@ -75,27 +80,39 @@ def randomized_period_times(
     count: int,
     rng: random.Random,
 ) -> list[datetime]:
-    """Spread cards irregularly between 05:00 and midnight Bishkek time."""
+    """Build five two-hour batches with three minutes between cards.
+
+    The daily total stays pseudo-random at 50-60 cards, while each individual
+    batch contains five or six cards for normal production targets. ``rng``
+    randomizes which batches receive the extra card without changing the
+    durable cadence.
+    """
+    if count <= 0:
+        return []
     local_day = period_start.astimezone(BISHKEK).replace(
         hour=0, minute=0, second=0, microsecond=0
     )
-    if period_start.astimezone(BISHKEK).hour == 0:
-        start = local_day + timedelta(hours=5)
-        end = local_day + timedelta(hours=14, minutes=25)
-    else:
-        start = local_day + timedelta(hours=14, minutes=25)
-        end = local_day + timedelta(days=1)
-    slot_seconds = (end - start).total_seconds() / max(1, count)
-    return [
-        (
-            start
-            + timedelta(
-                seconds=slot_seconds * index
-                + rng.uniform(slot_seconds * 0.12, slot_seconds * 0.88)
-            )
-        ).astimezone(timezone.utc)
-        for index in range(count)
-    ]
+    batch_hours = (
+        MORNING_BATCH_HOURS
+        if period_start.astimezone(BISHKEK).hour == 0
+        else EVENING_BATCH_HOURS
+    )
+    batch_sizes = [count // len(batch_hours)] * len(batch_hours)
+    extra_batches = list(range(len(batch_hours)))
+    rng.shuffle(extra_batches)
+    for index in extra_batches[: count % len(batch_hours)]:
+        batch_sizes[index] += 1
+
+    result: list[datetime] = []
+    for hour, batch_size in zip(batch_hours, batch_sizes):
+        batch_start = local_day + timedelta(hours=hour)
+        result.extend(
+            (
+                batch_start + timedelta(minutes=PUBLICATION_SPACING_MINUTES * offset)
+            ).astimezone(timezone.utc)
+            for offset in range(batch_size)
+        )
+    return result
 
 
 def is_central(district: str | None) -> bool:
@@ -277,7 +294,7 @@ def plan_period(
     repeat_apartment_ids: set[int] | None = None,
     rng: random.Random | None = None,
 ) -> list[PlannedApartment]:
-    """Create half of a random 50-60-card day between 05:00 and midnight."""
+    """Create half of a random 50-60-card day in two-hour mini-batches."""
     rng = rng or random.SystemRandom()
     apartments = [item for item in apartments if item.rooms in ALLOWED_ROOMS]
     repeat_ids = set(repeat_apartment_ids or ()) if MAX_REPOSTS_PER_PERIOD else set()
@@ -338,7 +355,7 @@ def plan_period(
         count=len(selected),
         rng=rng,
     )
-    window_key = f"{period_start.strftime('%Y%m%dT%H')}-random"
+    window_key = f"{period_start.strftime('%Y%m%dT%H')}-two-hour-batches"
     planned = [
         PlannedApartment(
             apartment=item,

@@ -10,6 +10,7 @@ from sqlalchemy import func, select, update
 from app.inventory import (
     DISCOVERY_RETRY_MINUTES,
     InventoryRepository,
+    PUBLICATION_SPACING_MINUTES,
     daily_publication_target,
     period_publication_targets,
     plan_period,
@@ -68,11 +69,26 @@ def test_two_periods_plan_random_50_to_60_card_day():
         for value in second_local
     )
     assert all(value.date() == first_start.date() for value in first_local + second_local)
-    gaps = {
-        round((after.scheduled_at - before.scheduled_at).total_seconds())
-        for before, after in zip(all_items, all_items[1:])
-    }
-    assert len(gaps) > 1
+    for period_items in (first, second):
+        local_times = [
+            item.scheduled_at.astimezone(first_start.tzinfo)
+            for item in period_items
+        ]
+        batch_hours = {value.hour for value in local_times if value.minute == 0}
+        expected_hours = (
+            {5, 7, 9, 11, 13}
+            if period_items is first
+            else {15, 17, 19, 21, 23}
+        )
+        assert batch_hours == expected_hours
+        for hour in expected_hours:
+            batch = [value for value in local_times if value.hour == hour]
+            assert 5 <= len(batch) <= 6
+            assert all(
+                round((after - before).total_seconds())
+                == PUBLICATION_SPACING_MINUTES * 60
+                for before, after in zip(batch, batch[1:])
+            )
 
 
 def test_period_uses_broader_stock_when_no_central_apartments_exist():
