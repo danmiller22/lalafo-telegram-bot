@@ -90,7 +90,7 @@ SOURCE_ALLOWED_ROOMS = ("studio", "1")
 SOURCE_MIN_PHOTOS = 2
 SOURCE_MAX_POSTS_PER_RUN = 18
 SOURCE_PUBLISH_SPACING_SECONDS = 150
-SOURCE_MAX_SEARCH_PAGES = 36
+SOURCE_MAX_SEARCH_PAGES = 12
 # Published apartments are terminal: every cycle must use fresh inventory.
 SOURCE_REPOST_AFTER_HOURS = None
 MAX_REPOSTS_PER_RUN = 0
@@ -611,7 +611,7 @@ async def run(*, discovery_only: bool = False) -> int:
     limit = 1 if settings.test_mode else SOURCE_MAX_POSTS_PER_RUN
     # The unfiltered source is large. Inspect several pages so central bargains
     # can outrank nearer but weaker results from the first page.
-    candidate_pool_limit = 240 if discovery_only else max(
+    candidate_pool_limit = 80 if discovery_only else max(
         limit, min(limit * 15, MAX_CANDIDATE_POOL)
     )
     candidates = []
