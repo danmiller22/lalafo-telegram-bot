@@ -129,6 +129,11 @@ CURATED_ROTATION_LALAFO_IDS = (
 PRIORITY_AD_SPECS = (
     (
         "https://lalafo.kg/bishkek/ads/"
+        "sdau-1-komnatnuu-kvartiru-za-40-000-som-s-id-113203621",
+        "ул. Манаса — центр",
+    ),
+    (
+        "https://lalafo.kg/bishkek/ads/"
         "1-komnata-rieltor-bez-zivotnyh-ot-1-mesaca-"
         "s-mebelu-polnostu-id-116518638",
         "Восток-5",
@@ -946,7 +951,7 @@ async def run(*, discovery_only: bool = False) -> int:
             len(search_urls),
             limit,
             owner_source_count=(
-                sum("/owner?" in url for url in search_urls)
+                sum("real-estate-agency" not in url for url in search_urls)
                 if discovery_only else min(2, len(search_urls))
             ),
         )

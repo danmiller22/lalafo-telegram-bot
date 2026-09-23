@@ -126,6 +126,11 @@ INVENTORY_SEARCH_URLS: tuple[str, ...] = (
     f"{_INVENTORY_BASE}owner?price[from]=20000&price[to]=29999",
     f"{_INVENTORY_BASE}owner?price[from]=30000&price[to]=40000",
     f"{_INVENTORY_BASE}owner?price[from]=20000&price[to]=40000",
+    # Lalafo authors do not always fill the offerer field. Broad searches keep
+    # those fresh cards available; seller classification still happens from
+    # the detail page before anything enters the Telegram queue.
+    f"{_INVENTORY_BASE}?price[from]=20000&price[to]=29999",
+    f"{_INVENTORY_BASE}?price[from]=30000&price[to]=40000",
     f"{_INVENTORY_BASE}{_CENTER_PATH}/real-estate-agency?price[from]=20000&price[to]=40000",
     f"{_INVENTORY_BASE}real-estate-agency?price[from]=20000&price[to]=40000",
 )
