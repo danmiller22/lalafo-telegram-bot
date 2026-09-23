@@ -18,7 +18,6 @@ from app.models import Apartment
 from app.security import TokenSigner
 from app.telegram.formatting import format_public_apartment
 from app.telegram.keyboards import APARTMENT_KEYBOARD_VERSION, apartment_keyboard
-from scripts.remove_confirmed_duplicate import run as remove_confirmed_duplicate
 
 
 logger = logging.getLogger(__name__)
@@ -40,9 +39,6 @@ async def run() -> int:
     failed = 0
     rate_limited = False
     try:
-        await remove_confirmed_duplicate(
-            bot, sessions, chat_id=settings.telegram_group_id
-        )
         async with sessions.begin() as session:
             apartments = list(
                 (
