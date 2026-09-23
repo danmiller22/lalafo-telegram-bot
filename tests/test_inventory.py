@@ -100,6 +100,18 @@ def test_period_keeps_single_central_card_and_fills_with_realtors():
     assert sum(item.apartment.seller_type == "realtor" for item in planned) == 47
 
 
+def test_noncentral_owners_outrank_central_realtors():
+    owners = _apartments(80, central=False, start_id=1)
+    realtors = _apartments(80, central=True, start_id=200, owner=False)
+    period_start = datetime(2026, 9, 13, 0, tzinfo=timezone(timedelta(hours=6)))
+
+    planned = plan_period(owners + realtors, period_start=period_start, rng=random.Random(15))
+
+    assert len(planned) == 48
+    # The five two-bedroom slots leave only 45 eligible owner cards here.
+    assert sum(item.apartment.seller_type == "owner" for item in planned) == 45
+
+
 def test_unknown_sellers_are_not_counted_as_realtors():
     stock = _apartments(100, central=True, start_id=1)
     for item in stock:

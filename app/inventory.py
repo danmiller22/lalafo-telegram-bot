@@ -70,7 +70,7 @@ def _candidate_key(item: Apartment, *, central: bool) -> tuple[object, ...]:
     favorable = central and item.price <= 32_000
     return (
         not item.discovery_priority,
-        not item.owner_listing,
+        {"owner": 0, "unknown": 1, "realtor": 2}[_seller_type(item)],
         not favorable,
         item.price,
         -(as_utc(item.last_seen_at or item.updated_at).timestamp()),
@@ -198,7 +198,9 @@ def plan_period(
         [
             item
             for item in apartments
-            if is_central(item.district) and item.id not in repeat_ids
+            if is_central(item.district)
+            and _seller_type(item) == "owner"
+            and item.id not in repeat_ids
         ],
         key=lambda item: _candidate_key(item, central=True),
     )
@@ -206,9 +208,10 @@ def plan_period(
         [
             item
             for item in apartments
-            if not is_central(item.district) and item.id not in repeat_ids
+            if not (is_central(item.district) and _seller_type(item) == "owner")
+            and item.id not in repeat_ids
         ],
-        key=lambda item: _candidate_key(item, central=False),
+        key=lambda item: _candidate_key(item, central=is_central(item.district)),
     )
     repeat_pool = [item for item in apartments if item.id in repeat_ids]
     rng.shuffle(repeat_pool)
