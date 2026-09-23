@@ -175,6 +175,42 @@ async def test_individual_photos_and_cancel_button():
 
 
 @pytest.mark.asyncio
+async def test_forwarded_album_photo_reaches_manual_form_before_copy_handler():
+    state = FakeState()
+    settings = Settings(admin_user_id=777)
+    await lalafo_links.start_manual_card(message("/addcard"), state, settings)
+    forwarded = message(photo="file-1", album="group-1")
+    forwarded.forward_origin = SimpleNamespace(message_id=123)
+    cancel_handler = next(
+        item for item in lalafo_links.manual_card_router.message.handlers
+        if item.callback is lalafo_links.cancel_manual_card
+    )
+    photo_handler = next(
+        item for item in lalafo_links.manual_card_router.message.handlers
+        if item.callback is lalafo_links.manual_card_photo
+    )
+    cancel_matches, _ = await cancel_handler.check(
+        forwarded, raw_state=state.state.state
+    )
+    photo_matches, _ = await photo_handler.check(
+        forwarded, raw_state=state.state.state
+    )
+    assert not cancel_matches
+    assert photo_matches
+
+    await lalafo_links.manual_card_photo(forwarded, state, settings)
+    assert state.data["photo_urls"] == ["file-1"]
+    forwarded.answer.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_ready_without_active_form_gets_restart_instruction():
+    ready = message("готово")
+    await lalafo_links.manual_card_expired_state(ready, Settings(admin_user_id=777))
+    assert "/addcard" in ready.answer.await_args.args[0]
+
+
+@pytest.mark.asyncio
 async def test_stale_confirmation_button_cannot_publish_new_card():
     state = FakeState()
     settings = Settings(admin_user_id=777)

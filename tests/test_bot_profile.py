@@ -40,5 +40,8 @@ async def test_payment_runtime_excludes_manual_lalafo_router(monkeypatch):
     routers = [call.args[0] for call in dispatcher.include_router.call_args_list]
     assert main.handlers.router in routers
     assert main.lalafo_links.manual_card_router in routers
+    assert routers.index(main.lalafo_links.manual_card_router) < routers.index(
+        main.lalafo_links.owner_router
+    )
     assert main.lalafo_links.main_router not in routers
     assert main.lalafo_links.router not in routers

@@ -55,8 +55,8 @@ async def create_runtime(*, bot_token: str | None = None, lalafo_only: bool = Fa
         # it can exhaust the payment web instance's CPU and memory.
         dispatcher.include_router(support_handlers.router)
         dispatcher.include_router(wanted_handlers.router)
-        dispatcher.include_router(lalafo_links.owner_router)
         dispatcher.include_router(lalafo_links.manual_card_router)
+        dispatcher.include_router(lalafo_links.owner_router)
         dispatcher.include_router(handlers.router)
     workflow_data = {
         "settings": settings,

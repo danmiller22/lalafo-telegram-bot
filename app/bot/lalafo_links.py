@@ -388,7 +388,7 @@ async def start_manual_card_button(
 @manual_card_router.message(
     StateFilter(*ManualCardPublish.__all_states__),
     F.chat.type == "private",
-    F.text.func(lambda text: text.strip().casefold() in {"/cancel", "отмена", "cancel"}),
+    F.text.func(lambda text: (text or "").strip().casefold() in {"/cancel", "отмена", "cancel"}),
 )
 async def cancel_manual_card(message: Message, state: FSMContext, settings: Settings) -> None:
     if not _is_manual_admin(message, settings):
@@ -440,11 +440,18 @@ async def manual_card_photo(
         full = len(photos) >= 10
         if not full:
             photos.append(message.photo[-1].file_id)
-            await state.update_data(photo_urls=photos)
+            first_in_album = bool(
+                message.media_group_id
+                and data.get("last_media_group_id") != message.media_group_id
+            )
+            await state.update_data(
+                photo_urls=photos,
+                last_media_group_id=message.media_group_id,
+            )
     if full:
         await message.answer("Достаточно 10 фото. Напишите «готово».")
         return
-    if not message.media_group_id:
+    if not message.media_group_id or first_in_album:
         await message.answer(f"Фото добавлено: {len(photos)}. Ещё фото или «готово».")
 
 
@@ -466,6 +473,19 @@ async def manual_card_photos_done(
         return
     await state.set_state(ManualCardPublish.waiting_for_phone)
     await message.answer("Введите номер хозяина, например +996 700 123 456.")
+
+
+@manual_card_router.message(StateFilter(None), F.chat.type == "private", F.text)
+async def manual_card_expired_state(
+    message: Message, settings: Settings
+) -> None:
+    if not _is_manual_admin(message, settings):
+        return
+    if (message.text or "").strip().casefold() in {"готово", "готов", "done"}:
+        await message.answer(
+            "Сценарий добавления не активен. Нажмите «Добавить карточку» "
+            "или отправьте /addcard, затем пришлите фотографии заново."
+        )
 
 
 @manual_card_router.message(ManualCardPublish.waiting_for_phone, F.chat.type == "private", F.text)
