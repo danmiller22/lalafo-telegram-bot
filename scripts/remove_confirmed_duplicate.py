@@ -74,7 +74,12 @@ async def run(
         repeated = await session.get(Apartment, 1386)
     message_ids = confirmed_duplicate_message_ids(original, repeated, chat_id=chat_id)
     if not message_ids:
-        logger.info("Confirmed duplicate already removed or source details changed")
+        logger.info(
+            "Confirmed duplicate state original_message=%s repeated_message=%s repeated_status=%s",
+            getattr(original, "telegram_message_id", None),
+            getattr(repeated, "telegram_message_id", None),
+            getattr(repeated, "publication_status", None),
+        )
         return
 
     deleted = await bot.delete_messages(chat_id=chat_id, message_ids=message_ids)
