@@ -204,6 +204,11 @@ PRIORITY_TERM_OVERRIDES = {
     113203621: (40_000, "ул. Манаса — центр"),
 }
 
+# These one-off operator links have either already been published or no longer
+# resolve reliably. Keeping them in the hot discovery path delayed every run
+# before the verified search feed was reached.
+PRIORITY_AD_SPECS = ()
+
 # Cards currently visible in the operator's Lalafo account. Ads waiting for
 # payment are not publicly fetchable, so keep their account-visible terms here
 # while original photos and owner phones continue to come from the database.
