@@ -395,7 +395,12 @@ class InventoryRepository:
                     )
                     return key
                 lease = as_utc(row.lease_until) if row.lease_until else None
-                if row.status == "running" and lease and lease > as_utc(now):
+                if (
+                    not force
+                    and row.status == "running"
+                    and lease
+                    and lease > as_utc(now)
+                ):
                     return None
                 if (
                     not force
