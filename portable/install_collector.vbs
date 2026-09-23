@@ -1,6 +1,6 @@
 Option Explicit
 
-Dim fso, shell, sourceDir, targetDir, secret, relayUrl, config, startup, shortcut, runner
+Dim fso, shell, sourceDir, targetDir, secret, relayUrl, config, runner, runCommand
 Set fso = CreateObject("Scripting.FileSystemObject")
 Set shell = CreateObject("WScript.Shell")
 
@@ -23,16 +23,12 @@ Set stream = fso.OpenTextFile(fso.BuildPath(targetDir, "collector-config.json"),
 stream.Write config
 stream.Close
 
-startup = shell.SpecialFolders("Startup")
-Set shortcut = shell.CreateShortcut(fso.BuildPath(startup, "ArendaKG Lalafo Collector.lnk"))
-shortcut.TargetPath = shell.ExpandEnvironmentStrings("%SystemRoot%\System32\wscript.exe")
-shortcut.Arguments = """" & fso.BuildPath(targetDir, "lalafo_collector.js") & """"
-shortcut.WorkingDirectory = targetDir
-shortcut.WindowStyle = 7
-shortcut.Description = "Arenda.KG Lalafo background collector"
-shortcut.Save
-
 runner = shell.ExpandEnvironmentStrings("%SystemRoot%\System32\wscript.exe")
-shell.Run """" & runner & """ """ & fso.BuildPath(targetDir, "lalafo_collector.js") & """", 0, False
+runCommand = """" & runner & """ """ & fso.BuildPath(targetDir, "lalafo_collector.js") & """"
+
+' Use the per-user Run registry key instead of a Startup shortcut.  This stays
+' reliable when the Windows profile name contains non-Latin characters.
+shell.RegWrite "HKCU\Software\Microsoft\Windows\CurrentVersion\Run\ArendaKGLalafoCollector", runCommand, "REG_SZ"
+shell.Run runCommand, 0, False
 
 MsgBox "Сборщик установлен и запущен в фоне. Автозапуск включен.", 64, "Arenda.KG"
