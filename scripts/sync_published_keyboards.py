@@ -21,7 +21,7 @@ from app.telegram.keyboards import APARTMENT_KEYBOARD_VERSION, apartment_keyboar
 
 
 logger = logging.getLogger(__name__)
-SYNC_BATCH_SIZE = 40
+SYNC_BATCH_SIZE = 10
 
 
 async def run() -> int:
@@ -37,6 +37,7 @@ async def run() -> int:
     unchanged = 0
     skipped = 0
     failed = 0
+    rate_limited = False
     try:
         async with sessions.begin() as session:
             apartments = list(
@@ -77,19 +78,12 @@ async def run() -> int:
                     apartment.keyboard_version = APARTMENT_KEYBOARD_VERSION
                     break
                 except TelegramRetryAfter as exc:
-                    if attempt == 4:
-                        failed += 1
-                        logger.warning(
-                            "Could not update apartment keyboard id=%s after rate-limit retries",
-                            apartment.id,
-                        )
-                        break
-                    wait_seconds = max(float(exc.retry_after), 1.0) + 1.0
+                    rate_limited = True
                     logger.info(
-                        "Telegram rate limit while syncing cards; retrying in %.0f seconds",
-                        wait_seconds,
+                        "Telegram rate limit while syncing cards; deferring remaining cards for %.0f seconds",
+                        max(float(exc.retry_after), 1.0),
                     )
-                    await asyncio.sleep(wait_seconds)
+                    break
                 except TelegramBadRequest as exc:
                     error_text = str(exc).lower()
                     if "message is not modified" in error_text:
@@ -129,6 +123,8 @@ async def run() -> int:
                         )
                         break
                     await asyncio.sleep(min(8.0, 2**attempt))
+            if rate_limited:
+                break
         synced_ids = [
             apartment.id
             for apartment in apartments
