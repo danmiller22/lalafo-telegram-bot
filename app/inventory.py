@@ -6,7 +6,7 @@ import math
 import random
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -72,12 +72,15 @@ class PlannedApartment:
 
 def _candidate_key(item: Apartment, *, central: bool) -> tuple[object, ...]:
     favorable = central and item.price <= 32_000
+    last_seen = as_utc(item.last_seen_at or item.updated_at)
+    hot = last_seen >= datetime.now(timezone.utc) - timedelta(hours=24)
     return (
-        not item.discovery_priority,
         0 if _seller_type(item) == "owner" else 1,
         not favorable,
+        not hot,
         item.price,
-        -(as_utc(item.last_seen_at or item.updated_at).timestamp()),
+        not item.discovery_priority,
+        -last_seen.timestamp(),
         item.id,
     )
 
@@ -469,12 +472,9 @@ class InventoryRepository:
                 Apartment.rooms.not_in(ALLOWED_ROOMS)
             )
             await session.execute(
-                update(ApartmentInventoryQueue)
-                .where(
-                    ApartmentInventoryQueue.status == "queued",
-                    ApartmentInventoryQueue.apartment_id.in_(invalid_room_ids),
+                delete(ApartmentInventoryQueue).where(
+                    ApartmentInventoryQueue.apartment_id.in_(invalid_room_ids)
                 )
-                .values(status="skipped", last_error="policy_room_filter")
             )
             published_non_owners = int(
                 await session.scalar(
@@ -648,17 +648,6 @@ class InventoryRepository:
                 )
                 .values(status="queued", claimed_at=None, last_error="stale_claim")
             )
-            invalid_room_ids = select(Apartment.id).where(
-                Apartment.rooms.not_in(ALLOWED_ROOMS)
-            )
-            await session.execute(
-                update(ApartmentInventoryQueue)
-                .where(
-                    ApartmentInventoryQueue.status == "queued",
-                    ApartmentInventoryQueue.apartment_id.in_(invalid_room_ids),
-                )
-                .values(status="skipped", last_error="policy_room_filter")
-            )
             published_today = int(
                 await session.scalar(
                     select(func.count())
@@ -739,6 +728,7 @@ class InventoryRepository:
                     .where(
                         ApartmentInventoryQueue.status == "queued",
                         ApartmentInventoryQueue.scheduled_at <= eligible_until,
+                        Apartment.rooms.in_(ALLOWED_ROOMS),
                     )
                     .order_by(
                         ApartmentInventoryQueue.scheduled_at,

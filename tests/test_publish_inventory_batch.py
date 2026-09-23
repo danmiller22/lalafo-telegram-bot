@@ -58,3 +58,29 @@ async def test_batch_does_not_consume_next_window_before_it_is_due(monkeypatch):
     assert await publish_inventory_batch.run() == 0
     cycle.assert_awaited_once()
     publish.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_batch_uses_three_minute_default_spacing(monkeypatch):
+    counts = iter((1, 2))
+    sleep = AsyncMock()
+    monkeypatch.setenv("PUBLISH_BATCH_SIZE", "2")
+    monkeypatch.delenv("PUBLISH_BATCH_SPACING_SECONDS", raising=False)
+    monkeypatch.setattr(
+        publish_inventory_batch, "run_inventory_cycle", AsyncMock(return_value=0)
+    )
+    monkeypatch.setattr(
+        publish_inventory_batch, "publish_one", AsyncMock(return_value=0)
+    )
+    monkeypatch.setattr(
+        publish_inventory_batch, "_has_due_queue", AsyncMock(return_value=True)
+    )
+    monkeypatch.setattr(
+        publish_inventory_batch,
+        "_published_since",
+        AsyncMock(side_effect=lambda _started_at: next(counts)),
+    )
+    monkeypatch.setattr(publish_inventory_batch.asyncio, "sleep", sleep)
+
+    assert await publish_inventory_batch.run() == 0
+    sleep.assert_awaited_once_with(180)

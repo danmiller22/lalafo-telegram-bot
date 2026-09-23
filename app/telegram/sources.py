@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timedelta, timezone
 import hashlib
+import logging
 import re
 from urllib.parse import urlparse
 
@@ -11,6 +12,11 @@ from bs4 import BeautifulSoup
 
 from app.lalafo.models import LalafoAd
 from app.telegram.source_filter import is_owner_offer
+
+
+logger = logging.getLogger(__name__)
+CHANNEL_REQUEST_ATTEMPTS = 2
+CHANNEL_CONCURRENCY = 4
 
 LALAFO_URL_RE = re.compile(r"https?://(?:www\.)?lalafo\.kg/[\w./?=&%-]+", re.I)
 PHOTO_URL_RE = re.compile(r"background-image:url\(['\"]?([^'\")]+)", re.I)
@@ -79,14 +85,32 @@ async def fetch_lalafo_urls(
     """Read public Telegram previews and return unique Lalafo ad URLs."""
     found: list[str] = []
     seen: set[str] = set()
-    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0"}) as http:
-        for channel in channels:
+    semaphore = asyncio.Semaphore(CHANNEL_CONCURRENCY)
+
+    async def fetch_channel(http: httpx.AsyncClient, channel: str) -> str:
+        for attempt in range(CHANNEL_REQUEST_ATTEMPTS):
             try:
-                response = await http.get(channel)
+                async with semaphore:
+                    response = await http.get(channel)
                 response.raise_for_status()
-            except httpx.HTTPError:
-                continue
-            for raw_url in LALAFO_URL_RE.findall(response.text):
+                return response.text
+            except httpx.HTTPError as exc:
+                if attempt + 1 < CHANNEL_REQUEST_ATTEMPTS:
+                    await asyncio.sleep(0.5 * (attempt + 1))
+                    continue
+                logger.warning("Telegram link source failed channel=%s error=%s", channel, type(exc).__name__)
+        return ""
+
+    async with httpx.AsyncClient(
+        timeout=timeout,
+        follow_redirects=True,
+        headers={"User-Agent": "Mozilla/5.0"},
+    ) as http:
+        pages = await asyncio.gather(
+            *(fetch_channel(http, channel) for channel in channels)
+        )
+        for page in pages:
+            for raw_url in LALAFO_URL_RE.findall(page):
                 url = raw_url.rstrip(".,);]\\\"'")
                 match = re.search(r"-id-(\d+)", url)
                 if not match:
@@ -126,6 +150,8 @@ def _telegram_phone(text: str) -> str | None:
 
 
 def _telegram_rooms(text: str) -> str | None:
+    if re.search(r"\bстуди(?:я|ю|и)\b", text, re.I):
+        return "studio"
     match = ROOM_RE.search(text)
     if match is not None:
         return match.group(1)
@@ -134,7 +160,7 @@ def _telegram_rooms(text: str) -> str | None:
     return None
 
 
-def _telegram_district(lines: list[str], text: str) -> str:
+def _telegram_district(lines: list[str], text: str) -> str | None:
     labels = ("район", "адрес", "дареги", "локация", "микрорайон", "мкр")
     for index, raw_line in enumerate(lines):
         line = re.sub(r"^[^\wА-Яа-яЁё]+", "", raw_line).strip()
@@ -156,7 +182,7 @@ def _telegram_district(lines: list[str], text: str) -> str:
         value = title.rsplit("|", 1)[-1].strip()
         if 2 <= len(value) <= 80:
             return value
-    return "Бишкек"
+    return None
 
 
 def _telegram_source_id(data_post: str) -> int:
@@ -260,10 +286,12 @@ async def fetch_telegram_apartments(
     *,
     timeout: float = 20.0,
     limit: int = 120,
-    pages_per_channel: int = 12,
-    max_age_hours: int = 96,
+    pages_per_channel: int = 5,
+    max_age_hours: int = 72,
 ) -> list[LalafoAd]:
     """Fetch several recent public preview pages from each approved channel."""
+
+    semaphore = asyncio.Semaphore(CHANNEL_CONCURRENCY)
 
     async def fetch_channel(http: httpx.AsyncClient, channel: str) -> list[LalafoAd]:
         parsed = urlparse(channel)
@@ -276,17 +304,39 @@ async def fetch_telegram_apartments(
         seen_before: set[int] = set()
         for _ in range(max(1, pages_per_channel)):
             url = base if before is None else f"{base}?before={before}"
-            try:
-                response = await http.get(url)
-                response.raise_for_status()
-            except httpx.HTTPError:
+            response: httpx.Response | None = None
+            for attempt in range(CHANNEL_REQUEST_ATTEMPTS):
+                try:
+                    async with semaphore:
+                        response = await http.get(url)
+                    response.raise_for_status()
+                    break
+                except httpx.HTTPError as exc:
+                    response = None
+                    if attempt + 1 < CHANNEL_REQUEST_ATTEMPTS:
+                        await asyncio.sleep(0.5 * (attempt + 1))
+                        continue
+                    logger.warning(
+                        "Telegram apartment source failed channel=%s error=%s",
+                        channel,
+                        type(exc).__name__,
+                    )
+            if response is None:
                 break
-            found.extend(
-                parse_telegram_apartments(
-                    response.text,
-                    max_age_hours=max_age_hours,
+            try:
+                found.extend(
+                    parse_telegram_apartments(
+                        response.text,
+                        max_age_hours=max_age_hours,
+                    )
                 )
-            )
+            except (TypeError, ValueError) as exc:
+                logger.warning(
+                    "Telegram apartment source parse failed channel=%s error=%s",
+                    channel,
+                    type(exc).__name__,
+                )
+                break
             soup = BeautifulSoup(response.text, "html.parser")
             message_ids = []
             for message in soup.select(".tgme_widget_message[data-post]"):
@@ -322,10 +372,18 @@ async def fetch_telegram_apartments(
         headers=headers,
     ) as http:
         batches = await asyncio.gather(
-            *(fetch_channel(http, channel) for channel in channels)
+            *(fetch_channel(http, channel) for channel in channels),
+            return_exceptions=True,
         )
     unique: dict[int, LalafoAd] = {}
-    for batch in batches:
+    for channel, batch in zip(channels, batches):
+        if isinstance(batch, BaseException):
+            logger.warning(
+                "Telegram apartment source isolated channel=%s error=%s",
+                channel,
+                type(batch).__name__,
+            )
+            continue
         for ad in batch:
             unique.setdefault(ad.lalafo_id, ad)
     return sorted(

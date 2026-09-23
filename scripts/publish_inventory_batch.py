@@ -15,6 +15,7 @@ from scripts.publish_inventory import run as publish_one
 
 
 logger = logging.getLogger(__name__)
+DEFAULT_PUBLISH_BATCH_SPACING_SECONDS = 180
 
 
 async def _published_since(started_at: datetime) -> int:
@@ -62,7 +63,18 @@ async def _has_due_queue(now: datetime) -> bool:
 async def run() -> int:
     """Publish eight valid cards per cloud run, spaced to avoid a burst."""
     target = max(1, min(12, int(os.getenv("PUBLISH_BATCH_SIZE", "8"))))
-    spacing = max(0, min(900, int(os.getenv("PUBLISH_BATCH_SPACING_SECONDS", "60"))))
+    spacing = max(
+        0,
+        min(
+            900,
+            int(
+                os.getenv(
+                    "PUBLISH_BATCH_SPACING_SECONDS",
+                    str(DEFAULT_PUBLISH_BATCH_SPACING_SECONDS),
+                )
+            ),
+        ),
+    )
     max_attempts = target * 4
     started_at = datetime.now(timezone.utc)
     eligible_until = started_at + timedelta(hours=2)

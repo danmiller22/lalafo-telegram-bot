@@ -239,7 +239,7 @@ async def test_concurrent_publishers_cannot_claim_the_same_card(repositories):
 
 
 @pytest.mark.asyncio
-async def test_claim_due_skips_old_two_room_queue_rows(repositories):
+async def test_schedule_period_deletes_old_two_room_queue_rows(repositories):
     apartments, _, sessions = repositories
     two_room = await apartments.upsert_discovered(
         make_ad(lalafo_id=920, rooms="2", district="ЦУМ")
@@ -266,20 +266,21 @@ async def test_claim_due_skips_old_two_room_queue_rows(repositories):
             ]
         )
 
-    claimed = await InventoryRepository(sessions).claim_due(now=now)
+    await InventoryRepository(sessions).schedule_period(now=now)
 
-    assert claimed is not None and claimed.apartment_id == one_room.id
     async with sessions() as session:
-        skipped = await session.scalar(
+        deleted = await session.scalar(
             select(func.count())
             .select_from(ApartmentInventoryQueue)
-            .where(
-                ApartmentInventoryQueue.apartment_id == two_room.id,
-                ApartmentInventoryQueue.status == "skipped",
-                ApartmentInventoryQueue.last_error == "policy_room_filter",
-            )
+            .where(ApartmentInventoryQueue.apartment_id == two_room.id)
         )
-    assert skipped == 1
+        retained = await session.scalar(
+            select(func.count())
+            .select_from(ApartmentInventoryQueue)
+            .where(ApartmentInventoryQueue.apartment_id == one_room.id)
+        )
+    assert deleted == 0
+    assert retained == 1
 
 
 @pytest.mark.asyncio

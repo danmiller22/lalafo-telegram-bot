@@ -47,6 +47,22 @@ def test_parses_fresh_owner_apartment_with_album_and_contact() -> None:
     assert len(ad.photo_urls) == 2
 
 
+def test_parses_studio_and_keeps_unknown_district_empty() -> None:
+    html = _post(
+        "Сдаётся студия. Аренда: 28 000 сом. Собственник. Телефон: 0705 123 457",
+        post_id=105,
+    )
+
+    ads = parse_telegram_apartments(
+        html,
+        now=datetime(2026, 9, 23, 7, tzinfo=timezone.utc),
+    )
+
+    assert len(ads) == 1
+    assert ads[0].rooms == "studio"
+    assert ads[0].district is None
+
+
 def test_rejects_foreign_currency_rent_even_if_som_deposit_is_present() -> None:
     html = _post(
         "Сдаю 2-комнатную квартиру. Оплата 700$ в месяц. "
