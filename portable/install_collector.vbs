@@ -1,6 +1,6 @@
 Option Explicit
 
-Dim fso, shell, sourceDir, targetDir, secret, relayUrl, config, runner, runCommand, binaryStream
+Dim fso, shell, sourceDir, targetDir, secret, relayUrl, config, runner, runCommand, sourceFile, targetFile, collectorSource
 Set fso = CreateObject("Scripting.FileSystemObject")
 Set shell = CreateObject("WScript.Shell")
 
@@ -16,18 +16,15 @@ End If
 
 If Not fso.FolderExists(targetDir) Then fso.CreateFolder targetDir
 
-' Re-save the downloaded script as a new local file.  A normal CopyFile keeps
-' the browser's Mark-of-the-Web stream, which makes Windows block the hidden
-' startup process behind an invisible "Open File" warning.
-Set binaryStream = CreateObject("ADODB.Stream")
-binaryStream.Type = 2
-' Windows Script Host on older systems treats a UTF-8 BOM as source text.
-' Save as UTF-16LE instead; WSH recognizes that BOM and keeps Cyrillic intact.
-binaryStream.Charset = "unicode"
-binaryStream.Open
-binaryStream.LoadFromFile fso.BuildPath(sourceDir, "lalafo_collector.js")
-binaryStream.SaveToFile fso.BuildPath(targetDir, "lalafo_collector.js"), 2
-binaryStream.Close
+' Re-save the ASCII-only collector instead of copying it. This strips
+' Mark-of-the-Web and avoids a BOM, which legacy Windows Script Host treats as
+' executable characters rather than an encoding marker.
+Set sourceFile = fso.OpenTextFile(fso.BuildPath(sourceDir, "lalafo_collector.js"), 1, False, 0)
+collectorSource = sourceFile.ReadAll
+sourceFile.Close
+Set targetFile = fso.CreateTextFile(fso.BuildPath(targetDir, "lalafo_collector.js"), True, False)
+targetFile.Write collectorSource
+targetFile.Close
 
 config = "{""relayUrl"":""" & relayUrl & """,""relaySecret"":""" & Replace(secret, """", "") & """,""intervalMinutes"":120}"
 Dim stream

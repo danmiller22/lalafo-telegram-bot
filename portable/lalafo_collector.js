@@ -90,7 +90,7 @@ function safeJson(path, fallback) {
 }
 
 function normalized(value) {
-  return String(value || "").toLowerCase().replace(/ё/g, "е");
+  return String(value || "").toLowerCase().replace(/\u0451/g, "\u0435");
 }
 
 function paramsMap(items) {
@@ -121,38 +121,38 @@ function timestamp(value) {
 function districtFrom(raw, params) {
   var explicit = "";
   for (var name in params) {
-    if (normalized(name).indexOf("район") >= 0 && params[name]) {
+    if (normalized(name).indexOf("\u0440\u0430\u0439\u043e\u043d") >= 0 && params[name]) {
       explicit = String(params[name]);
       break;
     }
   }
   var text = normalized(String(raw.title || "") + " " + String(raw.description || ""));
   var aliases = [
-    ["Центр", ["центр", "золотой квадрат", "ала-тоо", "эркиндик"]],
-    ["Филармония", ["филармони"]], ["ЦУМ", ["цум"]],
-    ["ГУМ", ["гум"]], ["Бишкек Парк", ["бишкек парк"]],
-    ["Азия Молл", ["азия молл", "asia mall"]],
-    ["1000 мелочей", ["1000 мелоч", "тысяча мелоч"]],
-    ["Восток-5 мкр", ["восток-5", "восток 5"]],
-    ["Аламедин-1", ["аламедин-1", "аламедин 1", "аламидин 1"]],
-    ["Кок-Жар", ["кок-жар", "кок жар"]],
-    ["Джал", ["джал"]], ["Асанбай", ["асанбай"]],
-    ["Орто-Сай", ["орто-сай", "орто сай"]]
+    ["\u0426\u0435\u043d\u0442\u0440", ["\u0446\u0435\u043d\u0442\u0440", "\u0437\u043e\u043b\u043e\u0442\u043e\u0439 \u043a\u0432\u0430\u0434\u0440\u0430\u0442", "\u0430\u043b\u0430-\u0442\u043e\u043e", "\u044d\u0440\u043a\u0438\u043d\u0434\u0438\u043a"]],
+    ["\u0424\u0438\u043b\u0430\u0440\u043c\u043e\u043d\u0438\u044f", ["\u0444\u0438\u043b\u0430\u0440\u043c\u043e\u043d\u0438"]], ["\u0426\u0423\u041c", ["\u0446\u0443\u043c"]],
+    ["\u0413\u0423\u041c", ["\u0433\u0443\u043c"]], ["\u0411\u0438\u0448\u043a\u0435\u043a \u041f\u0430\u0440\u043a", ["\u0431\u0438\u0448\u043a\u0435\u043a \u043f\u0430\u0440\u043a"]],
+    ["\u0410\u0437\u0438\u044f \u041c\u043e\u043b\u043b", ["\u0430\u0437\u0438\u044f \u043c\u043e\u043b\u043b", "asia mall"]],
+    ["1000 \u043c\u0435\u043b\u043e\u0447\u0435\u0439", ["1000 \u043c\u0435\u043b\u043e\u0447", "\u0442\u044b\u0441\u044f\u0447\u0430 \u043c\u0435\u043b\u043e\u0447"]],
+    ["\u0412\u043e\u0441\u0442\u043e\u043a-5 \u043c\u043a\u0440", ["\u0432\u043e\u0441\u0442\u043e\u043a-5", "\u0432\u043e\u0441\u0442\u043e\u043a 5"]],
+    ["\u0410\u043b\u0430\u043c\u0435\u0434\u0438\u043d-1", ["\u0430\u043b\u0430\u043c\u0435\u0434\u0438\u043d-1", "\u0430\u043b\u0430\u043c\u0435\u0434\u0438\u043d 1", "\u0430\u043b\u0430\u043c\u0438\u0434\u0438\u043d 1"]],
+    ["\u041a\u043e\u043a-\u0416\u0430\u0440", ["\u043a\u043e\u043a-\u0436\u0430\u0440", "\u043a\u043e\u043a \u0436\u0430\u0440"]],
+    ["\u0414\u0436\u0430\u043b", ["\u0434\u0436\u0430\u043b"]], ["\u0410\u0441\u0430\u043d\u0431\u0430\u0439", ["\u0430\u0441\u0430\u043d\u0431\u0430\u0439"]],
+    ["\u041e\u0440\u0442\u043e-\u0421\u0430\u0439", ["\u043e\u0440\u0442\u043e-\u0441\u0430\u0439", "\u043e\u0440\u0442\u043e \u0441\u0430\u0439"]]
   ];
   for (var i = 0; i < aliases.length; i++) {
     for (var j = 0; j < aliases[i][1].length; j++) {
       if (text.indexOf(aliases[i][1][j]) >= 0) return aliases[i][0];
     }
   }
-  var match = text.match(/(?:^|\s)(\d{1,2})\s*(?:мкр|микрорайон)/);
-  return match ? String(parseInt(match[1], 10)) + " мкр" : (explicit || null);
+  var match = text.match(/(?:^|\s)(\d{1,2})\s*(?:\u043c\u043a\u0440|\u043c\u0438\u043a\u0440\u043e\u0440\u0430\u0439\u043e\u043d)/);
+  return match ? String(parseInt(match[1], 10)) + " \u043c\u043a\u0440" : (explicit || null);
 }
 
 function parseAd(raw, sourceUrl) {
   if (!raw || !raw.id || raw.hide_phone) return null;
   var params = paramsMap(raw.params);
-  var roomValue = normalized(params["Количество комнат"] || "");
-  var rooms = roomValue === "студия" ? "studio" : (roomValue === "1 комната" ? "1" : "");
+  var roomValue = normalized(params["\u041a\u043e\u043b\u0438\u0447\u0435\u0441\u0442\u0432\u043e \u043a\u043e\u043c\u043d\u0430\u0442"] || "");
+  var rooms = roomValue === "\u0441\u0442\u0443\u0434\u0438\u044f" ? "studio" : (roomValue === "1 \u043a\u043e\u043c\u043d\u0430\u0442\u0430" ? "1" : "");
   var price = parseInt(raw.price || 0, 10);
   var images = photoUrls(raw);
   var phone = String(raw.mobile || "").replace(/\D/g, "");
@@ -160,20 +160,21 @@ function parseAd(raw, sourceUrl) {
   else if (phone.length === 10 && phone.charAt(0) === "0") phone = "+996" + phone.substr(1);
   else if (phone.length === 12 && phone.substr(0, 3) === "996") phone = "+" + phone;
   else return null;
-  if (parseInt(raw.category_id || 0, 10) !== 2044 || normalized(raw.city) !== "бишкек") return null;
+  if (parseInt(raw.category_id || 0, 10) !== 2044 || normalized(raw.city) !== "\u0431\u0438\u0448\u043a\u0435\u043a") return null;
   if (String(raw.currency || "").toUpperCase() !== "KGS" || price < 20000 || price > 40000) return null;
   if (!rooms || images.length < 2) return null;
   var text = normalized(String(raw.title || "") + " " + String(raw.description || ""));
-  if (/подсел|койко.?мест|общежит|хостел|комната в квартире|сда[её]тся комната/.test(text)) return null;
-  var offerer = normalized(params["Кто предлагает"] || "");
-  var realtorService = String(params["Услуги риэлтора"] || "");
-  var sellerType = realtorService || /риелтор|риэлтор|агент|агентство/.test(offerer) ? "realtor" : (offerer === "собственник" ? "owner" : "unknown");
-  var deposit = parseInt(String(params["Депозит, сом"] || "").replace(/\D/g, ""), 10);
+  if (/\u043f\u043e\u0434\u0441\u0435\u043b|\u043a\u043e\u0439\u043a\u043e.?\u043c\u0435\u0441\u0442|\u043e\u0431\u0449\u0435\u0436\u0438\u0442|\u0445\u043e\u0441\u0442\u0435\u043b|\u043a\u043e\u043c\u043d\u0430\u0442\u0430 \u0432 \u043a\u0432\u0430\u0440\u0442\u0438\u0440\u0435|\u0441\u0434\u0430[\u0435\u0451]\u0442\u0441\u044f \u043a\u043e\u043c\u043d\u0430\u0442\u0430/.test(text)) return null;
+  var offerer = normalized(params["\u041a\u0442\u043e \u043f\u0440\u0435\u0434\u043b\u0430\u0433\u0430\u0435\u0442"] || "");
+  var realtorService = String(params["\u0423\u0441\u043b\u0443\u0433\u0438 \u0440\u0438\u044d\u043b\u0442\u043e\u0440\u0430"] || "");
+  var realtorFlag = /^(\u0434\u0430|yes|1)$/i.test(normalized(realtorService));
+  var sellerType = realtorFlag || /\u0440\u0438\u0435\u043b\u0442\u043e\u0440|\u0440\u0438\u044d\u043b\u0442\u043e\u0440|\u0430\u0433\u0435\u043d\u0442|\u0430\u0433\u0435\u043d\u0442\u0441\u0442\u0432\u043e/.test(offerer) ? "realtor" : (offerer === "\u0441\u043e\u0431\u0441\u0442\u0432\u0435\u043d\u043d\u0438\u043a" ? "owner" : "unknown");
+  var deposit = parseInt(String(params["\u0414\u0435\u043f\u043e\u0437\u0438\u0442, \u0441\u043e\u043c"] || "").replace(/\D/g, ""), 10);
   if (!deposit || deposit === 1) deposit = null;
   return {
     lalafo_id: parseInt(raw.id, 10), source_url: sourceUrl, phone: phone,
     price: price, currency: "KGS", rooms: rooms,
-    district: districtFrom(raw, params), city: "Бишкек", deposit: deposit,
+    district: districtFrom(raw, params), city: "\u0411\u0438\u0448\u043a\u0435\u043a", deposit: deposit,
     photo_urls: images, category_id: 2044, no_subletting: true,
     owner_listing: sellerType === "owner", seller_type: sellerType,
     source_title: String(raw.title || ""), source_description: String(raw.description || ""),
