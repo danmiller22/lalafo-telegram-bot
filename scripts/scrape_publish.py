@@ -18,6 +18,7 @@ from app.config import (
     INVENTORY_SEARCH_URLS,
     get_settings,
     TELEGRAM_SOURCE_CHANNELS,
+    TELEGRAM_APARTMENT_CHANNELS,
 )
 from app.lalafo.client import LalafoClient, LalafoError, LalafoNotFound
 from app.lalafo.exclusions import is_permanently_excluded
@@ -27,7 +28,7 @@ from app.lalafo.phone import mask_phone
 from app.models import Apartment
 from app.state import PostedState, ad_fingerprint
 from app.telegram.formatting import format_apartment
-from app.telegram.sources import fetch_lalafo_urls
+from app.telegram.sources import fetch_lalafo_urls, fetch_telegram_apartments
 
 logger = logging.getLogger(__name__)
 
@@ -863,6 +864,56 @@ async def run(*, discovery_only: bool = False) -> int:
             candidate_ids.add(priority_id)
             curated_ids.add(priority_id)
             direct_priority_count += 1
+
+        telegram_ads = await fetch_telegram_apartments(
+            TELEGRAM_APARTMENT_CHANNELS,
+            timeout=settings.http_timeout_seconds,
+        )
+        if telegram_ads:
+            telegram_duplicate_ids = (
+                await apartments.duplicate_candidate_ids(telegram_ads)
+                if apartments is not None
+                else set()
+            )
+            published_telegram_ids = (
+                await apartments.published_lalafo_ids(
+                    [ad.lalafo_id for ad in telegram_ads]
+                )
+                if apartments is not None
+                else set()
+            )
+            for telegram_ad in telegram_ads:
+                if (
+                    telegram_ad.lalafo_id in candidate_ids
+                    or telegram_ad.lalafo_id in telegram_duplicate_ids
+                    or telegram_ad.lalafo_id in published_telegram_ids
+                    or state.contains(telegram_ad.lalafo_id, ad_fingerprint(telegram_ad))
+                ):
+                    continue
+                allowed, _ = is_allowed(
+                    telegram_ad,
+                    city=settings.city,
+                    max_price=SOURCE_MAX_PRICE,
+                    rooms=SOURCE_ALLOWED_ROOMS,
+                )
+                if not allowed or telegram_ad.price < max(
+                    settings.min_price,
+                    minimum_price_for_rooms(telegram_ad.rooms),
+                ):
+                    continue
+                if (
+                    len(telegram_ad.photo_urls) < SOURCE_MIN_PHOTOS
+                    or not telegram_ad.no_subletting
+                    or is_substandard_structure(telegram_ad)
+                ):
+                    continue
+                candidates.append(telegram_ad)
+                candidate_ids.add(telegram_ad.lalafo_id)
+            logger.info(
+                "Telegram channel discovery eligible=%d fetched=%d",
+                sum(ad.lalafo_id in candidate_ids for ad in telegram_ads),
+                len(telegram_ads),
+            )
 
         telegram_urls = await fetch_lalafo_urls(
             TELEGRAM_SOURCE_CHANNELS, timeout=settings.http_timeout_seconds

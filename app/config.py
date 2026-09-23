@@ -86,9 +86,17 @@ DEFAULT_SEARCH_URL = (
 )
 
 TELEGRAM_SOURCE_CHANNELS: tuple[str, ...] = (
-    "https://t.me/s/Domcomkgbot",
-    "https://t.me/s/kvartirnik2140",
+    "https://t.me/s/arenda_kvartiry_kg",
+    "https://t.me/s/bishkekarendakv",
+    "https://t.me/s/house_kg_official",
+    "https://t.me/s/apartbishkek",
+    "https://t.me/s/kvartirabish",
+    "https://t.me/s/wellcometoKGboard",
 )
+
+# These public channels expose complete photo albums, descriptions and phone
+# numbers in Telegram's web preview, so they can supplement Lalafo directly.
+TELEGRAM_APARTMENT_CHANNELS: tuple[str, ...] = TELEGRAM_SOURCE_CHANNELS
 
 # Keep separate fallback pools so realtor inventory always gets reserved search
 # capacity instead of being crowded out by the much larger owner result set.

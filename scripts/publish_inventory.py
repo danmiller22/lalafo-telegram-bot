@@ -63,27 +63,36 @@ async def run(*, eligible_until: datetime | None = None) -> int:
     is_repeat = apartment.publication_status == "published"
     stored = apartment_to_ad(apartment)
     ad = None
-    try:
-        async with LalafoClient(
-            timeout=settings.http_timeout_seconds,
-            max_retries=settings.http_max_retries,
-            proxy_url=settings.lalafo_proxy_url,
-        ) as client:
-            ad = await client.detail(apartment.source_url)
-    except LalafoNotFound:
-        await apartments.mark_inactive(apartment.id)
-        await inventory.finish_item(item.id, status="skipped", error="not_found")
-        await engine.dispose()
-        return 0
-    except (LalafoError, LalafoParseError, ValueError) as exc:
-        last_seen = as_utc(apartment.last_seen_at or apartment.updated_at)
-        if last_seen < datetime.now(timezone.utc) - timedelta(hours=24):
-            await inventory.finish_item(
-                item.id, status="skipped", error=f"stale_{type(exc).__name__}"
-            )
+    if apartment.source_url.startswith("https://t.me/"):
+        source_updated = as_utc(apartment.source_updated_at or apartment.updated_at)
+        if source_updated < datetime.now(timezone.utc) - timedelta(hours=96):
+            await inventory.finish_item(item.id, status="skipped", error="stale_telegram")
             await engine.dispose()
             return 0
         ad = stored
+    else:
+        try:
+            async with LalafoClient(
+                timeout=settings.http_timeout_seconds,
+                max_retries=settings.http_max_retries,
+                proxy_url=settings.lalafo_proxy_url,
+            ) as client:
+                ad = await client.detail(apartment.source_url)
+        except LalafoNotFound:
+            await apartments.mark_inactive(apartment.id)
+            await inventory.finish_item(item.id, status="skipped", error="not_found")
+            await engine.dispose()
+            return 0
+        except (LalafoError, LalafoParseError, ValueError) as exc:
+            last_seen = as_utc(apartment.last_seen_at or apartment.updated_at)
+            if last_seen >= datetime.now(timezone.utc) - timedelta(hours=24):
+                ad = stored
+            else:
+                await inventory.finish_item(
+                    item.id, status="skipped", error=f"stale_{type(exc).__name__}"
+                )
+                await engine.dispose()
+                return 0
 
     assert ad is not None
     valid, reason = _valid(ad, settings)
