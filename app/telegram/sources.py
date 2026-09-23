@@ -244,7 +244,7 @@ def parse_telegram_apartments(
             match = PHOTO_URL_RE.search(str(photo.get("style") or ""))
             if match is not None and match.group(1) not in photo_urls:
                 photo_urls.append(match.group(1))
-        if len(photo_urls) < 2:
+        if not photo_urls:
             continue
 
         data_post = str(message.get("data-post"))
@@ -286,8 +286,8 @@ async def fetch_telegram_apartments(
     *,
     timeout: float = 20.0,
     limit: int = 120,
-    pages_per_channel: int = 5,
-    max_age_hours: int = 72,
+    pages_per_channel: int = 12,
+    max_age_hours: int = 168,
 ) -> list[LalafoAd]:
     """Fetch several recent public preview pages from each approved channel."""
 
@@ -386,6 +386,11 @@ async def fetch_telegram_apartments(
             continue
         for ad in batch:
             unique.setdefault(ad.lalafo_id, ad)
+        logger.info(
+            "Telegram apartment source parsed channel=%s eligible=%d",
+            channel,
+            len(batch),
+        )
     return sorted(
         unique.values(),
         key=lambda ad: ad.source_updated_at or datetime.min.replace(tzinfo=timezone.utc),

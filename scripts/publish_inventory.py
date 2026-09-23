@@ -65,7 +65,7 @@ async def run(*, eligible_until: datetime | None = None) -> int:
     ad = None
     if apartment.source_url.startswith("https://t.me/"):
         source_updated = as_utc(apartment.source_updated_at or apartment.updated_at)
-        if source_updated < datetime.now(timezone.utc) - timedelta(hours=96):
+        if source_updated < datetime.now(timezone.utc) - timedelta(hours=168):
             await inventory.finish_item(item.id, status="skipped", error="stale_telegram")
             await engine.dispose()
             return 0
