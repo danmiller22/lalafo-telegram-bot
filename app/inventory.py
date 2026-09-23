@@ -18,6 +18,8 @@ ALLOWED_ROOMS = frozenset({"studio", "1"})
 CENTRAL_DAILY_SHARE = 0.90
 MIN_PUBLICATIONS_PER_DAY = 50
 MAX_PUBLICATIONS_PER_DAY = 60
+# The daily target is chosen once per Bishkek date, then split across the two
+# discovery periods so retries cannot increase the day's publication volume.
 # Only verified owners fill the main catalogue. Realtors and authors whose
 # role is unknown share three or four explicitly unverified slots per day.
 MIN_NON_OWNERS_PER_DAY = 3
