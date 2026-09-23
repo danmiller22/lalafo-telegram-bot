@@ -135,6 +135,69 @@ def _manual_keyboard(nonce: str) -> InlineKeyboardMarkup:
     ])
 
 
+def _manual_cancel_keyboard(nonce: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="❌ Отмена", callback_data=f"manual:cancel:{nonce}")],
+    ])
+
+
+def _manual_photos_keyboard(nonce: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Готово", callback_data=f"manual:photos_done:{nonce}")],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data=f"manual:cancel:{nonce}")],
+    ])
+
+
+def _manual_rooms_keyboard(nonce: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="Студия", callback_data=f"manual:room:studio:{nonce}"),
+            InlineKeyboardButton(text="1 комната", callback_data=f"manual:room:1:{nonce}"),
+        ],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data=f"manual:cancel:{nonce}")],
+    ])
+
+
+def _manual_author_keyboard(nonce: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Собственник", callback_data=f"manual:author:owner:{nonce}")],
+        [
+            InlineKeyboardButton(
+                text="Возможно собственник",
+                callback_data=f"manual:author:unknown:{nonce}",
+            )
+        ],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data=f"manual:cancel:{nonce}")],
+    ])
+
+
+def _is_manual_callback_admin(callback: CallbackQuery, settings: Settings) -> bool:
+    return bool(
+        settings.admin_user_id
+        and callback.from_user.id == settings.admin_user_id
+        and callback.message is not None
+        and callback.message.chat.type == "private"
+    )
+
+
+async def _manual_callback_is_current(
+    callback: CallbackQuery,
+    state: FSMContext,
+    settings: Settings,
+    *,
+    expected_state: State,
+    nonce: str,
+) -> bool:
+    if not _is_manual_callback_admin(callback, settings):
+        await callback.answer("Недостаточно прав.", show_alert=True)
+        return False
+    data = await state.get_data()
+    if await state.get_state() != expected_state.state or data.get("nonce") != nonce:
+        await callback.answer("Кнопка устарела. Откройте текущую карточку.", show_alert=True)
+        return False
+    return True
+
+
 def _manual_preview(data: dict) -> str:
     title = "Студия" if data["rooms"] == "studio" else "1-комнатная квартира"
     author = "собственник" if data["seller_type"] == "owner" else "возможно собственник"
@@ -352,9 +415,11 @@ async def start_manual_card(
         await state.clear()
         await state.set_state(ManualCardPublish.waiting_for_photos)
         await state.update_data(photo_urls=[], nonce=secrets.token_hex(6))
+    data = await state.get_data()
     await message.answer(
         "Пришлите фотографии квартиры (можно несколько сообщений), "
-        "затем отправьте «готово»."
+        "затем нажмите «Готово».",
+        reply_markup=_manual_photos_keyboard(data["nonce"]),
     )
 
 
@@ -378,9 +443,11 @@ async def start_manual_card_button(
         await state.clear()
         await state.set_state(ManualCardPublish.waiting_for_photos)
         await state.update_data(photo_urls=[], nonce=secrets.token_hex(6))
+    data = await state.get_data()
     await callback.message.answer(
         "Пришлите фотографии квартиры (можно несколько сообщений), "
-        "затем отправьте «готово»."
+        "затем нажмите «Готово».",
+        reply_markup=_manual_photos_keyboard(data["nonce"]),
     )
     await callback.answer()
 
@@ -449,10 +516,16 @@ async def manual_card_photo(
                 last_media_group_id=message.media_group_id,
             )
     if full:
-        await message.answer("Достаточно 10 фото. Напишите «готово».")
+        await message.answer(
+            "Достаточно 10 фото. Нажмите «Готово».",
+            reply_markup=_manual_photos_keyboard(data["nonce"]),
+        )
         return
     if not message.media_group_id or first_in_album:
-        await message.answer(f"Фото добавлено: {len(photos)}. Ещё фото или «готово».")
+        await message.answer(
+            f"Фото добавлено: {len(photos)}. Ещё фото или «Готово».",
+            reply_markup=_manual_photos_keyboard(data["nonce"]),
+        )
 
 
 @manual_card_router.message(ManualCardPublish.waiting_for_photos, F.chat.type == "private", F.text)
@@ -469,10 +542,41 @@ async def manual_card_photos_done(
         return
     data = await state.get_data()
     if len(data.get("photo_urls") or []) < 2:
-        await message.answer("Нужно минимум 2 фотографии.")
+        await message.answer(
+            "Нужно минимум 2 фотографии.",
+            reply_markup=_manual_photos_keyboard(data["nonce"]),
+        )
         return
     await state.set_state(ManualCardPublish.waiting_for_phone)
-    await message.answer("Введите номер хозяина, например +996 700 123 456.")
+    await message.answer(
+        "Введите номер хозяина, например +996 700 123 456.",
+        reply_markup=_manual_cancel_keyboard(data["nonce"]),
+    )
+
+
+@manual_card_router.callback_query(F.data.startswith("manual:photos_done:"))
+async def manual_card_photos_done_button(
+    callback: CallbackQuery, state: FSMContext, settings: Settings
+) -> None:
+    nonce = (callback.data or "").removeprefix("manual:photos_done:")
+    if not await _manual_callback_is_current(
+        callback,
+        state,
+        settings,
+        expected_state=ManualCardPublish.waiting_for_photos,
+        nonce=nonce,
+    ):
+        return
+    data = await state.get_data()
+    if len(data.get("photo_urls") or []) < 2:
+        await callback.answer("Нужно минимум 2 фотографии.", show_alert=True)
+        return
+    await state.set_state(ManualCardPublish.waiting_for_phone)
+    await callback.message.answer(
+        "Введите номер хозяина, например +996 700 123 456.",
+        reply_markup=_manual_cancel_keyboard(nonce),
+    )
+    await callback.answer()
 
 
 @manual_card_router.message(StateFilter(None), F.chat.type == "private", F.text)
@@ -504,7 +608,11 @@ async def manual_card_phone(
         return
     await state.update_data(phone=phone)
     await state.set_state(ManualCardPublish.waiting_for_rooms)
-    await message.answer("Тип квартиры: напишите «студия» или «1-комнатная».")
+    data = await state.get_data()
+    await message.answer(
+        "Выберите тип квартиры:",
+        reply_markup=_manual_rooms_keyboard(data["nonce"]),
+    )
 
 
 @manual_card_router.message(ManualCardPublish.waiting_for_rooms, F.chat.type == "private", F.text)
@@ -521,16 +629,55 @@ async def manual_card_rooms(
         "студия": "studio",
         "studio": "studio",
         "1": "1",
+        "1 комната": "1",
+        "1 комнаты": "1",
+        "1-комната": "1",
+        "1 комнатная": "1",
         "одна": "1",
         "1-комнатная": "1",
+        "1-комнатная квартира": "1",
         "однокомнатная": "1",
     }.get(value)
     if rooms is None:
-        await message.answer("Напишите «студия» или «1-комнатная».")
+        data = await state.get_data()
+        await message.answer(
+            "Выберите «Студия» или «1-комнатная».",
+            reply_markup=_manual_rooms_keyboard(data["nonce"]),
+        )
         return
     await state.update_data(rooms=rooms)
     await state.set_state(ManualCardPublish.waiting_for_district)
-    await message.answer("Какой район указать в карточке?")
+    data = await state.get_data()
+    await message.answer(
+        "Какой район указать в карточке?",
+        reply_markup=_manual_cancel_keyboard(data["nonce"]),
+    )
+
+
+@manual_card_router.callback_query(F.data.startswith("manual:room:"))
+async def manual_card_rooms_button(
+    callback: CallbackQuery, state: FSMContext, settings: Settings
+) -> None:
+    parts = (callback.data or "").split(":")
+    if len(parts) != 4 or parts[2] not in {"studio", "1"}:
+        await callback.answer("Недопустимый тип квартиры.", show_alert=True)
+        return
+    rooms, nonce = parts[2], parts[3]
+    if not await _manual_callback_is_current(
+        callback,
+        state,
+        settings,
+        expected_state=ManualCardPublish.waiting_for_rooms,
+        nonce=nonce,
+    ):
+        return
+    await state.update_data(rooms=rooms)
+    await state.set_state(ManualCardPublish.waiting_for_district)
+    await callback.message.answer(
+        "Какой район указать в карточке?",
+        reply_markup=_manual_cancel_keyboard(nonce),
+    )
+    await callback.answer()
 
 
 @manual_card_router.message(ManualCardPublish.waiting_for_district, F.chat.type == "private", F.text)
@@ -548,7 +695,11 @@ async def manual_card_district(
         return
     await state.update_data(district=district)
     await state.set_state(ManualCardPublish.waiting_for_price)
-    await message.answer("Какая цена в сомах? Например: 28000")
+    data = await state.get_data()
+    await message.answer(
+        "Какая цена в сомах? Например: 28000",
+        reply_markup=_manual_cancel_keyboard(data["nonce"]),
+    )
 
 
 @manual_card_router.message(ManualCardPublish.waiting_for_price, F.chat.type == "private", F.text)
@@ -571,8 +722,10 @@ async def manual_card_price(
         return
     await state.update_data(price=price)
     await state.set_state(ManualCardPublish.waiting_for_author)
+    data = await state.get_data()
     await message.answer(
-        "Кто автор объявления? Напишите «собственник» или «возможно собственник»."
+        "Выберите автора объявления:",
+        reply_markup=_manual_author_keyboard(data["nonce"]),
     )
 
 
@@ -590,12 +743,43 @@ async def manual_card_author(message: Message, state: FSMContext, settings: Sett
         "неизвестно": "unknown",
     }.get(value)
     if seller_type is None:
-        await message.answer("Напишите «собственник» или «возможно собственник».")
+        data = await state.get_data()
+        await message.answer(
+            "Выберите «Собственник» или «Возможно собственник».",
+            reply_markup=_manual_author_keyboard(data["nonce"]),
+        )
         return
     await state.update_data(seller_type=seller_type)
     await state.set_state(ManualCardPublish.waiting_for_confirmation)
     data = await state.get_data()
     await message.answer(_manual_preview(data), reply_markup=_manual_keyboard(data["nonce"]))
+
+
+@manual_card_router.callback_query(F.data.startswith("manual:author:"))
+async def manual_card_author_button(
+    callback: CallbackQuery, state: FSMContext, settings: Settings
+) -> None:
+    parts = (callback.data or "").split(":")
+    if len(parts) != 4 or parts[2] not in {"owner", "unknown"}:
+        await callback.answer("Недопустимый автор.", show_alert=True)
+        return
+    seller_type, nonce = parts[2], parts[3]
+    if not await _manual_callback_is_current(
+        callback,
+        state,
+        settings,
+        expected_state=ManualCardPublish.waiting_for_author,
+        nonce=nonce,
+    ):
+        return
+    await state.update_data(seller_type=seller_type)
+    await state.set_state(ManualCardPublish.waiting_for_confirmation)
+    data = await state.get_data()
+    await callback.message.answer(
+        _manual_preview(data),
+        reply_markup=_manual_keyboard(nonce),
+    )
+    await callback.answer()
 
 
 @manual_card_router.callback_query(F.data.startswith("manual:publish:"))

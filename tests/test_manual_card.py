@@ -4,9 +4,12 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from sqlalchemy import select
 
 from app.bot import lalafo_links
 from app.config import Settings
+from app.models import Apartment
+from app.security import TokenSigner
 from tests.helpers import make_ad
 
 
@@ -175,6 +178,86 @@ async def test_individual_photos_and_cancel_button():
 
 
 @pytest.mark.asyncio
+async def test_manual_form_can_use_buttons_for_every_choice():
+    state = FakeState()
+    settings = Settings(admin_user_id=777)
+    start = message("/addcard")
+    await lalafo_links.start_manual_card(start, state, settings)
+    photo_markup = start.answer.await_args.kwargs["reply_markup"]
+    done_data = photo_markup.inline_keyboard[0][0].callback_data
+    assert done_data == f"manual:photos_done:{state.data['nonce']}"
+
+    await lalafo_links.manual_card_photo(message(photo="file-1", album="album-1"), state, settings)
+    too_early = callback(done_data)
+    await lalafo_links.manual_card_photos_done_button(too_early, state, settings)
+    too_early.answer.assert_awaited_once_with("Нужно минимум 2 фотографии.", show_alert=True)
+    await lalafo_links.manual_card_photo(message(photo="file-2", album="album-1"), state, settings)
+    done = callback(done_data)
+    await lalafo_links.manual_card_photos_done_button(done, state, settings)
+    assert state.state == lalafo_links.ManualCardPublish.waiting_for_phone
+
+    phone = message("0700 123 456")
+    await lalafo_links.manual_card_phone(phone, state, settings)
+    rooms_markup = phone.answer.await_args.kwargs["reply_markup"]
+    assert [button.text for button in rooms_markup.inline_keyboard[0]] == [
+        "Студия",
+        "1 комната",
+    ]
+    room_data = rooms_markup.inline_keyboard[0][1].callback_data
+    assert room_data == f"manual:room:1:{state.data['nonce']}"
+    room = callback(room_data)
+    await lalafo_links.manual_card_rooms_button(room, state, settings)
+    assert state.data["rooms"] == "1"
+    assert state.state == lalafo_links.ManualCardPublish.waiting_for_district
+
+    await lalafo_links.manual_card_district(message("Центр"), state, settings)
+    price = message("32 000")
+    await lalafo_links.manual_card_price(price, state, settings)
+    author_markup = price.answer.await_args.kwargs["reply_markup"]
+    author_data = author_markup.inline_keyboard[1][0].callback_data
+    assert author_data == f"manual:author:unknown:{state.data['nonce']}"
+    author = callback(author_data)
+    await lalafo_links.manual_card_author_button(author, state, settings)
+    assert state.data["seller_type"] == "unknown"
+    assert state.state == lalafo_links.ManualCardPublish.waiting_for_confirmation
+    assert "👤 Автор: возможно собственник" in author.message.answer.await_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_room_text_accepts_one_room_phrase():
+    state = FakeState()
+    settings = Settings(admin_user_id=777)
+    await lalafo_links.start_manual_card(message("/addcard"), state, settings)
+    await state.set_state(lalafo_links.ManualCardPublish.waiting_for_rooms)
+
+    await lalafo_links.manual_card_rooms(message("1 комната"), state, settings)
+
+    assert state.data["rooms"] == "1"
+    assert state.state == lalafo_links.ManualCardPublish.waiting_for_district
+
+
+@pytest.mark.asyncio
+async def test_choice_buttons_reject_username_and_stale_form():
+    state = FakeState()
+    settings = Settings(admin_user_id=777, admin_username="owner_name")
+    await lalafo_links.start_manual_card(message("/addcard"), state, settings)
+    nonce = state.data["nonce"]
+    unauthorized = callback(
+        f"manual:photos_done:{nonce}", user_id=123, username="owner_name"
+    )
+    await lalafo_links.manual_card_photos_done_button(unauthorized, state, settings)
+    unauthorized.answer.assert_awaited_once_with("Недостаточно прав.", show_alert=True)
+    assert state.state == lalafo_links.ManualCardPublish.waiting_for_photos
+
+    stale = callback("manual:room:1:old_nonce")
+    await lalafo_links.manual_card_rooms_button(stale, state, settings)
+    stale.answer.assert_awaited_once_with(
+        "Кнопка устарела. Откройте текущую карточку.", show_alert=True
+    )
+    assert state.state == lalafo_links.ManualCardPublish.waiting_for_photos
+
+
+@pytest.mark.asyncio
 async def test_forwarded_album_photo_reaches_manual_form_before_copy_handler():
     state = FakeState()
     settings = Settings(admin_user_id=777)
@@ -306,3 +389,45 @@ async def test_manual_author_status_is_persisted(
     assert stored.seller_type == seller_type
     assert stored.owner_listing is owner_listing
     assert stored.photo_urls == ["file-1", "file-2"]
+
+
+@pytest.mark.asyncio
+async def test_confirmed_manual_card_reaches_album_keyboard_and_database(repositories):
+    apartments, _, sessions = repositories
+    state = FakeState()
+    settings = Settings(admin_user_id=777)
+    await fill_card(state, settings, rooms="1 комната", author="собственник")
+    bot = SimpleNamespace(
+        send_media_group=AsyncMock(
+            return_value=[
+                SimpleNamespace(message_id=11),
+                SimpleNamespace(message_id=12),
+                SimpleNamespace(message_id=13),
+            ]
+        ),
+        send_photo=AsyncMock(),
+        send_message=AsyncMock(return_value=SimpleNamespace(message_id=14)),
+        delete_message=AsyncMock(),
+    )
+    action = callback(f"manual:publish:{state.data['nonce']}")
+
+    await lalafo_links.publish_manual_card(
+        action, state, settings, apartments, TokenSigner("s" * 32), bot
+    )
+
+    assert state.state is None
+    media = bot.send_media_group.await_args.kwargs["media"]
+    assert [item.media for item in media] == ["file-1", "file-2", "file-3"]
+    card = bot.send_message.await_args.kwargs
+    assert "🏠 1-комнатная квартира" in card["text"]
+    assert "👤 Автор: собственник" in card["text"]
+    assert card["reply_markup"].inline_keyboard[0][0].text == "Получить номер"
+    async with sessions() as session:
+        stored = (
+            await session.scalars(
+                select(Apartment).where(Apartment.source_url.like("manual://telegram/%"))
+            )
+        ).one()
+    assert stored.publication_status == "published"
+    assert stored.telegram_message_id == 14
+    assert stored.seller_type == "owner"
