@@ -21,7 +21,9 @@ If Not fso.FolderExists(targetDir) Then fso.CreateFolder targetDir
 ' startup process behind an invisible "Open File" warning.
 Set binaryStream = CreateObject("ADODB.Stream")
 binaryStream.Type = 2
-binaryStream.Charset = "utf-8"
+' Windows Script Host on older systems treats a UTF-8 BOM as source text.
+' Save as UTF-16LE instead; WSH recognizes that BOM and keeps Cyrillic intact.
+binaryStream.Charset = "unicode"
 binaryStream.Open
 binaryStream.LoadFromFile fso.BuildPath(sourceDir, "lalafo_collector.js")
 binaryStream.SaveToFile fso.BuildPath(targetDir, "lalafo_collector.js"), 2
