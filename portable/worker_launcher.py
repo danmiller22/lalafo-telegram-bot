@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import aiosqlite  # Ensure PyInstaller bundles SQLAlchemy's async SQLite driver.
 import ctypes
 import logging
 import os
