@@ -5,14 +5,11 @@ from datetime import datetime, timezone
 import logging
 import os
 
-from sqlalchemy import func, select
-
 from app.config import get_settings
 from app.database import create_engine_and_session, init_db
 from app.inventory import InventoryRepository, MIN_HEALTHY_PERIOD_QUEUE
-from app.models import Apartment
 from scripts.publish_inventory import run as publish_one_due
-from scripts.scrape_publish import IMMEDIATE_PRIORITY_AD_IDS, run as discover
+from scripts.scrape_publish import run as discover
 
 
 logger = logging.getLogger(__name__)
@@ -48,19 +45,6 @@ async def run(*, force_discovery: bool | None = None) -> int:
     await init_db(engine)
     inventory = InventoryRepository(sessions)
     now = datetime.now(timezone.utc)
-    async with sessions() as session:
-        published_immediate = int(
-            await session.scalar(
-                select(func.count())
-                .select_from(Apartment)
-                .where(
-                    Apartment.lalafo_id.in_(IMMEDIATE_PRIORITY_AD_IDS),
-                    Apartment.publication_status == "published",
-                )
-            )
-            or 0
-        )
-    force = force or published_immediate < len(IMMEDIATE_PRIORITY_AD_IDS)
     period_key = await inventory.claim_discovery(now=now, force=force)
     await engine.dispose()
 
