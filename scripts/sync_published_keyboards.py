@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import logging
-from datetime import datetime, timedelta, timezone
-from urllib.parse import urlsplit
 
 from aiogram import Bot
 from aiogram.exceptions import (
@@ -19,9 +16,9 @@ from app.config import get_settings
 from app.database import create_engine_and_session
 from app.models import Apartment
 from app.security import TokenSigner
-from app.state import normalized_district
 from app.telegram.formatting import format_public_apartment
 from app.telegram.keyboards import APARTMENT_KEYBOARD_VERSION, apartment_keyboard
+from scripts.remove_confirmed_duplicate import run as remove_confirmed_duplicate
 
 
 logger = logging.getLogger(__name__)
@@ -43,28 +40,10 @@ async def run() -> int:
     failed = 0
     rate_limited = False
     try:
+        await remove_confirmed_duplicate(
+            bot, sessions, chat_id=settings.telegram_group_id
+        )
         async with sessions.begin() as session:
-            recent_studios = list((await session.scalars(
-                select(Apartment).where(
-                    Apartment.publication_status == "published",
-                    Apartment.rooms == "studio",
-                    Apartment.price == 20_000,
-                    Apartment.published_at >= datetime.now(timezone.utc) - timedelta(days=2),
-                )
-            )).all())
-            for apartment in recent_studios:
-                if normalized_district(apartment.district) != "восток5":
-                    continue
-                logger.info(
-                    "VOSTOK_DUPLICATE_AUDIT id=%s source_id=%s source=%s message=%s published=%s phone_hash=%s photos=%s",
-                    apartment.id,
-                    apartment.lalafo_id,
-                    apartment.source_url,
-                    apartment.telegram_message_id,
-                    apartment.published_at,
-                    hashlib.sha256(apartment.phone.encode()).hexdigest()[:12],
-                    [urlsplit(url).path.rsplit("/", 1)[-1] for url in apartment.photo_urls],
-                )
             apartments = list(
                 (
                     await session.scalars(
