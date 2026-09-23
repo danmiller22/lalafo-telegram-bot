@@ -129,6 +129,21 @@ CURATED_ROTATION_LALAFO_IDS = (
 PRIORITY_AD_SPECS = (
     (
         "https://lalafo.kg/bishkek/ads/"
+        "1-komnata-vostok-5-mkr-bez-zivotnyh-s-mebelu-casticno-id-116440509",
+        "Восток-5",
+    ),
+    (
+        "https://lalafo.kg/bishkek/ads/1-komnatnaa-kvartira-id-116537057",
+        "Восток-5",
+    ),
+    (
+        "https://lalafo.kg/bishkek/ads/"
+        "1-komnata-ul-kievskaa-umetalieva-rieltor-bez-zivotnyh-"
+        "ot-6-mesacev-ot-1-goda-s-mebelu-polnostu-id-116523595",
+        "Киевская / Уметалиева",
+    ),
+    (
+        "https://lalafo.kg/bishkek/ads/"
         "sdau-1-komnatnuu-kvartiru-za-40-000-som-s-id-113203621",
         "ул. Манаса — центр",
     ),
@@ -183,6 +198,11 @@ PRIORITY_AD_SPECS = (
     ),
 )
 IMMEDIATE_PRIORITY_AD_IDS = frozenset({116518638, 113286525})
+PRIORITY_TERM_OVERRIDES = {
+    # The live page states 40,000 som in its title/description while the API
+    # price field is "negotiable". Preserve the explicit current source price.
+    113203621: (40_000, "ул. Манаса — центр"),
+}
 
 # Cards currently visible in the operator's Lalafo account. Ads waiting for
 # payment are not publicly fetchable, so keep their account-visible terms here
@@ -824,6 +844,11 @@ async def run(*, discovery_only: bool = False) -> int:
                     type(exc).__name__,
                 )
                 continue
+            term_override = PRIORITY_TERM_OVERRIDES.get(priority_id)
+            if term_override is not None:
+                priority_ad = priority_ad.model_copy(
+                    update={"price": term_override[0], "district": term_override[1]}
+                )
             allowed, reason = is_allowed(
                 priority_ad,
                 city=settings.city,

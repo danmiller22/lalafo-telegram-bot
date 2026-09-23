@@ -245,6 +245,9 @@ def test_curated_rotation_preserves_manually_approved_apartments():
 
 def test_operator_priority_apartments_have_requested_district_labels():
     assert [int(url.rsplit("-id-", 1)[1]) for url, _ in PRIORITY_AD_SPECS] == [
+        116440509,
+        116537057,
+        116523595,
         113203621,
         116518638,
         113286525,
@@ -257,6 +260,9 @@ def test_operator_priority_apartments_have_requested_district_labels():
         114324774,
     ]
     assert [district for _, district in PRIORITY_AD_SPECS] == [
+        "Восток-5",
+        "Восток-5",
+        "Киевская / Уметалиева",
         "ул. Манаса — центр",
         "Восток-5",
         "ЦУМ",
