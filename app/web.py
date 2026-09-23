@@ -562,7 +562,54 @@ async def _execute_queue_dispatch() -> int:
         ),
         last_error=None if exit_code == 0 else "QueueDispatchFailed",
     )
+    queued_count, due_count, next_scheduled_at = await _inventory_queue_status()
+    _apartment_scheduler_state.update(
+        queued_count=queued_count,
+        due_count=due_count,
+        next_scheduled_at=(
+            next_scheduled_at.isoformat() if next_scheduled_at is not None else None
+        ),
+    )
     return exit_code
+
+
+async def _inventory_queue_status() -> tuple[int, int, datetime | None]:
+    from sqlalchemy import func, select
+
+    from app.database import create_engine_and_session
+    from app.models import ApartmentInventoryQueue
+
+    engine, sessions = create_engine_and_session(get_settings().database_url)
+    now = datetime.now(UTC)
+    try:
+        async with sessions() as session:
+            queued = int(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(ApartmentInventoryQueue)
+                    .where(ApartmentInventoryQueue.status == "queued")
+                )
+                or 0
+            )
+            due = int(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(ApartmentInventoryQueue)
+                    .where(
+                        ApartmentInventoryQueue.status == "queued",
+                        ApartmentInventoryQueue.scheduled_at <= now,
+                    )
+                )
+                or 0
+            )
+            next_scheduled = await session.scalar(
+                select(func.min(ApartmentInventoryQueue.scheduled_at)).where(
+                    ApartmentInventoryQueue.status == "queued"
+                )
+            )
+            return queued, due, next_scheduled
+    finally:
+        await engine.dispose()
 
 
 async def _run_hosted_apartment_scheduler() -> None:

@@ -431,6 +431,11 @@ async def test_hosted_queue_dispatcher_publishes_without_proxy_discovery(
     window_status = AsyncMock(side_effect=[(6, earlier), (7, published)])
     monkeypatch.setattr(scripts.publish_inventory, "run", publish_one)
     monkeypatch.setattr(
+        web,
+        "_inventory_queue_status",
+        AsyncMock(return_value=(12, 2, published)),
+    )
+    monkeypatch.setattr(
         scripts.publish_if_due, "publication_window_status", window_status
     )
 
@@ -440,6 +445,8 @@ async def test_hosted_queue_dispatcher_publishes_without_proxy_discovery(
     assert publish_one.await_args.kwargs["eligible_until"] > datetime.now(UTC)
     assert window_status.await_count == 2
     assert web._apartment_scheduler_state["recent_published_count"] == 7
+    assert web._apartment_scheduler_state["queued_count"] == 12
+    assert web._apartment_scheduler_state["due_count"] == 2
     assert web._apartment_scheduler_state["running_cycle"] is False
 
 
