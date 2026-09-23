@@ -27,7 +27,10 @@ MAX_NON_OWNERS_PER_DAY = 4
 TARGET_NON_OWNERS_PER_PERIOD = 2
 MAX_REPOSTS_PER_PERIOD = 0
 MAX_FRESH_STOCK_LOAD = 600
-DISCOVERY_RETRY_MINUTES = 30
+# A blocked source must not leave the channel empty for half an hour.  The
+# workflow itself is concurrency-limited, so a short retry is safe and lets
+# Telegram reserve sources recover the queue on the next cloud tick.
+DISCOVERY_RETRY_MINUTES = 3
 MIN_HEALTHY_PERIOD_QUEUE = 20
 
 
