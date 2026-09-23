@@ -95,7 +95,10 @@ async def test_manual_telegram_file_ids_form_album_with_working_card_keyboard() 
     media = bot.send_media_group.await_args.kwargs["media"]
     assert [item.media for item in media] == ad.photo_urls
     card = bot.send_message.await_args.kwargs
-    assert "Автор: возможно собственник" in card["text"]
+    assert any(
+        f"Автор: {label}" in card["text"]
+        for label in ("неизвестно", "возможно собственник")
+    )
     assert "Статус:" not in card["text"]
     keyboard = card["reply_markup"]
     assert keyboard.inline_keyboard[0][0].url.startswith(

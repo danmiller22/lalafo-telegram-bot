@@ -55,7 +55,7 @@ def callback(data, *, user_id=777, username=None):
     )
 
 
-async def fill_card(state, settings, *, rooms="студия", author="возможно собственник"):
+async def fill_card(state, settings, *, rooms="студия", author="неизвестно"):
     await lalafo_links.start_manual_card(message("/addcard"), state, settings)
     for file_id in ("file-1", "file-2", "file-3"):
         await lalafo_links.manual_card_photo(
@@ -75,7 +75,7 @@ async def fill_card(state, settings, *, rooms="студия", author="возмо
 @pytest.mark.parametrize(
     ("rooms", "author", "stored_rooms", "seller_type", "owner_listing"),
     [
-        ("студия", "возможно собственник", "studio", "unknown", False),
+        ("студия", "неизвестно", "studio", "unknown", False),
         ("1-комнатная", "собственник", "1", "owner", True),
     ],
 )
@@ -89,7 +89,17 @@ async def test_manual_card_album_confirmation_and_publish(
     assert state.data["photo_urls"] == ["file-1", "file-2", "file-3"]
     assert "28 000 сом" in preview.answer.await_args.args[0]
     assert "📞 +996700123456" in preview.answer.await_args.args[0]
-    assert "👤 Автор: " + author in preview.answer.await_args.args[0]
+    preview_author = (
+        "собственник"
+        if seller_type == "owner"
+        else lalafo_links.unknown_author_label(
+            phone=state.data["phone"],
+            price=state.data["price"],
+            district=state.data["district"],
+            rooms=state.data["rooms"],
+        )
+    )
+    assert "👤 Автор: " + preview_author in preview.answer.await_args.args[0]
     assert "Статус:" not in preview.answer.await_args.args[0]
     assert preview.answer.await_args.kwargs["reply_markup"].inline_keyboard[0][0].callback_data == (
         f"manual:publish:{state.data['nonce']}"
@@ -116,6 +126,9 @@ async def test_manual_card_album_confirmation_and_publish(
     assert ad.owner_listing is owner_listing
     assert ad.photo_urls == ["file-1", "file-2", "file-3"]
     assert ad.phone == "+996700123456"
+    from app.telegram.formatting import author_label
+
+    assert author_label(ad) == preview_author
     publish.assert_awaited_once_with(42, ad)
     apartments.mark_published.assert_awaited_once_with(
         42, chat_id=settings.telegram_group_id, message_id=987
@@ -214,13 +227,17 @@ async def test_manual_form_can_use_buttons_for_every_choice():
     price = message("32 000")
     await lalafo_links.manual_card_price(price, state, settings)
     author_markup = price.answer.await_args.kwargs["reply_markup"]
+    assert author_markup.inline_keyboard[1][0].text == "Неизвестно"
     author_data = author_markup.inline_keyboard[1][0].callback_data
     assert author_data == f"manual:author:unknown:{state.data['nonce']}"
     author = callback(author_data)
     await lalafo_links.manual_card_author_button(author, state, settings)
     assert state.data["seller_type"] == "unknown"
     assert state.state == lalafo_links.ManualCardPublish.waiting_for_confirmation
-    assert "👤 Автор: возможно собственник" in author.message.answer.await_args.args[0]
+    assert any(
+        f"👤 Автор: {label}" in author.message.answer.await_args.args[0]
+        for label in ("неизвестно", "возможно собственник")
+    )
 
 
 @pytest.mark.asyncio

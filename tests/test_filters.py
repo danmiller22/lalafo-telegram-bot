@@ -5,7 +5,7 @@ import pytest
 
 from app.config import ADDITIONAL_SEARCH_URLS, DEFAULT_SEARCH_URL, Settings
 from app.lalafo.parser import is_allowed
-from app.telegram.formatting import format_apartment, format_public_apartment
+from app.telegram.formatting import author_label, format_apartment, format_public_apartment
 from app.lalafo.subletting import halve_subletting_candidates
 from scripts.scrape_publish import (
     CURATED_ROTATION_SPECS,
@@ -88,7 +88,8 @@ def test_agency_listing_is_allowed_and_marked_as_unknown():
     )[0]
     text = format_apartment(ad)
     assert "риелтор" not in text.casefold()
-    assert "👤 Автор: возможно собственник" in text
+    assert f"👤 Автор: {author_label(ad)}" in text
+    assert author_label(ad) in {"неизвестно", "возможно собственник"}
     assert "Статус:" not in text
 
 
@@ -100,7 +101,8 @@ def test_channel_source_uses_single_author_label():
     )
     text = format_apartment(ad)
     assert text.count("👤 Автор:") == 1
-    assert "👤 Автор: возможно собственник" in text
+    assert f"👤 Автор: {author_label(ad)}" in text
+    assert author_label(ad) in {"неизвестно", "возможно собственник"}
     assert "Статус:" not in text
     assert "@owners_bishkek" not in text
 
@@ -294,7 +296,17 @@ def test_publish_batch_marks_realtors_as_unknown():
     selected = select_publish_batch([realtor, owner], limit=2)
     assert {ad.lalafo_id for ad in selected} == {1, 2}
     assert "риелтор" not in format_apartment(realtor).casefold()
-    assert "👤 Автор: возможно собственник" in format_apartment(realtor)
+    assert author_label(realtor) in {"неизвестно", "возможно собственник"}
+
+
+def test_unverified_author_variants_are_stable_and_both_used():
+    ads = [
+        make_ad(owner_listing=False, phone=f"+996700{index:06d}")
+        for index in range(40)
+    ]
+    labels = {author_label(ad) for ad in ads}
+    assert labels == {"неизвестно", "возможно собственник"}
+    assert all(author_label(ad) == author_label(ad) for ad in ads)
 
 
 def test_owners_lead_a_mixed_batch():
