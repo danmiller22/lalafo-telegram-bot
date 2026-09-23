@@ -128,7 +128,7 @@ def test_noncentral_owners_outrank_central_realtors():
     assert sum(item.apartment.seller_type != "owner" for item in planned) == 4
 
 
-def test_unknown_sellers_share_the_non_owner_limit():
+def test_unknown_authors_do_not_share_the_explicit_realtor_limit():
     stock = _apartments(100, central=True, start_id=1)
     for item in stock:
         item.owner_listing = False
@@ -137,7 +137,7 @@ def test_unknown_sellers_share_the_non_owner_limit():
 
     planned = plan_period(stock, period_start=period_start, rng=random.Random(13))
 
-    assert len(planned) == 4
+    assert len(planned) == period_publication_targets(period_start)[0]
     assert all(item.apartment.seller_type == "unknown" for item in planned)
 
 

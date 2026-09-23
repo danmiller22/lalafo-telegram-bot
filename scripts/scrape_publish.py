@@ -28,7 +28,11 @@ from app.lalafo.phone import mask_phone
 from app.models import Apartment
 from app.state import PostedState, ad_fingerprint
 from app.telegram.formatting import format_apartment
-from app.telegram.sources import fetch_lalafo_urls, fetch_telegram_apartments
+from app.telegram.sources import (
+    fetch_joyka_apartments,
+    fetch_lalafo_urls,
+    fetch_telegram_apartments,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +91,7 @@ CENTRAL_DISTRICT_TERMS = (
 SOURCE_MIN_PRICE = 20_000
 SOURCE_MAX_PRICE = 40_000
 SOURCE_ALLOWED_ROOMS = ("studio", "1")
-SOURCE_MIN_PHOTOS = 2
+SOURCE_MIN_PHOTOS = 1
 SOURCE_MAX_POSTS_PER_RUN = 18
 SOURCE_PUBLISH_SPACING_SECONDS = 150
 SOURCE_MAX_SEARCH_PAGES = 12
@@ -963,6 +967,52 @@ async def run(*, discovery_only: bool = False) -> int:
                 sum(ad.lalafo_id in candidate_ids for ad in telegram_ads),
                 len(telegram_ads),
             )
+
+        # Joyka mirrors a broad set of public Bishkek listings and is reachable
+        # from normal cloud egress addresses.  It keeps the queue healthy when
+        # Lalafo rejects GitHub/Koyeb data-centre IPs with HTTP 403.
+        joyka_ads = await fetch_joyka_apartments(
+            timeout=settings.http_timeout_seconds,
+            limit=max(candidate_pool_limit * 2, 120),
+        )
+        if joyka_ads:
+            joyka_duplicate_ids = (
+                await apartments.duplicate_candidate_ids(joyka_ads)
+                if apartments is not None
+                else set()
+            )
+            published_joyka_ids = (
+                await apartments.published_lalafo_ids(
+                    [ad.lalafo_id for ad in joyka_ads]
+                )
+                if apartments is not None
+                else set()
+            )
+            added = 0
+            for joyka_ad in joyka_ads:
+                if (
+                    joyka_ad.lalafo_id in candidate_ids
+                    or joyka_ad.lalafo_id in joyka_duplicate_ids
+                    or joyka_ad.lalafo_id in published_joyka_ids
+                    or state.contains(joyka_ad.lalafo_id, ad_fingerprint(joyka_ad))
+                ):
+                    continue
+                if is_substandard_structure(joyka_ad):
+                    continue
+                candidates.append(joyka_ad)
+                candidate_ids.add(joyka_ad.lalafo_id)
+                added += 1
+            logger.info(
+                "Joyka cloud reserve added=%d fetched=%d",
+                added,
+                len(joyka_ads),
+            )
+            if discovery_only and len(candidates) >= 20:
+                # Lalafo can still contribute when available, but a cloud IP
+                # block must fail fast instead of spending minutes on retries.
+                client.max_retries = 0
+                for detail_client in detail_clients:
+                    detail_client.max_retries = 0
 
         telegram_urls = await fetch_lalafo_urls(
             TELEGRAM_SOURCE_CHANNELS, timeout=settings.http_timeout_seconds

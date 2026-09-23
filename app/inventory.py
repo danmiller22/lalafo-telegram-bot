@@ -20,8 +20,9 @@ MIN_PUBLICATIONS_PER_DAY = 50
 MAX_PUBLICATIONS_PER_DAY = 60
 # The daily target is chosen once per Bishkek date, then split across the two
 # discovery periods so retries cannot increase the day's publication volume.
-# Only verified owners fill the main catalogue. Realtors and authors whose
-# role is unknown share three or four explicitly unverified slots per day.
+# Explicit realtors are limited to three or four cards per day. Public channel
+# authors whose role is not stated remain eligible and are shown honestly by
+# source name; treating them as agents used to collapse the queue to 3-4 cards.
 MIN_NON_OWNERS_PER_DAY = 3
 MAX_NON_OWNERS_PER_DAY = 4
 TARGET_NON_OWNERS_PER_PERIOD = 2
@@ -159,7 +160,7 @@ def _limit_non_owners(
     target: int,
     maximum: int,
 ) -> list[PlannedApartment]:
-    """Keep a tiny unknown-status slice and fill every other slot with owners."""
+    """Keep a tiny explicit-realtor slice without penalizing unknown authors."""
     maximum = max(0, maximum)
     target = min(maximum, max(0, target))
     result: list[PlannedApartment | None] = list(planned)
@@ -167,7 +168,7 @@ def _limit_non_owners(
     unused = [item for item in apartments if item.id not in used_ids]
 
     current_non_owners = sum(
-        item is not None and _seller_type(item.apartment) != "owner"
+        item is not None and _seller_type(item.apartment) == "realtor"
         for item in result
     )
 
@@ -181,7 +182,7 @@ def _limit_non_owners(
         surplus_indexes = [
             index
             for index, item in enumerate(result)
-            if item is not None and _seller_type(item.apartment) != "owner"
+            if item is not None and _seller_type(item.apartment) == "realtor"
         ][maximum:]
         for index in surplus_indexes:
             old = result[index]
@@ -214,13 +215,13 @@ def _limit_non_owners(
                     sequence=old.sequence,
                 )
         current_non_owners = sum(
-            item is not None and _seller_type(item.apartment) != "owner"
+            item is not None and _seller_type(item.apartment) == "realtor"
             for item in result
         )
 
     if current_non_owners < target:
         non_owner_candidates = [
-            item for item in unused if _seller_type(item) != "owner"
+            item for item in unused if _seller_type(item) == "realtor"
         ]
         non_owner_candidates.sort(
             key=lambda item: _candidate_key(item, central=is_central(item.district))
@@ -230,7 +231,7 @@ def _limit_non_owners(
                 index
                 for index, item in enumerate(result)
                 if item is not None
-                and _seller_type(item.apartment) == "owner"
+                and _seller_type(item.apartment) != "realtor"
                 and not item.apartment.discovery_priority
                 and item.apartment.rooms == candidate.rooms
             ]
@@ -507,7 +508,7 @@ class InventoryRepository:
                         Apartment.publication_status == "published",
                         Apartment.published_at >= day_start,
                         Apartment.published_at < day_end,
-                        func.coalesce(Apartment.seller_type, "unknown") != "owner",
+                        func.coalesce(Apartment.seller_type, "unknown") == "realtor",
                     )
                 )
                 or 0
@@ -521,7 +522,7 @@ class InventoryRepository:
                         ApartmentInventoryQueue.scheduled_at >= day_start,
                         ApartmentInventoryQueue.scheduled_at < day_end,
                         ApartmentInventoryQueue.status.in_(("queued", "publishing")),
-                        func.coalesce(Apartment.seller_type, "unknown") != "owner",
+                        func.coalesce(Apartment.seller_type, "unknown") == "realtor",
                     )
                 )
                 or 0
@@ -758,7 +759,7 @@ class InventoryRepository:
                         Apartment.publication_status == "published",
                         Apartment.published_at >= day_start,
                         Apartment.published_at < day_end,
-                        func.coalesce(Apartment.seller_type, "unknown") != "owner",
+                        func.coalesce(Apartment.seller_type, "unknown") == "realtor",
                     )
                 )
                 or 0
@@ -772,7 +773,7 @@ class InventoryRepository:
                         ApartmentInventoryQueue.status == "publishing",
                         ApartmentInventoryQueue.claimed_at >= day_start,
                         ApartmentInventoryQueue.claimed_at < day_end,
-                        func.coalesce(Apartment.seller_type, "unknown") != "owner",
+                        func.coalesce(Apartment.seller_type, "unknown") == "realtor",
                     )
                 )
                 or 0
@@ -788,7 +789,7 @@ class InventoryRepository:
                     .where(
                         ApartmentInventoryQueue.status == "queued",
                         ApartmentInventoryQueue.scheduled_at <= eligible_until,
-                        func.coalesce(Apartment.seller_type, "unknown") != "owner",
+                        func.coalesce(Apartment.seller_type, "unknown") == "realtor",
                     )
                 )
                 await session.execute(

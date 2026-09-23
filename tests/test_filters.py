@@ -74,7 +74,7 @@ def test_allowed_and_format_has_no_source_or_description():
     )[0]
     text = format_apartment(ad)
     assert text == (
-        "🏠 1-комнатная квартира\n👤 Статус: собственник\n📍 7 мкр\n🏙 Бишкек\n"
+        "🏠 1-комнатная квартира\n👤 Автор: собственник\n📍 7 мкр\n🏙 Бишкек\n"
         "💰 35 000 сом\n🔐 Депозит: 20 000 сом"
     )
     assert "lalafo" not in text.lower()
@@ -89,13 +89,13 @@ def test_agency_listing_is_allowed_and_marked_as_unknown():
     text = format_apartment(ad)
     assert "риелтор" not in text.casefold()
     assert "собственник" not in text.casefold()
-    assert "👤 Статус: неизвестен" in text
+    assert "👤 Автор: не указан" in text
 
 
 def test_missing_district_uses_labeled_demo_location_and_omits_deposit():
     text = format_apartment(make_ad(district=None, deposit=None, rooms="studio"))
     assert text == (
-        "🏠 Студия\n👤 Статус: собственник\n📍 Район не указан\n"
+        "🏠 Студия\n👤 Автор: собственник\n📍 Район не указан\n"
         "🏙 Бишкек\n💰 35 000 сом"
     )
 
@@ -108,7 +108,7 @@ def test_expanded_source_keeps_reposts_strictly_limited():
     assert SOURCE_PUBLISH_SPACING_SECONDS == 150
     assert SOURCE_MAX_SEARCH_PAGES == 12
     assert SOURCE_MIN_PRICE == 20_000
-    assert SOURCE_MIN_PHOTOS == 2
+    assert SOURCE_MIN_PHOTOS == 1
     assert MAX_REPOSTS_PER_RUN == 0
     assert SOURCE_REPOST_AFTER_HOURS is None
     assert TWO_BEDROOM_MIN_PRICE == 20_000
@@ -282,7 +282,7 @@ def test_publish_batch_marks_realtors_as_unknown():
     assert {ad.lalafo_id for ad in selected} == {1, 2}
     assert "риелтор" not in format_apartment(realtor).casefold()
     assert "собственник" not in format_apartment(realtor).casefold()
-    assert "👤 Статус: неизвестен" in format_apartment(realtor)
+    assert "👤 Автор: не указан" in format_apartment(realtor)
 
 
 def test_owners_lead_a_mixed_batch():
