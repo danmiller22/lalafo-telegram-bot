@@ -74,7 +74,10 @@ def test_mini_app_page_keeps_payment_and_receipt_in_one_window():
     assert 'id="apartment"' in html
     assert 'id="photos"' in html
     assert 'id="details"' in html
-    assert "tg.openLink(data.payment_url)" in html
+    assert "current.openLink(data.payment_url)" in html
+    assert '<script async src="https://telegram.org/js/telegram-web-app.js"></script>' in html
+    assert 'query.get("tgWebAppData")' in html
+    assert "prepareTelegramContext" in html
     assert "Выберите банк" not in html
     assert "Выберите доступ:" not in html
     assert "Я оплатил(а)" in html

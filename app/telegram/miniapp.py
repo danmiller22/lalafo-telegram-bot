@@ -62,7 +62,7 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
   <title>{safe_title}</title>
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script async src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     :root {{ color-scheme: light dark; font-family: Inter, system-ui, sans-serif; }}
     * {{ box-sizing: border-box; }}
@@ -106,14 +106,32 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
 </main>
 <script>
 (() => {{
-  const tg = window.Telegram && window.Telegram.WebApp;
-  if (tg) {{ tg.ready(); tg.expand(); }}
-  const initData = tg ? tg.initData : "";
   const query = new URLSearchParams(location.search);
-  const startParam = (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) || query.get("tgWebAppStartParam") || "";
+  const hash = new URLSearchParams(location.hash.replace(/^#/, ""));
   const el = id => document.getElementById(id);
+  let initData = query.get("tgWebAppData") || hash.get("tgWebAppData") || "";
+  let startParam = query.get("tgWebAppStartParam") || hash.get("tgWebAppStartParam") || "";
   let lastState = "";
   let paymentOpening = false;
+
+  function telegramContext() {{
+    const current = window.Telegram && window.Telegram.WebApp;
+    if (!current) return null;
+    if (current.initData) initData = current.initData;
+    if (current.initDataUnsafe && current.initDataUnsafe.start_param) {{
+      startParam = current.initDataUnsafe.start_param;
+    }}
+    current.ready();
+    current.expand();
+    return current;
+  }}
+  async function prepareTelegramContext() {{
+    for (let attempt = 0; attempt < 20; attempt += 1) {{
+      telegramContext();
+      if (initData && startParam) return;
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }}
+  }}
 
   function show(id, visible) {{ el(id).classList.toggle("hidden", !visible); }}
   function message(text) {{ el("status").textContent = text; }}
@@ -171,6 +189,7 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     }}
   }}
   async function load() {{
+    await prepareTelegramContext();
     if (!initData || !startParam) {{
       message("Откройте это окно кнопкой под карточкой квартиры в Telegram.");
       show("refresh", false);
@@ -190,7 +209,8 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     try {{
       const data = await api("/miniapp/api/start", {{plan}});
       render(data);
-      if (tg) tg.openLink(data.payment_url); else location.href = data.payment_url;
+      const current = telegramContext();
+      if (current) current.openLink(data.payment_url); else location.href = data.payment_url;
     }} catch (error) {{ message(error.message); }}
     finally {{
       button.disabled = false;

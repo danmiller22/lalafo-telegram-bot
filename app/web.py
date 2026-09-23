@@ -40,6 +40,11 @@ from app.lalafo.phone import display_phone
 from app.lalafo.mcp_server import lalafo_mcp, lalafo_mcp_app
 
 logger = logging.getLogger(__name__)
+
+# Apartment discovery is handled by the isolated GitHub cloud schedule.  Never
+# run its proxy scan inside the customer-facing payment process: Koyeb's small
+# web instance must remain available for Telegram webhooks and the Mini App.
+IN_PROCESS_APARTMENT_SCHEDULER_ENABLED = False
 app = FastAPI(title="Lalafo Telegram service", docs_url=None, redoc_url=None)
 
 PAYMENT_REVIEW_MESSAGE = (
@@ -583,6 +588,7 @@ async def _repair_background_tasks_once() -> int:
 
     if (
         settings.run_bot
+        and IN_PROCESS_APARTMENT_SCHEDULER_ENABLED
         and settings.hosted_apartment_scheduler_enabled
         and _task_stopped(_apartment_scheduler_task)
     ):
@@ -695,7 +701,10 @@ async def startup() -> None:
         _keyboard_sync_task = asyncio.create_task(
             _sync_outdated_keyboards(), name="keyboard-sync"
         )
-        if settings.hosted_apartment_scheduler_enabled:
+        if (
+            IN_PROCESS_APARTMENT_SCHEDULER_ENABLED
+            and settings.hosted_apartment_scheduler_enabled
+        ):
             _apartment_scheduler_task = asyncio.create_task(
                 _run_hosted_apartment_scheduler(), name="apartment-scheduler"
             )
@@ -923,7 +932,9 @@ async def health() -> JSONResponse:
                     "state": "running" if scheduler_running else "recovering",
                     **_apartment_scheduler_state,
                 }
-                if settings.run_bot and settings.hosted_apartment_scheduler_enabled
+                if settings.run_bot
+                and IN_PROCESS_APARTMENT_SCHEDULER_ENABLED
+                and settings.hosted_apartment_scheduler_enabled
                 else "disabled"
             ),
         }

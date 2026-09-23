@@ -236,7 +236,7 @@ async def test_health_keeps_payment_bot_live_when_scheduler_is_recovering(
         response = await client.get("/health")
     assert response.status_code == 200
     assert response.json()["bot"] == "running"
-    assert response.json()["apartment_scheduler"]["state"] == "recovering"
+    assert response.json()["apartment_scheduler"] == "disabled"
 
 
 @pytest.mark.asyncio
@@ -310,6 +310,7 @@ async def test_background_watchdog_restarts_only_stopped_worker(
 ) -> None:
     monkeypatch.setenv("RUN_BOT", "true")
     monkeypatch.setenv("SERVICE_KEEPALIVE_ENABLED", "false")
+    monkeypatch.setattr(web, "IN_PROCESS_APARTMENT_SCHEDULER_ENABLED", True)
     get_settings.cache_clear()
     stop = asyncio.Event()
 
