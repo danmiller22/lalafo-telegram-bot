@@ -1005,7 +1005,13 @@ async def relay_lalafo_ingest(
     for ad in payload.ads[:240]:
         await apartments.upsert_discovered(ad)
         stored += 1
-    return JSONResponse({"ok": True, "stored": stored})
+    # The residential collector is now a discovery source, not a publisher.
+    # Build the cloud queue immediately after a successful relay so the hosted
+    # dispatcher can publish the first card on its next lightweight tick.
+    from app.inventory import InventoryRepository
+
+    queued = await InventoryRepository(apartments.sessions).schedule_period()
+    return JSONResponse({"ok": True, "stored": stored, "queued": queued})
 
 
 @app.get("/health")
