@@ -15,8 +15,9 @@ import sys
 import time
 import winreg
 
-from app.bot.lalafo_only import run
+from app.bot.lalafo_only import run as run_link_bot
 from app.config import get_settings
+from scripts.remote_lalafo_collector import run_forever as run_collector
 
 
 APP_DIR = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "ArendaKG" / "LalafoWorker"
@@ -151,12 +152,17 @@ def worker() -> None:
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+
+    async def run_services() -> None:
+        logging.info("Starting Lalafo link bot and combined inventory collector")
+        await asyncio.gather(run_link_bot(), run_collector())
+
     while True:
         try:
             get_settings.cache_clear()
-            asyncio.run(run())
+            asyncio.run(run_services())
         except Exception:
-            logging.exception("Lalafo worker stopped; restarting in 10 seconds")
+            logging.exception("Combined worker stopped; restarting in 10 seconds")
             time.sleep(10)
 
 

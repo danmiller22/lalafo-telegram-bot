@@ -13,11 +13,7 @@ INTERVAL_SECONDS = max(900, int(os.getenv("COLLECTOR_INTERVAL_SECONDS", "7200"))
 
 
 async def collect_once() -> int:
-    """Collect durable inventory without starting a Telegram bot process."""
-    # The remote PC is the Lalafo network worker.  Telegram channel discovery
-    # remains in GitHub Actions, so the two workers do not duplicate requests.
-    scrape_publish.TELEGRAM_APARTMENT_CHANNELS = ()
-    scrape_publish.TELEGRAM_SOURCE_CHANNELS = ()
+    """Collect Lalafo and Telegram-channel inventory for the cloud queue."""
     return await scrape_publish.run(discovery_only=True)
 
 
@@ -26,9 +22,9 @@ async def run_forever() -> None:
     while not stop_file.exists():
         try:
             code = await collect_once()
-            logger.info("Remote Lalafo discovery completed exit_code=%d", code)
+            logger.info("Remote combined discovery completed exit_code=%d", code)
         except Exception:
-            logger.exception("Remote Lalafo discovery failed; retrying later")
+            logger.exception("Remote combined discovery failed; retrying later")
         for _ in range(INTERVAL_SECONDS // 10):
             if stop_file.exists():
                 return
