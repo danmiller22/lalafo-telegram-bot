@@ -34,14 +34,6 @@ if (typeof JSON.stringify !== "function") {
   };
 }
 
-function isoDate(value) {
-  var d = value || new Date();
-  function pad(number) { return (number < 10 ? "0" : "") + number; }
-  return d.getUTCFullYear() + "-" + pad(d.getUTCMonth() + 1) + "-" +
-    pad(d.getUTCDate()) + "T" + pad(d.getUTCHours()) + ":" +
-    pad(d.getUTCMinutes()) + ":" + pad(d.getUTCSeconds()) + "Z";
-}
-
 function readText(path) {
   var stream = fso.OpenTextFile(path, 1, false, -1);
   var value = stream.ReadAll();
@@ -58,7 +50,7 @@ function writeText(path, value) {
 function appendLog(message) {
   try {
     var stream = fso.OpenTextFile(logPath, 8, true, -1);
-    stream.WriteLine(isoDate(new Date()) + " " + message);
+    stream.WriteLine(message);
     stream.Close();
   } catch (_) {}
 }
@@ -121,8 +113,9 @@ function photoUrls(raw) {
 }
 
 function timestamp(value) {
-  if (!value) return null;
-  try { return isoDate(new Date(Number(value) * 1000)); } catch (_) { return null; }
+  // Source timestamps are optional.  Keeping them null avoids relying on Date
+  // serialization methods missing from the legacy WSH JScript runtime.
+  return null;
 }
 
 function districtFrom(raw, params) {
@@ -227,7 +220,7 @@ function collectCycle() {
       var raw = JSON.parse(request("GET", detailUrl, null, null));
       var source = raw.url ? (String(raw.url).indexOf("http") === 0 ? String(raw.url) : "https://lalafo.kg" + String(raw.url)) : "https://lalafo.kg/bishkek/ads/id-" + id;
       var ad = parseAd(raw, source);
-      seen[id] = isoDate(new Date());
+      seen[id] = new Date().getTime();
       if (ad) ads.push(ad);
     } catch (error) {
       appendLog("detail failed id=" + id + " " + error.message);
@@ -243,7 +236,7 @@ function collectCycle() {
     appendLog("cycle completed with no new eligible ads; candidates=" + ids.length);
   }
   var cutoff = new Date().getTime() - 14 * 24 * 60 * 60 * 1000;
-  for (var key in seen) if (new Date(seen[key]).getTime() < cutoff) delete seen[key];
+  for (var key in seen) if (Number(seen[key]) < cutoff) delete seen[key];
   writeText(seenPath, JSON.stringify(seen));
 }
 
