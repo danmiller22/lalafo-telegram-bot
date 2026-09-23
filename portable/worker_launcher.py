@@ -1,4 +1,4 @@
-"""Hidden, self-installing Windows launcher for the dedicated Lalafo link bot."""
+"""Hidden, self-installing Windows collector for the main cloud bot."""
 
 from __future__ import annotations
 
@@ -53,8 +53,8 @@ def _write_configuration(token: str, admin_username: str) -> None:
                 "DATABASE_URL=sqlite:///data/bot.db",
                 "CITY=Бишкек",
                 "MIN_PRICE=20000",
-                "MAX_PRICE=45000",
-                "ROOMS=1,2",
+                "MAX_PRICE=40000",
+                "ROOMS=studio,1",
                 "MAX_PHOTOS_PER_APARTMENT=10",
                 "ONLY_WITH_PHOTOS=true",
                 "ALLOW_NO_DEPOSIT=true",
@@ -93,16 +93,16 @@ def install_gui() -> None:
     from tkinter import messagebox
 
     root = tk.Tk()
-    root.title("Arenda.KG — Lalafo link bot")
+    root.title("Arenda.KG — фоновый сборщик")
     root.geometry("520x250")
     root.resizable(False, False)
 
     tk.Label(
         root,
-        text="Фоновый обработчик ссылок Lalafo",
+        text="Фоновый сборщик квартир для основного бота",
         font=("Segoe UI", 15, "bold"),
     ).pack(pady=(18, 8))
-    tk.Label(root, text="Токен отдельного link-бота:").pack(anchor="w", padx=28)
+    tk.Label(root, text="Секрет подключения к облаку:").pack(anchor="w", padx=28)
     token_entry = tk.Entry(root, width=68, show="•")
     token_entry.pack(padx=28, pady=(3, 10))
     tk.Label(root, text="Ваш Telegram username:").pack(anchor="w", padx=28)
@@ -147,6 +147,9 @@ def worker() -> None:
         return
     APP_DIR.mkdir(parents=True, exist_ok=True)
     os.chdir(APP_DIR)
+    # Enforce the current catalogue policy even on PCs carrying an older .env.
+    os.environ["ROOMS"] = "studio,1"
+    os.environ["MAX_PRICE"] = "40000"
     logging.basicConfig(
         filename=LOG_FILE,
         level=logging.INFO,
