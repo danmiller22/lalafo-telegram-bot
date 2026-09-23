@@ -236,7 +236,7 @@ async def test_health_keeps_payment_bot_live_when_scheduler_is_recovering(
         response = await client.get("/health")
     assert response.status_code == 200
     assert response.json()["bot"] == "running"
-    assert response.json()["apartment_scheduler"] == "disabled"
+    assert response.json()["apartment_scheduler"]["state"] == "recovering"
 
 
 @pytest.mark.asyncio
@@ -310,7 +310,7 @@ async def test_background_watchdog_restarts_only_stopped_worker(
 ) -> None:
     monkeypatch.setenv("RUN_BOT", "true")
     monkeypatch.setenv("SERVICE_KEEPALIVE_ENABLED", "false")
-    monkeypatch.setattr(web, "IN_PROCESS_APARTMENT_SCHEDULER_ENABLED", True)
+    monkeypatch.setattr(web, "IN_PROCESS_QUEUE_DISPATCHER_ENABLED", True)
     get_settings.cache_clear()
     stop = asyncio.Event()
 
@@ -414,6 +414,28 @@ async def test_hosted_scheduler_runs_due_check_without_forcing_duplicates(
     assert schedule_status.await_count == 2
     assert web._apartment_scheduler_state["recent_published_count"] == 5
     assert web._apartment_scheduler_state["last_exit_code"] == 0
+    assert web._apartment_scheduler_state["running_cycle"] is False
+
+
+@pytest.mark.asyncio
+async def test_hosted_queue_dispatcher_publishes_without_proxy_discovery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import scripts.publish_if_due
+    import scripts.publish_inventory
+
+    publish_one = AsyncMock(return_value=0)
+    window_status = AsyncMock(return_value=(7, None))
+    monkeypatch.setattr(scripts.publish_inventory, "run", publish_one)
+    monkeypatch.setattr(
+        scripts.publish_if_due, "publication_window_status", window_status
+    )
+
+    assert await web._execute_queue_dispatch() == 0
+
+    publish_one.assert_awaited_once_with()
+    window_status.assert_awaited_once_with(window_minutes=180)
+    assert web._apartment_scheduler_state["recent_published_count"] == 7
     assert web._apartment_scheduler_state["running_cycle"] is False
 
 

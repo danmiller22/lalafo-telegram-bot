@@ -41,10 +41,10 @@ from app.lalafo.mcp_server import lalafo_mcp, lalafo_mcp_app
 
 logger = logging.getLogger(__name__)
 
-# Apartment discovery is handled by the isolated GitHub cloud schedule.  Never
-# run its proxy scan inside the customer-facing payment process: Koyeb's small
-# web instance must remain available for Telegram webhooks and the Mini App.
-IN_PROCESS_APARTMENT_SCHEDULER_ENABLED = False
+# Apartment discovery stays in the isolated GitHub workflow. Koyeb runs only a
+# lightweight atomic queue dispatcher so GitHub cron delays cannot stop cards,
+# while proxy scans can never block Telegram webhooks or the payment Mini App.
+IN_PROCESS_QUEUE_DISPATCHER_ENABLED = True
 app = FastAPI(title="Lalafo Telegram service", docs_url=None, redoc_url=None)
 
 PAYMENT_REVIEW_MESSAGE = (
@@ -523,18 +523,48 @@ async def _execute_due_apartment_cycle() -> int:
             _run_state.update(running=False, last_finished_at=_now())
 
 
+async def _execute_queue_dispatch() -> int:
+    from scripts.publish_inventory import run as publish_one_due
+    from scripts.publish_if_due import publication_window_status
+
+    _apartment_scheduler_state.update(
+        running_cycle=True,
+        last_check_at=_now(),
+        last_error=None,
+    )
+    exit_code = await publish_one_due()
+    recent_count, latest_published_at = await publication_window_status(
+        window_minutes=180
+    )
+    _apartment_scheduler_state.update(
+        running_cycle=False,
+        last_exit_code=exit_code,
+        recent_published_count=recent_count,
+        latest_published_at=(
+            latest_published_at.isoformat()
+            if latest_published_at is not None
+            else None
+        ),
+        last_error=None if exit_code == 0 else "QueueDispatchFailed",
+    )
+    return exit_code
+
+
 async def _run_hosted_apartment_scheduler() -> None:
     settings = get_settings()
     check_seconds = max(30.0, settings.hosted_apartment_scheduler_check_seconds)
     while True:
         try:
-            await _execute_due_apartment_cycle()
+            await _execute_queue_dispatch()
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            # A failed cycle must never terminate the permanent scheduler.
-            _apartment_scheduler_state["last_error"] = type(exc).__name__
-            logger.exception("Hosted apartment scheduler recovered from a crash")
+            _apartment_scheduler_state.update(
+                running_cycle=False,
+                last_exit_code=1,
+                last_error=type(exc).__name__,
+            )
+            logger.exception("Hosted queue dispatcher recovered from a crash")
         await asyncio.sleep(check_seconds)
 
 
@@ -588,7 +618,7 @@ async def _repair_background_tasks_once() -> int:
 
     if (
         settings.run_bot
-        and IN_PROCESS_APARTMENT_SCHEDULER_ENABLED
+        and IN_PROCESS_QUEUE_DISPATCHER_ENABLED
         and settings.hosted_apartment_scheduler_enabled
         and _task_stopped(_apartment_scheduler_task)
     ):
@@ -702,13 +732,13 @@ async def startup() -> None:
             _sync_outdated_keyboards(), name="keyboard-sync"
         )
         if (
-            IN_PROCESS_APARTMENT_SCHEDULER_ENABLED
+            IN_PROCESS_QUEUE_DISPATCHER_ENABLED
             and settings.hosted_apartment_scheduler_enabled
         ):
             _apartment_scheduler_task = asyncio.create_task(
                 _run_hosted_apartment_scheduler(), name="apartment-scheduler"
             )
-            logger.info("Hosted hourly apartment scheduler enabled")
+            logger.info("Hosted lightweight apartment queue dispatcher enabled")
         if settings.service_keepalive_enabled:
             _service_keepalive_state.update(
                 state="starting",
@@ -933,7 +963,7 @@ async def health() -> JSONResponse:
                     **_apartment_scheduler_state,
                 }
                 if settings.run_bot
-                and IN_PROCESS_APARTMENT_SCHEDULER_ENABLED
+                and IN_PROCESS_QUEUE_DISPATCHER_ENABLED
                 and settings.hosted_apartment_scheduler_enabled
                 else "disabled"
             ),
