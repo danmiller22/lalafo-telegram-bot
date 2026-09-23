@@ -7,7 +7,13 @@ import random
 import pytest
 from sqlalchemy import func, select
 
-from app.inventory import DISCOVERY_RETRY_MINUTES, InventoryRepository, plan_period
+from app.inventory import (
+    DISCOVERY_RETRY_MINUTES,
+    InventoryRepository,
+    daily_publication_target,
+    period_publication_targets,
+    plan_period,
+)
 from app.models import ApartmentInventoryQueue
 from tests.helpers import make_ad
 
@@ -33,7 +39,7 @@ def _apartments(count: int, *, central: bool, start_id: int, owner: bool = True)
     ]
 
 
-def test_two_periods_plan_96_cards_in_eight_card_windows():
+def test_two_periods_plan_random_50_to_60_card_day():
     stock = _apartments(220, central=True, start_id=1) + _apartments(
         100, central=False, start_id=300
     )
@@ -46,32 +52,27 @@ def test_two_periods_plan_96_cards_in_eight_card_windows():
         rng=random.Random(8),
     )
     all_items = first + second
-    assert len(all_items) == 96
-    assert sum("золотой" in item.apartment.district.casefold() for item in all_items) == 86
+    daily_target = daily_publication_target(first_start)
+    assert 50 <= daily_target <= 60
+    assert len(all_items) == daily_target
+    assert sum(
+        "золотой" in item.apartment.district.casefold() for item in all_items
+    ) == round(daily_target * 0.90)
     assert {item.apartment.rooms for item in all_items} == {"1", "studio"}
 
-    for planned in (first, second):
-        windows = {}
-        for item in planned:
-            windows.setdefault(item.window_key, []).append(item)
-        assert len(windows) == 6
-        assert all(len(items) == 8 for items in windows.values())
-        starts = []
-        for items in windows.values():
-            ordered = sorted(items, key=lambda item: item.sequence)
-            starts.append(ordered[0].scheduled_at)
-            central_count = sum(
-                "золотой" in item.apartment.district.casefold() for item in items
-            )
-            assert central_count >= 7
-            for before, after in zip(ordered, ordered[1:]):
-                assert (
-                    timedelta(minutes=8)
-                    <= after.scheduled_at - before.scheduled_at
-                    <= timedelta(minutes=15)
-                )
-        for before, after in zip(sorted(starts), sorted(starts)[1:]):
-            assert timedelta(minutes=110) <= after - before <= timedelta(minutes=130)
+    first_local = [item.scheduled_at.astimezone(first_start.tzinfo) for item in first]
+    second_local = [item.scheduled_at.astimezone(first_start.tzinfo) for item in second]
+    assert all(5 <= value.hour < 15 for value in first_local)
+    assert all(
+        value.hour > 14 or (value.hour == 14 and value.minute >= 25)
+        for value in second_local
+    )
+    assert all(value.date() == first_start.date() for value in first_local + second_local)
+    gaps = {
+        round((after.scheduled_at - before.scheduled_at).total_seconds())
+        for before, after in zip(all_items, all_items[1:])
+    }
+    assert len(gaps) > 1
 
 
 def test_period_uses_broader_stock_when_no_central_apartments_exist():
@@ -105,8 +106,9 @@ def test_noncentral_owners_outrank_central_realtors():
 
     planned = plan_period(owners + realtors, period_start=period_start, rng=random.Random(15))
 
-    assert len(planned) == 48
-    assert sum(item.apartment.seller_type == "owner" for item in planned) == 44
+    period_count, _ = period_publication_targets(period_start)
+    assert len(planned) == period_count
+    assert sum(item.apartment.seller_type == "owner" for item in planned) == period_count - 4
     assert sum(item.apartment.seller_type != "owner" for item in planned) == 4
 
 
@@ -124,7 +126,7 @@ def test_unknown_sellers_share_the_non_owner_limit():
 
 
 def test_period_keeps_exact_non_owner_target_without_exceeding_limit():
-    owners = _apartments(80, central=True, start_id=1)
+    owners = _apartments(100, central=True, start_id=1)
     realtors = _apartments(40, central=True, start_id=200, owner=False)
     period_start = datetime(2026, 9, 13, 0, tzinfo=timezone(timedelta(hours=6)))
 
@@ -136,47 +138,22 @@ def test_period_keeps_exact_non_owner_target_without_exceeding_limit():
         rng=random.Random(14),
     )
 
-    assert len(planned) == 48
+    assert len(planned) == period_publication_targets(period_start)[0]
     assert sum(item.apartment.seller_type == "realtor" for item in planned) == 4
 
 
-def test_period_spreads_random_reposts_across_separate_windows():
-    fresh = _apartments(100, central=True, start_id=1)
-    repeats = _apartments(8, central=True, start_id=100)
-    for item in repeats:
-        item.rooms = "1"
-    repeat_ids = {item.id for item in repeats}
+def test_daily_target_is_stable_for_retries_but_changes_across_dates():
     period_start = datetime(2026, 9, 13, 0, tzinfo=timezone(timedelta(hours=6)))
 
-    planned = plan_period(
-        fresh + repeats,
-        period_start=period_start,
-        repeat_apartment_ids=repeat_ids,
-        rng=random.Random(11),
+    assert daily_publication_target(period_start) == daily_publication_target(
+        period_start + timedelta(hours=12)
     )
-
-    planned_repeats = [
-        item for item in planned if item.apartment.id in repeat_ids
-    ]
-    assert len(planned_repeats) == 6
-    assert len({item.window_key for item in planned_repeats}) == 6
-
-
-def test_two_hour_period_can_be_filled_from_48_hour_reposts():
-    repeats = _apartments(36, central=True, start_id=500)
-    for item in repeats:
-        item.rooms = "1"
-    period_start = datetime(2026, 9, 13, 0, tzinfo=timezone(timedelta(hours=6)))
-
-    planned = plan_period(
-        repeats,
-        period_start=period_start,
-        repeat_apartment_ids={item.id for item in repeats},
-        rng=random.Random(12),
-    )
-
-    assert len(planned) == 36
-    assert len({item.window_key for item in planned}) == 6
+    targets = {
+        daily_publication_target(period_start + timedelta(days=offset))
+        for offset in range(10)
+    }
+    assert targets.issubset(set(range(50, 61)))
+    assert len(targets) > 1
 
 
 @pytest.mark.asyncio

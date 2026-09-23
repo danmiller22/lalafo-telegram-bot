@@ -115,8 +115,8 @@ async def run(
     wait_for_active_lease: bool | None = None,
 ) -> int:
     # The old implementation below is retained temporarily for compatibility.
-    # Production drains one complete eight-card, two-hour inventory window so a
-    # delayed cloud tick cannot reduce the group to one apartment per run.
+    # Production publishes at most one due card per tick. Persisted random
+    # daytime timestamps control the 50-60-card daily cadence.
     from scripts.publish_inventory_batch import run as run_inventory_batch
 
     return await run_inventory_batch()

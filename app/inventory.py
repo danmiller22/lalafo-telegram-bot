@@ -14,27 +14,19 @@ from app.models import Apartment, ApartmentDiscoveryRun, ApartmentInventoryQueue
 
 
 BISHKEK = ZoneInfo("Asia/Bishkek")
-FIRST_HALF_BATCH_SIZES = (8,) * 6
-SECOND_HALF_BATCH_SIZES = (8,) * 6
-# Forty-three of forty-eight slots per half-day are central (89.6%). One
-# all-central window keeps the daily total as close as possible to the requested
-# 90% while still leaving a few places for exceptional bargains elsewhere.
-FIRST_HALF_CENTRAL = (8, 7, 7, 7, 7, 7)
-SECOND_HALF_CENTRAL = (8, 7, 7, 7, 7, 7)
 ALLOWED_ROOMS = frozenset({"studio", "1"})
 CENTRAL_DAILY_SHARE = 0.90
-MAX_PUBLICATIONS_PER_DAY = 96
+MIN_PUBLICATIONS_PER_DAY = 50
+MAX_PUBLICATIONS_PER_DAY = 60
 # Only verified owners fill the main catalogue. Realtors and authors whose
 # role is unknown share three or four explicitly unverified slots per day.
 MIN_NON_OWNERS_PER_DAY = 3
 MAX_NON_OWNERS_PER_DAY = 4
 TARGET_NON_OWNERS_PER_PERIOD = 2
-REPOST_AFTER_HOURS = 48
-MAX_REPOSTS_PER_PERIOD = 36
+MAX_REPOSTS_PER_PERIOD = 0
 MAX_FRESH_STOCK_LOAD = 600
-MAX_REPEAT_STOCK_LOAD = 240
 DISCOVERY_RETRY_MINUTES = 30
-MIN_HEALTHY_PERIOD_QUEUE = 40
+MIN_HEALTHY_PERIOD_QUEUE = 20
 
 
 def as_utc(value: datetime) -> datetime:
@@ -51,6 +43,54 @@ def discovery_period_start(now: datetime | None = None) -> datetime:
 
 def discovery_period_key(now: datetime | None = None) -> str:
     return discovery_period_start(now).strftime("%Y-%m-%dT%H:00+06")
+
+
+def daily_publication_target(period_start: datetime) -> int:
+    """Return a stable pseudo-random 50-60 target for one Bishkek date."""
+    local_date = period_start.astimezone(BISHKEK).date()
+    seed = int(local_date.strftime("%Y%m%d"))
+    return random.Random(seed).randint(
+        MIN_PUBLICATIONS_PER_DAY, MAX_PUBLICATIONS_PER_DAY
+    )
+
+
+def period_publication_targets(period_start: datetime) -> tuple[int, int]:
+    daily_total = daily_publication_target(period_start)
+    first_count = (daily_total + 1) // 2
+    first_central = round(first_count * CENTRAL_DAILY_SHARE)
+    daily_central = round(daily_total * CENTRAL_DAILY_SHARE)
+    if period_start.astimezone(BISHKEK).hour == 0:
+        return first_count, first_central
+    return daily_total - first_count, daily_central - first_central
+
+
+def randomized_period_times(
+    period_start: datetime,
+    *,
+    count: int,
+    rng: random.Random,
+) -> list[datetime]:
+    """Spread cards irregularly between 05:00 and midnight Bishkek time."""
+    local_day = period_start.astimezone(BISHKEK).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    if period_start.astimezone(BISHKEK).hour == 0:
+        start = local_day + timedelta(hours=5)
+        end = local_day + timedelta(hours=14, minutes=25)
+    else:
+        start = local_day + timedelta(hours=14, minutes=25)
+        end = local_day + timedelta(days=1)
+    slot_seconds = (end - start).total_seconds() / max(1, count)
+    return [
+        (
+            start
+            + timedelta(
+                seconds=slot_seconds * index
+                + rng.uniform(slot_seconds * 0.12, slot_seconds * 0.88)
+            )
+        ).astimezone(timezone.utc)
+        for index in range(count)
+    ]
 
 
 def is_central(district: str | None) -> bool:
@@ -230,10 +270,10 @@ def plan_period(
     repeat_apartment_ids: set[int] | None = None,
     rng: random.Random | None = None,
 ) -> list[PlannedApartment]:
-    """Create one immutable eight-card publication window every two hours."""
+    """Create half of a random 50-60-card day between 05:00 and midnight."""
     rng = rng or random.SystemRandom()
     apartments = [item for item in apartments if item.rooms in ALLOWED_ROOMS]
-    repeat_ids = set(repeat_apartment_ids or ())
+    repeat_ids = set(repeat_apartment_ids or ()) if MAX_REPOSTS_PER_PERIOD else set()
     central_pool = sorted(
         [
             item
@@ -253,105 +293,52 @@ def plan_period(
         key=lambda item: _candidate_key(item, central=False),
     )
     repeat_pool = [item for item in apartments if item.id in repeat_ids]
-    rng.shuffle(repeat_pool)
-    first_half = period_start.astimezone(BISHKEK).hour == 0
-    batch_sizes = FIRST_HALF_BATCH_SIZES if first_half else SECOND_HALF_BATCH_SIZES
-    repeat_windows = set(
-        rng.sample(
-            range(len(batch_sizes)),
-            k=min(MAX_REPOSTS_PER_PERIOD, len(repeat_pool), len(batch_sizes)),
-        )
-    )
-    central_targets = FIRST_HALF_CENTRAL if first_half else SECOND_HALF_CENTRAL
-    # Every two hours gets a stable slot with a small persisted jitter. Eight
-    # cards remain 8-15 minutes apart and finish well inside their window.
-    starts = [
-        period_start + timedelta(minutes=5 + 120 * index + rng.randint(0, 4))
-        for index in range(len(batch_sizes))
-    ]
-    planned: list[PlannedApartment] = []
+    target_count, central_target = period_publication_targets(period_start)
     room_counts: dict[str, int] = {}
-
-    for index, (batch_size, central_target, start) in enumerate(
-        zip(batch_sizes, central_targets, starts)
-    ):
-        selected: list[Apartment] = []
-        if index in repeat_windows and repeat_pool:
-            central_repeats = [
-                item for item in repeat_pool if is_central(item.district)
-            ]
-            repeat = rng.choice(central_repeats or repeat_pool)
-            repeat_pool.remove(repeat)
-            selected.append(repeat)
-            room_counts[repeat.rooms] = room_counts.get(repeat.rooms, 0) + 1
-
-        selected_central = sum(is_central(item.district) for item in selected)
-        central_count = min(
-            max(0, central_target - selected_central),
-            len(central_pool),
-            batch_size - len(selected),
-        )
-        selected.extend(
-            _pick_for_window(
-                central_pool,
-                central_count,
-                room_counts,
-                central=True,
-            )
-        )
-        remaining = batch_size - len(selected)
-        others = _pick_for_window(
+    selected = _pick_for_window(
+        central_pool,
+        min(central_target, len(central_pool)),
+        room_counts,
+        central=True,
+    )
+    selected.extend(
+        _pick_for_window(
             other_pool,
-            remaining,
+            target_count - len(selected),
             room_counts,
             central=False,
         )
-        selected.extend(others)
-        # If non-central supply is short, fill the window from the central pool.
-        # A centre shortage must never stop the publisher completely: after
-        # taking every available central card, fill the remaining places from
-        # the broader owner/realtor stock gathered by discovery.
-        if len(selected) < batch_size:
-            extras = _pick_for_window(
+    )
+    if len(selected) < target_count:
+        selected.extend(
+            _pick_for_window(
                 central_pool,
-                batch_size - len(selected),
+                target_count - len(selected),
                 room_counts,
                 central=True,
             )
-            selected.extend(extras)
-        # Fresh cards have priority. If they run out, use randomly ordered
-        # cards whose previous post is at least 48 hours old so no hourly slot
-        # disappears merely because Lalafo has little new stock.
-        while len(selected) < batch_size and repeat_pool:
-            # Keep the random repost allocation spread across the remaining
-            # hours. Only consume surplus repeats here; otherwise a thin fresh
-            # pool would dump tomorrow's reserved repeats into this window.
-            future_repeat_windows = sum(
-                future_index in repeat_windows
-                for future_index in range(index + 1, len(batch_sizes))
-            )
-            if len(repeat_pool) <= future_repeat_windows:
-                break
-            repeat = repeat_pool[0]
-            repeat_pool.remove(repeat)
-            selected.append(repeat)
-            room_counts[repeat.rooms] = room_counts.get(repeat.rooms, 0) + 1
-        if not selected:
-            continue
-        rng.shuffle(selected)
-        scheduled = start
-        window_key = f"{period_start.strftime('%Y%m%dT%H')}-{index + 1}"
-        for sequence, item in enumerate(selected, start=1):
-            if sequence > 1:
-                scheduled += timedelta(minutes=rng.randint(8, 15))
-            planned.append(
-                PlannedApartment(
-                    apartment=item,
-                    scheduled_at=scheduled.astimezone(timezone.utc),
-                    window_key=window_key,
-                    sequence=sequence,
-                )
-            )
+        )
+    if len(selected) < target_count and repeat_pool:
+        rng.shuffle(repeat_pool)
+        selected.extend(repeat_pool[: target_count - len(selected)])
+    rng.shuffle(selected)
+    schedule = randomized_period_times(
+        period_start,
+        count=len(selected),
+        rng=rng,
+    )
+    window_key = f"{period_start.strftime('%Y%m%dT%H')}-random"
+    planned = [
+        PlannedApartment(
+            apartment=item,
+            scheduled_at=scheduled,
+            window_key=window_key,
+            sequence=sequence,
+        )
+        for sequence, (item, scheduled) in enumerate(
+            zip(selected, schedule), start=1
+        )
+    ]
     return _limit_non_owners(
         planned,
         apartments,
@@ -546,40 +533,12 @@ class InventoryRepository:
                     )
                 ).all()
             )
-            repeat_stock = list(
-                (
-                    await session.scalars(
-                        select(Apartment).where(
-                            Apartment.active.is_(True),
-                            Apartment.publication_status == "published",
-                            Apartment.published_at.is_not(None),
-                            Apartment.published_at
-                            <= now - timedelta(hours=REPOST_AFTER_HOURS),
-                            Apartment.id.not_in(active_queue_ids),
-                            Apartment.price.between(20_000, 40_000),
-                            Apartment.rooms.in_(ALLOWED_ROOMS),
-                        )
-                        .order_by(
-                            Apartment.discovery_priority.desc(),
-                            Apartment.published_at.asc(),
-                            Apartment.price.asc(),
-                        )
-                        .limit(MAX_REPEAT_STOCK_LOAD)
-                    )
-                ).all()
-            )
             chooser = rng or random.SystemRandom()
-            chosen_repeats = chooser.sample(
-                repeat_stock,
-                k=min(MAX_REPOSTS_PER_PERIOD, len(repeat_stock)),
-            )
-            stock = fresh_stock + chosen_repeats
             planned = plan_period(
-                stock,
+                fresh_stock,
                 period_start=period,
                 non_owner_target=non_owner_target,
                 non_owner_limit=remaining_non_owners,
-                repeat_apartment_ids={item.id for item in chosen_repeats},
                 rng=chooser,
             )
             if planned and planned[0].scheduled_at < now + timedelta(minutes=2):
@@ -593,6 +552,29 @@ class InventoryRepository:
                     )
                     for item in planned
                 ]
+            if planned:
+                local_now = now.astimezone(BISHKEK)
+                day_end = (
+                    local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+                    + timedelta(days=1)
+                ).astimezone(timezone.utc)
+                if planned[-1].scheduled_at >= day_end:
+                    start = now + timedelta(minutes=2)
+                    usable_seconds = max(1.0, (day_end - start).total_seconds())
+                    slot_seconds = usable_seconds / (len(planned) + 1)
+                    planned = [
+                        PlannedApartment(
+                            apartment=item.apartment,
+                            scheduled_at=start
+                            + timedelta(
+                                seconds=slot_seconds
+                                * (index + chooser.uniform(0.15, 0.85))
+                            ),
+                            window_key=item.window_key,
+                            sequence=item.sequence,
+                        )
+                        for index, item in enumerate(planned)
+                    ]
             planned_ids = [item.apartment.id for item in planned]
             existing_rows = {
                 row.apartment_id: row
