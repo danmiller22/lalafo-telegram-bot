@@ -347,3 +347,40 @@ async def test_published_apartment_blocks_id_and_fingerprint_duplicates(reposito
     assert set(repostable) == {555}
     assert repostable[555] is not None
     assert await apartments.repostable_lalafo_ids([555, 999], after_hours=24) == set()
+
+
+@pytest.mark.asyncio
+async def test_published_apartment_blocks_district_alias_and_reused_photo_duplicates(repositories):
+    apartments, _, _ = repositories
+    original = make_ad(
+        lalafo_id=8001,
+        rooms="studio",
+        district="Восток-5",
+        price=20_000,
+        photo_urls=[
+            "https://img.example/first-photo-12345.jpg",
+            "https://img.example/second-photo-12345.jpg",
+        ],
+    )
+    stored = await apartments.upsert_discovered(original)
+    await apartments.mark_published(stored.id, chat_id=-100123, message_id=100)
+    same_phone = original.model_copy(
+        update={"lalafo_id": 8002, "district": "Восток-5 мкр", "photo_urls": []}
+    )
+    same_photos = original.model_copy(
+        update={
+            "lalafo_id": 8003,
+            "district": "Восток-5 мкр",
+            "phone": "+996700000003",
+            "photo_urls": [
+                "https://cdn.example/first-photo-12345.jpg",
+                "https://cdn.example/second-photo-12345.jpg",
+            ],
+        }
+    )
+    assert await apartments.is_duplicate(same_phone)
+    assert await apartments.is_duplicate(same_photos)
+    assert await apartments.duplicate_candidate_ids([same_phone, same_photos]) == {
+        8002,
+        8003,
+    }

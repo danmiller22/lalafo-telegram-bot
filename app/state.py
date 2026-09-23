@@ -2,15 +2,58 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from app.lalafo.models import LalafoAd
 
 
+def normalized_district(value: str | None) -> str:
+    district = (value or "").casefold().replace("ё", "е")
+    district = re.sub(r"\b(?:мкр|микрорайон)\b", "", district)
+    return re.sub(r"[^0-9a-zа-я]+", "", district)
+
+
+def _photo_keys(urls: list[str]) -> set[str]:
+    keys = set()
+    for url in urls:
+        name = urlsplit(url).path.rsplit("/", 1)[-1].casefold()
+        stem = name.rsplit(".", 1)[0]
+        if len(stem) >= 12:
+            keys.add(stem)
+    return keys
+
+
+def same_listing(ad: LalafoAd, other: LalafoAd | object) -> bool:
+    """Match one apartment across source IDs and minor district variations."""
+    if ad.lalafo_id == getattr(other, "lalafo_id", None):
+        return True
+    if ad.rooms != getattr(other, "rooms", None):
+        return False
+    ad_district = normalized_district(ad.district)
+    other_district = normalized_district(getattr(other, "district", None))
+    if not ad_district or ad_district != other_district:
+        return False
+    other_price = getattr(other, "price", None)
+    if not isinstance(other_price, int):
+        return False
+    same_contact = (
+        ad.phone == getattr(other, "phone", None)
+        and ad.price == other_price
+    )
+    if same_contact:
+        return True
+    if abs(ad.price - other_price) > max(ad.price, other_price) * 0.2:
+        return False
+    other_photos = getattr(other, "photo_urls", None) or []
+    return len(_photo_keys(ad.photo_urls) & _photo_keys(other_photos)) >= 2
+
+
 def ad_fingerprint(ad: LalafoAd) -> str:
-    raw = "|".join((ad.phone, str(ad.price), (ad.district or "").casefold()))
+    raw = "|".join((ad.phone, str(ad.price), normalized_district(ad.district)))
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 

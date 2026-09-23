@@ -13,7 +13,7 @@ from sqlalchemy.orm import selectinload
 from app.lalafo.models import PHONE_SOURCE_VERSION, LalafoAd
 from app.models import Apartment, DailyFeaturedPublication, PaymentHistory, PaymentRequest
 from app.payment_plans import MONTH_PLAN, WEEK_PLAN, expires_at_for, plan_price
-from app.state import ad_fingerprint
+from app.state import ad_fingerprint, same_listing
 from app.telegram.keyboards import APARTMENT_KEYBOARD_VERSION
 
 
@@ -380,48 +380,36 @@ class ApartmentRepository:
             }
 
     async def is_duplicate(self, ad: LalafoAd) -> bool:
-        fingerprint = ad_fingerprint(ad)
         async with self.sessions() as session:
-            result = await session.execute(
-                select(Apartment.id).where(
-                    (
-                        (Apartment.lalafo_id == ad.lalafo_id)
-                        & (Apartment.publication_status == "published")
-                    )
-                    | (
-                        (Apartment.fingerprint == fingerprint)
-                        & (Apartment.publication_status == "published")
+            published = (
+                await session.scalars(
+                    select(Apartment).where(
+                        Apartment.publication_status == "published",
+                        or_(Apartment.rooms == ad.rooms, Apartment.lalafo_id == ad.lalafo_id),
                     )
                 )
-            )
-            return result.first() is not None
+            ).all()
+        return any(same_listing(ad, apartment) for apartment in published)
 
     async def duplicate_candidate_ids(self, ads: list[LalafoAd]) -> set[int]:
         """Resolve all ID/fingerprint/contact duplicates in one database trip."""
         if not ads:
             return set()
-        fingerprints = {ad_fingerprint(ad) for ad in ads}
+        rooms = {ad.rooms for ad in ads}
         lalafo_ids = {ad.lalafo_id for ad in ads}
         async with self.sessions() as session:
-            rows = (
-                await session.execute(
-                    select(
-                        Apartment.lalafo_id,
-                        Apartment.fingerprint,
-                    ).where(
+            published = (
+                await session.scalars(
+                    select(Apartment).where(
                         Apartment.publication_status == "published",
-                        (Apartment.lalafo_id.in_(lalafo_ids))
-                        | (Apartment.fingerprint.in_(fingerprints))
+                        or_(Apartment.rooms.in_(rooms), Apartment.lalafo_id.in_(lalafo_ids)),
                     )
                 )
             ).all()
-        duplicate_ids = {row.lalafo_id for row in rows if row.lalafo_id in lalafo_ids}
-        duplicate_fingerprints = {row.fingerprint for row in rows}
         return {
             ad.lalafo_id
             for ad in ads
-            if ad.lalafo_id in duplicate_ids
-            or ad_fingerprint(ad) in duplicate_fingerprints
+            if any(same_listing(ad, apartment) for apartment in published)
         }
 
     async def upsert_discovered(
