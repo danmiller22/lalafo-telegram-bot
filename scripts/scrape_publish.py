@@ -1192,6 +1192,26 @@ async def run(*, discovery_only: bool = False) -> int:
         from app.inventory import InventoryRepository
 
         inventory_candidates = deduplicate_candidates(candidates)[:240]
+        if (
+            settings.lalafo_relay_url.strip()
+            and settings.lalafo_relay_secret.strip()
+        ):
+            async with httpx.AsyncClient(timeout=90.0) as relay_client:
+                response = await relay_client.post(
+                    settings.lalafo_relay_url.rstrip("/") + "/internal/lalafo/ingest",
+                    headers={"X-Lalafo-Relay-Secret": settings.lalafo_relay_secret},
+                    json={
+                        "ads": [ad.model_dump(mode="json") for ad in inventory_candidates]
+                    },
+                )
+                response.raise_for_status()
+            logger.info(
+                "Relayed remote Lalafo inventory stored=%d",
+                len(inventory_candidates),
+            )
+            if engine is not None:
+                await engine.dispose()
+            return 0
         priority_ids = managed_profile_ids | curated_ids
         for ad in inventory_candidates:
             await apartments.upsert_discovered(

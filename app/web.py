@@ -121,6 +121,10 @@ class LalafoRelayRequest(BaseModel):
     district: str | None = None
 
 
+class LalafoIngestRequest(BaseModel):
+    ads: list[LalafoAd]
+
+
 class MiniAppReceiptRequest(MiniAppRequest):
     file_name: str
     content_type: str
@@ -970,6 +974,38 @@ async def relay_lalafo_publish(
         message_id=published.message_id,
     )
     return JSONResponse({"ok": True, "lalafo_id": ad.lalafo_id, "message_id": published.message_id})
+
+
+@app.post("/internal/lalafo/ingest")
+async def relay_lalafo_ingest(
+    payload: LalafoIngestRequest,
+    relay_secret: str | None = Header(default=None, alias="X-Lalafo-Relay-Secret"),
+) -> JSONResponse:
+    """Accept filtered inventory from the Windows Lalafo network worker."""
+    settings = get_settings()
+    expected_secrets = tuple(
+        value
+        for value in (
+            settings.lalafo_relay_secret,
+            settings.callback_secret,
+            settings.lalafo_bot_token,
+        )
+        if value
+    )
+    if not expected_secrets or not any(
+        secrets.compare_digest(relay_secret or "", expected)
+        for expected in expected_secrets
+    ):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid relay secret")
+    runtime = _bot_runtime
+    if runtime is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Bot is starting")
+    apartments = runtime.workflow_data["apartments"]
+    stored = 0
+    for ad in payload.ads[:240]:
+        await apartments.upsert_discovered(ad)
+        stored += 1
+    return JSONResponse({"ok": True, "stored": stored})
 
 
 @app.get("/health")
