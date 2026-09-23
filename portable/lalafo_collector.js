@@ -93,6 +93,13 @@ function normalized(value) {
   return String(value || "").toLowerCase().replace(/\u0451/g, "\u0435");
 }
 
+function arrayContains(values, needle) {
+  for (var i = 0; i < values.length; i++) {
+    if (values[i] === needle) return true;
+  }
+  return false;
+}
+
 function paramsMap(items) {
   var result = {};
   items = items || [];
@@ -206,7 +213,7 @@ function collectCycle() {
         var items = payload.items || [];
         for (var i = 0; i < items.length; i++) {
           var id = parseInt(items[i].id || 0, 10);
-          if (id && !seen[id] && ids.indexOf(id) < 0) ids.push(id);
+          if (id && !seen[id] && !arrayContains(ids, id)) ids.push(id);
         }
       } catch (error) {
         appendLog("search failed mode=" + modes[m] + " page=" + page + " " + error.message);
