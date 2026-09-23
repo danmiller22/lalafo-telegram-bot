@@ -50,10 +50,9 @@ async def run(*, force_discovery: bool | None = None) -> int:
     # already contains fresh eligible cards; do not wait for another network
     # crawl before using that inventory.
     if force:
-        queued = await inventory.schedule_period(now=now)
-        if queued:
-            await engine.dispose()
-            return await publish_one_due(eligible_until=now + timedelta(days=1))
+        await inventory.schedule_period(now=now)
+        await engine.dispose()
+        return await publish_one_due(eligible_until=now + timedelta(days=1))
 
     period_key = await inventory.claim_discovery(now=now, force=force)
     await engine.dispose()
