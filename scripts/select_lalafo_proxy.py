@@ -41,7 +41,7 @@ HEADERS = {
 # Keep several independently verified routes. Lalafo can accept the probe and
 # then rate-limit that IP on the real multi-page search; LalafoClient rotates
 # this comma-separated pool on 403/429 and transport failures.
-TARGET_PROXY_COUNT = 5
+TARGET_PROXY_COUNT = 1
 
 
 async def _works(proxy_url: str) -> str | None:
@@ -52,7 +52,7 @@ async def _works(proxy_url: str) -> str | None:
         async with httpx.AsyncClient(
             proxy=proxy_url,
             headers=headers,
-            timeout=httpx.Timeout(8.0),
+            timeout=httpx.Timeout(4.0),
             follow_redirects=True,
         ) as client:
             response = await client.get(SEARCH_URL)
@@ -94,7 +94,7 @@ async def find_working_proxies() -> list[str]:
         "timeout": "5000",
         "limit": "200",
     }
-    async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
+    async with httpx.AsyncClient(timeout=5.0, follow_redirects=True) as client:
         response = await client.get(PROXY_LIST_URL, params=params)
         response.raise_for_status()
     proxies = [line.strip() for line in response.text.splitlines() if line.strip()]
@@ -104,7 +104,7 @@ async def find_working_proxies() -> list[str]:
     selected: list[str] = []
     tasks = [asyncio.create_task(_works(proxy)) for proxy in proxies]
     try:
-        for task in asyncio.as_completed(tasks, timeout=25.0):
+        for task in asyncio.as_completed(tasks, timeout=6.0):
             result = await task
             if result:
                 selected.append(result)
