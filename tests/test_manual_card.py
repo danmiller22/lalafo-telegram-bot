@@ -52,7 +52,7 @@ def callback(data, *, user_id=777, username=None):
     )
 
 
-async def fill_card(state, settings, *, rooms="студия", author="не указан"):
+async def fill_card(state, settings, *, rooms="студия", author="возможно собственник"):
     await lalafo_links.start_manual_card(message("/addcard"), state, settings)
     for file_id in ("file-1", "file-2", "file-3"):
         await lalafo_links.manual_card_photo(
@@ -72,7 +72,7 @@ async def fill_card(state, settings, *, rooms="студия", author="не ук�
 @pytest.mark.parametrize(
     ("rooms", "author", "stored_rooms", "seller_type", "owner_listing"),
     [
-        ("студия", "не указан", "studio", "unknown", False),
+        ("студия", "возможно собственник", "studio", "unknown", False),
         ("1-комнатная", "собственник", "1", "owner", True),
     ],
 )
@@ -86,6 +86,8 @@ async def test_manual_card_album_confirmation_and_publish(
     assert state.data["photo_urls"] == ["file-1", "file-2", "file-3"]
     assert "28 000 сом" in preview.answer.await_args.args[0]
     assert "📞 +996700123456" in preview.answer.await_args.args[0]
+    assert "👤 Автор: " + author in preview.answer.await_args.args[0]
+    assert "Статус:" not in preview.answer.await_args.args[0]
     assert preview.answer.await_args.kwargs["reply_markup"].inline_keyboard[0][0].callback_data == (
         f"manual:publish:{state.data['nonce']}"
     )

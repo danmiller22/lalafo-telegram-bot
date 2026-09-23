@@ -6,7 +6,7 @@ from app.security import TokenSigner
 from app.payment_plans import MONTH_PRICE, WEEK_PRICE
 
 
-APARTMENT_KEYBOARD_VERSION = 12
+APARTMENT_KEYBOARD_VERSION = 13
 MINI_APP_SHORT_NAME = "access"
 
 

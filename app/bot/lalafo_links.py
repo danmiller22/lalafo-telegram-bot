@@ -137,7 +137,7 @@ def _manual_keyboard(nonce: str) -> InlineKeyboardMarkup:
 
 def _manual_preview(data: dict) -> str:
     title = "Студия" if data["rooms"] == "studio" else "1-комнатная квартира"
-    author = "собственник" if data["seller_type"] == "owner" else "не указан"
+    author = "собственник" if data["seller_type"] == "owner" else "возможно собственник"
     price = f"{data['price']:,}".replace(",", " ")
     return (
         "Проверьте карточку:\n\n"
@@ -551,7 +551,9 @@ async def manual_card_price(
         return
     await state.update_data(price=price)
     await state.set_state(ManualCardPublish.waiting_for_author)
-    await message.answer("Кто автор объявления? Напишите «собственник» или «не указан».")
+    await message.answer(
+        "Кто автор объявления? Напишите «собственник» или «возможно собственник»."
+    )
 
 
 @manual_card_router.message(ManualCardPublish.waiting_for_author, F.chat.type == "private", F.text)
@@ -563,11 +565,12 @@ async def manual_card_author(message: Message, state: FSMContext, settings: Sett
     seller_type = {
         "собственник": "owner",
         "владелец": "owner",
+        "возможно собственник": "unknown",
         "не указан": "unknown",
         "неизвестно": "unknown",
     }.get(value)
     if seller_type is None:
-        await message.answer("Напишите «собственник» или «не указан».")
+        await message.answer("Напишите «собственник» или «возможно собственник».")
         return
     await state.update_data(seller_type=seller_type)
     await state.set_state(ManualCardPublish.waiting_for_confirmation)

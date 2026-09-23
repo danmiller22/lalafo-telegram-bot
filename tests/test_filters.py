@@ -88,8 +88,21 @@ def test_agency_listing_is_allowed_and_marked_as_unknown():
     )[0]
     text = format_apartment(ad)
     assert "риелтор" not in text.casefold()
-    assert "собственник" not in text.casefold()
-    assert "👤 Автор: не указан" in text
+    assert "👤 Автор: возможно собственник" in text
+    assert "Статус:" not in text
+
+
+def test_channel_source_uses_single_author_label():
+    ad = make_ad(
+        source_url="https://t.me/owners_bishkek/123",
+        owner_listing=False,
+        seller_type="unknown",
+    )
+    text = format_apartment(ad)
+    assert text.count("👤 Автор:") == 1
+    assert "👤 Автор: возможно собственник" in text
+    assert "Статус:" not in text
+    assert "@owners_bishkek" not in text
 
 
 def test_missing_district_uses_labeled_demo_location_and_omits_deposit():
@@ -281,8 +294,7 @@ def test_publish_batch_marks_realtors_as_unknown():
     selected = select_publish_batch([realtor, owner], limit=2)
     assert {ad.lalafo_id for ad in selected} == {1, 2}
     assert "риелтор" not in format_apartment(realtor).casefold()
-    assert "собственник" not in format_apartment(realtor).casefold()
-    assert "👤 Автор: не указан" in format_apartment(realtor)
+    assert "👤 Автор: возможно собственник" in format_apartment(realtor)
 
 
 def test_owners_lead_a_mixed_batch():

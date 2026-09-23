@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import re
-
 from app.lalafo.models import LalafoAd
 from app.models import Apartment, PaymentRequest
 from app.payment_plans import plan_label, plan_price
@@ -20,16 +18,12 @@ def room_title(rooms: str) -> str:
 
 
 def author_label(ad: LalafoAd | Apartment) -> str:
-    """Show the public source author without inventing an ownership claim."""
-    source_url = str(getattr(ad, "source_url", "") or "")
-    match = re.search(r"https?://t\.me/(?:s/)?([A-Za-z0-9_]{5,})", source_url, re.I)
-    if match is not None:
-        return f"@{match.group(1)}"
+    """Use one consistent author label on every public apartment card."""
     seller_type = str(getattr(ad, "seller_type", "unknown") or "unknown")
     verified_owner = seller_type == "owner" or (
         seller_type == "unknown" and bool(getattr(ad, "owner_listing", False))
     )
-    return "собственник" if verified_owner else "не указан"
+    return "собственник" if verified_owner else "возможно собственник"
 
 
 def seller_status(ad: LalafoAd | Apartment) -> str:
