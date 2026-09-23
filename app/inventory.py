@@ -455,7 +455,10 @@ class InventoryRepository:
                 await session.scalar(
                     select(func.count())
                     .select_from(ApartmentInventoryQueue)
-                    .where(ApartmentInventoryQueue.window_key.like(prefix))
+                    .where(
+                        ApartmentInventoryQueue.window_key.like(prefix),
+                        ApartmentInventoryQueue.status == "queued",
+                    )
                 )
                 or 0
             )

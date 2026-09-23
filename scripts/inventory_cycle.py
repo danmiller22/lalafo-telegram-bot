@@ -50,9 +50,10 @@ async def run(*, force_discovery: bool | None = None) -> int:
     # already contains fresh eligible cards; do not wait for another network
     # crawl before using that inventory.
     if force:
-        await inventory.schedule_period(now=now)
-        await engine.dispose()
-        return await publish_one_due(eligible_until=now + timedelta(days=1))
+        scheduled = await inventory.schedule_period(now=now)
+        if scheduled > 0:
+            await engine.dispose()
+            return await publish_one_due(eligible_until=now + timedelta(days=1))
 
     period_key = await inventory.claim_discovery(now=now, force=force)
     await engine.dispose()
@@ -92,7 +93,11 @@ async def run(*, force_discovery: bool | None = None) -> int:
         finally:
             await engine.dispose()
 
-    return await publish_one_due()
+    # A forced recovery must not finish green with an empty queue.  When no
+    # saved stock existed above, it reaches discovery and then publishes the
+    # first newly scheduled card immediately instead of waiting for its slot.
+    eligible_until = now + timedelta(days=1) if force else None
+    return await publish_one_due(eligible_until=eligible_until)
 
 
 def main() -> None:
