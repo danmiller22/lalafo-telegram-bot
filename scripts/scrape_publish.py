@@ -1146,9 +1146,6 @@ async def run(*, discovery_only: bool = False) -> int:
                         ad.lalafo_id,
                     )
                     continue
-                if not settings.allow_no_deposit and ad.deposit is None:
-                    logger.info("Skipping ad id=%s reason=deposit", ad.lalafo_id)
-                    continue
                 if state.contains(ad.lalafo_id, ad_fingerprint(ad)) and not is_repost:
                     continue
                 if ad.lalafo_id in duplicate_ids and not is_repost:
