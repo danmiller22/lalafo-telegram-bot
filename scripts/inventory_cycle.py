@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import logging
 import os
 
@@ -45,6 +45,16 @@ async def run(*, force_discovery: bool | None = None) -> int:
     await init_db(engine)
     inventory = InventoryRepository(sessions)
     now = datetime.now(timezone.utc)
+
+    # An operator-forced run must publish immediately when the database
+    # already contains fresh eligible cards; do not wait for another network
+    # crawl before using that inventory.
+    if force:
+        queued = await inventory.schedule_period(now=now)
+        if queued:
+            await engine.dispose()
+            return await publish_one_due(eligible_until=now + timedelta(days=1))
+
     period_key = await inventory.claim_discovery(now=now, force=force)
     await engine.dispose()
 
