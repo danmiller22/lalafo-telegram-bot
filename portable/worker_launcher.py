@@ -16,7 +16,6 @@ import sys
 import time
 import winreg
 
-from app.bot.lalafo_only import run as run_link_bot
 from app.config import get_settings
 from scripts.remote_lalafo_collector import run_forever as run_collector
 
@@ -155,8 +154,8 @@ def worker() -> None:
     )
 
     async def run_services() -> None:
-        logging.info("Starting Lalafo link bot and combined inventory collector")
-        await asyncio.gather(run_link_bot(), run_collector())
+        logging.info("Starting combined inventory collector for the main cloud bot")
+        await run_collector()
 
     while True:
         try:

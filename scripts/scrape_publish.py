@@ -663,7 +663,13 @@ async def run(*, discovery_only: bool = False) -> int:
             except RuntimeError as exc:
                 logger.error("Production configuration is incomplete: %s", exc)
                 return 2
-        engine, sessions = create_engine_and_session(settings.database_url)
+        database_url = settings.database_url
+        if discovery_only and database_url.startswith("sqlite"):
+            # The always-on link bot and the inventory collector start together.
+            # Give discovery its own SQLite file so concurrent schema setup and
+            # writes cannot lock the bot database.
+            database_url = "sqlite:///data/collector.db"
+        engine, sessions = create_engine_and_session(database_url)
         try:
             await init_db(engine)
         except Exception as exc:

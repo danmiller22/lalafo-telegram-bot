@@ -23,8 +23,13 @@ async def run_forever() -> None:
         try:
             code = await collect_once()
             logger.info("Remote combined discovery completed exit_code=%d", code)
+            if code != 0:
+                await asyncio.sleep(60)
+                continue
         except Exception:
             logger.exception("Remote combined discovery failed; retrying later")
+            await asyncio.sleep(60)
+            continue
         for _ in range(INTERVAL_SECONDS // 10):
             if stop_file.exists():
                 return
