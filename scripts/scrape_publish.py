@@ -246,8 +246,13 @@ async def fetch_detail_batch(
     search_ads: list[SearchAd],
     clients: list[LalafoClient],
 ) -> list[tuple[SearchAd, LalafoAd | None]]:
-    """Fetch details concurrently without sharing a rotating HTTP client."""
-    chunks = [search_ads[index :: len(clients)] for index in range(len(clients))]
+    """Fetch each unique detail once without sharing a rotating HTTP client."""
+    unique_search_ads = list(
+        {search_ad.lalafo_id: search_ad for search_ad in search_ads}.values()
+    )
+    chunks = [
+        unique_search_ads[index :: len(clients)] for index in range(len(clients))
+    ]
 
     async def worker(client: LalafoClient, items):
         results = []
@@ -275,7 +280,7 @@ async def fetch_detail_batch(
         for batch in batches
         for search_ad, ad in batch
     }
-    return [by_id[search_ad.lalafo_id] for search_ad in search_ads]
+    return [by_id[search_ad.lalafo_id] for search_ad in unique_search_ads]
 
 
 def is_preferred_district(district: str | None) -> bool:

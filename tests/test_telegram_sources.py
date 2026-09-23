@@ -113,3 +113,39 @@ def test_rejects_search_posts_shared_housing_and_old_cards() -> None:
     assert parse_telegram_apartments(search, now=now) == []
     assert parse_telegram_apartments(shared, now=now) == []
     assert parse_telegram_apartments(old, now=now) == []
+
+
+def test_accepts_price_before_label_and_short_room_notation() -> None:
+    html = _post(
+        "Сдаю 1 ком квартиру на долгий срок. "
+        "10.000 депозит, 35.000 оплата. Собственник. "
+        "Телефон 0705 450 817",
+        post_id=501,
+    )
+
+    ads = parse_telegram_apartments(
+        html,
+        now=datetime(2026, 9, 23, 7, tzinfo=timezone.utc),
+    )
+
+    assert len(ads) == 1
+    assert ads[0].rooms == "1"
+    assert ads[0].price == 35_000
+    assert ads[0].seller_type == "owner"
+
+
+def test_accepts_thousands_price_notation() -> None:
+    html = _post(
+        "Сдаётся 1-комнатная квартира. Цена: 32 тыс. сом. "
+        "От хозяина. 0555 123 456",
+        post_id=502,
+    )
+
+    ads = parse_telegram_apartments(
+        html,
+        now=datetime(2026, 9, 23, 7, tzinfo=timezone.utc),
+    )
+
+    assert len(ads) == 1
+    assert ads[0].price == 32_000
+    assert ads[0].rooms == "1"

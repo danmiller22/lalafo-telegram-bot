@@ -243,37 +243,8 @@ def test_curated_rotation_preserves_manually_approved_apartments():
     )
 
 
-def test_operator_priority_apartments_have_requested_district_labels():
-    assert [int(url.rsplit("-id-", 1)[1]) for url, _ in PRIORITY_AD_SPECS] == [
-        116440509,
-        116537057,
-        116523595,
-        113203621,
-        116518638,
-        113286525,
-        81141886,
-        116308607,
-        114595809,
-        115806919,
-        115746322,
-        116273232,
-        114324774,
-    ]
-    assert [district for _, district in PRIORITY_AD_SPECS] == [
-        "Восток-5",
-        "Восток-5",
-        "Киевская / Уметалиева",
-        "ул. Манаса — центр",
-        "Восток-5",
-        "ЦУМ",
-        "Гоин",
-        "Филармония",
-        "Восток-5",
-        "1000 мелочей — Дордой Плаза ТЦ",
-        "Карпинка — Восток-5",
-        "Восток-5",
-        "Филармония",
-    ]
+def test_stale_operator_priority_links_are_not_in_the_hot_path():
+    assert PRIORITY_AD_SPECS == ()
     assert CURATED_ROTATION_LALAFO_IDS == (
         115333471,
         112925333,

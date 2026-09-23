@@ -46,14 +46,11 @@ async def run(*, force_discovery: bool | None = None) -> int:
     inventory = InventoryRepository(sessions)
     now = datetime.now(timezone.utc)
 
-    # An operator-forced run must publish immediately when the database
-    # already contains fresh eligible cards; do not wait for another network
-    # crawl before using that inventory.
+    # Schedule existing stock first, but never let that suppress a requested
+    # cloud collection.  The previous early return made a manual "collect now"
+    # run publish one saved card without actually refreshing either source.
     if force:
-        scheduled = await inventory.schedule_period(now=now)
-        if scheduled > 0:
-            await engine.dispose()
-            return await publish_one_due(eligible_until=now + timedelta(days=1))
+        await inventory.schedule_period(now=now)
 
     period_key = await inventory.claim_discovery(now=now, force=force)
     await engine.dispose()

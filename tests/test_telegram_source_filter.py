@@ -15,3 +15,7 @@ def test_rejects_people_looking_for_housing():
 def test_rejects_over_limit():
     assert not is_apartment_offer("Сдам квартиру, хозяин, 45 000 сом")
     assert not is_apartment_offer("Сдам квартиру, хозяин, 46 000 сом")
+
+
+def test_extracts_thousands_price_notation():
+    assert extract_kgs_price("Цена: 35 тыс. сом") == 35_000

@@ -408,7 +408,12 @@ async def test_failed_empty_discovery_retries_after_cooldown(repositories):
         error="EmptyInventory",
     )
 
-    assert await inventory.claim_discovery(now=now + timedelta(minutes=5)) is None
+    assert (
+        await inventory.claim_discovery(
+            now=now + timedelta(minutes=DISCOVERY_RETRY_MINUTES - 1)
+        )
+        is None
+    )
     assert (
         await inventory.claim_discovery(
             now=now + timedelta(minutes=DISCOVERY_RETRY_MINUTES + 1)

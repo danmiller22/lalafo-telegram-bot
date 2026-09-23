@@ -22,7 +22,7 @@ LALAFO_URL_RE = re.compile(r"https?://(?:www\.)?lalafo\.kg/[\w./?=&%-]+", re.I)
 PHOTO_URL_RE = re.compile(r"background-image:url\(['\"]?([^'\")]+)", re.I)
 ROOM_RE = re.compile(
     r"\b([12])\s*(?:[-‑–—хx]\s*)?"
-    r"(?:комнат(?:ная|ную|ные|ы)?|комн(?:ат)?\.?|б[өо]лм[өо]л[үүу]+)",
+    r"(?:комнат(?:ная|ную|ные|ы)?|ком(?:н(?:ат)?)?\.?|б[өо]лм[өо]л[үүу]+)",
     re.I,
 )
 PHONE_RE = re.compile(
@@ -36,7 +36,24 @@ PRICE_PATTERNS = (
         re.I,
     ),
     re.compile(
-        r"(?<!\d)(\d{1,3}(?:[ .]\d{3})|\d{4,6})\s*(?:сом|kgs|кгс)\b",
+        r"(?<!\d)(\d{1,3}(?:[ .]\d{3})|\d{4,6})\s*(?:сом|с|kgs|кгс)\b",
+        re.I,
+    ),
+    re.compile(
+        r"(?<!\d)(\d{1,3}(?:[ .]\d{3})|\d{4,6})\s*"
+        r"(?:сом(?:ов)?|с)?\s*(?:в\s+месяц|оплата|аренда|цена|квартплата)\b",
+        re.I,
+    ),
+)
+THOUSANDS_PRICE_PATTERNS = (
+    re.compile(
+        r"(?:аренд(?:а|ная\s+плата)|оплата|цена|стоимость(?:\s+аренды)?|квартплата|баасы)"
+        r"\s*[:—–+\-]?\s*(?:от\s*)?(\d{1,3}(?:[.,]\d+)?)\s*тыс(?:яч[аи]?)?\.?\b",
+        re.I,
+    ),
+    re.compile(
+        r"(?<!\d)(\d{1,3}(?:[.,]\d+)?)\s*тыс(?:яч[аи]?)?\.?\s*"
+        r"(?:сом(?:ов)?|с)?\s*(?:в\s+месяц|оплата|аренда|цена|квартплата)\b",
         re.I,
     ),
 )
@@ -76,6 +93,9 @@ OFFER_TERMS = (
     "аренда, квартира",
     "аренда квартира",
     "ижарага берилет",
+    "арендага берилет",
+    "квартира берилет",
+    "батир берилет",
 )
 
 
@@ -137,6 +157,13 @@ def _telegram_price(text: str) -> int | None:
     for pattern in PRICE_PATTERNS:
         value = _integer(pattern.search(text))
         if value is not None and 5_000 <= value <= 500_000:
+            return value
+    for pattern in THOUSANDS_PRICE_PATTERNS:
+        match = pattern.search(text)
+        if match is None:
+            continue
+        value = round(float(match.group(1).replace(",", ".")) * 1_000)
+        if 5_000 <= value <= 500_000:
             return value
     return None
 

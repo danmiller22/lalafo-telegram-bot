@@ -17,7 +17,7 @@ from app.publication_schedule import (
     schedule_snapshot,
     stop_heartbeat,
 )
-from scripts.scrape_publish import run as run_scraper
+from scripts.inventory_cycle import run as run_scraper
 
 
 logger = logging.getLogger(__name__)
