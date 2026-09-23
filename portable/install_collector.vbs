@@ -1,6 +1,6 @@
 Option Explicit
 
-Dim fso, shell, sourceDir, targetDir, secret, relayUrl, config, runner, runCommand
+Dim fso, shell, sourceDir, targetDir, secret, relayUrl, config, runner, runCommand, binaryStream
 Set fso = CreateObject("Scripting.FileSystemObject")
 Set shell = CreateObject("WScript.Shell")
 
@@ -15,7 +15,17 @@ If Len(Trim(secret)) = 0 Then
 End If
 
 If Not fso.FolderExists(targetDir) Then fso.CreateFolder targetDir
-fso.CopyFile fso.BuildPath(sourceDir, "lalafo_collector.js"), fso.BuildPath(targetDir, "lalafo_collector.js"), True
+
+' Re-save the downloaded script as a new local file.  A normal CopyFile keeps
+' the browser's Mark-of-the-Web stream, which makes Windows block the hidden
+' startup process behind an invisible "Open File" warning.
+Set binaryStream = CreateObject("ADODB.Stream")
+binaryStream.Type = 2
+binaryStream.Charset = "utf-8"
+binaryStream.Open
+binaryStream.LoadFromFile fso.BuildPath(sourceDir, "lalafo_collector.js")
+binaryStream.SaveToFile fso.BuildPath(targetDir, "lalafo_collector.js"), 2
+binaryStream.Close
 
 config = "{""relayUrl"":""" & relayUrl & """,""relaySecret"":""" & Replace(secret, """", "") & """,""intervalMinutes"":120}"
 Dim stream

@@ -9,6 +9,39 @@ var configPath = fso.BuildPath(baseDir, "collector-config.json");
 var logPath = fso.BuildPath(baseDir, "collector.log");
 var seenPath = fso.BuildPath(baseDir, "seen.json");
 
+// Windows Script Host still ships the legacy JScript engine on some PCs.
+// Supply the two ES5 helpers the collector needs instead of silently exiting
+// on machines where JSON and Date#toISOString are absent.
+if (typeof JSON === "undefined") JSON = {};
+if (typeof JSON.parse !== "function") {
+  JSON.parse = function (value) { return eval("(" + value + ")"); };
+}
+if (typeof JSON.stringify !== "function") {
+  JSON.stringify = function (value) {
+    if (value === null) return "null";
+    var kind = typeof value;
+    if (kind === "string") return '"' + value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\r/g, "\\r").replace(/\n/g, "\\n") + '"';
+    if (kind === "number" || kind === "boolean") return String(value);
+    var parts = [], i, key;
+    if (value instanceof Array) {
+      for (i = 0; i < value.length; i++) parts.push(JSON.stringify(value[i]));
+      return "[" + parts.join(",") + "]";
+    }
+    for (key in value) if (value.hasOwnProperty(key)) {
+      parts.push(JSON.stringify(key) + ":" + JSON.stringify(value[key]));
+    }
+    return "{" + parts.join(",") + "}";
+  };
+}
+
+function isoDate(value) {
+  var d = value || new Date();
+  function pad(number) { return (number < 10 ? "0" : "") + number; }
+  return d.getUTCFullYear() + "-" + pad(d.getUTCMonth() + 1) + "-" +
+    pad(d.getUTCDate()) + "T" + pad(d.getUTCHours()) + ":" +
+    pad(d.getUTCMinutes()) + ":" + pad(d.getUTCSeconds()) + "Z";
+}
+
 function readText(path) {
   var stream = fso.OpenTextFile(path, 1, false, -1);
   var value = stream.ReadAll();
@@ -25,7 +58,7 @@ function writeText(path, value) {
 function appendLog(message) {
   try {
     var stream = fso.OpenTextFile(logPath, 8, true, -1);
-    stream.WriteLine(new Date().toISOString() + " " + message);
+    stream.WriteLine(isoDate(new Date()) + " " + message);
     stream.Close();
   } catch (_) {}
 }
@@ -89,7 +122,7 @@ function photoUrls(raw) {
 
 function timestamp(value) {
   if (!value) return null;
-  try { return new Date(Number(value) * 1000).toISOString(); } catch (_) { return null; }
+  try { return isoDate(new Date(Number(value) * 1000)); } catch (_) { return null; }
 }
 
 function districtFrom(raw, params) {
@@ -194,7 +227,7 @@ function collectCycle() {
       var raw = JSON.parse(request("GET", detailUrl, null, null));
       var source = raw.url ? (String(raw.url).indexOf("http") === 0 ? String(raw.url) : "https://lalafo.kg" + String(raw.url)) : "https://lalafo.kg/bishkek/ads/id-" + id;
       var ad = parseAd(raw, source);
-      seen[id] = new Date().toISOString();
+      seen[id] = isoDate(new Date());
       if (ad) ads.push(ad);
     } catch (error) {
       appendLog("detail failed id=" + id + " " + error.message);
