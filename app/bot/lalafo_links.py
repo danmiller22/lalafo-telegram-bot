@@ -162,12 +162,6 @@ def _manual_rooms_keyboard(nonce: str) -> InlineKeyboardMarkup:
 def _manual_author_keyboard(nonce: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Собственник", callback_data=f"manual:author:owner:{nonce}")],
-        [
-            InlineKeyboardButton(
-                text="Неизвестно",
-                callback_data=f"manual:author:unknown:{nonce}",
-            )
-        ],
         [InlineKeyboardButton(text="❌ Отмена", callback_data=f"manual:cancel:{nonce}")],
     ])
 
@@ -748,14 +742,11 @@ async def manual_card_author(message: Message, state: FSMContext, settings: Sett
     seller_type = {
         "собственник": "owner",
         "владелец": "owner",
-        "возможно собственник": "unknown",
-        "не указан": "unknown",
-        "неизвестно": "unknown",
     }.get(value)
     if seller_type is None:
         data = await state.get_data()
         await message.answer(
-            "Выберите «Собственник» или «Неизвестно».",
+            "Публикуем только объявления собственников. Выберите «Собственник».",
             reply_markup=_manual_author_keyboard(data["nonce"]),
         )
         return
@@ -770,7 +761,7 @@ async def manual_card_author_button(
     callback: CallbackQuery, state: FSMContext, settings: Settings
 ) -> None:
     parts = (callback.data or "").split(":")
-    if len(parts) != 4 or parts[2] not in {"owner", "unknown"}:
+    if len(parts) != 4 or parts[2] != "owner":
         await callback.answer("Недопустимый автор.", show_alert=True)
         return
     seller_type, nonce = parts[2], parts[3]
@@ -814,6 +805,10 @@ async def publish_manual_card(
             or (callback.data or "").removeprefix("manual:publish:") != data.get("nonce")
         ):
             await callback.answer("Карточка уже обработана или отменена.", show_alert=True)
+            return
+        if data.get("seller_type") != "owner":
+            await state.clear()
+            await callback.answer("Публикуем только объявления собственников.", show_alert=True)
             return
         await state.set_state(ManualCardPublish.publishing)
     try:

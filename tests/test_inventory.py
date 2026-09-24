@@ -30,6 +30,7 @@ def _apartments(count: int, *, central: bool, start_id: int, owner: bool = True)
             price=25_000 + index % 8 * 1_000,
             rooms=rooms[index % len(rooms)],
             district="Золотой квадрат" if central else "7 мкр",
+            source_url=f"https://lalafo.kg/bishkek/ads/test-id-{start_id + index}",
             discovery_priority=False,
             owner_listing=owner,
             seller_type="owner" if owner else "realtor",
@@ -91,18 +92,16 @@ def test_two_periods_plan_random_50_to_60_card_day():
             )
 
 
-def test_period_uses_broader_stock_when_no_central_apartments_exist():
+def test_period_rejects_stock_without_confirmed_owners():
     stock = _apartments(100, central=False, start_id=1, owner=False)
     period_start = datetime(2026, 9, 13, 0, tzinfo=timezone(timedelta(hours=6)))
 
     planned = plan_period(stock, period_start=period_start, rng=random.Random(9))
 
-    assert len(planned) == 4
-    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 4
-    assert all(not "золотой" in item.apartment.district.casefold() for item in planned)
+    assert planned == []
 
 
-def test_period_keeps_single_central_card_and_fills_with_realtors():
+def test_period_keeps_only_single_confirmed_owner():
     stock = _apartments(1, central=True, start_id=1) + _apartments(
         100, central=False, start_id=100, owner=False
     )
@@ -110,12 +109,11 @@ def test_period_keeps_single_central_card_and_fills_with_realtors():
 
     planned = plan_period(stock, period_start=period_start, rng=random.Random(10))
 
-    assert len(planned) == 5
+    assert len(planned) == 1
     assert sum("золотой" in item.apartment.district.casefold() for item in planned) == 1
-    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 4
 
 
-def test_noncentral_owners_outrank_central_realtors():
+def test_noncentral_owners_exclude_central_realtors():
     owners = _apartments(80, central=False, start_id=1)
     realtors = _apartments(80, central=True, start_id=200, owner=False)
     period_start = datetime(2026, 9, 13, 0, tzinfo=timezone(timedelta(hours=6)))
@@ -124,11 +122,10 @@ def test_noncentral_owners_outrank_central_realtors():
 
     period_count, _ = period_publication_targets(period_start)
     assert len(planned) == period_count
-    assert sum(item.apartment.seller_type == "owner" for item in planned) == period_count - 4
-    assert sum(item.apartment.seller_type != "owner" for item in planned) == 4
+    assert all(item.apartment.seller_type == "owner" for item in planned)
 
 
-def test_unknown_authors_do_not_share_the_explicit_realtor_limit():
+def test_unknown_authors_are_excluded():
     stock = _apartments(100, central=True, start_id=1)
     for item in stock:
         item.owner_listing = False
@@ -137,11 +134,10 @@ def test_unknown_authors_do_not_share_the_explicit_realtor_limit():
 
     planned = plan_period(stock, period_start=period_start, rng=random.Random(13))
 
-    assert len(planned) == period_publication_targets(period_start)[0]
-    assert all(item.apartment.seller_type == "unknown" for item in planned)
+    assert planned == []
 
 
-def test_period_keeps_exact_non_owner_target_without_exceeding_limit():
+def test_period_excludes_non_owners_even_with_legacy_non_owner_target():
     owners = _apartments(100, central=True, start_id=1)
     realtors = _apartments(40, central=True, start_id=200, owner=False)
     period_start = datetime(2026, 9, 13, 0, tzinfo=timezone(timedelta(hours=6)))
@@ -155,7 +151,7 @@ def test_period_keeps_exact_non_owner_target_without_exceeding_limit():
     )
 
     assert len(planned) == period_publication_targets(period_start)[0]
-    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 4
+    assert all(item.apartment.seller_type == "owner" for item in planned)
 
 
 def test_daily_target_is_stable_for_retries_but_changes_across_dates():
@@ -342,7 +338,7 @@ async def test_claim_due_prioritizes_central_card_for_daily_share(repositories):
 
 
 @pytest.mark.asyncio
-async def test_claim_due_caps_realtors_and_unknown_sellers_at_four_per_day(repositories):
+async def test_claim_due_skips_queued_unconfirmed_authors(repositories):
     apartments, _, sessions = repositories
     now = datetime.now(timezone.utc)
     rows = []
@@ -370,16 +366,6 @@ async def test_claim_due_caps_realtors_and_unknown_sellers_at_four_per_day(repos
         )
 
     inventory = InventoryRepository(sessions)
-    for apartment in rows[:4]:
-        claimed = await inventory.claim_due(now=now)
-        assert claimed is not None
-        await apartments.mark_published(
-            apartment.id,
-            chat_id=-100,
-            message_id=apartment.id,
-        )
-        await inventory.finish_item(claimed.id, status="published")
-
     assert await inventory.claim_due(now=now) is None
     async with sessions() as session:
         skipped = await session.scalar(
@@ -387,10 +373,31 @@ async def test_claim_due_caps_realtors_and_unknown_sellers_at_four_per_day(repos
             .select_from(ApartmentInventoryQueue)
             .where(
                 ApartmentInventoryQueue.status == "skipped",
-                ApartmentInventoryQueue.last_error == "daily_non_owner_cap",
+                ApartmentInventoryQueue.last_error == "not_confirmed_owner",
             )
         )
-    assert skipped == 1
+    assert skipped == 5
+
+
+@pytest.mark.asyncio
+async def test_claim_due_skips_old_unsupported_source_even_if_owner(repositories):
+    apartments, _, sessions = repositories
+    now = datetime.now(timezone.utc)
+    apartment = await apartments.upsert_discovered(
+        make_ad(lalafo_id=-7999999999999999999, source_url="https://joyka.kg/test")
+    )
+    async with sessions.begin() as session:
+        session.add(ApartmentInventoryQueue(
+            apartment_id=apartment.id,
+            scheduled_at=now - timedelta(minutes=1),
+            window_key="old-source",
+            sequence=1,
+        ))
+
+    assert await InventoryRepository(sessions).claim_due(now=now) is None
+    async with sessions() as session:
+        row = (await session.scalars(select(ApartmentInventoryQueue))).one()
+    assert row.status == "skipped"
 
 
 @pytest.mark.asyncio

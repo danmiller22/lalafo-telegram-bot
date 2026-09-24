@@ -24,6 +24,7 @@ def make_ad() -> LalafoAd:
         category_id=2044,
         no_subletting=True,
         owner_listing=True,
+        seller_type="owner",
     )
 
 
@@ -77,8 +78,8 @@ async def test_manual_telegram_file_ids_form_album_with_working_card_keyboard() 
     ad = make_ad().model_copy(
         update={
             "photo_urls": ["telegram-file-id-1", "telegram-file-id-2"],
-            "seller_type": "unknown",
-            "owner_listing": False,
+            "seller_type": "owner",
+            "owner_listing": True,
         }
     )
     signer = TokenSigner("s" * 32)
@@ -95,10 +96,7 @@ async def test_manual_telegram_file_ids_form_album_with_working_card_keyboard() 
     media = bot.send_media_group.await_args.kwargs["media"]
     assert [item.media for item in media] == ad.photo_urls
     card = bot.send_message.await_args.kwargs
-    assert any(
-        f"Автор: {label}" in card["text"]
-        for label in ("неизвестно", "возможно собственник")
-    )
+    assert "Автор: собственник" in card["text"]
     assert "Статус:" not in card["text"]
     keyboard = card["reply_markup"]
     assert keyboard.inline_keyboard[0][0].url.startswith(
@@ -106,6 +104,23 @@ async def test_manual_telegram_file_ids_form_album_with_working_card_keyboard() 
     )
     token = keyboard.inline_keyboard[0][0].url.split("startapp=", 1)[1]
     assert signer.decode_public_start_id(token) == 77
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("seller_type,owner_listing", [("unknown", False), ("realtor", False), ("owner", False)])
+async def test_unconfirmed_owner_is_rejected_before_sending(seller_type, owner_listing) -> None:
+    bot = SimpleNamespace(send_media_group=AsyncMock(), send_message=AsyncMock())
+    publisher = TelegramPublisher(
+        bot, chat_id=-1001, signer=TokenSigner("s" * 32),
+        bot_username="testbot", support_url="https://t.me/support",
+    )
+    ad = make_ad().model_copy(update={"seller_type": seller_type, "owner_listing": owner_listing})
+
+    with pytest.raises(TelegramPublishError, match="confirmed owner"):
+        await publisher.publish(77, ad)
+
+    bot.send_media_group.assert_not_awaited()
+    bot.send_message.assert_not_awaited()
 
 
 @pytest.mark.asyncio

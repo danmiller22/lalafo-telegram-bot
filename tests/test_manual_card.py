@@ -55,7 +55,7 @@ def callback(data, *, user_id=777, username=None):
     )
 
 
-async def fill_card(state, settings, *, rooms="студия", author="неизвестно"):
+async def fill_card(state, settings, *, rooms="студия", author="собственник"):
     await lalafo_links.start_manual_card(message("/addcard"), state, settings)
     for file_id in ("file-1", "file-2", "file-3"):
         await lalafo_links.manual_card_photo(
@@ -75,7 +75,7 @@ async def fill_card(state, settings, *, rooms="студия", author="неизв
 @pytest.mark.parametrize(
     ("rooms", "author", "stored_rooms", "seller_type", "owner_listing"),
     [
-        ("студия", "неизвестно", "studio", "unknown", False),
+        ("студия", "собственник", "studio", "owner", True),
         ("1-комнатная", "собственник", "1", "owner", True),
     ],
 )
@@ -227,17 +227,25 @@ async def test_manual_form_can_use_buttons_for_every_choice():
     price = message("32 000")
     await lalafo_links.manual_card_price(price, state, settings)
     author_markup = price.answer.await_args.kwargs["reply_markup"]
-    assert author_markup.inline_keyboard[1][0].text == "Неизвестно"
-    author_data = author_markup.inline_keyboard[1][0].callback_data
-    assert author_data == f"manual:author:unknown:{state.data['nonce']}"
+    assert author_markup.inline_keyboard[0][0].text == "Собственник"
+    author_data = author_markup.inline_keyboard[0][0].callback_data
+    assert author_data == f"manual:author:owner:{state.data['nonce']}"
     author = callback(author_data)
     await lalafo_links.manual_card_author_button(author, state, settings)
-    assert state.data["seller_type"] == "unknown"
+    assert state.data["seller_type"] == "owner"
     assert state.state == lalafo_links.ManualCardPublish.waiting_for_confirmation
-    assert any(
-        f"👤 Автор: {label}" in author.message.answer.await_args.args[0]
-        for label in ("неизвестно", "возможно собственник")
-    )
+    assert "👤 Автор: собственник" in author.message.answer.await_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_manual_card_rejects_unconfirmed_author():
+    state = FakeState()
+    settings = Settings(admin_user_id=777)
+    reply = await fill_card(state, settings, author="неизвестно")
+
+    assert state.state == lalafo_links.ManualCardPublish.waiting_for_author
+    assert "только объявления собственников" in reply.answer.await_args.args[0]
+    assert "seller_type" not in state.data
 
 
 @pytest.mark.asyncio

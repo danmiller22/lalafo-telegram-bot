@@ -956,6 +956,10 @@ async def relay_lalafo_publish(
     if runtime is None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Bot is starting")
     ad = payload.ad.model_copy(update={"district": payload.district or payload.ad.district})
+    from app.telegram.formatting import is_confirmed_owner
+
+    if not is_confirmed_owner(ad):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Owner is not confirmed")
     apartments = runtime.workflow_data["apartments"]
     signer = runtime.workflow_data["signer"]
     apartment = await apartments.upsert_discovered(ad, discovery_priority=True)
@@ -1002,7 +1006,11 @@ async def relay_lalafo_ingest(
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Bot is starting")
     apartments = runtime.workflow_data["apartments"]
     stored = 0
+    from app.telegram.formatting import is_confirmed_owner
+
     for ad in payload.ads[:240]:
+        if not is_confirmed_owner(ad):
+            continue
         await apartments.upsert_discovered(ad)
         stored += 1
     # The residential collector is now a discovery source, not a publisher.

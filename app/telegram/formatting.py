@@ -26,13 +26,26 @@ def unknown_author_label(*, phone: str, price: int, district: str | None, rooms:
     return ("неизвестно", "возможно собственник")[variant]
 
 
+def is_confirmed_owner(ad: LalafoAd | Apartment) -> bool:
+    return (
+        getattr(ad, "seller_type", None) == "owner"
+        and bool(getattr(ad, "owner_listing", False))
+    )
+
+
+def is_supported_source(ad: LalafoAd | Apartment) -> bool:
+    url = str(getattr(ad, "source_url", "") or "").casefold()
+    return url.startswith((
+        "https://lalafo.kg/",
+        "https://www.lalafo.kg/",
+        "https://t.me/",
+        "manual://telegram/",
+    ))
+
+
 def author_label(ad: LalafoAd | Apartment) -> str:
     """Keep the displayed author label stable across previews and reposts."""
-    seller_type = str(getattr(ad, "seller_type", "unknown") or "unknown")
-    verified_owner = seller_type == "owner" or (
-        seller_type == "unknown" and bool(getattr(ad, "owner_listing", False))
-    )
-    if verified_owner:
+    if is_confirmed_owner(ad):
         return "собственник"
     return unknown_author_label(
         phone=ad.phone,

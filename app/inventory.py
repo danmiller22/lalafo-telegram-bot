@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import Apartment, ApartmentDiscoveryRun, ApartmentInventoryQueue
+from app.telegram.formatting import is_supported_source
 
 
 BISHKEK = ZoneInfo("Asia/Bishkek")
@@ -20,12 +21,10 @@ MIN_PUBLICATIONS_PER_DAY = 50
 MAX_PUBLICATIONS_PER_DAY = 60
 # The daily target is chosen once per Bishkek date, then split across the two
 # discovery periods so retries cannot increase the day's publication volume.
-# Explicit realtors are limited to three or four cards per day. Public channel
-# authors whose role is not stated remain eligible and are shown honestly by
-# source name; treating them as agents used to collapse the queue to 3-4 cards.
-MIN_NON_OWNERS_PER_DAY = 3
-MAX_NON_OWNERS_PER_DAY = 4
-TARGET_NON_OWNERS_PER_PERIOD = 2
+# Publication is restricted to listings whose source explicitly identifies an owner.
+MIN_NON_OWNERS_PER_DAY = 0
+MAX_NON_OWNERS_PER_DAY = 0
+TARGET_NON_OWNERS_PER_PERIOD = 0
 MAX_REPOSTS_PER_PERIOD = 0
 MAX_FRESH_STOCK_LOAD = 600
 # A blocked source must not leave the channel empty for half an hour.  The
@@ -151,6 +150,15 @@ def _candidate_key(item: Apartment, *, central: bool) -> tuple[object, ...]:
 def _seller_type(item: Apartment) -> str:
     value = getattr(item, "seller_type", "unknown")
     return value if value in {"owner", "realtor", "unknown"} else "unknown"
+
+
+def _supported_source_filter():
+    return (
+        Apartment.source_url.like("https://lalafo.kg/%")
+        | Apartment.source_url.like("https://www.lalafo.kg/%")
+        | Apartment.source_url.like("https://t.me/%")
+        | Apartment.source_url.like("manual://telegram/%")
+    )
 
 
 def _limit_non_owners(
@@ -297,7 +305,14 @@ def plan_period(
 ) -> list[PlannedApartment]:
     """Create half of a random 50-60-card day in two-hour mini-batches."""
     rng = rng or random.SystemRandom()
-    apartments = [item for item in apartments if item.rooms in ALLOWED_ROOMS]
+    apartments = [
+        item
+        for item in apartments
+        if item.rooms in ALLOWED_ROOMS
+        and _seller_type(item) == "owner"
+        and item.owner_listing
+        and is_supported_source(item)
+    ]
     repeat_ids = set(repeat_apartment_ids or ()) if MAX_REPOSTS_PER_PERIOD else set()
     central_pool = sorted(
         [
@@ -608,6 +623,9 @@ class InventoryRepository:
                         select(Apartment).where(
                             Apartment.active.is_(True),
                             Apartment.publication_status == "discovered",
+                            Apartment.seller_type == "owner",
+                            Apartment.owner_listing.is_(True),
+                            _supported_source_filter(),
                             Apartment.id.not_in(active_queue_ids),
                             Apartment.fingerprint.not_in(queued_fingerprints),
                             Apartment.price.between(20_000, 40_000),
@@ -737,6 +755,19 @@ class InventoryRepository:
                 )
                 .values(status="queued", claimed_at=None, last_error="stale_claim")
             )
+            unconfirmed_apartment_ids = select(Apartment.id).where(
+                (Apartment.seller_type != "owner")
+                | Apartment.owner_listing.is_not(True)
+                | ~_supported_source_filter()
+            )
+            await session.execute(
+                update(ApartmentInventoryQueue)
+                .where(
+                    ApartmentInventoryQueue.status == "queued",
+                    ApartmentInventoryQueue.apartment_id.in_(unconfirmed_apartment_ids),
+                )
+                .values(status="skipped", last_error="not_confirmed_owner")
+            )
             published_today = int(
                 await session.scalar(
                     select(func.count())
@@ -818,6 +849,9 @@ class InventoryRepository:
                         ApartmentInventoryQueue.status == "queued",
                         ApartmentInventoryQueue.scheduled_at <= eligible_until,
                         Apartment.rooms.in_(ALLOWED_ROOMS),
+                        Apartment.seller_type == "owner",
+                        Apartment.owner_listing.is_(True),
+                        _supported_source_filter(),
                     )
                     .order_by(
                         ApartmentInventoryQueue.scheduled_at,
