@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -18,7 +18,7 @@ from tests.helpers import make_ad
 
 @pytest.mark.parametrize(
     ("price", "accepted"),
-    [(9_999, False), (10_000, True), (40_000, True), (40_001, False)],
+    [(17_999, False), (18_000, True), (40_000, True), (40_001, False)],
 )
 def test_release_price_boundaries(price: int, accepted: bool) -> None:
     result, _ = _valid(
@@ -68,7 +68,7 @@ async def test_confirmed_source_removal_blocks_payment(repositories) -> None:
 
 
 @pytest.mark.asyncio
-async def test_availability_result_is_cached_for_five_minutes(repositories, monkeypatch) -> None:
+async def test_availability_result_is_cached_for_twelve_hours(repositories, monkeypatch) -> None:
     apartments, _, _ = repositories
     apartment = await apartments.upsert_discovered(make_ad(lalafo_id=70002))
     service = AvailabilityService(apartments, Settings(_env_file=None))
@@ -86,6 +86,27 @@ async def test_availability_result_is_cached_for_five_minutes(repositories, monk
     assert first.status == second.status == "active"
     assert second.cached is True
     assert calls == 1
+    assert "Последняя проверка:" in second.message
+
+
+@pytest.mark.asyncio
+async def test_apartment_expires_two_days_after_publication(repositories) -> None:
+    apartments, _, sessions = repositories
+    apartment = await apartments.upsert_discovered(make_ad(lalafo_id=70004))
+    async with sessions.begin() as session:
+        await session.execute(
+            update(type(apartment))
+            .where(type(apartment).id == apartment.id)
+            .values(published_at=datetime.now(timezone.utc) - timedelta(days=2, minutes=1))
+        )
+
+    result = await AvailabilityService(
+        apartments, Settings(_env_file=None)
+    ).check(apartment.id)
+
+    assert result.status == "unavailable"
+    assert result.reason == "listing_age_limit"
+    assert (await apartments.get(apartment.id)).active is False
 
 
 @pytest.mark.asyncio

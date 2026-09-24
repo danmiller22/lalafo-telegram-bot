@@ -112,7 +112,7 @@ def test_period_accepts_agent_stock():
 
     planned = plan_period(stock, period_start=period_start, rng=random.Random(9))
 
-    assert len(planned) == 2
+    assert len(planned) == period_publication_targets(period_start)[0]
     assert all(item.apartment.seller_type == "realtor" for item in planned)
 
 
@@ -124,7 +124,7 @@ def test_period_fills_from_all_author_types():
 
     planned = plan_period(stock, period_start=period_start, rng=random.Random(10))
 
-    assert len(planned) == 3
+    assert len(planned) == period_publication_targets(period_start)[0]
     assert sum("золотой" in item.apartment.district.casefold() for item in planned) == 1
 
 
@@ -138,7 +138,7 @@ def test_central_realtors_can_fill_central_share():
     period_count, _ = period_publication_targets(period_start)
     assert len(planned) == period_count
     assert any(item.apartment.seller_type == "owner" for item in planned)
-    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 2
+    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 13
 
 
 def test_unknown_authors_are_included():
@@ -489,3 +489,14 @@ async def test_code_change_resets_dedupe_without_touching_old_message(repositori
         assert await session.scalar(select(func.count()).select_from(ApartmentInventoryQueue)) == 0
 
     assert await inventory.reset_publication_history_for_code("commit-one") is False
+
+
+@pytest.mark.asyncio
+async def test_availability_sweep_is_claimed_twice_daily(repositories):
+    _, _, sessions = repositories
+    inventory = InventoryRepository(sessions)
+    now = datetime.now(timezone.utc)
+
+    assert await inventory.claim_availability_sweep(now=now) is True
+    assert await inventory.claim_availability_sweep(now=now + timedelta(hours=11)) is False
+    assert await inventory.claim_availability_sweep(now=now + timedelta(hours=12)) is True

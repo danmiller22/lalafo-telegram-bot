@@ -10,6 +10,7 @@ def test_accepts_owner_rental_under_limit():
 
 def test_rejects_people_looking_for_housing():
     assert not is_apartment_offer("Ищу квартиру до 30 000 сом")
+    assert not is_apartment_offer("КВАРТИРА КЕРЕК КВАРТИРА НУЖНА ДОО 25 000")
 
 
 def test_rejects_over_limit():

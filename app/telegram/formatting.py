@@ -19,7 +19,7 @@ def room_title(rooms: str) -> str:
 
 def unknown_author_label(*, phone: str, price: int, district: str | None, rooms: str) -> str:
     """Backward-compatible helper for callers that still pass listing fields."""
-    return "неизвестно"
+    return "возможно агент"
 
 
 def is_confirmed_owner(ad: LalafoAd | Apartment) -> bool:
@@ -44,9 +44,7 @@ def author_label(ad: LalafoAd | Apartment) -> str:
     seller_type = getattr(ad, "seller_type", "unknown")
     if seller_type == "owner":
         return "собственник"
-    if seller_type == "realtor":
-        return "агент"
-    return "неизвестно"
+    return "возможно агент"
 
 
 def seller_status(ad: LalafoAd | Apartment) -> str:

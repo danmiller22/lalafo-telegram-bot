@@ -7,7 +7,11 @@ THOUSANDS_PRICE_RE = re.compile(
     r"(?<!\d)(\d{1,3}(?:[.,]\d+)?)\s*тыс(?:яч[аи]?)?\.?\b",
     re.I,
 )
-SEARCH_TERMS = ("ищу квартиру", "сниму квартиру", "нужна квартира", "ищем квартиру", "ищу жилье")
+SEARCH_TERMS = (
+    "ищу квартиру", "сниму квартиру", "нужна квартира", "квартира нужна",
+    "ищем квартиру", "снимем квартиру", "ищу жилье", "квартира керек",
+    "батир керек", "квартира издейм", "батир издейм",
+)
 OFFER_TERMS = ("сдам", "сдается", "сдаётся", "сдаю", "квартира в аренду", "квартиру в аренду", "продам квартиру")
 OWNER_TERMS = (
     "собственник", "хозяин", "хозяйка", "без посредников", "от хозяина",
@@ -28,14 +32,16 @@ def extract_kgs_price(text: str) -> int | None:
     return min(values) if values else None
 
 
-def is_apartment_offer(text: str, *, max_price: int = 40_000) -> bool:
+def is_apartment_offer(
+    text: str, *, min_price: int = 18_000, max_price: int = 40_000
+) -> bool:
     normalized = " ".join((text or "").casefold().replace("ё", "е").split())
     if not normalized or any(term in normalized for term in SEARCH_TERMS):
         return False
     if not any(term in normalized for term in OFFER_TERMS):
         return False
     price = extract_kgs_price(normalized)
-    return price is not None and price <= max_price
+    return price is not None and min_price <= price <= max_price
 
 
 def is_owner_offer(text: str) -> bool:

@@ -82,7 +82,7 @@ DEFAULT_SEARCH_URL = (
     "dolgosrochnaya-arenda-kvartir/studio/1-bedroom/owner/"
     "semeynym/param-bez-detey/studentam/bez-podseleniya/"
     "mozhno-s-zhivotnymi"
-    "?price[from]=10000&price[to]=40000"
+    "?price[from]=18000&price[to]=40000"
 )
 
 TELEGRAM_SOURCE_CHANNELS: tuple[str, ...] = (
@@ -104,7 +104,7 @@ TELEGRAM_APARTMENT_CHANNELS: tuple[str, ...] = TELEGRAM_SOURCE_CHANNELS
 ADDITIONAL_SEARCH_URLS: tuple[str, ...] = (
     "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
     "dolgosrochnaya-arenda-kvartir/studio/1-bedroom/real-estate-agency"
-    "?price[from]=10000&price[to]=40000",
+    "?price[from]=18000&price[to]=40000",
 )
 
 _INVENTORY_BASE = (
@@ -114,13 +114,13 @@ _INVENTORY_BASE = (
 # Split owner results by price as well as location. This exposes older affordable
 # ads that can be buried behind the newest broad-search results.
 INVENTORY_SEARCH_URLS: tuple[str, ...] = (
-    f"{_INVENTORY_BASE}owner?price[from]=10000&price[to]=29999",
+    f"{_INVENTORY_BASE}owner?price[from]=18000&price[to]=29999",
     f"{_INVENTORY_BASE}owner?price[from]=30000&price[to]=40000",
-    f"{_INVENTORY_BASE}real-estate-agency?price[from]=10000&price[to]=40000",
+    f"{_INVENTORY_BASE}real-estate-agency?price[from]=18000&price[to]=40000",
     # Lalafo authors do not always fill the offerer field. Broad searches keep
     # those fresh cards available; seller classification still happens from
     # the detail page before anything enters the Telegram queue.
-    f"{_INVENTORY_BASE}?price[from]=10000&price[to]=29999",
+    f"{_INVENTORY_BASE}?price[from]=18000&price[to]=29999",
     f"{_INVENTORY_BASE}?price[from]=30000&price[to]=40000",
 )
 
@@ -190,7 +190,7 @@ class Settings(BaseSettings):
     apartment_publication_lease_seconds: int = 300
     apartment_publication_heartbeat_seconds: float = 60.0
     city: str = "Бишкек"
-    min_price: int = 10_000
+    min_price: int = 18_000
     max_price: int = 40_000
     rooms: str = "studio,1"
     max_new_posts_per_run: int = 18

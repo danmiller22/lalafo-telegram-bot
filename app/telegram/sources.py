@@ -77,6 +77,11 @@ SEARCH_TERMS = (
     "снимем квартиру",
     "нужна квартира",
     "нужен квартира",
+    "квартира нужна",
+    "квартира керек",
+    "батир керек",
+    "квартира издейм",
+    "батир издейм",
 )
 SHARED_HOUSING_TERMS = (
     "подсел",
@@ -267,7 +272,7 @@ def parse_telegram_apartments(
         price = _telegram_price(text)
         rooms = _telegram_rooms(text)
         phone = _telegram_phone(text)
-        if price is None or not 10_000 <= price <= 40_000 or rooms is None or phone is None:
+        if price is None or not 18_000 <= price <= 40_000 or rooms is None or phone is None:
             continue
         photo_urls: list[str] = []
         for photo in wrapper.select(".tgme_widget_message_photo_wrap[style]"):
@@ -317,7 +322,7 @@ async def fetch_telegram_apartments(
     timeout: float = 20.0,
     limit: int = 120,
     pages_per_channel: int = 12,
-    max_age_hours: int = 168,
+    max_age_hours: int = 48,
 ) -> list[LalafoAd]:
     """Fetch several recent public preview pages from each approved channel."""
 

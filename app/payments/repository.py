@@ -69,6 +69,67 @@ class ApartmentRepository:
                 or 0
             )
 
+    async def availability_candidates(
+        self, *, published_since: datetime, limit: int = 500
+    ) -> list[int]:
+        async with self.sessions() as session:
+            return list(
+                (
+                    await session.scalars(
+                        select(Apartment.id)
+                        .where(
+                            Apartment.active.is_(True),
+                            Apartment.telegram_message_id.is_not(None),
+                            Apartment.published_at.is_not(None),
+                            Apartment.published_at >= published_since,
+                        )
+                        .order_by(
+                            Apartment.availability_checked_at.asc().nullsfirst(),
+                            Apartment.published_at.desc(),
+                        )
+                        .limit(limit)
+                    )
+                ).all()
+            )
+
+    async def expire_published_before(
+        self, *, cutoff: datetime, checked_at: datetime
+    ) -> int:
+        async with self.sessions.begin() as session:
+            ids = list(
+                (
+                    await session.scalars(
+                        select(Apartment.id).where(
+                            Apartment.active.is_(True),
+                            Apartment.telegram_message_id.is_not(None),
+                            Apartment.published_at.is_not(None),
+                            Apartment.published_at < cutoff,
+                        )
+                    )
+                ).all()
+            )
+            if not ids:
+                return 0
+            result = await session.execute(
+                update(Apartment)
+                .where(Apartment.id.in_(ids))
+                .values(
+                    active=False,
+                    availability_status="unavailable",
+                    availability_checked_at=checked_at,
+                    availability_reason="listing_age_limit",
+                )
+            )
+            await session.execute(
+                update(ApartmentInventoryQueue)
+                .where(
+                    ApartmentInventoryQueue.apartment_id.in_(ids),
+                    ApartmentInventoryQueue.status.in_(("queued", "publishing")),
+                )
+                .values(status="skipped", last_error="listing_age_limit")
+            )
+            return int(result.rowcount or 0)
+
     async def get_by_telegram_message(
         self, *, chat_id: int, message_id: int
     ) -> Apartment | None:

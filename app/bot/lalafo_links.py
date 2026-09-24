@@ -196,8 +196,8 @@ async def _manual_callback_is_current(
 
 def _manual_preview(data: dict) -> str:
     title = "Студия" if data["rooms"] == "studio" else "1-комнатная квартира"
-    author = {"owner": "собственник", "realtor": "агент"}.get(
-        data["seller_type"], "неизвестно"
+    author = (
+        "собственник" if data["seller_type"] == "owner" else "возможно агент"
     )
     price = f"{data['price']:,}".replace(",", " ")
     return (
@@ -715,8 +715,8 @@ async def manual_card_price(
         price = int(digits) if digits.isdecimal() else 0
     except ValueError:
         price = 0
-    if not 10_000 <= price <= 40_000:
-        await message.answer("Укажите цену от 10 000 до 40 000 сом.")
+    if not 18_000 <= price <= 40_000:
+        await message.answer("Укажите цену от 18 000 до 40 000 сом.")
         return
     await state.update_data(price=price)
     await state.set_state(ManualCardPublish.waiting_for_author)

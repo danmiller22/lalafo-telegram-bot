@@ -5,9 +5,11 @@ from datetime import datetime, timedelta, timezone
 import logging
 import os
 
+from app.availability import AvailabilityService, MAX_LISTING_AGE_DAYS
 from app.config import get_settings
 from app.database import create_engine_and_session, init_db
 from app.inventory import InventoryRepository, MIN_HEALTHY_PERIOD_QUEUE
+from app.payments.repository import ApartmentRepository
 from scripts.publish_inventory import run as publish_one_due
 from scripts.scrape_publish import run as discover
 
@@ -47,9 +49,38 @@ async def run(*, force_discovery: bool | None = None) -> int:
     now = datetime.now(timezone.utc)
     code_version = (os.getenv("GITHUB_SHA") or "").strip()
     if await inventory.reset_publication_history_for_code(code_version):
+        force = True
         logger.info(
             "Publication history reset for code version %s; old Telegram messages were untouched",
             code_version[:12],
+        )
+    if await inventory.claim_availability_sweep(now=now, interval_hours=12):
+        apartments = ApartmentRepository(sessions)
+        cutoff = now - timedelta(days=MAX_LISTING_AGE_DAYS)
+        expired = await apartments.expire_published_before(
+            cutoff=cutoff, checked_at=now
+        )
+        apartment_ids = await apartments.availability_candidates(
+            published_since=cutoff
+        )
+        availability = AvailabilityService(apartments, settings)
+        semaphore = asyncio.Semaphore(8)
+
+        async def check_one(apartment_id: int):
+            async with semaphore:
+                return await availability.check(apartment_id, force=True)
+
+        results = await asyncio.gather(
+            *(check_one(apartment_id) for apartment_id in apartment_ids),
+            return_exceptions=True,
+        )
+        checked = sum(not isinstance(result, Exception) for result in results)
+        failed = len(results) - checked
+        logger.info(
+            "Availability sweep completed checked=%d expired=%d failed=%d",
+            checked,
+            expired,
+            failed,
         )
 
     # Schedule existing stock first, but never let that suppress a requested

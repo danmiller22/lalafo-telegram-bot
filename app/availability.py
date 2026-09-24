@@ -17,6 +17,8 @@ from app.payments.repository import ApartmentRepository
 _RENTED = re.compile(r"(?iu)\b(?:сдан[аоы]?|снят[аоы]?|неактуальн\w*)\b")
 _TAGS = re.compile(r"<[^>]+>")
 _BISHKEK = ZoneInfo("Asia/Bishkek")
+AVAILABILITY_CACHE_HOURS = 12
+MAX_LISTING_AGE_DAYS = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,12 +33,12 @@ class AvailabilityResult:
         stamp = self.checked_at.astimezone(_BISHKEK).strftime("%d.%m.%Y %H:%M")
         if self.status == "active":
             return (
-                f"Объявление доступно на источнике. Проверено {stamp}. "
+                f"Объявление доступно на источнике. Последняя проверка: {stamp}. "
                 "Окончательную доступность квартиры подтвердите по телефону."
             )
         if self.status == "unavailable":
-            return f"Квартира больше недоступна. Проверено {stamp}."
-        return f"Не удалось проверить, попробуйте позже. Проверено {stamp}."
+            return f"Квартира больше недоступна. Последняя проверка: {stamp}."
+        return f"Не удалось проверить, попробуйте позже. Последняя проверка: {stamp}."
 
 
 class AvailabilityService:
@@ -49,10 +51,23 @@ class AvailabilityService:
         if apartment is None:
             return AvailabilityResult("unavailable", "missing", datetime.now(timezone.utc))
         now = datetime.now(timezone.utc)
+        published_at = apartment.published_at
+        if published_at is not None and published_at.tzinfo is None:
+            published_at = published_at.replace(tzinfo=timezone.utc)
+        if published_at and now - published_at >= timedelta(days=MAX_LISTING_AGE_DAYS):
+            await self.apartments.set_availability(
+                apartment_id,
+                status="unavailable",
+                checked_at=now,
+                reason="listing_age_limit",
+            )
+            return AvailabilityResult("unavailable", "listing_age_limit", now)
         checked = apartment.availability_checked_at
         if checked is not None and checked.tzinfo is None:
             checked = checked.replace(tzinfo=timezone.utc)
-        if not force and checked and now - checked < timedelta(minutes=5):
+        if not force and checked and now - checked < timedelta(
+            hours=AVAILABILITY_CACHE_HOURS
+        ):
             return AvailabilityResult(
                 apartment.availability_status, apartment.availability_reason or "cached", checked, True
             )

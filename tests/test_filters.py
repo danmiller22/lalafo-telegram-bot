@@ -82,7 +82,7 @@ def test_allowed_and_format_has_no_source_or_description():
     assert ad.phone not in text
 
 
-def test_agency_listing_is_allowed_and_marked_as_agent():
+def test_agency_listing_is_allowed_and_marked_as_possible_agent():
     ad = make_ad(owner_listing=False, rooms="1")
     assert is_allowed(
         ad, city="Бишкек", max_price=40000, rooms=SOURCE_ALLOWED_ROOMS
@@ -90,7 +90,7 @@ def test_agency_listing_is_allowed_and_marked_as_agent():
     text = format_apartment(ad)
     assert "риелтор" not in text.casefold()
     assert f"👤 Автор: {author_label(ad)}" in text
-    assert author_label(ad) == "агент"
+    assert author_label(ad) == "возможно агент"
     assert "Статус:" not in text
 
 
@@ -103,7 +103,7 @@ def test_channel_source_uses_single_author_label():
     text = format_apartment(ad)
     assert text.count("👤 Автор:") == 1
     assert f"👤 Автор: {author_label(ad)}" in text
-    assert author_label(ad) == "неизвестно"
+    assert author_label(ad) == "возможно агент"
     assert "Статус:" not in text
     assert "@owners_bishkek" not in text
 
@@ -123,7 +123,7 @@ def test_expanded_source_keeps_reposts_strictly_limited():
     assert SOURCE_MAX_POSTS_PER_RUN == 18
     assert SOURCE_PUBLISH_SPACING_SECONDS == 150
     assert SOURCE_MAX_SEARCH_PAGES == 12
-    assert SOURCE_MIN_PRICE == 10_000
+    assert SOURCE_MIN_PRICE == 18_000
     assert SOURCE_MAX_PRICE == 40_000
     assert SOURCE_MIN_PHOTOS == 1
     assert MAX_REPOSTS_PER_RUN == 0
@@ -133,7 +133,7 @@ def test_expanded_source_keeps_reposts_strictly_limited():
     assert TWO_BEDROOM_DAILY_LIMIT == 20
     assert TWO_BEDROOM_MAX_PER_RUN == 2
     assert settings.rooms == "studio,1"
-    assert settings.min_price == 10_000
+    assert settings.min_price == 18_000
     assert settings.max_price == 40_000
     assert settings.max_new_posts_per_run == 18
     assert settings.max_search_pages == 36
@@ -147,11 +147,11 @@ def test_source_urls_follow_the_operator_filters():
     assert "/semeynym/param-bez-detey/studentam/" in DEFAULT_SEARCH_URL
     assert "/bez-podseleniya/mozhno-s-zhivotnymi" in DEFAULT_SEARCH_URL
     assert "bez-zhivotnyh" not in DEFAULT_SEARCH_URL
-    assert "price[from]=10000&price[to]=40000" in DEFAULT_SEARCH_URL
+    assert "price[from]=18000&price[to]=40000" in DEFAULT_SEARCH_URL
     assert len(ADDITIONAL_SEARCH_URLS) == 1
     assert "/studio/1-bedroom/real-estate-agency" in ADDITIONAL_SEARCH_URLS[0]
     assert all("bez-podseleniya" not in url for url in ADDITIONAL_SEARCH_URLS)
-    assert all("price[from]=10000&price[to]=40000" in url for url in ADDITIONAL_SEARCH_URLS)
+    assert all("price[from]=18000&price[to]=40000" in url for url in ADDITIONAL_SEARCH_URLS)
 
 
 def test_owner_sources_receive_most_of_discovery_pool():
@@ -173,15 +173,20 @@ def test_inventory_sources_reserve_smaller_realtor_fallback():
     assert targets == [110, 220, 230, 240]
 
 
-def test_supported_room_types_have_ten_thousand_price_floor():
-    assert minimum_price_for_rooms("studio") == 10_000
-    assert minimum_price_for_rooms("1") == 10_000
+def test_supported_room_types_have_eighteen_thousand_price_floor():
+    assert minimum_price_for_rooms("studio") == 18_000
+    assert minimum_price_for_rooms("1") == 18_000
     assert minimum_price_for_rooms("2") == 20_000
 
 
 @pytest.mark.parametrize("term", ["контейнер", "времянка", "вагончик", "барак"])
 def test_substandard_housing_terms_are_rejected(term):
     assert is_substandard_structure(make_ad(source_description=f"Сдаётся {term}"))
+
+
+def test_people_looking_for_housing_are_rejected_in_russian_and_kyrgyz():
+    ad = make_ad(source_title="КВАРТИРА КЕРЕК КВАРТИРА НУЖНА ДОО 25 000")
+    assert is_substandard_structure(ad)
 
 
 def test_single_floor_temporary_style_unit_is_rejected():
@@ -290,14 +295,14 @@ def test_curated_rotation_never_reposts_published_apartments():
     assert [apartment.lalafo_id for apartment in eligible] == [103]
 
 
-def test_publish_batch_marks_realtors_as_agents():
+def test_publish_batch_marks_realtors_as_possible_agents():
     realtor = make_ad(lalafo_id=1, district="ЦУМ", owner_listing=False)
     owner = make_ad(lalafo_id=2, district="Тунгуч", owner_listing=True)
 
     selected = select_publish_batch([realtor, owner], limit=2)
     assert {ad.lalafo_id for ad in selected} == {1, 2}
     assert "риелтор" not in format_apartment(realtor).casefold()
-    assert author_label(realtor) == "агент"
+    assert author_label(realtor) == "возможно агент"
 
 
 def test_unknown_author_label_is_stable_and_exact():
@@ -306,7 +311,7 @@ def test_unknown_author_label_is_stable_and_exact():
         for index in range(40)
     ]
     labels = {author_label(ad) for ad in ads}
-    assert labels == {"неизвестно"}
+    assert labels == {"возможно агент"}
     assert all(author_label(ad) == author_label(ad) for ad in ads)
 
 

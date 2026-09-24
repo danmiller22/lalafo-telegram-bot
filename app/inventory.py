@@ -27,10 +27,10 @@ MIN_PUBLICATIONS_PER_DAY = 50
 MAX_PUBLICATIONS_PER_DAY = 60
 # The daily target is chosen once per Bishkek date, then split across the two
 # discovery periods so retries cannot increase the day's publication volume.
-# Publication is restricted to listings whose source explicitly identifies an owner.
+# Seller type does not restrict publication; these values remain for compatibility.
 MIN_NON_OWNERS_PER_DAY = 0
-MAX_NON_OWNERS_PER_DAY = 2
-TARGET_NON_OWNERS_PER_PERIOD = 1
+MAX_NON_OWNERS_PER_DAY = MAX_PUBLICATIONS_PER_DAY
+TARGET_NON_OWNERS_PER_PERIOD = 0
 MAX_REPOSTS_PER_PERIOD = 0
 MAX_FRESH_STOCK_LOAD = 600
 # A blocked source must not leave the channel empty for half an hour.  The
@@ -143,7 +143,7 @@ def _candidate_key(item: Apartment, *, central: bool) -> tuple[object, ...]:
     last_seen = as_utc(item.last_seen_at or item.updated_at)
     hot = last_seen >= datetime.now(timezone.utc) - timedelta(hours=24)
     return (
-        0 if _seller_type(item) == "owner" else 1,
+        0,
         not favorable,
         not hot,
         item.price,
@@ -400,12 +400,7 @@ def plan_period(
             zip(selected, schedule), start=1
         )
     ]
-    return _limit_non_owners(
-        planned,
-        apartments,
-        target=non_owner_target,
-        maximum=non_owner_limit,
-    )
+    return planned
 
 
 class InventoryRepository:
@@ -438,6 +433,25 @@ class InventoryRepository:
                 session.add(LalafoAutoReplyMeta(key=key, value=version))
             else:
                 marker.value = version
+        return True
+
+    async def claim_availability_sweep(
+        self, *, now: datetime, interval_hours: int = 12
+    ) -> bool:
+        key = "apartment_availability_last_sweep"
+        current = as_utc(now)
+        async with self.sessions.begin() as session:
+            marker = await session.get(LalafoAutoReplyMeta, key)
+            if marker is not None:
+                try:
+                    last_run = as_utc(datetime.fromisoformat(marker.value))
+                except ValueError:
+                    last_run = current - timedelta(days=1)
+                if current - last_run < timedelta(hours=max(1, interval_hours)):
+                    return False
+                marker.value = current.isoformat()
+            else:
+                session.add(LalafoAutoReplyMeta(key=key, value=current.isoformat()))
         return True
 
     async def claim_discovery(self, *, now: datetime, force: bool = False) -> str | None:
@@ -560,34 +574,6 @@ class InventoryRepository:
                     ApartmentInventoryQueue.apartment_id.in_(invalid_room_ids)
                 )
             )
-            published_non_owners = int(
-                await session.scalar(
-                    select(func.count())
-                    .select_from(Apartment)
-                    .where(
-                        Apartment.publication_status == "published",
-                        Apartment.published_at >= day_start,
-                        Apartment.published_at < day_end,
-                        func.coalesce(Apartment.seller_type, "unknown") == "realtor",
-                    )
-                )
-                or 0
-            )
-            reserved_non_owners = int(
-                await session.scalar(
-                    select(func.count())
-                    .select_from(ApartmentInventoryQueue)
-                    .join(Apartment)
-                    .where(
-                        ApartmentInventoryQueue.scheduled_at >= day_start,
-                        ApartmentInventoryQueue.scheduled_at < day_end,
-                        ApartmentInventoryQueue.status.in_(("queued", "publishing")),
-                        func.coalesce(Apartment.seller_type, "unknown") == "realtor",
-                    )
-                )
-                or 0
-            )
-            already_non_owners = published_non_owners + reserved_non_owners
             published_today = int(
                 await session.scalar(
                     select(func.count())
@@ -640,21 +626,6 @@ class InventoryRepository:
                     )
                 ).all()
             )
-            remaining_non_owners = max(
-                0, MAX_NON_OWNERS_PER_DAY - already_non_owners
-            )
-            if period.astimezone(BISHKEK).hour == 0:
-                non_owner_target = min(
-                    TARGET_NON_OWNERS_PER_PERIOD, remaining_non_owners
-                )
-            else:
-                non_owner_target = min(
-                    remaining_non_owners,
-                    max(
-                        TARGET_NON_OWNERS_PER_PERIOD,
-                        MIN_NON_OWNERS_PER_DAY - already_non_owners,
-                    ),
-                )
             active_queue_ids = select(ApartmentInventoryQueue.apartment_id).where(
                 ApartmentInventoryQueue.status.in_(("queued", "publishing"))
             )
@@ -671,8 +642,9 @@ class InventoryRepository:
                             _supported_source_filter(),
                             Apartment.id.not_in(active_queue_ids),
                             Apartment.fingerprint.not_in(queued_fingerprints),
-                            Apartment.price.between(10_000, 40_000),
+                            Apartment.price.between(18_000, 40_000),
                             Apartment.rooms.in_(ALLOWED_ROOMS),
+                            Apartment.last_seen_at >= now - timedelta(days=2),
                         )
                         .order_by(
                             Apartment.discovery_priority.desc(),
@@ -699,8 +671,6 @@ class InventoryRepository:
             planned = plan_period(
                 fresh_stock,
                 period_start=period,
-                non_owner_target=non_owner_target,
-                non_owner_limit=remaining_non_owners,
                 target_count_override=target_override,
                 central_target_override=central_override,
                 rng=chooser,
