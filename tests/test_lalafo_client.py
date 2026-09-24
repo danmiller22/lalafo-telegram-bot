@@ -46,8 +46,8 @@ def test_primary_search_uses_owner_studio_one_bedroom_and_price_filters():
     assert [
         params[key] for key in params if key.startswith("parameters[2149]")
     ] == ["19057"]
-    assert params["price[from]"] == "20000"
-    assert params["price[to]"] == "40000"
+    assert params["price[from]"] == "10000"
+    assert params["price[to]"] == "50000"
 
 
 def test_client_sends_browser_context_headers():
@@ -63,12 +63,10 @@ def test_supplementary_search_uses_broad_owner_pool():
         assert set(
             params[key] for key in params if key.startswith("parameters[69]")
         ) == {"15496", "2773"}
-        assert [
-            params[key] for key in params if key.startswith("parameters[2149]")
-        ] == ["19057"]
+        assert [params[key] for key in params if key.startswith("parameters[2149]")] == ["42340"]
         assert not any(key.startswith("parameters[946]") for key in params)
-        assert params["price[from]"] == "20000"
-        assert params["price[to]"] == "40000"
+        assert params["price[from]"] == "10000"
+        assert params["price[to]"] == "50000"
 
 
 @pytest.mark.parametrize(

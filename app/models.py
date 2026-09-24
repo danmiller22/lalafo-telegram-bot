@@ -47,6 +47,7 @@ class Apartment(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     lalafo_id: Mapped[int] = mapped_column(BigInteger, unique=True, nullable=False, index=True)
     source_url: Mapped[str] = mapped_column(Text, nullable=False)
+    source_description: Mapped[str | None] = mapped_column(Text)
     phone: Mapped[str] = mapped_column(String(32), nullable=False)
     fingerprint: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     price: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -69,6 +70,11 @@ class Apartment(Base):
     source_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    availability_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="unknown"
+    )
+    availability_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    availability_reason: Mapped[str | None] = mapped_column(String(64))
     publication_status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="discovered"
     )
@@ -80,6 +86,17 @@ class Apartment(Base):
     )
 
     payments: Mapped[list["PaymentRequest"]] = relationship(back_populates="apartment")
+
+
+class TermsConsent(Base):
+    __tablename__ = "terms_consents"
+
+    telegram_user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    version: Mapped[str] = mapped_column(String(32), nullable=False)
+    accepted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    accepted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
 
 
 class ApartmentInventoryQueue(Base):

@@ -54,8 +54,10 @@ async def test_public_album_uses_fast_direct_telegram_urls() -> None:
     keyboard = bot.send_message.await_args.kwargs["reply_markup"]
     assert [button.text for row in keyboard.inline_keyboard for button in row] == [
         "Получить номер",
+        "🔄 Проверить актуальность",
         "Подать заявку на поиск квартиры",
         "🛟 Техподдержка",
+        "🔒 Политика конфиденциальности",
     ]
     media = bot.send_media_group.await_args.kwargs["media"]
     assert [item.media for item in media] == [
@@ -108,7 +110,7 @@ async def test_manual_telegram_file_ids_form_album_with_working_card_keyboard() 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("seller_type,owner_listing", [("unknown", False), ("realtor", False), ("owner", False)])
-async def test_unconfirmed_owner_is_rejected_before_sending(seller_type, owner_listing) -> None:
+async def test_all_author_types_are_published(seller_type, owner_listing) -> None:
     bot = SimpleNamespace(send_media_group=AsyncMock(), send_message=AsyncMock())
     publisher = TelegramPublisher(
         bot, chat_id=-1001, signer=TokenSigner("s" * 32),
@@ -116,11 +118,9 @@ async def test_unconfirmed_owner_is_rejected_before_sending(seller_type, owner_l
     )
     ad = make_ad().model_copy(update={"seller_type": seller_type, "owner_listing": owner_listing})
 
-    with pytest.raises(TelegramPublishError, match="confirmed owner"):
-        await publisher.publish(77, ad)
-
-    bot.send_media_group.assert_not_awaited()
-    bot.send_message.assert_not_awaited()
+    await publisher.publish(77, ad)
+    bot.send_media_group.assert_awaited_once()
+    bot.send_message.assert_awaited_once()
 
 
 @pytest.mark.asyncio

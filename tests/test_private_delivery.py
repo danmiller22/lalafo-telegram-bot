@@ -23,7 +23,8 @@ def test_private_contact_contains_full_card_and_phone():
     assert "1-комнатная квартира" in text
     assert "25 000 сом" in text
     assert "+996 555 123 456" in text
-    assert "доступен только вам" in text
+    assert "Оплата подтверждена" not in text
+    assert "доступен только вам" not in text
 
 
 def test_private_contact_uses_labeled_demo_location_when_district_is_missing():

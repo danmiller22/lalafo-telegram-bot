@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from app.lalafo.models import PHONE_SOURCE_VERSION, LalafoAd
-from app.models import Apartment, DailyFeaturedPublication, PaymentHistory, PaymentRequest
+from app.models import Apartment, ApartmentInventoryQueue, DailyFeaturedPublication, PaymentHistory, PaymentRequest
 from app.payment_plans import MONTH_PLAN, WEEK_PLAN, expires_at_for, plan_price
 from app.state import ad_fingerprint, same_listing
 from app.telegram.keyboards import APARTMENT_KEYBOARD_VERSION
@@ -426,6 +426,7 @@ class ApartmentRepository:
                 apartment = Apartment(
                     lalafo_id=ad.lalafo_id,
                     source_url=ad.source_url,
+                    source_description=ad.source_description,
                     phone=ad.phone,
                     phone_source_version=PHONE_SOURCE_VERSION,
                     fingerprint=fingerprint,
@@ -451,6 +452,7 @@ class ApartmentRepository:
                 session.add(apartment)
             else:
                 apartment.source_url = ad.source_url
+                apartment.source_description = ad.source_description
                 apartment.phone = ad.phone
                 apartment.phone_source_version = PHONE_SOURCE_VERSION
                 apartment.fingerprint = fingerprint
@@ -498,6 +500,30 @@ class ApartmentRepository:
             await session.execute(
                 update(Apartment).where(Apartment.id == apartment_id).values(active=False)
             )
+
+    async def set_availability(
+        self, apartment_id: int, *, status: str, checked_at: datetime, reason: str
+    ) -> Apartment | None:
+        async with self.sessions.begin() as session:
+            apartment = await session.get(Apartment, apartment_id)
+            if apartment is None:
+                return None
+            apartment.availability_status = status
+            apartment.availability_checked_at = checked_at
+            apartment.availability_reason = reason
+            if status == "unavailable":
+                apartment.active = False
+                await session.execute(
+                    update(ApartmentInventoryQueue)
+                    .where(
+                        ApartmentInventoryQueue.apartment_id == apartment_id,
+                        ApartmentInventoryQueue.status.in_(("queued", "claimed")),
+                    )
+                    .values(status="skipped", last_error="source_unavailable")
+                )
+            await session.flush()
+            await session.refresh(apartment)
+            return apartment
 
     async def published_count(self) -> int:
         async with self.sessions() as session:
@@ -594,7 +620,11 @@ class PaymentRepository:
     ) -> PaymentSubmission:
         async with self.sessions.begin() as session:
             apartment = await session.get(Apartment, apartment_id)
-            if apartment is None or not apartment.phone:
+            if (
+                apartment is None
+                or not apartment.phone
+                or apartment.availability_status == "unavailable"
+            ):
                 raise LookupError("Apartment is unavailable")
             reusable = await session.execute(
                 select(PaymentRequest)

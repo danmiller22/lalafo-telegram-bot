@@ -25,10 +25,11 @@ class PaymentService:
 
     async def contact_status(self, user_id: int, apartment_id: int) -> ContactResult:
         apartment = await self.apartments.get(apartment_id)
-        # Payment access follows the published card and does not re-check the
-        # source listing's current activity.  A stored verified phone is the
-        # only requirement, matching the customer flow used by comparable bots.
-        if apartment is None or not apartment.phone:
+        if (
+            apartment is None
+            or not apartment.phone
+            or apartment.availability_status == "unavailable"
+        ):
             return ContactResult("unavailable", apartment)
         weekly = await self.payments.active_weekly_access(user_id)
         if weekly is not None:

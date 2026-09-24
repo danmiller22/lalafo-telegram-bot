@@ -9,7 +9,7 @@ from app.lalafo.phone import display_phone
 from app.models import Apartment
 from app.telegram.formatting import format_apartment
 from app.telegram.formatting import format_public_apartment
-from app.telegram.keyboards import apartment_keyboard, private_contact_keyboard
+from app.telegram.keyboards import apartment_keyboard
 from app.security import TokenSigner
 
 logger = logging.getLogger(__name__)
@@ -17,16 +17,12 @@ TELEGRAM_ALBUM_LIMIT = 10
 
 
 def format_private_contact(apartment: Apartment) -> str:
-    return "\n".join(
-        [
-            "✅ Оплата подтверждена",
-            "",
-            format_apartment(apartment),
-            "",
-            f"📞 Контакт по объявлению: {display_phone(apartment.phone)}",
-            "🔒 Этот контакт доступен только вам.",
-        ]
-    )
+    parts = [format_apartment(apartment)]
+    description = getattr(apartment, "source_description", None)
+    if description:
+        parts.extend(("", description.strip()[:2500]))
+    parts.extend(("", f"📞 Контакт по объявлению: {display_phone(apartment.phone)}"))
+    return "\n".join(parts)
 
 
 async def send_private_contact(
@@ -38,7 +34,6 @@ async def send_private_contact(
     max_photos: int = 5,
 ) -> None:
     text = format_private_contact(apartment)
-    reply_markup = private_contact_keyboard(support_url=support_url)
     # The public card and the paid private copy must contain the same complete
     # photo set. ``max_photos`` remains in the signature for compatibility.
     photo_urls = list(dict.fromkeys(apartment.photo_urls))
@@ -48,7 +43,6 @@ async def send_private_contact(
                 user_id,
                 URLInputFile(photo_urls[0], timeout=25),
                 caption=text,
-                reply_markup=reply_markup,
             )
             return
         except Exception as exc:
@@ -77,7 +71,7 @@ async def send_private_contact(
                     "Could not deliver private apartment photo batch: %s",
                     type(exc).__name__,
                 )
-    await bot.send_message(user_id, text, reply_markup=reply_markup)
+    await bot.send_message(user_id, text)
 
 
 async def send_private_public_card(

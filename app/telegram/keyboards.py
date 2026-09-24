@@ -6,12 +6,19 @@ from app.security import TokenSigner
 from app.payment_plans import MONTH_PRICE, WEEK_PRICE
 
 
-APARTMENT_KEYBOARD_VERSION = 13
+APARTMENT_KEYBOARD_VERSION = 14
 MINI_APP_SHORT_NAME = "access"
 
 
 def _support_row(support_url: str) -> list[InlineKeyboardButton]:
     return [InlineKeyboardButton(text="🛟 Техподдержка", url=support_url)]
+
+
+def _support_and_privacy_row(support_url: str) -> list[InlineKeyboardButton]:
+    return [
+        InlineKeyboardButton(text="🛟 Техподдержка", url=support_url),
+        InlineKeyboardButton(text="🔒 Политика", url=support_url.split("?", 1)[0] + "?start=privacy"),
+    ]
 
 
 def apartment_keyboard(
@@ -32,6 +39,10 @@ def apartment_keyboard(
                     url=mini_app_url,
                 )
             ],
+            [InlineKeyboardButton(
+                text="🔄 Проверить актуальность",
+                callback_data=f"availability:{signer.sign_id('availability', apartment_id)}",
+            )],
             [
                 InlineKeyboardButton(
                     text="Подать заявку на поиск квартиры",
@@ -49,7 +60,21 @@ def apartment_keyboard(
             ]
         )
     rows.append(_support_row(support_url))
+    rows.append([InlineKeyboardButton(text="🔒 Политика конфиденциальности", url=f"{bot_url}?start=privacy")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def terms_keyboard(apartment_id: int, *, signer: TokenSigner, bot_username: str) -> InlineKeyboardMarkup:
+    bot_url = f"https://t.me/{bot_username.lstrip('@')}"
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="✅ Я ознакомлен(а) с условиями и согласен(на) со всеми пунктами",
+            callback_data=f"terms:accept:{signer.sign_id('terms', apartment_id)}",
+        )],
+        [InlineKeyboardButton(text="🔄 Проверить актуальность", callback_data=f"availability:{signer.sign_id('availability', apartment_id)}")],
+        [InlineKeyboardButton(text="🔒 Политика конфиденциальности", url=f"{bot_url}?start=privacy")],
+        [InlineKeyboardButton(text="🛟 Техподдержка", url=f"{bot_url}?start=support")],
+    ])
 
 
 def payment_keyboard(
@@ -76,7 +101,7 @@ def payment_keyboard(
                     callback_data=f"view:{signer.sign_id('view', apartment_id)}",
                 )
             ],
-            _support_row(support_url),
+            _support_and_privacy_row(support_url),
         ]
     )
 
@@ -107,7 +132,7 @@ def private_payment_keyboard(
                 )
             ]
         )
-    rows.append(_support_row(support_url))
+    rows.append(_support_and_privacy_row(support_url))
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

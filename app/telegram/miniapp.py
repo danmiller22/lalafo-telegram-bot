@@ -76,6 +76,7 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     .photos {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin: 0 0 14px; }}
     .photos img {{ width: 100%; height: 118px; object-fit: cover; border-radius: 11px; }}
     .details {{ white-space: pre-line; font-size: 16px; font-weight: 650; line-height: 1.55; margin: 4px 0 12px; }}
+    .terms {{ white-space: pre-line; line-height: 1.45; font-size: 14px; }}
     button, .button {{ width: 100%; border: 0; border-radius: 14px; padding: 14px 16px; margin-top: 9px; font: inherit; font-weight: 750; text-align: center; cursor: pointer; text-decoration: none; display: block; }}
     .primary {{ background: var(--tg-theme-button-color, #079b79); color: var(--tg-theme-button-text-color, white); }}
     .secondary {{ background: #12856a18; color: var(--tg-theme-link-color, #07866b); }}
@@ -90,6 +91,7 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     <h1 id="title">Получить доступ</h1>
     <div id="plans" class="plans">1 неделя доступа к номерам — {WEEK_PRICE} сом
 1 месяц доступа к номерам — {MONTH_PRICE} сом</div>
+    <div id="terms" class="terms hidden"></div>
     <div id="apartment" class="hidden">
       <div id="photos" class="photos"></div>
       <div id="details" class="details"></div>
@@ -101,6 +103,10 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     <button id="check" class="secondary hidden">Я оплатил(а)</button>
     <button id="checking" class="secondary hidden" disabled>⏳ Статус: оплата проверяется</button>
     <button id="refresh" class="secondary hidden">Обновить статус</button>
+    <button id="accept" class="primary hidden">✅ Я ознакомлен(а) с условиями и согласен(на) со всеми пунктами</button>
+    <button id="availability" class="secondary hidden">🔄 Проверить актуальность</button>
+    <a id="privacy" class="button secondary hidden">🔒 Политика конфиденциальности</a>
+    <a id="support" class="button secondary hidden">🛟 Техподдержка</a>
   </section>
   <div id="foot" class="foot">Номер виден только пользователю с подтверждённым доступом</div>
 </main>
@@ -148,18 +154,29 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
   function render(data) {{
     lastState = data.status;
     const approved = data.status === "approved";
+    const accepted = Boolean(data.terms_accepted);
     el("title").textContent = approved ? "Квартира" : "Получить доступ";
-    show("plans", !approved);
+    show("plans", !approved && accepted);
+    show("terms", !approved && !accepted);
     show("apartment", approved);
     show("foot", !approved);
     show("status", !approved);
     show("phone", approved);
-    const canPay = data.status !== "approved" && data.status !== "pending";
+    const canPay = accepted && data.status !== "approved" && data.status !== "pending";
     show("pay-week", canPay);
     show("pay-month", canPay && Boolean(data.monthly_available));
     show("refresh", !approved && data.status !== "unpaid");
     show("check", data.status === "awaiting_receipt");
     show("checking", data.status === "pending");
+    show("accept", !approved && !accepted);
+    show("availability", !approved);
+    show("privacy", !approved);
+    show("support", !approved);
+    if (!approved) {{
+      el("terms").textContent = data.terms_text || "";
+      el("privacy").href = data.privacy_url || "#";
+      el("support").href = data.support_url || "#";
+    }}
     if (approved) {{
       const apartment = data.apartment || {{}};
       const photos = el("photos");
@@ -174,9 +191,13 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
       show("photos", photos.childElementCount > 0);
       const price = Number(apartment.price || 0).toLocaleString("ru-RU");
       const deposit = apartment.deposit ? "\\n🔐 Депозит: " + Number(apartment.deposit).toLocaleString("ru-RU") + " сом" : "";
-      el("details").textContent = "🏠 " + (apartment.rooms || "—") + "-комнатная квартира\\n📍 " + (apartment.district || "—") + "\\n🏙 " + (apartment.city || "Бишкек") + "\\n💰 " + price + " сом" + deposit;
+      const room = apartment.rooms === "studio" ? "Студия" : (apartment.rooms || "—") + "-комнатная квартира";
+      el("details").textContent = "🏠 " + room + "\\n👤 Автор: " + (apartment.author || "неизвестно") + "\\n📍 " + (apartment.district || "—") + "\\n🏙 " + (apartment.city || "Бишкек") + "\\n💰 " + price + " сом" + deposit;
+      if (apartment.description) el("details").textContent += "\\n\\n" + apartment.description;
       el("phone").textContent = "📞 " + data.phone;
       el("phone").href = "tel:" + String(data.phone || "").replace(/\\s+/g, "");
+    }} else if (!accepted) {{
+      message("Ознакомьтесь с условиями перед выбором тарифа.");
     }} else if (data.status === "pending") {{
       message("⏳ Оплата проверяется. Квартира сохранена — номер появится здесь после подтверждения.");
     }} else if (data.status === "awaiting_receipt") {{
@@ -229,6 +250,18 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     finally {{ el("check").disabled = false; }}
   }};
   el("refresh").onclick = load;
+  el("accept").onclick = async () => {{
+    el("accept").disabled = true;
+    try {{ render(await api("/miniapp/api/consent", {{}})); }}
+    catch (error) {{ message(error.message); }}
+    finally {{ el("accept").disabled = false; }}
+  }};
+  el("availability").onclick = async () => {{
+    el("availability").disabled = true;
+    try {{ const data = await api("/miniapp/api/availability", {{}}); message(data.message); }}
+    catch (error) {{ message(error.message); }}
+    finally {{ el("availability").disabled = false; }}
+  }};
   load();
   setInterval(() => {{ if (lastState === "pending") load(); }}, 5000);
 }})();

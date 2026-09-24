@@ -22,6 +22,7 @@ def main_menu_keyboard(
                 InlineKeyboardButton(text="🛟 Техподдержка", callback_data="menu:support"),
                 InlineKeyboardButton(text="✅ Проверить бота", callback_data="menu:status"),
             ],
+            [InlineKeyboardButton(text="🔒 Политика конфиденциальности", callback_data="menu:privacy")],
         ]
     if include_admin:
         rows.insert(

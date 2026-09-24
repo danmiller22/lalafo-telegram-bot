@@ -24,8 +24,8 @@ MAX_PUBLICATIONS_PER_DAY = 60
 # discovery periods so retries cannot increase the day's publication volume.
 # Publication is restricted to listings whose source explicitly identifies an owner.
 MIN_NON_OWNERS_PER_DAY = 0
-MAX_NON_OWNERS_PER_DAY = 0
-TARGET_NON_OWNERS_PER_PERIOD = 0
+MAX_NON_OWNERS_PER_DAY = MAX_PUBLICATIONS_PER_DAY
+TARGET_NON_OWNERS_PER_PERIOD = MAX_PUBLICATIONS_PER_DAY
 MAX_REPOSTS_PER_PERIOD = 0
 MAX_FRESH_STOCK_LOAD = 600
 # A blocked source must not leave the channel empty for half an hour.  The
@@ -319,8 +319,6 @@ def plan_period(
         item
         for item in apartments
         if item.rooms in ALLOWED_ROOMS
-        and _seller_type(item) == "owner"
-        and item.owner_listing
         and is_supported_source(item)
     ]
     repeat_ids = set(repeat_apartment_ids or ()) if MAX_REPOSTS_PER_PERIOD else set()
@@ -397,12 +395,7 @@ def plan_period(
             zip(selected, schedule), start=1
         )
     ]
-    return _limit_non_owners(
-        planned,
-        apartments,
-        target=non_owner_target,
-        maximum=non_owner_limit,
-    )
+    return planned
 
 
 class InventoryRepository:
@@ -637,12 +630,10 @@ class InventoryRepository:
                         select(Apartment).where(
                             Apartment.active.is_(True),
                             Apartment.publication_status == "discovered",
-                            Apartment.seller_type == "owner",
-                            Apartment.owner_listing.is_(True),
                             _supported_source_filter(),
                             Apartment.id.not_in(active_queue_ids),
                             Apartment.fingerprint.not_in(queued_fingerprints),
-                            Apartment.price.between(20_000, 40_000),
+                            Apartment.price.between(10_000, 50_000),
                             Apartment.rooms.in_(ALLOWED_ROOMS),
                         )
                         .order_by(
@@ -769,18 +760,14 @@ class InventoryRepository:
                 )
                 .values(status="queued", claimed_at=None, last_error="stale_claim")
             )
-            unconfirmed_apartment_ids = select(Apartment.id).where(
-                (Apartment.seller_type != "owner")
-                | Apartment.owner_listing.is_not(True)
-                | ~_supported_source_filter()
-            )
+            unconfirmed_apartment_ids = select(Apartment.id).where(~_supported_source_filter())
             await session.execute(
                 update(ApartmentInventoryQueue)
                 .where(
                     ApartmentInventoryQueue.status == "queued",
                     ApartmentInventoryQueue.apartment_id.in_(unconfirmed_apartment_ids),
                 )
-                .values(status="skipped", last_error="not_confirmed_owner")
+                .values(status="skipped", last_error="unsupported_source")
             )
             published_today = int(
                 await session.scalar(
@@ -823,10 +810,7 @@ class InventoryRepository:
                 )
                 or 0
             )
-            non_owner_cap_reached = (
-                published_non_owners + publishing_non_owners
-                >= MAX_NON_OWNERS_PER_DAY
-            )
+            non_owner_cap_reached = False
             if non_owner_cap_reached:
                 excess_non_owners = (
                     select(ApartmentInventoryQueue.id)
@@ -863,8 +847,6 @@ class InventoryRepository:
                         ApartmentInventoryQueue.status == "queued",
                         ApartmentInventoryQueue.scheduled_at <= eligible_until,
                         Apartment.rooms.in_(ALLOWED_ROOMS),
-                        Apartment.seller_type == "owner",
-                        Apartment.owner_listing.is_(True),
                         _supported_source_filter(),
                     )
                     .order_by(

@@ -14,6 +14,7 @@ from app.bot.callbacks import (
     VIEW_PREFIX,
 )
 from app.config import Settings
+from app.availability import AvailabilityService
 from app.payments.repository import PaymentRepository
 from app.payment_plans import (
     MONTH_PLAN,
@@ -32,10 +33,12 @@ from app.telegram.keyboards import (
     payment_keyboard,
     private_payment_keyboard,
     status_keyboard,
+    terms_keyboard,
 )
 from app.telegram.private_delivery import send_private_contact
 from app.wanted.keyboards import main_menu_keyboard
 from app.wanted.handlers import begin_wanted_form
+from app.terms import PRIVACY_TEXT, TERMS_TEXT, TermsConsentRepository
 
 logger = logging.getLogger(__name__)
 router = Router(name="user")
@@ -76,6 +79,7 @@ async def start_handler(
     settings: Settings,
     bot: Bot,
     state: FSMContext,
+    terms_consents: TermsConsentRepository | None = None,
 ) -> None:
     payload = _start_payload(message)
     if payload == "want":
@@ -83,6 +87,10 @@ async def start_handler(
         return
     if payload == "support":
         await begin_support(message, state)
+        return
+    if payload == "privacy":
+        await state.clear()
+        await message.answer(PRIVACY_TEXT)
         return
     if not payload:
         # A plain /start is the most common customer action.  Send the menu
@@ -112,6 +120,20 @@ async def start_handler(
             return
         if result.status == "unavailable":
             await message.answer("Квартира больше недоступна.")
+            return
+        if (
+            result.status in {"unpaid", "awaiting_receipt", "rejected"}
+            and terms_consents is not None
+            and not await terms_consents.accepted(message.from_user.id)
+        ):
+            await message.answer(
+                TERMS_TEXT,
+                reply_markup=terms_keyboard(
+                    apartment_id,
+                    signer=signer,
+                    bot_username=settings.telegram_bot_username,
+                ),
+            )
             return
         apartment_text = format_apartment(result.apartment) if result.apartment else "Квартира"
         if result.status == "pending":
@@ -178,6 +200,7 @@ async def plan_handler(
     signer: TokenSigner,
     settings: Settings,
     bot: Bot,
+    terms_consents: TermsConsentRepository | None = None,
 ) -> None:
     parts = (callback.data or "").split(":", 2)
     if len(parts) != 3 or parts[1] not in {"w", "m"}:
@@ -194,6 +217,18 @@ async def plan_handler(
     apartment_id = signer.verify_id(purpose, parts[2])
     if apartment_id is None:
         await callback.answer("Недействительная кнопка.", show_alert=True)
+        return
+    if terms_consents is not None and not await terms_consents.accepted(callback.from_user.id):
+        await callback.answer("Сначала ознакомьтесь с условиями.", show_alert=True)
+        if callback.message:
+            await callback.message.edit_text(
+                TERMS_TEXT,
+                reply_markup=terms_keyboard(
+                    apartment_id,
+                    signer=signer,
+                    bot_username=settings.telegram_bot_username,
+                ),
+            )
         return
     access = await service.contact_status(callback.from_user.id, apartment_id)
     if access.status == "approved" and access.apartment:
@@ -312,6 +347,55 @@ async def receipt_prompt_handler(callback: CallbackQuery) -> None:
 @router.callback_query(F.data == "menu:status")
 async def status_button_handler(callback: CallbackQuery) -> None:
     await callback.answer("✅ Бот работает", show_alert=True)
+
+
+@router.callback_query(F.data == "menu:privacy")
+async def privacy_button_handler(callback: CallbackQuery) -> None:
+    await callback.answer()
+    if callback.message:
+        await callback.message.answer(PRIVACY_TEXT)
+
+
+@router.callback_query(F.data.startswith("terms:accept:"))
+async def terms_accept_handler(
+    callback: CallbackQuery,
+    signer: TokenSigner,
+    settings: Settings,
+    terms_consents: TermsConsentRepository,
+) -> None:
+    token = (callback.data or "").removeprefix("terms:accept:")
+    apartment_id = signer.verify_id("terms", token)
+    if apartment_id is None:
+        await callback.answer("Недействительная кнопка.", show_alert=True)
+        return
+    await terms_consents.accept(callback.from_user.id)
+    await callback.answer("Условия приняты.")
+    if callback.message:
+        await callback.message.edit_text(
+            "Выберите тариф доступа к контактам объявлений.",
+            reply_markup=private_payment_keyboard(
+                apartment_id,
+                signer=signer,
+                payment_url=settings.finik_payment_url,
+                support_url=settings.support_bot_url,
+                monthly_payment_url=settings.monthly_finik_payment_url,
+            ),
+        )
+
+
+@router.callback_query(F.data.startswith("availability:"))
+async def availability_handler(
+    callback: CallbackQuery,
+    signer: TokenSigner,
+    availability: AvailabilityService,
+) -> None:
+    token = (callback.data or "").removeprefix("availability:")
+    apartment_id = signer.verify_id("availability", token)
+    if apartment_id is None:
+        await callback.answer("Недействительная кнопка.", show_alert=True)
+        return
+    result = await availability.check(apartment_id)
+    await callback.answer(result.message, show_alert=True)
 
 
 @router.callback_query(F.data.startswith(CONTACT_PREFIX))

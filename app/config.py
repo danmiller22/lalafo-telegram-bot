@@ -82,7 +82,7 @@ DEFAULT_SEARCH_URL = (
     "dolgosrochnaya-arenda-kvartir/studio/1-bedroom/owner/"
     "semeynym/param-bez-detey/studentam/bez-podseleniya/"
     "mozhno-s-zhivotnymi"
-    "?price[from]=20000&price[to]=40000"
+    "?price[from]=10000&price[to]=50000"
 )
 
 TELEGRAM_SOURCE_CHANNELS: tuple[str, ...] = (
@@ -92,17 +92,19 @@ TELEGRAM_SOURCE_CHANNELS: tuple[str, ...] = (
     "https://t.me/s/apartbishkek",
     "https://t.me/s/kvartirabish",
     "https://t.me/s/wellcometoKGboard",
+    "https://t.me/s/Bishkek_kvartira312",
+    "https://t.me/s/rental_property_bishkek",
 )
 
 # These public channels expose complete photo albums, descriptions and phone
 # numbers in Telegram's web preview, so they can supplement Lalafo directly.
 TELEGRAM_APARTMENT_CHANNELS: tuple[str, ...] = TELEGRAM_SOURCE_CHANNELS
 
-# Broad owner searches cover all Bishkek districts.
+# Broad searches cover all Bishkek districts and all author types.
 ADDITIONAL_SEARCH_URLS: tuple[str, ...] = (
     "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
-    "dolgosrochnaya-arenda-kvartir/studio/1-bedroom/owner"
-    "?price[from]=20000&price[to]=40000",
+    "dolgosrochnaya-arenda-kvartir/studio/1-bedroom/real-estate-agency"
+    "?price[from]=10000&price[to]=50000",
 )
 
 _INVENTORY_BASE = (
@@ -112,14 +114,14 @@ _INVENTORY_BASE = (
 # Split owner results by price as well as location. This exposes older affordable
 # ads that can be buried behind the newest broad-search results.
 INVENTORY_SEARCH_URLS: tuple[str, ...] = (
-    f"{_INVENTORY_BASE}owner?price[from]=20000&price[to]=29999",
-    f"{_INVENTORY_BASE}owner?price[from]=30000&price[to]=40000",
-    f"{_INVENTORY_BASE}owner?price[from]=20000&price[to]=40000",
+    f"{_INVENTORY_BASE}owner?price[from]=10000&price[to]=29999",
+    f"{_INVENTORY_BASE}owner?price[from]=30000&price[to]=50000",
+    f"{_INVENTORY_BASE}real-estate-agency?price[from]=10000&price[to]=50000",
     # Lalafo authors do not always fill the offerer field. Broad searches keep
     # those fresh cards available; seller classification still happens from
     # the detail page before anything enters the Telegram queue.
-    f"{_INVENTORY_BASE}?price[from]=20000&price[to]=29999",
-    f"{_INVENTORY_BASE}?price[from]=30000&price[to]=40000",
+    f"{_INVENTORY_BASE}?price[from]=10000&price[to]=29999",
+    f"{_INVENTORY_BASE}?price[from]=30000&price[to]=50000",
 )
 
 APARTMENT_PUBLISH_INTERVAL_MINUTES = 90
@@ -139,6 +141,7 @@ class Settings(BaseSettings):
     lalafo_relay_secret: str = ""
     telegram_group_id: int = -1004389602150
     telegram_bot_username: str = "arenda312bot"
+    telegram_extra_channels: str = ""
     admin_user_id: int = 0
     admin_username: str = "maxkgz2"
     support_url: str = "https://t.me/maxkgz2"
@@ -187,8 +190,8 @@ class Settings(BaseSettings):
     apartment_publication_lease_seconds: int = 300
     apartment_publication_heartbeat_seconds: float = 60.0
     city: str = "Бишкек"
-    min_price: int = 20_000
-    max_price: int = 40_000
+    min_price: int = 10_000
+    max_price: int = 50_000
     rooms: str = "studio,1"
     max_new_posts_per_run: int = 18
     max_search_pages: int = 36
@@ -240,6 +243,13 @@ class Settings(BaseSettings):
         """Always keep support inside the customer bot, regardless of stale env URLs."""
         username = self.telegram_bot_username.lstrip("@")
         return f"https://t.me/{username}?start=support"
+
+    @property
+    def telegram_source_channels(self) -> tuple[str, ...]:
+        extra = tuple(
+            value.strip() for value in self.telegram_extra_channels.split(",") if value.strip()
+        )
+        return tuple(dict.fromkeys((*TELEGRAM_SOURCE_CHANNELS, *extra)))
 
     @property
     def allowed_rooms(self) -> tuple[str, ...]:

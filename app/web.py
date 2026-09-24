@@ -32,7 +32,8 @@ from app.finik import (
     verify_request,
 )
 from app.security import TokenSigner
-from app.telegram.formatting import format_admin_card
+from app.telegram.formatting import author_label, format_admin_card
+from app.terms import TERMS_TEXT
 from app.telegram.keyboards import admin_keyboard, payment_keyboard
 from app.telegram.publisher import TelegramPublisher
 from app.telegram.miniapp import mini_app_html, verify_telegram_init_data
@@ -956,10 +957,6 @@ async def relay_lalafo_publish(
     if runtime is None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Bot is starting")
     ad = payload.ad.model_copy(update={"district": payload.district or payload.ad.district})
-    from app.telegram.formatting import is_confirmed_owner
-
-    if not is_confirmed_owner(ad):
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Owner is not confirmed")
     apartments = runtime.workflow_data["apartments"]
     signer = runtime.workflow_data["signer"]
     apartment = await apartments.upsert_discovered(ad, discovery_priority=True)
@@ -1006,11 +1003,7 @@ async def relay_lalafo_ingest(
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Bot is starting")
     apartments = runtime.workflow_data["apartments"]
     stored = 0
-    from app.telegram.formatting import is_confirmed_owner
-
     for ad in payload.ads[:240]:
-        if not is_confirmed_owner(ad):
-            continue
         await apartments.upsert_discovered(ad)
         stored += 1
     # The residential collector is now a discovery source, not a publisher.
@@ -1154,6 +1147,8 @@ def _miniapp_result_payload(result) -> dict[str, Any]:
             "city": apartment.city,
             "price": apartment.price,
             "deposit": apartment.deposit,
+            "author": author_label(apartment),
+            "description": getattr(apartment, "source_description", None) or "",
             "photo_urls": [
                 url
                 for url in (apartment.photo_urls or [])[:4]
@@ -1194,13 +1189,48 @@ async def miniapp_session(payload: MiniAppRequest) -> dict[str, Any]:
         )
     response = _miniapp_result_payload(result)
     response["monthly_available"] = bool(settings.monthly_finik_payment_url)
+    consent_repository = runtime.workflow_data.get("terms_consents")
+    response["terms_accepted"] = (
+        await consent_repository.accepted(user.id) if consent_repository is not None else True
+    )
+    response["terms_text"] = TERMS_TEXT
+    bot_url = f"https://t.me/{settings.telegram_bot_username.lstrip('@')}"
+    response["privacy_url"] = f"{bot_url}?start=privacy"
+    response["support_url"] = f"{bot_url}?start=support"
     return response
+
+
+@app.post("/miniapp/api/consent", include_in_schema=False)
+async def miniapp_consent(payload: MiniAppRequest) -> dict[str, Any]:
+    settings, runtime, user, apartment_id = _miniapp_context(payload)
+    await runtime.workflow_data["terms_consents"].accept(user.id)
+    result = await runtime.workflow_data["service"].contact_status(user.id, apartment_id)
+    response = _miniapp_result_payload(result)
+    response["monthly_available"] = bool(settings.monthly_finik_payment_url)
+    response["terms_accepted"] = True
+    response["terms_text"] = TERMS_TEXT
+    bot_url = f"https://t.me/{settings.telegram_bot_username.lstrip('@')}"
+    response["privacy_url"] = f"{bot_url}?start=privacy"
+    response["support_url"] = f"{bot_url}?start=support"
+    return response
+
+
+@app.post("/miniapp/api/availability", include_in_schema=False)
+async def miniapp_availability(payload: MiniAppRequest) -> dict[str, Any]:
+    _, runtime, _, apartment_id = _miniapp_context(payload)
+    result = await runtime.workflow_data["availability"].check(apartment_id)
+    return {"status": result.status, "checked_at": result.checked_at.isoformat(), "message": result.message}
 
 
 @app.post("/miniapp/api/start", include_in_schema=False)
 async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
     settings, runtime, user, apartment_id = _miniapp_context(payload)
     service = runtime.workflow_data["service"]
+    if not await runtime.workflow_data["terms_consents"].accepted(user.id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Сначала ознакомьтесь с условиями и подтвердите согласие.",
+        )
     result = await service.contact_status(user.id, apartment_id)
     plan = payload.plan if payload.plan in {WEEK_PLAN, MONTH_PLAN} else WEEK_PLAN
     fallback_payment_url = _finik_payment_url(settings, plan)

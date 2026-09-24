@@ -83,8 +83,9 @@ SHARED_HOUSING_TERMS = (
     "койко-мест",
     "общежит",
     "хостел",
+    "подселение",
 )
-REALTOR_TERMS = ("риелтор", "риэлтор", "агентство", "комиссия")
+REALTOR_TERMS = ("риелтор", "риэлтор", "агент", "агентство", "комиссия")
 OFFER_TERMS = (
     "сдаётся",
     "сдается",
@@ -256,6 +257,8 @@ def parse_telegram_apartments(
             continue
         if any(term in normalized for term in SHARED_HOUSING_TERMS):
             continue
+        if any(term in normalized for term in ("продам", "продается", "продаётся", "посуточно", "на сутки", "за сутки")):
+            continue
         if re.search(r"(?:сда[её]тся|сдаю)\s+(?:отдельная\s+)?комната\b", text, re.I):
             continue
         if any(term in normalized for term in ("частный дом", "сдается дом", "сдаётся дом", "пол дома")):
@@ -264,7 +267,7 @@ def parse_telegram_apartments(
         price = _telegram_price(text)
         rooms = _telegram_rooms(text)
         phone = _telegram_phone(text)
-        if price is None or not 20_000 <= price <= 40_000 or rooms is None or phone is None:
+        if price is None or not 10_000 <= price <= 50_000 or rooms is None or phone is None:
             continue
         photo_urls: list[str] = []
         for photo in wrapper.select(".tgme_widget_message_photo_wrap[style]"):

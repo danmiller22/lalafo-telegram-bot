@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-
 from app.lalafo.models import LalafoAd
 from app.models import Apartment, PaymentRequest
 from app.payment_plans import plan_label, plan_price
@@ -20,10 +18,8 @@ def room_title(rooms: str) -> str:
 
 
 def unknown_author_label(*, phone: str, price: int, district: str | None, rooms: str) -> str:
-    """Choose a stable, evenly split label for an unverified author."""
-    identity = "\x1f".join((phone, str(price), district or "", rooms))
-    variant = hashlib.blake2b(identity.encode("utf-8"), digest_size=1).digest()[0] & 1
-    return ("неизвестно", "возможно собственник")[variant]
+    """Backward-compatible helper for callers that still pass listing fields."""
+    return "неизвестно"
 
 
 def is_confirmed_owner(ad: LalafoAd | Apartment) -> bool:
@@ -45,14 +41,12 @@ def is_supported_source(ad: LalafoAd | Apartment) -> bool:
 
 def author_label(ad: LalafoAd | Apartment) -> str:
     """Keep the displayed author label stable across previews and reposts."""
-    if is_confirmed_owner(ad):
+    seller_type = getattr(ad, "seller_type", "unknown")
+    if seller_type == "owner":
         return "собственник"
-    return unknown_author_label(
-        phone=ad.phone,
-        price=ad.price,
-        district=ad.district,
-        rooms=ad.rooms,
-    )
+    if seller_type == "realtor":
+        return "агент"
+    return "неизвестно"
 
 
 def seller_status(ad: LalafoAd | Apartment) -> str:

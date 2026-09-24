@@ -238,14 +238,14 @@ async def test_manual_form_can_use_buttons_for_every_choice():
 
 
 @pytest.mark.asyncio
-async def test_manual_card_rejects_unconfirmed_author():
+async def test_manual_card_accepts_unknown_author():
     state = FakeState()
     settings = Settings(admin_user_id=777)
     reply = await fill_card(state, settings, author="неизвестно")
 
-    assert state.state == lalafo_links.ManualCardPublish.waiting_for_author
-    assert "только объявления собственников" in reply.answer.await_args.args[0]
-    assert "seller_type" not in state.data
+    assert state.state == lalafo_links.ManualCardPublish.waiting_for_confirmation
+    assert state.data["seller_type"] == "unknown"
+    assert "Автор: неизвестно" in reply.answer.await_args.args[0]
 
 
 @pytest.mark.asyncio

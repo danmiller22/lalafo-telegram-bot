@@ -65,7 +65,9 @@ def test_approved_miniapp_payload_contains_apartment_card() -> None:
         "district": "ЦУМ",
         "city": "Бишкек",
         "price": 35_000,
-        "deposit": 5_000,
+            "deposit": 5_000,
+            "author": "неизвестно",
+            "description": "",
         "photo_urls": [
             "https://img.example/1.jpg",
             "https://img.example/2.jpg",
@@ -561,11 +563,12 @@ async def test_miniapp_page_is_public_but_session_requires_telegram_auth(
     assert "Telegram.WebApp" in page.text
     assert denied.status_code == 401
     assert accepted.status_code == 200
-    assert accepted.json() == {
-        "status": "unpaid",
-        "price": 499,
-        "monthly_available": False,
-    }
+    payload = accepted.json()
+    assert payload["status"] == "unpaid"
+    assert payload["price"] == 499
+    assert payload["monthly_available"] is False
+    assert payload["terms_accepted"] is True
+    assert "Условия и правила безопасности" in payload["terms_text"]
     service.contact_status.assert_awaited_once_with(778899, 42)
 
 

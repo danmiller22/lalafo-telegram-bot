@@ -82,9 +82,12 @@ def test_callback_data_is_short_and_contains_no_phone():
     assert "." not in payload
     assert signer.verify_start_id("miniapp-apartment", payload) == 123456789
     assert group.inline_keyboard[0][0].text == "Получить номер"
-    assert group.inline_keyboard[1][0].text == "Подать заявку на поиск квартиры"
-    assert group.inline_keyboard[1][0].url == "https://t.me/arenda312bot?start=want"
-    assert len(group.inline_keyboard) == 3
+    assert group.inline_keyboard[1][0].text == "🔄 Проверить актуальность"
+    assert group.inline_keyboard[2][0].text == "Подать заявку на поиск квартиры"
+    assert group.inline_keyboard[2][0].url == "https://t.me/arenda312bot?start=want"
+    assert len(group.inline_keyboard) == 5
+    assert group.inline_keyboard[3][0].text == "🛟 Техподдержка"
+    assert group.inline_keyboard[4][0].text == "🔒 Политика конфиденциальности"
     assert payment.inline_keyboard[0][0].url == "https://qr.finik.kg/payment"
     for keyboard in (
         group,
@@ -96,8 +99,16 @@ def test_callback_data_is_short_and_contains_no_phone():
         receipt,
         pending_receipt,
     ):
-        assert keyboard.inline_keyboard[-1][0].text == "🛟 Техподдержка"
-        assert keyboard.inline_keyboard[-1][0].url == support_url
+        assert any(
+            button.text == "🛟 Техподдержка"
+            for row in keyboard.inline_keyboard
+            for button in row
+        )
+        assert any(
+            button.url == support_url
+            for row in keyboard.inline_keyboard
+            for button in row
+        )
 
     assert [row[0].text for row in private_payment.inline_keyboard] == [
         "Базовая: 7 дней — 499 сом",

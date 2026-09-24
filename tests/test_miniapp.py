@@ -83,10 +83,12 @@ def test_mini_app_page_keeps_payment_and_receipt_in_one_window():
     assert "Я оплатил(а)" in html
     assert "Статус: оплата проверяется" in html
     assert "Оплата проверяется. Квартира сохранена" in html
-    assert 'data.status !== "approved" && data.status !== "pending"' in html
+    assert 'accepted && data.status !== "approved" && data.status !== "pending"' in html
     assert "Открываю Finik" not in html
     assert "Создаём защищённую ссылку" not in html
-    assert 'show("plans", !approved)' in html
+    assert 'show("plans", !approved && accepted)' in html
+    assert "/miniapp/api/consent" in html
+    assert "/miniapp/api/availability" in html
     assert 'show("status", !approved)' in html
     assert 'show("refresh", !approved' in html
     assert '"\n🔐 Депозит: "' not in html

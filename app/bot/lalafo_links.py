@@ -24,7 +24,6 @@ from app.lalafo.models import LalafoAd
 from app.lalafo.phone import normalize_kg_phone
 from app.payments.repository import ApartmentRepository
 from app.security import TokenSigner
-from app.telegram.formatting import unknown_author_label
 from app.telegram.publisher import TelegramPublishError, TelegramPublisher
 from scripts.publish_inventory import _valid
 from scripts.select_lalafo_proxy import find_working_proxies
@@ -162,6 +161,8 @@ def _manual_rooms_keyboard(nonce: str) -> InlineKeyboardMarkup:
 def _manual_author_keyboard(nonce: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Собственник", callback_data=f"manual:author:owner:{nonce}")],
+        [InlineKeyboardButton(text="Агент", callback_data=f"manual:author:realtor:{nonce}")],
+        [InlineKeyboardButton(text="Неизвестно", callback_data=f"manual:author:unknown:{nonce}")],
         [InlineKeyboardButton(text="❌ Отмена", callback_data=f"manual:cancel:{nonce}")],
     ])
 
@@ -195,15 +196,8 @@ async def _manual_callback_is_current(
 
 def _manual_preview(data: dict) -> str:
     title = "Студия" if data["rooms"] == "studio" else "1-комнатная квартира"
-    author = (
-        "собственник"
-        if data["seller_type"] == "owner"
-        else unknown_author_label(
-            phone=data["phone"],
-            price=data["price"],
-            district=data["district"],
-            rooms=data["rooms"],
-        )
+    author = {"owner": "собственник", "realtor": "агент"}.get(
+        data["seller_type"], "неизвестно"
     )
     price = f"{data['price']:,}".replace(",", " ")
     return (
@@ -721,8 +715,8 @@ async def manual_card_price(
         price = int(digits) if digits.isdecimal() else 0
     except ValueError:
         price = 0
-    if not 20_000 <= price <= 40_000:
-        await message.answer("Укажите цену от 20 000 до 40 000 сом.")
+    if not 10_000 <= price <= 50_000:
+        await message.answer("Укажите цену от 10 000 до 50 000 сом.")
         return
     await state.update_data(price=price)
     await state.set_state(ManualCardPublish.waiting_for_author)
@@ -742,11 +736,14 @@ async def manual_card_author(message: Message, state: FSMContext, settings: Sett
     seller_type = {
         "собственник": "owner",
         "владелец": "owner",
+        "агент": "realtor",
+        "риелтор": "realtor",
+        "неизвестно": "unknown",
     }.get(value)
     if seller_type is None:
         data = await state.get_data()
         await message.answer(
-            "Публикуем только объявления собственников. Выберите «Собственник».",
+            "Выберите: «Собственник», «Агент» или «Неизвестно».",
             reply_markup=_manual_author_keyboard(data["nonce"]),
         )
         return
@@ -761,7 +758,7 @@ async def manual_card_author_button(
     callback: CallbackQuery, state: FSMContext, settings: Settings
 ) -> None:
     parts = (callback.data or "").split(":")
-    if len(parts) != 4 or parts[2] != "owner":
+    if len(parts) != 4 or parts[2] not in {"owner", "realtor", "unknown"}:
         await callback.answer("Недопустимый автор.", show_alert=True)
         return
     seller_type, nonce = parts[2], parts[3]
@@ -805,10 +802,6 @@ async def publish_manual_card(
             or (callback.data or "").removeprefix("manual:publish:") != data.get("nonce")
         ):
             await callback.answer("Карточка уже обработана или отменена.", show_alert=True)
-            return
-        if data.get("seller_type") != "owner":
-            await state.clear()
-            await callback.answer("Публикуем только объявления собственников.", show_alert=True)
             return
         await state.set_state(ManualCardPublish.publishing)
     try:

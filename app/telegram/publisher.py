@@ -9,7 +9,7 @@ from aiogram.types import InputMediaPhoto, Message, URLInputFile
 
 from app.lalafo.models import LalafoAd
 from app.security import TokenSigner
-from app.telegram.formatting import format_public_apartment, is_confirmed_owner, is_supported_source
+from app.telegram.formatting import format_public_apartment, is_supported_source
 from app.telegram.keyboards import apartment_keyboard
 
 logger = logging.getLogger(__name__)
@@ -73,8 +73,6 @@ class TelegramPublisher:
         raise TelegramPublishError("Telegram retry loop ended unexpectedly")
 
     async def publish(self, apartment_id: int, ad: LalafoAd) -> Message:
-        if not is_confirmed_owner(ad):
-            raise TelegramPublishError("Author is not a confirmed owner")
         if not is_supported_source(ad):
             raise TelegramPublishError("Unsupported apartment source")
         urls = list(dict.fromkeys(ad.photo_urls))

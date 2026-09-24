@@ -10,6 +10,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.bot import admin, handlers, lalafo_links
+from app.availability import AvailabilityService
 from app.config import get_settings
 from app.database import create_engine_and_session, init_db
 from app.payments.repository import ApartmentRepository, PaymentRepository
@@ -17,6 +18,7 @@ from app.payments.service import PaymentService
 from app.security import TokenSigner
 from app.support import handlers as support_handlers
 from app.support.repository import SupportTicketRepository
+from app.terms import TermsConsentRepository
 from app.wanted import admin as wanted_admin
 from app.wanted import handlers as wanted_handlers
 from app.wanted.repository import WantedAdRepository
@@ -43,7 +45,9 @@ async def create_runtime(*, bot_token: str | None = None, lalafo_only: bool = Fa
     payments = PaymentRepository(sessions)
     wanted_ads = WantedAdRepository(sessions)
     support_tickets = SupportTicketRepository(sessions)
+    terms_consents = TermsConsentRepository(sessions)
     service = PaymentService(apartments, payments, admin_user_id=settings.admin_user_id)
+    availability = AvailabilityService(apartments, settings)
     bot = Bot(token=bot_token or settings.require_bot_token())
     dispatcher = Dispatcher(storage=MemoryStorage())
     if lalafo_only:
@@ -66,6 +70,8 @@ async def create_runtime(*, bot_token: str | None = None, lalafo_only: bool = Fa
         "service": service,
         "wanted_ads": wanted_ads,
         "support_tickets": support_tickets,
+        "terms_consents": terms_consents,
+        "availability": availability,
     }
     return BotRuntime(bot, dispatcher, engine, workflow_data)
 

@@ -17,8 +17,6 @@ from app.config import (
     DEFAULT_SEARCH_URL,
     INVENTORY_SEARCH_URLS,
     get_settings,
-    TELEGRAM_SOURCE_CHANNELS,
-    TELEGRAM_APARTMENT_CHANNELS,
 )
 from app.lalafo.client import LalafoClient, LalafoError, LalafoNotFound
 from app.lalafo.exclusions import is_permanently_excluded
@@ -87,10 +85,10 @@ CENTRAL_DISTRICT_TERMS = (
 )
 # The fallback search includes owners and real-estate agents; detail-level
 # checks still remove shared housing and all public cards omit offerer type.
-SOURCE_MIN_PRICE = 20_000
-SOURCE_MAX_PRICE = 40_000
+SOURCE_MIN_PRICE = 10_000
+SOURCE_MAX_PRICE = 50_000
 SOURCE_ALLOWED_ROOMS = ("studio", "1")
-SOURCE_MIN_PHOTOS = 2
+SOURCE_MIN_PHOTOS = 1
 SOURCE_MAX_POSTS_PER_RUN = 18
 SOURCE_PUBLISH_SPACING_SECONDS = 150
 SOURCE_MAX_SEARCH_PAGES = 12
@@ -826,8 +824,6 @@ async def run(*, discovery_only: bool = False) -> int:
             )
             if source.lalafo_id in duplicate_ids:
                 continue
-            if not merged_ad.owner_listing or merged_ad.seller_type != "owner":
-                continue
             candidates.append(merged_ad)
             candidate_ids.add(source.lalafo_id)
             curated_ids.add(source.lalafo_id)
@@ -895,8 +891,6 @@ async def run(*, discovery_only: bool = False) -> int:
             )
             if priority_id in duplicate_ids:
                 continue
-            if not priority_ad.owner_listing or priority_ad.seller_type != "owner":
-                continue
             candidates.append(priority_ad)
             candidate_ids.add(priority_id)
             curated_ids.add(priority_id)
@@ -918,7 +912,7 @@ async def run(*, discovery_only: bool = False) -> int:
                 )
 
         telegram_ads = await fetch_telegram_apartments(
-            TELEGRAM_APARTMENT_CHANNELS,
+            settings.telegram_source_channels,
             timeout=settings.http_timeout_seconds,
         )
         if telegram_ads:
@@ -935,8 +929,6 @@ async def run(*, discovery_only: bool = False) -> int:
                 else set()
             )
             for telegram_ad in telegram_ads:
-                if not telegram_ad.owner_listing or telegram_ad.seller_type != "owner":
-                    continue
                 if (
                     telegram_ad.lalafo_id in candidate_ids
                     or telegram_ad.lalafo_id in telegram_duplicate_ids
@@ -970,7 +962,7 @@ async def run(*, discovery_only: bool = False) -> int:
             )
 
         telegram_urls = await fetch_lalafo_urls(
-            TELEGRAM_SOURCE_CHANNELS, timeout=settings.http_timeout_seconds
+            settings.telegram_source_channels, timeout=settings.http_timeout_seconds
         )
         for telegram_url in telegram_urls:
             match = re.search(r"-id-(\d+)", telegram_url)
@@ -991,8 +983,6 @@ async def run(*, discovery_only: bool = False) -> int:
             if len(telegram_ad.photo_urls) < SOURCE_MIN_PHOTOS or not telegram_ad.no_subletting or is_substandard_structure(telegram_ad):
                 continue
             if apartments is not None and telegram_id in await apartments.duplicate_candidate_ids([telegram_ad]):
-                continue
-            if not telegram_ad.owner_listing or telegram_ad.seller_type != "owner":
                 continue
             candidates.append(telegram_ad)
             candidate_ids.add(telegram_id)
@@ -1124,8 +1114,6 @@ async def run(*, discovery_only: bool = False) -> int:
                     break
                 if ad is None:
                     continue
-                if not ad.owner_listing or ad.seller_type != "owner":
-                    continue
                 if is_permanently_excluded(ad.lalafo_id):
                     logger.info("Skipping permanently excluded ad id=%s", ad.lalafo_id)
                     continue
@@ -1211,12 +1199,7 @@ async def run(*, discovery_only: bool = False) -> int:
         assert apartments is not None
         from app.inventory import InventoryRepository
 
-        from app.telegram.formatting import is_confirmed_owner
-
-        inventory_candidates = [
-            ad for ad in deduplicate_candidates(candidates)
-            if is_confirmed_owner(ad)
-        ][:240]
+        inventory_candidates = deduplicate_candidates(candidates)[:240]
         if (
             settings.lalafo_relay_url.strip()
             and settings.lalafo_relay_secret.strip()

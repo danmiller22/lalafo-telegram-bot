@@ -14,7 +14,7 @@ from app.lalafo.parser import LalafoParseError, is_allowed
 from app.payments.repository import ApartmentRepository
 from app.security import TokenSigner
 from app.telegram.publisher import TelegramPublishError, TelegramPublisher
-from app.telegram.formatting import is_confirmed_owner, is_supported_source
+from app.telegram.formatting import is_supported_source
 from scripts.scrape_publish import (
     SOURCE_ALLOWED_ROOMS,
     SOURCE_MAX_PRICE,
@@ -29,8 +29,6 @@ logger = logging.getLogger(__name__)
 
 
 def _valid(ad, settings) -> tuple[bool, str]:
-    if not is_confirmed_owner(ad):
-        return False, "not_owner"
     if not is_supported_source(ad):
         return False, "unsupported_source"
     allowed, reason = is_allowed(
@@ -41,7 +39,7 @@ def _valid(ad, settings) -> tuple[bool, str]:
     )
     if not allowed:
         return False, reason
-    if ad.price < max(20_000, settings.min_price, minimum_price_for_rooms(ad.rooms)):
+    if ad.price < max(10_000, settings.min_price, minimum_price_for_rooms(ad.rooms)):
         return False, "min_price"
     if len(ad.photo_urls) < SOURCE_MIN_PHOTOS:
         return False, "too_few_photos"
