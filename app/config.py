@@ -98,23 +98,13 @@ TELEGRAM_SOURCE_CHANNELS: tuple[str, ...] = (
 # numbers in Telegram's web preview, so they can supplement Lalafo directly.
 TELEGRAM_APARTMENT_CHANNELS: tuple[str, ...] = TELEGRAM_SOURCE_CHANNELS
 
-# Keep separate fallback pools so realtor inventory always gets reserved search
-# capacity instead of being crowded out by the much larger owner result set.
+# Broad owner searches cover all Bishkek districts.
 ADDITIONAL_SEARCH_URLS: tuple[str, ...] = (
     "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
     "dolgosrochnaya-arenda-kvartir/studio/1-bedroom/owner"
     "?price[from]=20000&price[to]=40000",
-    "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
-    "dolgosrochnaya-arenda-kvartir/studio/1-bedroom/real-estate-agency"
-    "?price[from]=20000&price[to]=40000",
 )
 
-_CENTER_PATH = (
-    "1000-melochey/azija-moll/rajon-bgu/bishkek-park-trc/"
-    "dordoi-plaza-shopping-center/zolotoj-kvadrat/karavan-trc/"
-    "1000-melochej-karpinka/square-ala-too/filarmoniya/tsum/"
-    "vefa-shopping-center/bulvar-erkindik/vostok-5/trc-tehnopark"
-)
 _INVENTORY_BASE = (
     "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
     "dolgosrochnaya-arenda-kvartir/studio/1-bedroom/"
@@ -122,7 +112,6 @@ _INVENTORY_BASE = (
 # Split owner results by price as well as location. This exposes older affordable
 # ads that can be buried behind the newest broad-search results.
 INVENTORY_SEARCH_URLS: tuple[str, ...] = (
-    f"{_INVENTORY_BASE}{_CENTER_PATH}/owner?price[from]=20000&price[to]=40000",
     f"{_INVENTORY_BASE}owner?price[from]=20000&price[to]=29999",
     f"{_INVENTORY_BASE}owner?price[from]=30000&price[to]=40000",
     f"{_INVENTORY_BASE}owner?price[from]=20000&price[to]=40000",
@@ -131,8 +120,6 @@ INVENTORY_SEARCH_URLS: tuple[str, ...] = (
     # the detail page before anything enters the Telegram queue.
     f"{_INVENTORY_BASE}?price[from]=20000&price[to]=29999",
     f"{_INVENTORY_BASE}?price[from]=30000&price[to]=40000",
-    f"{_INVENTORY_BASE}{_CENTER_PATH}/real-estate-agency?price[from]=20000&price[to]=40000",
-    f"{_INVENTORY_BASE}real-estate-agency?price[from]=20000&price[to]=40000",
 )
 
 APARTMENT_PUBLISH_INTERVAL_MINUTES = 90

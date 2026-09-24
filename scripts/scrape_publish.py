@@ -26,7 +26,7 @@ from app.lalafo.models import LalafoAd, SearchAd
 from app.lalafo.parser import LalafoParseError, is_allowed
 from app.lalafo.phone import mask_phone
 from app.models import Apartment
-from app.state import PostedState, ad_fingerprint
+from app.state import PostedState, ad_fingerprint, normalized_district
 from app.telegram.formatting import format_apartment
 from app.telegram.sources import (
     fetch_lalafo_urls,
@@ -97,8 +97,8 @@ SOURCE_MAX_SEARCH_PAGES = 12
 # Published apartments are terminal: every cycle must use fresh inventory.
 SOURCE_REPOST_AFTER_HOURS = None
 MAX_REPOSTS_PER_RUN = 0
-CENTRAL_BATCH_SHARE = 0.90
-OWNER_OTHER_BATCH_SHARE = 0.10
+CENTRAL_BATCH_SHARE = 0.50
+OWNER_OTHER_BATCH_SHARE = 0.50
 MAX_CANDIDATE_POOL = 300
 # Keep a separate discovery reserve for agents so the daily 3-4 unknown-status
 # cards can still be selected, while the publication queue remains owner-led.
@@ -370,14 +370,6 @@ def is_substandard_structure(ad: LalafoAd) -> bool:
     if any(term in text for term in blocked_terms):
         return True
 
-    district = (ad.district or "").casefold().replace("ё", "е")
-    # Бишкек listings from residential settlements (ж/м) are commonly a room
-    # or an annex in a private yard presented as a one-room apartment.
-    if "жилмассив" in district or "жилой массив" in district or re.search(
-        r"(?:^|\s)ж\s*/?\s*м(?:\s|$)", district
-    ):
-        return True
-
     params = {
         str(item.get("name") or "").casefold(): str(item.get("value") or "").strip()
         for item in ad.source_params
@@ -528,22 +520,26 @@ def select_publish_batch(
     *,
     rank_key: Callable[[LalafoAd], tuple] = candidate_quality,
 ) -> list[LalafoAd]:
-    """Build a 50/50 batch from central and other-district listings."""
+    """Choose from central and other districts, rotating areas within each half."""
     if limit <= 0 or not candidates:
         return []
     candidates = deduplicate_candidates(candidates)
     if not candidates:
         return []
-    central = sorted(
-        (ad for ad in candidates if is_central_district(ad.district)),
-        key=rank_key,
-        reverse=True,
-    )
-    owner_other = sorted(
-        (ad for ad in candidates if not is_central_district(ad.district)),
-        key=rank_key,
-        reverse=True,
-    )
+    def diverse(items: list[LalafoAd]) -> list[LalafoAd]:
+        by_district: dict[str, list[LalafoAd]] = {}
+        for ad in sorted(items, key=rank_key, reverse=True):
+            by_district.setdefault(normalized_district(ad.district) or "unknown", []).append(ad)
+        result: list[LalafoAd] = []
+        while by_district:
+            for district in list(by_district):
+                result.append(by_district[district].pop(0))
+                if not by_district[district]:
+                    del by_district[district]
+        return result
+
+    central = diverse([ad for ad in candidates if is_central_district(ad.district)])
+    owner_other = diverse([ad for ad in candidates if not is_central_district(ad.district)])
     total = min(limit, len(candidates))
     central_target = min(len(central), math.ceil(total * CENTRAL_BATCH_SHARE))
     owner_target = min(len(owner_other), total - central_target)
@@ -571,7 +567,7 @@ def select_publish_batch(
             reverse=True,
         )
         selected.extend(remaining[: total - len(selected)])
-    return sorted(selected, key=rank_key, reverse=True)
+    return selected
 
 
 def select_publish_batch_with_reposts(

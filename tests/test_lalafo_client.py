@@ -56,16 +56,16 @@ def test_client_sends_browser_context_headers():
     assert client._headers["Referer"] == "https://lalafo.kg/"
 
 
-def test_supplementary_search_reserves_owner_and_realtor_pools():
-    assert len(ADDITIONAL_SEARCH_URLS) == 2
-    for url, expected_offerer in zip(ADDITIONAL_SEARCH_URLS, ("19057", "42340")):
+def test_supplementary_search_uses_broad_owner_pool():
+    assert len(ADDITIONAL_SEARCH_URLS) == 1
+    for url in ADDITIONAL_SEARCH_URLS:
         params = dict(LalafoClient._search_params(url, 1))
         assert set(
             params[key] for key in params if key.startswith("parameters[69]")
         ) == {"15496", "2773"}
         assert [
             params[key] for key in params if key.startswith("parameters[2149]")
-        ] == [expected_offerer]
+        ] == ["19057"]
         assert not any(key.startswith("parameters[946]") for key in params)
         assert params["price[from]"] == "20000"
         assert params["price[to]"] == "40000"

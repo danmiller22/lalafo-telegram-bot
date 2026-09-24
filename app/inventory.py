@@ -11,12 +11,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import Apartment, ApartmentDiscoveryRun, ApartmentInventoryQueue
+from app.state import normalized_district
 from app.telegram.formatting import is_supported_source
 
 
 BISHKEK = ZoneInfo("Asia/Bishkek")
 ALLOWED_ROOMS = frozenset({"studio", "1"})
-CENTRAL_DAILY_SHARE = 0.90
+CENTRAL_DAILY_SHARE = 0.50
 MIN_PUBLICATIONS_PER_DAY = 50
 MAX_PUBLICATIONS_PER_DAY = 60
 # The daily target is chosen once per Bishkek date, then split across the two
@@ -271,6 +272,7 @@ def _pick_for_window(
     pool: list[Apartment],
     count: int,
     room_counts: dict[str, int],
+    district_counts: dict[str, int],
     *,
     central: bool,
 ) -> list[Apartment]:
@@ -282,13 +284,21 @@ def _pick_for_window(
         def selection_key(item: Apartment) -> tuple[object, ...]:
             base = _candidate_key(item, central=central)
             room_rank = {"1": 0, "studio": 1}.get(item.rooms, 2)
-            return (*base[:2], room_counts.get(item.rooms, 0), room_rank, *base[2:])
+            district = normalized_district(item.district) or "unknown"
+            return (
+                district_counts.get(district, 0),
+                room_counts.get(item.rooms, 0),
+                room_rank,
+                *base,
+            )
 
         eligible.sort(key=selection_key)
         item = eligible[0]
         pool.remove(item)
         picked.append(item)
         room_counts[item.rooms] = room_counts.get(item.rooms, 0) + 1
+        district = normalized_district(item.district) or "unknown"
+        district_counts[district] = district_counts.get(district, 0) + 1
     return picked
 
 
@@ -339,10 +349,12 @@ def plan_period(
     if central_target_override is not None:
         central_target = max(0, min(target_count, central_target_override))
     room_counts: dict[str, int] = {}
+    district_counts: dict[str, int] = {}
     selected = _pick_for_window(
         central_pool,
         min(central_target, len(central_pool)),
         room_counts,
+        district_counts,
         central=True,
     )
     selected.extend(
@@ -350,6 +362,7 @@ def plan_period(
             other_pool,
             target_count - len(selected),
             room_counts,
+            district_counts,
             central=False,
         )
     )
@@ -359,6 +372,7 @@ def plan_period(
                 central_pool,
                 target_count - len(selected),
                 room_counts,
+                district_counts,
                 central=True,
             )
         )

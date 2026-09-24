@@ -146,9 +146,8 @@ def test_source_urls_follow_the_operator_filters():
     assert "/bez-podseleniya/mozhno-s-zhivotnymi" in DEFAULT_SEARCH_URL
     assert "bez-zhivotnyh" not in DEFAULT_SEARCH_URL
     assert "price[from]=20000&price[to]=40000" in DEFAULT_SEARCH_URL
-    assert len(ADDITIONAL_SEARCH_URLS) == 2
+    assert len(ADDITIONAL_SEARCH_URLS) == 1
     assert "/studio/1-bedroom/owner" in ADDITIONAL_SEARCH_URLS[0]
-    assert "/studio/1-bedroom/real-estate-agency" in ADDITIONAL_SEARCH_URLS[1]
     assert all("bez-podseleniya" not in url for url in ADDITIONAL_SEARCH_URLS)
     assert all("price[from]=20000&price[to]=40000" in url for url in ADDITIONAL_SEARCH_URLS)
 
@@ -194,8 +193,8 @@ def test_single_floor_temporary_style_unit_is_rejected():
 
 
 @pytest.mark.parametrize("district", ["Алтын-Ордо ж/м", "Ак-Ордо 3 ж/м", "Колмо жилмассив"])
-def test_residential_settlement_annexes_are_rejected(district):
-    assert is_substandard_structure(make_ad(district=district, price=20_000))
+def test_residential_settlement_apartments_are_not_rejected_by_district(district):
+    assert not is_substandard_structure(make_ad(district=district, price=20_000))
 
 
 def test_private_house_and_annex_descriptions_are_rejected():
@@ -420,7 +419,7 @@ def test_quality_puts_cheap_central_apartment_first():
     assert candidate_quality(central_bargain) > candidate_quality(cheap_outskirts)
 
 
-def test_publish_batch_targets_ninety_percent_central():
+def test_publish_batch_includes_other_districts_equally():
     preferred = [
         make_ad(lalafo_id=index, district="ЦУМ", phone=f"+996555000{index:03d}")
         for index in range(1, 81)
@@ -433,11 +432,11 @@ def test_publish_batch_targets_ninety_percent_central():
     selected = select_publish_batch(preferred + other, 60)
 
     assert len(selected) == 60
-    assert sum(is_central_district(ad.district) for ad in selected) == 54
-    assert sum(ad.owner_listing and not is_central_district(ad.district) for ad in selected) == 6
+    assert sum(is_central_district(ad.district) for ad in selected) == 30
+    assert sum(ad.owner_listing and not is_central_district(ad.district) for ad in selected) == 30
 
 
-def test_publish_batch_keeps_central_majority():
+def test_publish_batch_keeps_both_area_groups():
     central = [
         make_ad(lalafo_id=index, district="ЦУМ", phone=f"+996555100{index:03d}")
         for index in range(1, 31)
@@ -459,8 +458,22 @@ def test_publish_batch_keeps_central_majority():
     selected = select_publish_batch(central + preferred + other, 25)
 
     assert len(selected) == 25
-    assert sum(is_central_district(ad.district) for ad in selected) == 23
-    assert sum(ad.owner_listing and not is_central_district(ad.district) for ad in selected) == 2
+    assert sum(is_central_district(ad.district) for ad in selected) == 13
+    assert sum(ad.owner_listing and not is_central_district(ad.district) for ad in selected) == 12
+
+
+def test_publish_batch_rotates_districts_within_other_areas():
+    districts = ("Асанбай", "Джал", "Тунгуч")
+    candidates = [
+        make_ad(lalafo_id=100 + district_index * 10 + index,
+                district=district, phone=f"+996700{district_index}{index:05d}")
+        for district_index, district in enumerate(districts)
+        for index in range(5)
+    ]
+
+    selected = select_publish_batch(candidates, 6)
+
+    assert {ad.district for ad in selected} == set(districts)
 
 
 def test_owner_realtor_refill_does_not_duplicate_cards():

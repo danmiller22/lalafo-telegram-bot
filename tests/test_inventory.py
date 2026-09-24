@@ -59,7 +59,7 @@ def test_two_periods_plan_random_50_to_60_card_day():
     assert len(all_items) == daily_target
     assert sum(
         "золотой" in item.apartment.district.casefold() for item in all_items
-    ) == round(daily_target * 0.90)
+    ) == round(daily_target * 0.50)
     assert {item.apartment.rooms for item in all_items} == {"1", "studio"}
 
     first_local = [item.scheduled_at.astimezone(first_start.tzinfo) for item in first]
@@ -90,6 +90,20 @@ def test_two_periods_plan_random_50_to_60_card_day():
                 == PUBLICATION_SPACING_MINUTES * 60
                 for before, after in zip(batch, batch[1:])
             )
+
+
+def test_period_rotates_confirmed_owners_across_available_districts():
+    central = _apartments(40, central=True, start_id=1)
+    other = _apartments(60, central=False, start_id=100)
+    for index, item in enumerate(other):
+        item.district = ("Асанбай", "Джал", "Тунгуч")[index % 3]
+    period_start = datetime(2026, 9, 13, 0, tzinfo=timezone(timedelta(hours=6)))
+
+    planned = plan_period(central + other, period_start=period_start, rng=random.Random(4))
+
+    assert {item.apartment.district for item in planned} == {
+        "Золотой квадрат", "Асанбай", "Джал", "Тунгуч"
+    }
 
 
 def test_period_rejects_stock_without_confirmed_owners():
