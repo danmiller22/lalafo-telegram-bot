@@ -27,7 +27,7 @@ from scripts.scrape_publish import (
 
 
 logger = logging.getLogger(__name__)
-MAX_TERMINAL_SKIPS_PER_RUN = 10
+MAX_TERMINAL_SKIPS_PER_RUN = 100
 BISHKEK = ZoneInfo("Asia/Bishkek")
 
 
