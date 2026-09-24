@@ -45,6 +45,12 @@ async def run(*, force_discovery: bool | None = None) -> int:
     await init_db(engine)
     inventory = InventoryRepository(sessions)
     now = datetime.now(timezone.utc)
+    code_version = (os.getenv("GITHUB_SHA") or "").strip()
+    if await inventory.reset_publication_history_for_code(code_version):
+        logger.info(
+            "Publication history reset for code version %s; old Telegram messages were untouched",
+            code_version[:12],
+        )
 
     # Schedule existing stock first, but never let that suppress a requested
     # cloud collection.  The previous early return made a manual "collect now"

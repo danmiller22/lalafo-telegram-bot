@@ -461,3 +461,31 @@ async def test_thin_successful_discovery_is_rebuilt(repositories):
     )
 
     assert await inventory.claim_discovery(now=now) == key
+
+
+@pytest.mark.asyncio
+async def test_code_change_resets_dedupe_without_touching_old_message(repositories):
+    apartments, _, sessions = repositories
+    apartment = await apartments.upsert_discovered(make_ad(lalafo_id=88001))
+    await apartments.mark_published(apartment.id, chat_id=-1001, message_id=501)
+    async with sessions.begin() as session:
+        session.add(
+            ApartmentInventoryQueue(
+                apartment_id=apartment.id,
+                scheduled_at=datetime.now(timezone.utc),
+                window_key="old-code",
+                sequence=1,
+            )
+        )
+
+    inventory = InventoryRepository(sessions)
+    assert await inventory.reset_publication_history_for_code("commit-one") is True
+    refreshed = await apartments.get(apartment.id)
+    assert refreshed.publication_status == "discovered"
+    assert refreshed.telegram_chat_id == -1001
+    assert refreshed.telegram_message_id == 501
+    assert refreshed.published_at is not None
+    async with sessions() as session:
+        assert await session.scalar(select(func.count()).select_from(ApartmentInventoryQueue)) == 0
+
+    assert await inventory.reset_publication_history_for_code("commit-one") is False

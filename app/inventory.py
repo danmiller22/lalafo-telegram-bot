@@ -10,7 +10,12 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models import Apartment, ApartmentDiscoveryRun, ApartmentInventoryQueue
+from app.models import (
+    Apartment,
+    ApartmentDiscoveryRun,
+    ApartmentInventoryQueue,
+    LalafoAutoReplyMeta,
+)
 from app.state import normalized_district
 from app.telegram.formatting import is_supported_source
 
@@ -406,6 +411,34 @@ def plan_period(
 class InventoryRepository:
     def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
         self.sessions = sessions
+
+    async def reset_publication_history_for_code(self, code_version: str) -> bool:
+        """Start a fresh publication epoch once for each deployed code version.
+
+        Historical Telegram messages and payment records stay intact. Only the
+        deduplication status and unpublished queue are reset, which lets the
+        same source apartments be selected again after a code update.
+        """
+        version = code_version.strip()
+        if not version:
+            return False
+        key = "apartment_publication_code_version"
+        async with self.sessions.begin() as session:
+            marker = await session.get(LalafoAutoReplyMeta, key)
+            if marker is not None and marker.value == version:
+                return False
+            await session.execute(delete(ApartmentInventoryQueue))
+            await session.execute(delete(ApartmentDiscoveryRun))
+            await session.execute(
+                update(Apartment)
+                .where(Apartment.active.is_(True))
+                .values(publication_status="discovered")
+            )
+            if marker is None:
+                session.add(LalafoAutoReplyMeta(key=key, value=version))
+            else:
+                marker.value = version
+        return True
 
     async def claim_discovery(self, *, now: datetime, force: bool = False) -> str | None:
         key = discovery_period_key(now)
