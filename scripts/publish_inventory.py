@@ -28,6 +28,7 @@ from scripts.scrape_publish import (
 
 logger = logging.getLogger(__name__)
 MAX_TERMINAL_SKIPS_PER_RUN = 100
+STORED_FALLBACK_MAX_AGE_HOURS = 168
 BISHKEK = ZoneInfo("Asia/Bishkek")
 
 
@@ -143,7 +144,9 @@ async def run(
             )
         except (LalafoError, LalafoParseError, ValueError) as exc:
             last_seen = as_utc(apartment.last_seen_at or apartment.updated_at)
-            if last_seen >= datetime.now(timezone.utc) - timedelta(hours=24):
+            if last_seen >= datetime.now(timezone.utc) - timedelta(
+                hours=STORED_FALLBACK_MAX_AGE_HOURS
+            ):
                 ad = stored
             else:
                 return await _skip_and_continue(
