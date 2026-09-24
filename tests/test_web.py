@@ -568,7 +568,8 @@ async def test_miniapp_page_is_public_but_session_requires_telegram_auth(
     assert payload["price"] == 499
     assert payload["monthly_available"] is False
     assert payload["terms_accepted"] is True
-    assert "Условия и правила безопасности" in payload["terms_text"]
+    assert "Мы не можем проверить личность автора" in payload["terms_text"]
+    assert "При заселении сверьте личность человека" in payload["terms_text"]
     service.contact_status.assert_awaited_once_with(778899, 42)
 
 
