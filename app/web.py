@@ -329,19 +329,6 @@ async def _execute_scraper() -> int:
         return int(_run_state["last_exit_code"])
 
 
-async def _sync_outdated_keyboards() -> None:
-    try:
-        from scripts.sync_published_keyboards import run as run_keyboard_sync
-
-        exit_code = await run_keyboard_sync()
-        if exit_code:
-            logger.error("Hosted apartment keyboard sync exited with code %s", exit_code)
-    except asyncio.CancelledError:
-        raise
-    except Exception:
-        logger.exception("Hosted apartment keyboard sync failed")
-
-
 def _build_lalafo_auto_responder() -> LalafoAutoResponder:
     settings = get_settings()
     login, password = settings.require_lalafo_auto_reply_credentials()
@@ -795,9 +782,6 @@ async def startup() -> None:
                 _configure_lalafo_bot(), name="lalafo-telegram-setup-maintainer"
             )
         logger.info("Telegram runtime ready; network setup continues in background")
-        _keyboard_sync_task = asyncio.create_task(
-            _sync_outdated_keyboards(), name="keyboard-sync"
-        )
         if (
             IN_PROCESS_QUEUE_DISPATCHER_ENABLED
             and settings.hosted_apartment_scheduler_enabled
