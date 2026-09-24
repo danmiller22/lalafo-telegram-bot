@@ -392,9 +392,16 @@ async def availability_handler(
     token = (callback.data or "").removeprefix("availability:")
     apartment_id = signer.verify_id("availability", token)
     if apartment_id is None:
+        apartment_id = signer.decode_public_id(token)
+    if apartment_id is None:
         await callback.answer("Недействительная кнопка.", show_alert=True)
         return
-    result = await availability.check(apartment_id)
+    try:
+        result = await availability.check(apartment_id)
+    except Exception:
+        logger.exception("Availability callback failed")
+        await callback.answer("Не удалось проверить, попробуйте позже.", show_alert=True)
+        return
     await callback.answer(result.message, show_alert=True)
 
 

@@ -24,8 +24,8 @@ MAX_PUBLICATIONS_PER_DAY = 60
 # discovery periods so retries cannot increase the day's publication volume.
 # Publication is restricted to listings whose source explicitly identifies an owner.
 MIN_NON_OWNERS_PER_DAY = 0
-MAX_NON_OWNERS_PER_DAY = MAX_PUBLICATIONS_PER_DAY
-TARGET_NON_OWNERS_PER_PERIOD = MAX_PUBLICATIONS_PER_DAY
+MAX_NON_OWNERS_PER_DAY = 2
+TARGET_NON_OWNERS_PER_PERIOD = 1
 MAX_REPOSTS_PER_PERIOD = 0
 MAX_FRESH_STOCK_LOAD = 600
 # A blocked source must not leave the channel empty for half an hour.  The
@@ -395,7 +395,12 @@ def plan_period(
             zip(selected, schedule), start=1
         )
     ]
-    return planned
+    return _limit_non_owners(
+        planned,
+        apartments,
+        target=non_owner_target,
+        maximum=non_owner_limit,
+    )
 
 
 class InventoryRepository:

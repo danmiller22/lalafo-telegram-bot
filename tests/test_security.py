@@ -85,9 +85,13 @@ def test_callback_data_is_short_and_contains_no_phone():
     assert group.inline_keyboard[1][0].text == "🔄 Проверить актуальность"
     assert group.inline_keyboard[2][0].text == "Подать заявку на поиск квартиры"
     assert group.inline_keyboard[2][0].url == "https://t.me/arenda312bot?start=want"
-    assert len(group.inline_keyboard) == 5
+    assert len(group.inline_keyboard) == 4
     assert group.inline_keyboard[3][0].text == "🛟 Техподдержка"
-    assert group.inline_keyboard[4][0].text == "🔒 Политика конфиденциальности"
+    assert all(
+        "Политика" not in button.text
+        for row in group.inline_keyboard
+        for button in row
+    )
     assert payment.inline_keyboard[0][0].url == "https://qr.finik.kg/payment"
     for keyboard in (
         group,
@@ -164,3 +168,12 @@ def test_start_signature_is_telegram_safe_and_rejects_tampering():
     assert signer.verify_start_id("payment-link", token) == 152
     assert signer.verify_start_id("payment-link", token + "x") is None
     assert signer.verify_start_id("other-purpose", token) is None
+
+
+def test_public_callback_id_can_be_read_across_worker_secrets():
+    worker = TokenSigner("worker-secret-long-enough")
+    bot = TokenSigner("bot-secret-long-enough-value")
+    token = worker.sign_id("availability", 152)
+
+    assert bot.verify_id("availability", token) is None
+    assert bot.decode_public_id(token) == 152

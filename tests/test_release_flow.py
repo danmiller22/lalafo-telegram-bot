@@ -1,12 +1,16 @@
 from datetime import datetime, timezone
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import update
 
 from app.availability import AvailabilityService
+from app.bot.handlers import availability_handler
 from app.config import Settings
 from app.models import TermsConsent
 from app.payments.service import PaymentService
+from app.security import TokenSigner
 from app.terms import TERMS_VERSION, TermsConsentRepository
 from scripts.publish_inventory import _valid
 from tests.helpers import make_ad
@@ -82,3 +86,20 @@ async def test_availability_result_is_cached_for_five_minutes(repositories, monk
     assert first.status == second.status == "active"
     assert second.cached is True
     assert calls == 1
+
+
+@pytest.mark.asyncio
+async def test_public_availability_button_works_across_cloud_secrets() -> None:
+    worker_signer = TokenSigner("worker-secret-long-enough")
+    bot_signer = TokenSigner("bot-secret-long-enough-value")
+    result = SimpleNamespace(message="Объявление доступно на источнике.")
+    availability = SimpleNamespace(check=AsyncMock(return_value=result))
+    callback = SimpleNamespace(
+        data=f"availability:{worker_signer.sign_id('availability', 70003)}",
+        answer=AsyncMock(),
+    )
+
+    await availability_handler(callback, bot_signer, availability)
+
+    availability.check.assert_awaited_once_with(70003)
+    callback.answer.assert_awaited_once_with(result.message, show_alert=True)

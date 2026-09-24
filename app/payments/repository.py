@@ -47,6 +47,28 @@ class ApartmentRepository:
             )
             return result.scalar_one_or_none()
 
+    async def published_author_count(
+        self,
+        seller_type: str,
+        *,
+        since: datetime,
+        until: datetime,
+    ) -> int:
+        async with self.sessions() as session:
+            return int(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(Apartment)
+                    .where(
+                        Apartment.publication_status == "published",
+                        Apartment.published_at >= since,
+                        Apartment.published_at < until,
+                        Apartment.seller_type == seller_type,
+                    )
+                )
+                or 0
+            )
+
     async def get_by_telegram_message(
         self, *, chat_id: int, message_id: int
     ) -> Apartment | None:

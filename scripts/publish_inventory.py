@@ -3,12 +3,13 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timedelta, timezone
 import logging
+from zoneinfo import ZoneInfo
 
 from aiogram import Bot
 
 from app.config import get_settings
 from app.database import create_engine_and_session, init_db
-from app.inventory import InventoryRepository, as_utc
+from app.inventory import InventoryRepository, MAX_NON_OWNERS_PER_DAY, as_utc
 from app.lalafo.client import LalafoClient, LalafoError, LalafoNotFound
 from app.lalafo.parser import LalafoParseError, is_allowed
 from app.payments.repository import ApartmentRepository
@@ -27,6 +28,7 @@ from scripts.scrape_publish import (
 
 logger = logging.getLogger(__name__)
 MAX_TERMINAL_SKIPS_PER_RUN = 10
+BISHKEK = ZoneInfo("Asia/Bishkek")
 
 
 def _valid(ad, settings) -> tuple[bool, str]:
@@ -88,6 +90,24 @@ async def run(
         return 0
 
     apartment = item.apartment
+    if apartment.seller_type == "realtor":
+        local_now = datetime.now(timezone.utc).astimezone(BISHKEK)
+        day_start = local_now.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(
+            timezone.utc
+        )
+        day_end = (day_start + timedelta(days=1)).astimezone(timezone.utc)
+        published_agents = await apartments.published_author_count(
+            "realtor", since=day_start, until=day_end
+        )
+        if published_agents >= MAX_NON_OWNERS_PER_DAY:
+            return await _skip_and_continue(
+                inventory=inventory,
+                item_id=item.id,
+                engine=engine,
+                error="daily_agent_limit",
+                eligible_until=eligible_until,
+                remaining_skips=_remaining_skips,
+            )
     is_repeat = apartment.publication_status == "published"
     stored = apartment_to_ad(apartment)
     ad = None

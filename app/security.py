@@ -46,6 +46,23 @@ class TokenSigner:
         except (ValueError, TypeError):
             return None
 
+    @staticmethod
+    def decode_public_id(token: str) -> int | None:
+        """Read the public object ID from a signed callback token.
+
+        Public apartment cards can be produced by a separate cloud worker with
+        a different signing secret. Mutating callbacks still require a valid
+        signature; availability is read-only and may safely resolve the public
+        apartment ID before the repository check and five-minute rate limit.
+        """
+        encoded, _, _ = token.partition(".")
+        if not encoded:
+            return None
+        try:
+            return base36_decode(encoded)
+        except (ValueError, TypeError):
+            return None
+
     def sign_start_id(self, purpose: str, value: int) -> str:
         """Sign an ID using only characters allowed in Telegram start parameters."""
         return self.sign_id(purpose, value).replace(".", "-", 1)

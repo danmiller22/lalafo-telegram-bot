@@ -6,7 +6,7 @@ from app.security import TokenSigner
 from app.payment_plans import MONTH_PRICE, WEEK_PRICE
 
 
-APARTMENT_KEYBOARD_VERSION = 14
+APARTMENT_KEYBOARD_VERSION = 15
 MINI_APP_SHORT_NAME = "access"
 
 
@@ -60,7 +60,6 @@ def apartment_keyboard(
             ]
         )
     rows.append(_support_row(support_url))
-    rows.append([InlineKeyboardButton(text="🔒 Политика конфиденциальности", url=f"{bot_url}?start=privacy")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

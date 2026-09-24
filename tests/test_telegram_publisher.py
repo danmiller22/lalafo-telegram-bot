@@ -57,7 +57,6 @@ async def test_public_album_uses_fast_direct_telegram_urls() -> None:
         "🔄 Проверить актуальность",
         "Подать заявку на поиск квартиры",
         "🛟 Техподдержка",
-        "🔒 Политика конфиденциальности",
     ]
     media = bot.send_media_group.await_args.kwargs["media"]
     assert [item.media for item in media] == [

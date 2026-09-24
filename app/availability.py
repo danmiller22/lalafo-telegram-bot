@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import html
 import re
 from dataclasses import dataclass
@@ -71,11 +72,12 @@ class AvailabilityService:
     async def _check_lalafo(self, url: str) -> tuple[str, str]:
         try:
             async with LalafoClient(
-                timeout=self.settings.http_timeout_seconds,
-                max_retries=1,
+                timeout=min(6, self.settings.http_timeout_seconds),
+                max_retries=0,
                 proxy_url=self.settings.lalafo_proxy_url,
             ) as client:
-                await client.detail(url)
+                async with asyncio.timeout(8):
+                    await client.detail(url)
             return "active", "source_available"
         except LalafoNotFound:
             return "unavailable", "source_removed"
@@ -84,7 +86,7 @@ class AvailabilityService:
 
     async def _check_telegram(self, url: str) -> tuple[str, str]:
         try:
-            async with httpx.AsyncClient(follow_redirects=True, timeout=15) as client:
+            async with httpx.AsyncClient(follow_redirects=True, timeout=7) as client:
                 response = await client.get(url, params={"embed": "1"})
             if response.status_code == 404:
                 return "unavailable", "source_removed"
