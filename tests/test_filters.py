@@ -15,6 +15,7 @@ from scripts.scrape_publish import (
     PRIORITY_AD_SPECS,
     REALTOR_CANDIDATE_RESERVE_SHARE,
     SOURCE_ALLOWED_ROOMS,
+    SOURCE_MAX_PRICE,
     SOURCE_MAX_POSTS_PER_RUN,
     SOURCE_MAX_SEARCH_PAGES,
     SOURCE_MIN_PHOTOS,
@@ -123,6 +124,7 @@ def test_expanded_source_keeps_reposts_strictly_limited():
     assert SOURCE_PUBLISH_SPACING_SECONDS == 150
     assert SOURCE_MAX_SEARCH_PAGES == 12
     assert SOURCE_MIN_PRICE == 10_000
+    assert SOURCE_MAX_PRICE == 40_000
     assert SOURCE_MIN_PHOTOS == 1
     assert MAX_REPOSTS_PER_RUN == 0
     assert SOURCE_REPOST_AFTER_HOURS is None
@@ -132,7 +134,7 @@ def test_expanded_source_keeps_reposts_strictly_limited():
     assert TWO_BEDROOM_MAX_PER_RUN == 2
     assert settings.rooms == "studio,1"
     assert settings.min_price == 10_000
-    assert settings.max_price == 50_000
+    assert settings.max_price == 40_000
     assert settings.max_new_posts_per_run == 18
     assert settings.max_search_pages == 36
     assert settings.allow_no_district is True
@@ -145,11 +147,11 @@ def test_source_urls_follow_the_operator_filters():
     assert "/semeynym/param-bez-detey/studentam/" in DEFAULT_SEARCH_URL
     assert "/bez-podseleniya/mozhno-s-zhivotnymi" in DEFAULT_SEARCH_URL
     assert "bez-zhivotnyh" not in DEFAULT_SEARCH_URL
-    assert "price[from]=10000&price[to]=50000" in DEFAULT_SEARCH_URL
+    assert "price[from]=10000&price[to]=40000" in DEFAULT_SEARCH_URL
     assert len(ADDITIONAL_SEARCH_URLS) == 1
     assert "/studio/1-bedroom/real-estate-agency" in ADDITIONAL_SEARCH_URLS[0]
     assert all("bez-podseleniya" not in url for url in ADDITIONAL_SEARCH_URLS)
-    assert all("price[from]=10000&price[to]=50000" in url for url in ADDITIONAL_SEARCH_URLS)
+    assert all("price[from]=10000&price[to]=40000" in url for url in ADDITIONAL_SEARCH_URLS)
 
 
 def test_owner_sources_receive_most_of_discovery_pool():

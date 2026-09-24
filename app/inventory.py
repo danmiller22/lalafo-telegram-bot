@@ -638,7 +638,7 @@ class InventoryRepository:
                             _supported_source_filter(),
                             Apartment.id.not_in(active_queue_ids),
                             Apartment.fingerprint.not_in(queued_fingerprints),
-                            Apartment.price.between(10_000, 50_000),
+                            Apartment.price.between(10_000, 40_000),
                             Apartment.rooms.in_(ALLOWED_ROOMS),
                         )
                         .order_by(
