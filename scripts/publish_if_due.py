@@ -99,7 +99,7 @@ async def publication_schedule_status(*, window_minutes: int):
     engine, sessions = create_engine_and_session(settings.database_url)
     try:
         await init_db(engine)
-        # The durable inventory contains exact 8–15 minute card times, so the
+        # The durable inventory contains exact five-minute card times, so the
         # dispatcher must wake every minute. ``window_minutes`` remains in the
         # public signature for compatibility with older hosted callers.
         return await schedule_snapshot(sessions, interval_minutes=1)

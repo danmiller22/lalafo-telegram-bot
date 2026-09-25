@@ -239,9 +239,17 @@ async def test_queue_claims_each_due_apartment_only_once(repositories):
     claimed = await inventory.claim_due(now=now)
     assert claimed is not None and claimed.apartment_id == first.id
     await inventory.finish_item(claimed.id, status="published")
-    next_claimed = await inventory.claim_due(now=now)
-    assert next_claimed is not None and next_claimed.apartment_id == second.id
     assert await inventory.claim_due(now=now) is None
+    next_claimed = await inventory.claim_due(
+        now=now + timedelta(minutes=PUBLICATION_SPACING_MINUTES + 1)
+    )
+    assert next_claimed is not None and next_claimed.apartment_id == second.id
+    assert (
+        await inventory.claim_due(
+            now=now + timedelta(minutes=PUBLICATION_SPACING_MINUTES + 1)
+        )
+        is None
+    )
 
 
 @pytest.mark.asyncio

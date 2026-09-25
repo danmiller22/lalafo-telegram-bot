@@ -6,7 +6,7 @@ import math
 import random
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy import delete, func, or_, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -39,6 +39,7 @@ MAX_FRESH_STOCK_LOAD = 600
 DISCOVERY_RETRY_MINUTES = 3
 MIN_HEALTHY_PERIOD_QUEUE = 20
 PUBLICATION_SPACING_MINUTES = 5
+INVENTORY_CLAIM_LOCK_ID = 731_290_512
 # Five batches in each 12-hour discovery period. Together they cover the day
 # from 05:00 through 23:00 Bishkek time at an exact two-hour cadence.
 MORNING_BATCH_HOURS = (5, 7, 9, 11, 13)
@@ -809,6 +810,11 @@ class InventoryRepository:
         day_start = local.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
         day_end = (local.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)).astimezone(timezone.utc)
         async with self.sessions.begin() as session:
+            if session.bind is not None and session.bind.dialect.name == "postgresql":
+                await session.execute(
+                    text("SELECT pg_advisory_xact_lock(:lock_id)"),
+                    {"lock_id": INVENTORY_CLAIM_LOCK_ID},
+                )
             await session.execute(
                 update(ApartmentInventoryQueue)
                 .where(
@@ -826,6 +832,26 @@ class InventoryRepository:
                 )
                 .values(status="skipped", last_error="unsupported_source")
             )
+            active_publication = int(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(ApartmentInventoryQueue)
+                    .where(ApartmentInventoryQueue.status == "publishing")
+                )
+                or 0
+            )
+            if active_publication:
+                return None
+            latest_queue_publication = await session.scalar(
+                select(func.max(ApartmentInventoryQueue.published_at)).where(
+                    ApartmentInventoryQueue.status == "published",
+                    ApartmentInventoryQueue.published_at.is_not(None),
+                )
+            )
+            if latest_queue_publication is not None and as_utc(
+                latest_queue_publication
+            ) > now - timedelta(minutes=PUBLICATION_SPACING_MINUTES):
+                return None
             published_today = int(
                 await session.scalar(
                     select(func.count())
