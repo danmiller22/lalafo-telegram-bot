@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-
 from app.lalafo.models import LalafoAd
 from app.models import Apartment, PaymentRequest
 from app.payment_plans import plan_label, plan_price
@@ -20,11 +18,9 @@ def room_title(rooms: str) -> str:
 
 
 def unknown_author_label(*, phone: str, price: int, district: str | None, rooms: str) -> str:
-    """Choose one stable public label when the source does not name the author."""
-    identity = "|".join((phone, str(price), district or "", rooms))
-    labels = ("возможно агент", "возможно собственник", "собственник")
-    bucket = hashlib.sha256(identity.encode("utf-8")).digest()[0] % len(labels)
-    return labels[bucket]
+    """Use the requested public fallback when the source does not name the author."""
+    del phone, price, district, rooms
+    return "возможно собственник"
 
 
 def is_confirmed_owner(ad: LalafoAd | Apartment) -> bool:
@@ -50,7 +46,7 @@ def author_label(ad: LalafoAd | Apartment) -> str:
     if seller_type == "owner":
         return "собственник"
     if seller_type == "realtor":
-        return "возможно агент"
+        return "возможно собственник"
     return unknown_author_label(
         phone=str(getattr(ad, "phone", "") or ""),
         price=int(getattr(ad, "price", 0) or 0),

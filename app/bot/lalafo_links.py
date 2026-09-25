@@ -199,7 +199,7 @@ def _manual_preview(data: dict) -> str:
     title = "Студия" if data["rooms"] == "studio" else "1-комнатная квартира"
     author = {
         "owner": "собственник",
-        "realtor": "возможно агент",
+        "realtor": "возможно собственник",
     }.get(data["seller_type"]) or unknown_author_label(
         phone=data["phone"],
         price=data["price"],

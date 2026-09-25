@@ -93,14 +93,14 @@ def test_allowed_and_format_has_no_source_or_description():
     assert ad.phone not in text
 
 
-def test_agency_listing_is_allowed_and_marked_as_possible_agent():
+def test_agency_listing_is_allowed_and_marked_as_possible_owner():
     ad = make_ad(owner_listing=False, rooms="1")
     assert is_allowed(
         ad, city="Бишкек", max_price=40000, rooms=SOURCE_ALLOWED_ROOMS
     )[0]
     text = format_apartment(ad)
-    assert "👤 Автор: возможно агент" in text
-    assert author_label(ad) == "возможно агент"
+    assert "👤 Автор: возможно собственник" in text
+    assert author_label(ad) == "возможно собственник"
     assert "Статус:" not in text
 
 
@@ -113,11 +113,7 @@ def test_channel_source_always_marks_unknown_author():
     text = format_apartment(ad)
     assert text.count("👤 Автор:") == 1
     assert f"👤 Автор: {author_label(ad)}" in text
-    assert author_label(ad) in {
-        "возможно агент",
-        "возможно собственник",
-        "собственник",
-    }
+    assert author_label(ad) == "возможно собственник"
     assert "Статус:" not in text
     assert "@owners_bishkek" not in text
 
@@ -309,14 +305,14 @@ def test_curated_rotation_never_reposts_published_apartments():
     assert [apartment.lalafo_id for apartment in eligible] == [103]
 
 
-def test_publish_batch_marks_realtor_as_possible_agent():
+def test_publish_batch_marks_realtor_as_possible_owner():
     realtor = make_ad(lalafo_id=1, district="ЦУМ", owner_listing=False)
     owner = make_ad(lalafo_id=2, district="Тунгуч", owner_listing=True)
 
     selected = select_publish_batch([realtor, owner], limit=2)
     assert {ad.lalafo_id for ad in selected} == {1, 2}
-    assert "Автор: возможно агент" in format_apartment(realtor)
-    assert author_label(realtor) == "возможно агент"
+    assert "Автор: возможно собственник" in format_apartment(realtor)
+    assert author_label(realtor) == "возможно собственник"
 
 
 def test_unknown_author_label_is_stable_and_exact():
@@ -325,7 +321,7 @@ def test_unknown_author_label_is_stable_and_exact():
         for index in range(40)
     ]
     labels = {author_label(ad) for ad in ads}
-    assert labels == {"возможно агент", "возможно собственник", "собственник"}
+    assert labels == {"возможно собственник"}
     assert all(author_label(ad) == author_label(ad) for ad in ads)
 
 
