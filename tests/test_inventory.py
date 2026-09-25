@@ -45,7 +45,7 @@ def _apartments(count: int, *, central: bool, start_id: int, owner: bool = True)
     ]
 
 
-def test_two_periods_plan_random_50_to_60_card_day():
+def test_two_periods_plan_32_card_day_in_90_minute_launches():
     stock = _apartments(220, central=True, start_id=1) + _apartments(
         100, central=False, start_id=300
     )
@@ -59,7 +59,7 @@ def test_two_periods_plan_random_50_to_60_card_day():
     )
     all_items = first + second
     daily_target = daily_publication_target(first_start)
-    assert 50 <= daily_target <= 60
+    assert daily_target == 32
     assert len(all_items) == daily_target
     assert sum(
         "золотой" in item.apartment.district.casefold() for item in all_items
@@ -68,27 +68,23 @@ def test_two_periods_plan_random_50_to_60_card_day():
 
     first_local = [item.scheduled_at.astimezone(first_start.tzinfo) for item in first]
     second_local = [item.scheduled_at.astimezone(first_start.tzinfo) for item in second]
-    assert all(5 <= value.hour < 15 for value in first_local)
-    assert all(
-        value.hour > 14 or (value.hour == 14 and value.minute >= 25)
-        for value in second_local
-    )
+    assert all(value.hour < 12 for value in first_local)
+    assert all(value.hour >= 12 for value in second_local)
     assert all(value.date() == first_start.date() for value in first_local + second_local)
     for period_items in (first, second):
         local_times = [
             item.scheduled_at.astimezone(first_start.tzinfo)
             for item in period_items
         ]
-        batch_hours = {value.hour for value in local_times if value.minute == 0}
-        expected_hours = (
-            {5, 7, 9, 11, 13}
-            if period_items is first
-            else {15, 17, 19, 21, 23}
+        launch_starts = local_times[::2]
+        assert len(launch_starts) == 8
+        assert all(
+            round((after - before).total_seconds()) == 90 * 60
+            for before, after in zip(launch_starts, launch_starts[1:])
         )
-        assert batch_hours == expected_hours
-        for hour in expected_hours:
-            batch = [value for value in local_times if value.hour == hour]
-            assert 5 <= len(batch) <= 6
+        for offset in range(0, len(local_times), 2):
+            batch = local_times[offset : offset + 2]
+            assert len(batch) == 2
             assert all(
                 round((after - before).total_seconds())
                 == PUBLICATION_SPACING_MINUTES * 60
@@ -139,10 +135,13 @@ def test_central_realtors_can_fill_central_share():
 
     planned = plan_period(owners + realtors, period_start=period_start, rng=random.Random(15))
 
-    period_count, _ = period_publication_targets(period_start)
+    period_count, central_count = period_publication_targets(period_start)
     assert len(planned) == period_count
     assert any(item.apartment.seller_type == "owner" for item in planned)
-    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 13
+    assert (
+        sum(item.apartment.seller_type == "realtor" for item in planned)
+        == central_count
+    )
 
 
 def test_two_periods_do_not_cap_agents():
@@ -194,18 +193,16 @@ def test_period_does_not_cap_non_owners():
     assert all(item.apartment.seller_type in {"owner", "realtor", "unknown"} for item in planned)
 
 
-def test_daily_target_is_stable_for_retries_but_changes_across_dates():
+def test_daily_target_is_fixed_at_reduced_volume():
     period_start = datetime(2026, 9, 13, 0, tzinfo=timezone(timedelta(hours=6)))
 
     assert daily_publication_target(period_start) == daily_publication_target(
         period_start + timedelta(hours=12)
     )
-    targets = {
+    assert {
         daily_publication_target(period_start + timedelta(days=offset))
         for offset in range(10)
-    }
-    assert targets.issubset(set(range(50, 61)))
-    assert len(targets) > 1
+    } == {32}
 
 
 @pytest.mark.asyncio

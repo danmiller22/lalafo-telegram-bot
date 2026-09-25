@@ -23,8 +23,8 @@ from app.telegram.formatting import is_supported_source
 BISHKEK = ZoneInfo("Asia/Bishkek")
 ALLOWED_ROOMS = frozenset({"studio", "1"})
 CENTRAL_DAILY_SHARE = 0.50
-MIN_PUBLICATIONS_PER_DAY = 50
-MAX_PUBLICATIONS_PER_DAY = 60
+MIN_PUBLICATIONS_PER_DAY = 32
+MAX_PUBLICATIONS_PER_DAY = 32
 # The daily target is chosen once per Bishkek date, then split across the two
 # discovery periods so retries cannot increase the day's publication volume.
 # Seller type does not restrict publication; these values remain for compatibility.
@@ -37,13 +37,13 @@ MAX_FRESH_STOCK_LOAD = 600
 # workflow itself is concurrency-limited, so a short retry is safe and lets
 # Telegram reserve sources recover the queue on the next cloud tick.
 DISCOVERY_RETRY_MINUTES = 3
-MIN_HEALTHY_PERIOD_QUEUE = 20
+MIN_HEALTHY_PERIOD_QUEUE = 12
 PUBLICATION_SPACING_MINUTES = 5
 INVENTORY_CLAIM_LOCK_ID = 731_290_512
-# Five batches in each 12-hour discovery period. Together they cover the day
-# from 05:00 through 23:00 Bishkek time at an exact two-hour cadence.
-MORNING_BATCH_HOURS = (5, 7, 9, 11, 13)
-EVENING_BATCH_HOURS = (15, 17, 19, 21, 23)
+# Eight launches in each 12-hour discovery period. Every launch contains two
+# cards five minutes apart; launches themselves begin every 90 minutes.
+MORNING_BATCH_MINUTES = tuple(range(0, 12 * 60, 90))
+EVENING_BATCH_MINUTES = tuple(range(12 * 60, 24 * 60, 90))
 
 
 def as_utc(value: datetime) -> datetime:
@@ -63,12 +63,9 @@ def discovery_period_key(now: datetime | None = None) -> str:
 
 
 def daily_publication_target(period_start: datetime) -> int:
-    """Return a stable pseudo-random 50-60 target for one Bishkek date."""
-    local_date = period_start.astimezone(BISHKEK).date()
-    seed = int(local_date.strftime("%Y%m%d"))
-    return random.Random(seed).randint(
-        MIN_PUBLICATIONS_PER_DAY, MAX_PUBLICATIONS_PER_DAY
-    )
+    """Return the reduced fixed daily target for one Bishkek date."""
+    del period_start
+    return MAX_PUBLICATIONS_PER_DAY
 
 
 def period_publication_targets(period_start: datetime) -> tuple[int, int]:
@@ -87,32 +84,26 @@ def randomized_period_times(
     count: int,
     rng: random.Random,
 ) -> list[datetime]:
-    """Build five two-hour batches with five minutes between cards.
-
-    The daily total stays pseudo-random at 50-60 cards, while each individual
-    batch contains five or six cards for normal production targets. ``rng``
-    randomizes which batches receive the extra card without changing the
-    durable cadence.
-    """
+    """Build 90-minute launches with five minutes between cards in each launch."""
     if count <= 0:
         return []
     local_day = period_start.astimezone(BISHKEK).replace(
         hour=0, minute=0, second=0, microsecond=0
     )
-    batch_hours = (
-        MORNING_BATCH_HOURS
+    batch_minutes = (
+        MORNING_BATCH_MINUTES
         if period_start.astimezone(BISHKEK).hour == 0
-        else EVENING_BATCH_HOURS
+        else EVENING_BATCH_MINUTES
     )
-    batch_sizes = [count // len(batch_hours)] * len(batch_hours)
-    extra_batches = list(range(len(batch_hours)))
+    batch_sizes = [count // len(batch_minutes)] * len(batch_minutes)
+    extra_batches = list(range(len(batch_minutes)))
     rng.shuffle(extra_batches)
-    for index in extra_batches[: count % len(batch_hours)]:
+    for index in extra_batches[: count % len(batch_minutes)]:
         batch_sizes[index] += 1
 
     result: list[datetime] = []
-    for hour, batch_size in zip(batch_hours, batch_sizes):
-        batch_start = local_day + timedelta(hours=hour)
+    for minute, batch_size in zip(batch_minutes, batch_sizes):
+        batch_start = local_day + timedelta(minutes=minute)
         result.extend(
             (
                 batch_start + timedelta(minutes=PUBLICATION_SPACING_MINUTES * offset)
