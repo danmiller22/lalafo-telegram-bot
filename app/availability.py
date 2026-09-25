@@ -57,6 +57,16 @@ class AvailabilityService:
                 reason="listing_age_limit",
             )
             return AvailabilityResult("unavailable", "listing_age_limit", now)
+        if published_at:
+            # A newly published card receives one complete 48-hour window.
+            # Reposts must not inherit an old removal check from an earlier card.
+            await self.apartments.set_availability(
+                apartment_id,
+                status="active",
+                checked_at=now,
+                reason="publication_age_window",
+            )
+            return AvailabilityResult("active", "publication_age_window", now)
         checked = apartment.availability_checked_at
         if checked is not None and checked.tzinfo is None:
             checked = checked.replace(tzinfo=timezone.utc)

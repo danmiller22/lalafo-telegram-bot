@@ -575,6 +575,10 @@ class ApartmentRepository:
             apartment.telegram_message_id = message_id
             apartment.published_at = datetime.now(timezone.utc)
             apartment.publication_status = "published"
+            apartment.active = True
+            apartment.availability_status = "active"
+            apartment.availability_checked_at = apartment.published_at
+            apartment.availability_reason = "publication_age_window"
             apartment.keyboard_version = APARTMENT_KEYBOARD_VERSION
             await session.flush()
             await session.refresh(apartment)
@@ -596,7 +600,9 @@ class ApartmentRepository:
             apartment.availability_status = status
             apartment.availability_checked_at = checked_at
             apartment.availability_reason = reason
-            if status == "unavailable":
+            if status == "active":
+                apartment.active = True
+            elif status == "unavailable":
                 apartment.active = False
                 await session.execute(
                     update(ApartmentInventoryQueue)

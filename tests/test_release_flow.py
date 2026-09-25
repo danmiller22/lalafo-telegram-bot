@@ -113,6 +113,31 @@ async def test_apartment_expires_two_days_after_publication(repositories) -> Non
 
 
 @pytest.mark.asyncio
+async def test_today_card_gets_full_two_day_window_despite_old_status(repositories) -> None:
+    apartments, _, _ = repositories
+    apartment = await apartments.upsert_discovered(make_ad(lalafo_id=70005))
+    apartment = await apartments.mark_published(
+        apartment.id, chat_id=-1001, message_id=505
+    )
+    await apartments.set_availability(
+        apartment.id,
+        status="unavailable",
+        checked_at=datetime.now(timezone.utc) - timedelta(days=1),
+        reason="old_card_status",
+    )
+
+    result = await AvailabilityService(
+        apartments, Settings(_env_file=None)
+    ).check(apartment.id)
+
+    assert result.status == "active"
+    assert result.reason == "publication_age_window"
+    refreshed = await apartments.get(apartment.id)
+    assert refreshed.active is True
+    assert refreshed.availability_status == "active"
+
+
+@pytest.mark.asyncio
 async def test_public_availability_button_works_across_cloud_secrets() -> None:
     worker_signer = TokenSigner("worker-secret-long-enough")
     bot_signer = TokenSigner("bot-secret-long-enough-value")
