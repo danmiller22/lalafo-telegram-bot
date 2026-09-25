@@ -38,7 +38,7 @@ MAX_FRESH_STOCK_LOAD = 600
 # Telegram reserve sources recover the queue on the next cloud tick.
 DISCOVERY_RETRY_MINUTES = 3
 MIN_HEALTHY_PERIOD_QUEUE = 20
-PUBLICATION_SPACING_MINUTES = 1
+PUBLICATION_SPACING_MINUTES = 5
 # Five batches in each 12-hour discovery period. Together they cover the day
 # from 05:00 through 23:00 Bishkek time at an exact two-hour cadence.
 MORNING_BATCH_HOURS = (5, 7, 9, 11, 13)
@@ -86,7 +86,7 @@ def randomized_period_times(
     count: int,
     rng: random.Random,
 ) -> list[datetime]:
-    """Build five two-hour batches with one minute between cards.
+    """Build five two-hour batches with five minutes between cards.
 
     The daily total stays pseudo-random at 50-60 cards, while each individual
     batch contains five or six cards for normal production targets. ``rng``

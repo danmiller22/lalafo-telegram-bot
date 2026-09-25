@@ -19,6 +19,10 @@ from app.models import Apartment, ApartmentInventoryQueue
 from tests.helpers import make_ad
 
 
+def test_publication_rate_is_twelve_apartments_per_hour() -> None:
+    assert PUBLICATION_SPACING_MINUTES == 5
+
+
 def _apartments(count: int, *, central: bool, start_id: int, owner: bool = True):
     from types import SimpleNamespace
 
