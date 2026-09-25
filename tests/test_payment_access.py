@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import func, select, update
 
 from app.payments.service import PaymentService
-from app.models import PaymentHistory, PaymentRequest
+from app.models import Apartment, PaymentHistory, PaymentRequest
 from app.payment_plans import MONTH_PLAN, WEEK_PLAN
 from app.lalafo.models import PHONE_SOURCE_VERSION
 from app.telegram.keyboards import APARTMENT_KEYBOARD_VERSION
@@ -347,6 +347,33 @@ async def test_published_apartment_blocks_id_and_fingerprint_duplicates(reposito
     assert set(repostable) == {555}
     assert repostable[555] is not None
     assert await apartments.repostable_lalafo_ids([555, 999], after_hours=24) == set()
+
+
+@pytest.mark.asyncio
+async def test_forwarded_card_resolves_after_new_code_cycle_reset(repositories):
+    apartments, _, sessions = repositories
+    apartment = await apartments.upsert_discovered(
+        make_ad(lalafo_id=558, rooms="1", district="Восток-5", price=30_000)
+    )
+    apartment = await apartments.mark_published(
+        apartment.id, chat_id=-100123, message_id=78
+    )
+    async with sessions.begin() as session:
+        await session.execute(
+            update(Apartment)
+            .where(Apartment.id == apartment.id)
+            .values(publication_status="discovered", active=False)
+        )
+
+    resolved = await apartments.find_forwarded_card(
+        rooms="1",
+        district="Восток-5",
+        price=30_000,
+        origin_date=apartment.published_at,
+    )
+
+    assert resolved is not None
+    assert resolved.id == apartment.id
 
 
 @pytest.mark.asyncio

@@ -62,6 +62,10 @@ def test_forwarded_card_fields_are_parsed_from_public_text() -> None:
         "🔎 Ищете квартиру? Подайте заявку: @arenda312bot"
     ) == ("1", "Восток-5", 28_000)
 
+    assert lalafo_links._forwarded_card_fields(
+        "🏠 Студия\n📍 Центр\n🏙 Бишкек\n💰 25 000 сом"
+    ) == ("studio", "Центр", 25_000)
+
 
 @pytest.mark.asyncio
 async def test_forwarded_album_is_rebuilt_with_normal_publisher(monkeypatch) -> None:

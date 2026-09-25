@@ -159,8 +159,7 @@ class ApartmentRepository:
                         .where(
                             Apartment.rooms == rooms,
                             Apartment.price == price,
-                            Apartment.publication_status == "published",
-                            Apartment.active.is_(True),
+                            Apartment.telegram_message_id.is_not(None),
                         )
                         .order_by(Apartment.published_at.desc(), Apartment.id.desc())
                         .limit(100)

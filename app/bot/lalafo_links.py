@@ -46,7 +46,7 @@ _manual_publish_lock = asyncio.Lock()
 REPOST_AFTER = timedelta(hours=48)
 MAX_DISTRICT_LENGTH = 60
 PROXY_DISCOVERY_TIMEOUT = 30.0
-FORWARD_BATCH_DELAY_SECONDS = 1.5
+FORWARD_BATCH_DELAY_SECONDS = 5.0
 _manual_proxy_pool: list[str] = []
 
 
@@ -225,7 +225,11 @@ def normalize_district(text: str | None) -> str | None:
 
 def _forwarded_card_fields(text: str | None) -> tuple[str, str, int] | None:
     value = text or ""
-    room_match = re.search(r"🏠\s*([12])-комнатная\s+квартира", value, re.IGNORECASE)
+    room_match = re.search(
+        r"🏠\s*(?:(?P<number>[12])-комнатная\s+квартира|(?P<studio>студия))",
+        value,
+        re.IGNORECASE,
+    )
     district_match = re.search(r"^📍\s*(.+?)\s*$", value, re.MULTILINE)
     price_match = re.search(r"^💰\s*([\d\s]+)\s*сом\s*$", value, re.MULTILINE)
     if not room_match or not district_match or not price_match:
@@ -234,7 +238,9 @@ def _forwarded_card_fields(text: str | None) -> tuple[str, str, int] | None:
     if district is None:
         return None
     price = int(re.sub(r"\D", "", price_match.group(1)))
-    return room_match.group(1), district, price
+    rooms = "studio" if room_match.group("studio") else room_match.group("number")
+    assert rooms is not None
+    return rooms, district, price
 
 
 def _forwarded_apartment_id(message: Message, signer: TokenSigner) -> int | None:
