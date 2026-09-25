@@ -318,7 +318,7 @@ async def test_schedule_period_deletes_old_two_room_queue_rows(repositories):
 
 
 @pytest.mark.asyncio
-async def test_afternoon_schedule_fills_remaining_daily_target_today(repositories):
+async def test_afternoon_schedule_fills_only_remaining_period_target(repositories):
     apartments, _, sessions = repositories
     stored = [
         await apartments.upsert_discovered(
@@ -330,7 +330,7 @@ async def test_afternoon_schedule_fills_remaining_daily_target_today(repositorie
     async with sessions.begin() as session:
         await session.execute(
             update(Apartment)
-            .where(Apartment.id.in_([item.id for item in stored[:18]]))
+            .where(Apartment.id.in_([item.id for item in stored[:6]]))
             .values(publication_status="published", published_at=now - timedelta(hours=1))
         )
 
@@ -338,7 +338,7 @@ async def test_afternoon_schedule_fills_remaining_daily_target_today(repositorie
         now=now, rng=random.Random(19)
     )
 
-    assert queued == daily_publication_target(now) - 18
+    assert queued == period_publication_targets(now)[0] - 6
     async with sessions() as session:
         first = await session.scalar(
             select(ApartmentInventoryQueue)
@@ -347,6 +347,37 @@ async def test_afternoon_schedule_fills_remaining_daily_target_today(repositorie
         )
     assert first is not None
     assert first.scheduled_at <= now.replace(tzinfo=None)
+
+
+@pytest.mark.asyncio
+async def test_late_period_schedule_keeps_five_and_ninety_minute_cadence(repositories):
+    apartments, _, sessions = repositories
+    for index in range(40):
+        await apartments.upsert_discovered(
+            make_ad(lalafo_id=20_000 + index, district="ЦУМ", rooms="1")
+        )
+    now = datetime(2026, 9, 23, 10, 0, tzinfo=timezone.utc)
+
+    queued = await InventoryRepository(sessions).schedule_period(
+        now=now, rng=random.Random(23)
+    )
+
+    assert queued == 16
+    async with sessions() as session:
+        scheduled = list(
+            (
+                await session.scalars(
+                    select(ApartmentInventoryQueue.scheduled_at).order_by(
+                        ApartmentInventoryQueue.scheduled_at.asc()
+                    )
+                )
+            ).all()
+        )
+    deltas = [
+        round((after - before).total_seconds() / 60)
+        for before, after in zip(scheduled, scheduled[1:])
+    ]
+    assert deltas == [5, 85] * 7 + [5]
 
 
 @pytest.mark.asyncio

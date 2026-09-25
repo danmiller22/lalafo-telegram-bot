@@ -554,6 +554,8 @@ class InventoryRepository:
     async def schedule_period(self, *, now: datetime | None = None, rng: random.Random | None = None) -> int:
         now = as_utc(now or datetime.now(timezone.utc))
         period = discovery_period_start(now)
+        period_start = period.astimezone(timezone.utc)
+        period_end = period_start + timedelta(hours=12)
         day_start_local = period.astimezone(BISHKEK).replace(hour=0)
         day_start = day_start_local.astimezone(timezone.utc)
         day_end = (day_start_local + timedelta(days=1)).astimezone(timezone.utc)
@@ -594,25 +596,25 @@ class InventoryRepository:
                 or 0
             )
             already_non_owners = published_non_owners + reserved_non_owners
-            published_today = int(
+            published_in_period = int(
                 await session.scalar(
                     select(func.count())
                     .select_from(Apartment)
                     .where(
                         Apartment.publication_status == "published",
-                        Apartment.published_at >= day_start,
-                        Apartment.published_at < day_end,
+                        Apartment.published_at >= period_start,
+                        Apartment.published_at < period_end,
                     )
                 )
                 or 0
             )
-            reserved_today = int(
+            reserved_in_period = int(
                 await session.scalar(
                     select(func.count())
                     .select_from(ApartmentInventoryQueue)
                     .where(
-                        ApartmentInventoryQueue.scheduled_at >= day_start,
-                        ApartmentInventoryQueue.scheduled_at < day_end,
+                        ApartmentInventoryQueue.scheduled_at >= period_start,
+                        ApartmentInventoryQueue.scheduled_at < period_end,
                         ApartmentInventoryQueue.status.in_(("queued", "publishing")),
                     )
                 )
@@ -624,8 +626,8 @@ class InventoryRepository:
                     await session.scalars(
                         select(Apartment.district).where(
                             Apartment.publication_status == "published",
-                            Apartment.published_at >= day_start,
-                            Apartment.published_at < day_end,
+                            Apartment.published_at >= period_start,
+                            Apartment.published_at < period_end,
                         )
                     )
                 ).all()
@@ -637,8 +639,8 @@ class InventoryRepository:
                         select(Apartment.district)
                         .join(ApartmentInventoryQueue)
                         .where(
-                            ApartmentInventoryQueue.scheduled_at >= day_start,
-                            ApartmentInventoryQueue.scheduled_at < day_end,
+                            ApartmentInventoryQueue.scheduled_at >= period_start,
+                            ApartmentInventoryQueue.scheduled_at < period_end,
                             ApartmentInventoryQueue.status.in_(
                                 ("queued", "publishing")
                             ),
@@ -695,18 +697,14 @@ class InventoryRepository:
                 ).all()
             )
             chooser = rng or random.SystemRandom()
-            target_override = None
-            central_override = None
-            if period.astimezone(BISHKEK).hour != 0:
-                daily_target = daily_publication_target(period)
-                target_override = max(
-                    0, daily_target - published_today - reserved_today
-                )
-                daily_central_target = round(daily_target * CENTRAL_DAILY_SHARE)
-                central_override = max(
-                    0,
-                    daily_central_target - published_central - reserved_central,
-                )
+            period_target, period_central_target = period_publication_targets(period)
+            target_override = max(
+                0, period_target - published_in_period - reserved_in_period
+            )
+            central_override = max(
+                0,
+                period_central_target - published_central - reserved_central,
+            )
             planned = plan_period(
                 fresh_stock,
                 period_start=period,
@@ -727,33 +725,6 @@ class InventoryRepository:
                     )
                     for item in planned
                 ]
-            if planned:
-                local_now = now.astimezone(BISHKEK)
-                day_end = (
-                    local_now.replace(hour=0, minute=0, second=0, microsecond=0)
-                    + timedelta(days=1)
-                ).astimezone(timezone.utc)
-                if planned[-1].scheduled_at >= day_end:
-                    start = now - timedelta(seconds=1)
-                    usable_seconds = max(1.0, (day_end - start).total_seconds())
-                    slot_seconds = usable_seconds / (len(planned) + 1)
-                    planned = [
-                        PlannedApartment(
-                            apartment=item.apartment,
-                            scheduled_at=(
-                                start
-                                if index == 0
-                                else start
-                                + timedelta(
-                                    seconds=slot_seconds
-                                    * (index + chooser.uniform(0.15, 0.85))
-                                )
-                            ),
-                            window_key=item.window_key,
-                            sequence=item.sequence,
-                        )
-                        for index, item in enumerate(planned)
-                    ]
             planned_ids = [item.apartment.id for item in planned]
             existing_rows = {
                 row.apartment_id: row
