@@ -67,7 +67,6 @@ _lalafo_restart_lock = asyncio.Lock()
 _apartment_scheduler_task: asyncio.Task[None] | None = None
 _service_keepalive_task: asyncio.Task[None] | None = None
 _background_watchdog_task: asyncio.Task[None] | None = None
-_requested_lalafo_task: asyncio.Task[None] | None = None
 _shutting_down = False
 _lalafo_mcp_context: Any | None = None
 _bot_setup_state: dict[str, Any] = {
@@ -110,42 +109,6 @@ _background_watchdog_state: dict[str, Any] = {
     "last_error": None,
     "restart_count": 0,
 }
-_requested_lalafo_state: dict[str, Any] = {
-    "state": "pending",
-    "last_started_at": None,
-    "last_finished_at": None,
-    "last_error": None,
-}
-
-
-async def _publish_requested_lalafo_once() -> None:
-    """Finish the explicitly requested Lalafo publication on the cloud host."""
-    _requested_lalafo_state.update(
-        state="running",
-        last_started_at=_now(),
-        last_finished_at=None,
-        last_error=None,
-    )
-    try:
-        from scripts.publish_featured_lalafo import run as publish_requested
-
-        exit_code = await publish_requested()
-        _requested_lalafo_state.update(
-            state="completed" if exit_code == 0 else "failed",
-            last_error=None if exit_code == 0 else f"ExitCode{exit_code}",
-        )
-    except asyncio.CancelledError:
-        raise
-    except Exception as exc:
-        _requested_lalafo_state.update(
-            state="failed",
-            last_error=type(exc).__name__,
-        )
-        logger.exception("Requested Lalafo publication failed")
-    finally:
-        _requested_lalafo_state["last_finished_at"] = _now()
-
-
 class MiniAppRequest(BaseModel):
     init_data: str
     start_param: str
@@ -784,7 +747,7 @@ async def startup() -> None:
     global _legacy_featured_cleanup_task
     global _keyboard_sync_task, _lalafo_auto_responder
     global _lalafo_watchdog_task, _apartment_scheduler_task
-    global _service_keepalive_task, _background_watchdog_task, _requested_lalafo_task
+    global _service_keepalive_task, _background_watchdog_task
     global _shutting_down
     global _lalafo_mcp_context
     settings = get_settings()
@@ -852,15 +815,6 @@ async def startup() -> None:
     _background_watchdog_task = asyncio.create_task(
         _watch_background_tasks(), name="background-task-watchdog"
     )
-    if settings.lalafo_login and settings.lalafo_password:
-        _requested_lalafo_task = asyncio.create_task(
-            _publish_requested_lalafo_once(), name="requested-lalafo-publication"
-        )
-    else:
-        _requested_lalafo_state.update(
-            state="disabled",
-            last_error="MissingLalafoCredentials",
-        )
 
 
 @app.on_event("shutdown")
@@ -869,15 +823,10 @@ async def shutdown() -> None:
     global _legacy_featured_cleanup_task
     global _keyboard_sync_task, _lalafo_auto_responder
     global _lalafo_watchdog_task, _apartment_scheduler_task
-    global _service_keepalive_task, _background_watchdog_task, _requested_lalafo_task
+    global _service_keepalive_task, _background_watchdog_task
     global _shutting_down
     global _lalafo_mcp_context
     _shutting_down = True
-    if _requested_lalafo_task is not None and not _requested_lalafo_task.done():
-        _requested_lalafo_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await _requested_lalafo_task
-    _requested_lalafo_task = None
     if _lalafo_mcp_context is not None:
         await _lalafo_mcp_context.__aexit__(None, None, None)
         _lalafo_mcp_context = None
@@ -1097,7 +1046,6 @@ async def health() -> JSONResponse:
             ),
             "background_watchdog": dict(_background_watchdog_state),
             "lalafo_auto_reply": auto_reply,
-            "requested_lalafo_publication": dict(_requested_lalafo_state),
             "apartment_scheduler": (
                 {
                     "state": "running" if scheduler_running else "recovering",
