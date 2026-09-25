@@ -60,12 +60,12 @@ def test_telegram_init_data_rejects_tampering_and_stale_payload():
     ) is None
 
 
-def test_mini_app_page_keeps_payment_and_receipt_in_one_window():
+def test_mini_app_page_uses_automatic_access_delivery():
     html = mini_app_html()
 
     assert "/miniapp/api/session" in html
     assert "/miniapp/api/start" in html
-    assert "/miniapp/api/check" in html
+    assert "/miniapp/api/access" in html
     assert "1 неделя доступа к номерам — 499 сом" in html
     assert "1 месяц доступа к номерам — 999 сом" in html
     assert "Оплатить неделю — 499 сом" in html
@@ -80,9 +80,9 @@ def test_mini_app_page_keeps_payment_and_receipt_in_one_window():
     assert "prepareTelegramContext" in html
     assert "Выберите банк" not in html
     assert "Выберите доступ:" not in html
-    assert "Я оплатил(а)" in html
-    assert "Статус: оплата проверяется" in html
-    assert "Оплата проверяется. Квартира сохранена" in html
+    assert "📞 Получить номер" in html
+    assert "Статус: оплата проверяется" not in html
+    assert "Оплата проверяется" not in html
     assert 'accepted && data.status !== "approved" && data.status !== "pending"' in html
     assert "Открываю Finik" not in html
     assert "Создаём защищённую ссылку" not in html
@@ -90,7 +90,7 @@ def test_mini_app_page_keeps_payment_and_receipt_in_one_window():
     assert "/miniapp/api/consent" in html
     assert "/miniapp/api/availability" in html
     assert 'show("status", !approved)' in html
-    assert 'show("refresh", !approved' in html
+    assert 'id="refresh"' not in html
     assert '"\n🔐 Депозит: "' not in html
     assert '"\\n🔐 Депозит: "' in html
     assert "Без перехода в личный чат" not in html

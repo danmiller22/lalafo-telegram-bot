@@ -28,16 +28,16 @@ def test_support_url_always_opens_the_customer_bot():
 
 def test_faq_answers_only_confident_common_questions():
     assert faq_for_text("Как получить номер собственника?").key == "phone"
-    assert faq_for_text("куда отправить чек после оплаты").key == "payment"
+    assert faq_for_text("как оплатить доступ").key == "payment"
     assert faq_for_text("сколько стоит тариф на неделю").key == "week"
-    assert faq_for_text("сколько ждать проверку оплаты").key == "review"
+    assert faq_for_text("оплатил но номера нет").key == "review"
     assert faq_for_text("У меня необычная проблема с конкретной квартирой") is None
 
 
 def test_payment_faq_gives_only_customer_facing_instructions():
-    assert "дождитесь подтверждения" in FAQ_BY_KEY["payment"].answer
-    assert "проверяется вручную" in FAQ_BY_KEY["review"].answer
-    assert "автоматически" not in FAQ_BY_KEY["review"].answer
+    assert "Получить номер" in FAQ_BY_KEY["payment"].answer
+    assert "автоматически" in FAQ_BY_KEY["review"].answer
+    assert "проверяется вручную" not in FAQ_BY_KEY["review"].answer
     assert "Finik" not in FAQ_BY_KEY["review"].answer
 
 

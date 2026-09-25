@@ -16,7 +16,6 @@ from app.finik import (
     sign_request,
     verify_request,
 )
-from app.web import PAYMENT_REVIEW_MESSAGE
 
 
 def _keys() -> tuple[str, str]:
@@ -75,11 +74,6 @@ def test_payment_configuration_id_changes_with_merchant() -> None:
         api_url="https://api.acquiring.averspay.kg/v1/payment",
         account_id="old-personal-account",
     )
-
-
-def test_payment_review_message_explains_manual_confirmation() -> None:
-    assert "отправлена на проверку" in PAYMENT_REVIEW_MESSAGE
-    assert "После подтверждения" in PAYMENT_REVIEW_MESSAGE
 
 
 @pytest.mark.asyncio

@@ -1,21 +1,18 @@
 from __future__ import annotations
 
 import asyncio
-import base64
-import binascii
 import logging
 import os
 import secrets
 import inspect
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
-from pathlib import PurePath
 from typing import Any
 from zoneinfo import ZoneInfo
 
 import httpx
 from aiogram import Bot
-from aiogram.types import BufferedInputFile, Update
+from aiogram.types import Update
 from fastapi import FastAPI, Header, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
@@ -32,9 +29,9 @@ from app.finik import (
     verify_request,
 )
 from app.security import TokenSigner
-from app.telegram.formatting import author_label, format_admin_card
+from app.telegram.formatting import author_label
 from app.terms import TERMS_TEXT
-from app.telegram.keyboards import admin_keyboard, payment_keyboard
+from app.telegram.keyboards import payment_keyboard
 from app.telegram.publisher import TelegramPublisher
 from app.telegram.miniapp import mini_app_html, verify_telegram_init_data
 from app.lalafo.phone import display_phone
@@ -47,11 +44,6 @@ logger = logging.getLogger(__name__)
 # while proxy scans can never block Telegram webhooks or the payment Mini App.
 IN_PROCESS_QUEUE_DISPATCHER_ENABLED = True
 app = FastAPI(title="Lalafo Telegram service", docs_url=None, redoc_url=None)
-
-PAYMENT_REVIEW_MESSAGE = (
-    "✅ Оплата получена и отправлена на проверку.\n\n"
-    "После подтверждения откройте нужную квартиру и нажмите «Посмотреть номер»."
-)
 
 _run_lock = asyncio.Lock()
 _scraper_task: asyncio.Task[None] | None = None
@@ -124,12 +116,6 @@ class LalafoIngestRequest(BaseModel):
     ads: list[LalafoAd]
 
 
-class MiniAppReceiptRequest(MiniAppRequest):
-    file_name: str
-    content_type: str
-    file_base64: str
-
-
 def _finik_payment_url(settings: Any, plan: str) -> str:
     return (
         settings.monthly_finik_payment_url
@@ -139,7 +125,7 @@ def _finik_payment_url(settings: Any, plan: str) -> str:
 
 
 def _uses_dynamic_finik(settings: Any, plan: str) -> bool:
-    """Manual approval uses permanent tariff links without creating extra Finiks."""
+    """The current automatic flow uses the configured permanent tariff links."""
     return False
 
 
@@ -1248,14 +1234,9 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
     return response
 
 
-@app.post("/miniapp/api/check", include_in_schema=False)
-async def miniapp_check_payment(payload: MiniAppRequest) -> dict[str, Any]:
-    settings, runtime, user, apartment_id = _miniapp_context(payload)
-    if not settings.admin_user_id:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Проверка оплаты временно недоступна.",
-        )
+@app.post("/miniapp/api/access", include_in_schema=False)
+async def miniapp_issue_access(payload: MiniAppRequest) -> dict[str, Any]:
+    _, runtime, user, apartment_id = _miniapp_context(payload)
     service = runtime.workflow_data["service"]
     payments = runtime.workflow_data["payments"]
     current = await service.contact_status(user.id, apartment_id)
@@ -1273,34 +1254,13 @@ async def miniapp_check_payment(payload: MiniAppRequest) -> dict[str, Any]:
         )
     if request is None:
         raise HTTPException(status_code=409, detail="Сначала откройте оплату.")
-    if request.status == "approved":
-        result = await service.contact_status(user.id, apartment_id)
-        return _miniapp_result_payload(result)
-    if await payments.claim_admin_notification(request.id):
-        try:
-            admin_message = await runtime.bot.send_message(
-                settings.admin_user_id,
-                format_admin_card(request),
-                reply_markup=admin_keyboard(
-                    request.id,
-                    signer=TokenSigner(settings.require_callback_secret()),
-                ),
-            )
-        except Exception as exc:
-            await payments.release_admin_notification(request.id)
-            logger.exception("Mini App payment notification failed")
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Не удалось отправить оплату на проверку. Попробуйте ещё раз.",
-            ) from exc
-        await payments.finish_admin_notification(request.id, admin_message.message_id)
     result = await service.contact_status(user.id, apartment_id)
     return _miniapp_result_payload(result)
 
 
 @app.post("/finik/webhook", include_in_schema=False)
 async def finik_webhook(request: Request) -> dict[str, str]:
-    """Verify a Finik callback and send successful payments for manual approval."""
+    """Verify a Finik callback and activate paid access automatically."""
     settings = get_settings()
     runtime = _bot_runtime
     if not settings.run_bot or runtime is None or not settings.finik_auto_enabled:
@@ -1352,123 +1312,7 @@ async def finik_webhook(request: Request) -> dict[str, str]:
     if outcome == "amount_mismatch":
         logger.error("Finik amount mismatch for payment request %s", payment_request.id)
         raise HTTPException(status_code=status.HTTP_409_CONFLICT)
-    if outcome in {"pending_review", "already_pending"} and payment_request is not None:
-        payments = runtime.workflow_data["payments"]
-        if await payments.claim_admin_notification(payment_request.id):
-            try:
-                admin_message = await runtime.bot.send_message(
-                    settings.admin_user_id,
-                    format_admin_card(payment_request),
-                    reply_markup=admin_keyboard(
-                        payment_request.id,
-                        signer=TokenSigner(settings.require_callback_secret()),
-                    ),
-                )
-            except Exception:
-                await payments.release_admin_notification(payment_request.id)
-                logger.exception("Finik payment review notification failed")
-            else:
-                await payments.finish_admin_notification(
-                    payment_request.id, admin_message.message_id
-                )
-        if outcome == "pending_review":
-            with suppress(Exception):
-                await runtime.bot.send_message(
-                    payment_request.telegram_user_id,
-                    PAYMENT_REVIEW_MESSAGE,
-                )
     return {"status": outcome}
-
-
-@app.post("/miniapp/api/receipt", include_in_schema=False)
-async def miniapp_upload_receipt(payload: MiniAppReceiptRequest) -> dict[str, Any]:
-    settings, runtime, user, apartment_id = _miniapp_context(payload)
-    if not settings.admin_user_id:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Проверка оплаты временно недоступна.",
-        )
-    if len(payload.file_base64) > 14_000_000:
-        raise HTTPException(status_code=413, detail="Файл должен быть не больше 10 МБ.")
-    try:
-        file_bytes = base64.b64decode(payload.file_base64, validate=True)
-    except (ValueError, binascii.Error) as exc:
-        raise HTTPException(status_code=400, detail="Не удалось прочитать файл чека.") from exc
-    if not file_bytes or len(file_bytes) > 10 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="Файл должен быть не больше 10 МБ.")
-    allowed_types = {"image/jpeg", "image/png", "application/pdf"}
-    content_type = payload.content_type.casefold()
-    if content_type not in allowed_types:
-        raise HTTPException(
-            status_code=415,
-            detail="Прикрепите чек в формате JPG, PNG или PDF.",
-        )
-
-    service = runtime.workflow_data["service"]
-    payments = runtime.workflow_data["payments"]
-    current = await service.contact_status(user.id, apartment_id)
-    if current.status == "approved":
-        return _miniapp_result_payload(current)
-    if current.status == "pending":
-        return _miniapp_result_payload(current)
-    if current.status != "awaiting_receipt":
-        try:
-            await service.begin_payment(
-                user_id=user.id,
-                apartment_id=apartment_id,
-                username=user.username,
-                first_name=user.first_name,
-                plan=WEEK_PLAN,
-            )
-        except LookupError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Квартира больше недоступна.",
-            ) from exc
-
-    request = await service.submit_receipt(
-        user_id=user.id,
-        file_id=f"miniapp:{apartment_id}:{int(datetime.now(UTC).timestamp())}",
-        file_type="photo" if content_type.startswith("image/") else "document",
-    )
-    if request is None:
-        raise HTTPException(status_code=409, detail="Сначала откройте оплату.")
-    if request.status == "approved":
-        result = await service.contact_status(user.id, apartment_id)
-        return _miniapp_result_payload(result)
-    if not await payments.claim_admin_notification(request.id):
-        result = await service.contact_status(user.id, apartment_id)
-        return _miniapp_result_payload(result)
-
-    filename = PurePath(payload.file_name or "receipt").name[:120] or "receipt"
-    upload = BufferedInputFile(file_bytes, filename=filename)
-    try:
-        caption = format_admin_card(request)
-        markup = admin_keyboard(request.id, signer=TokenSigner(settings.require_callback_secret()))
-        if content_type.startswith("image/"):
-            admin_message = await runtime.bot.send_photo(
-                settings.admin_user_id,
-                upload,
-                caption=caption,
-                reply_markup=markup,
-            )
-        else:
-            admin_message = await runtime.bot.send_document(
-                settings.admin_user_id,
-                upload,
-                caption=caption,
-                reply_markup=markup,
-            )
-    except Exception as exc:
-        await payments.restore_receipt_upload(request.id)
-        logger.exception("Mini App receipt notification failed")
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Не удалось отправить чек. Попробуйте ещё раз.",
-        ) from exc
-    await payments.finish_admin_notification(request.id, admin_message.message_id)
-    result = await service.contact_status(user.id, apartment_id)
-    return _miniapp_result_payload(result)
 
 
 @app.get("/pay/{token}", include_in_schema=False)

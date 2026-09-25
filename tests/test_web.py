@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 from datetime import UTC, datetime
 import hashlib
 import hmac
@@ -593,90 +592,7 @@ def test_manual_approval_uses_permanent_finik_links(
 
 
 @pytest.mark.asyncio
-async def test_miniapp_receipt_auto_approves_without_admin_notification(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    bot_token = "123456:telegram-test-token"
-    callback_secret = "c" * 32
-    monkeypatch.setenv("RUN_BOT", "true")
-    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", bot_token)
-    monkeypatch.setenv("CALLBACK_SECRET", callback_secret)
-    monkeypatch.setenv("ADMIN_USER_ID", "999")
-    get_settings.cache_clear()
-    apartment = SimpleNamespace(
-        id=42,
-        rooms="1",
-        district="ЦУМ",
-        city="Бишкек",
-        price=25_000,
-        deposit=None,
-        photo_urls=["https://img.example/apartment.jpg"],
-        phone="+996555123456",
-    )
-    awaiting = SimpleNamespace(
-        status="awaiting_receipt", apartment=apartment, access_expires_at=None
-    )
-    approved = SimpleNamespace(
-        status="approved", apartment=apartment, access_expires_at=None
-    )
-    request = SimpleNamespace(
-        id=73,
-        telegram_user_id=778899,
-        username="mini_user",
-        first_name="Test",
-        plan="week",
-        status="approved",
-        apartment=apartment,
-    )
-    service = SimpleNamespace(
-        contact_status=AsyncMock(side_effect=[awaiting, approved]),
-        begin_payment=AsyncMock(),
-        submit_receipt=AsyncMock(return_value=request),
-    )
-    payments = SimpleNamespace(
-        claim_admin_notification=AsyncMock(return_value=True),
-        finish_admin_notification=AsyncMock(return_value=True),
-        restore_receipt_upload=AsyncMock(),
-    )
-    bot = SimpleNamespace(
-        send_photo=AsyncMock(return_value=SimpleNamespace(message_id=515)),
-        send_document=AsyncMock(),
-    )
-    monkeypatch.setattr(
-        web,
-        "_bot_runtime",
-        SimpleNamespace(
-            bot=bot,
-            workflow_data={"service": service, "payments": payments},
-        ),
-    )
-    signer = TokenSigner(callback_secret)
-    transport = httpx.ASGITransport(app=web.app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.post(
-            "/miniapp/api/receipt",
-            json={
-                "init_data": miniapp_init_data(bot_token=bot_token, user_id=778899),
-                "start_param": signer.sign_start_id("miniapp-apartment", 42),
-                "file_name": "receipt.jpg",
-                "content_type": "image/jpeg",
-                "file_base64": base64.b64encode(b"receipt-image").decode(),
-            },
-        )
-
-    assert response.status_code == 200
-    assert response.json()["status"] == "approved"
-    service.begin_payment.assert_not_awaited()
-    service.submit_receipt.assert_awaited_once()
-    payments.claim_admin_notification.assert_not_awaited()
-    payments.finish_admin_notification.assert_not_awaited()
-    payments.restore_receipt_upload.assert_not_awaited()
-    bot.send_photo.assert_not_awaited()
-    bot.send_document.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_miniapp_payment_check_auto_approves_without_admin_notification(
+async def test_miniapp_access_is_issued_without_admin_notification(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     bot_token = "123456:telegram-test-token"
@@ -737,7 +653,7 @@ async def test_miniapp_payment_check_auto_approves_without_admin_notification(
     transport = httpx.ASGITransport(app=web.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
-            "/miniapp/api/check",
+            "/miniapp/api/access",
             json={
                 "init_data": miniapp_init_data(bot_token=bot_token, user_id=778899),
                 "start_param": signer.sign_start_id("miniapp-apartment", 42),

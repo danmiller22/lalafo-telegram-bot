@@ -2,13 +2,10 @@ import re
 
 from app.security import TokenSigner
 from app.telegram.keyboards import (
-    admin_keyboard,
     apartment_keyboard,
     payment_keyboard,
-    pending_payment_keyboard,
     private_contact_keyboard,
     private_payment_keyboard,
-    receipt_payment_keyboard,
     reveal_keyboard,
     status_keyboard,
 )
@@ -37,7 +34,6 @@ def test_callback_data_is_short_and_contains_no_phone():
         payment_url="https://qr.finik.kg/payment",
         support_url=support_url,
     )
-    admin = admin_keyboard(987654321, signer=signer)
     status = status_keyboard(
         123456789,
         signer=signer,
@@ -52,24 +48,11 @@ def test_callback_data_is_short_and_contains_no_phone():
         support_url=support_url,
     )
     private_contact = private_contact_keyboard(support_url=support_url)
-    receipt = receipt_payment_keyboard(
-        123456789,
-        signer=signer,
-        payment_url="https://qr.finik.kg/payment",
-        support_url=support_url,
-    )
-    pending_receipt = pending_payment_keyboard(
-        123456789, signer=signer, support_url=support_url
-    )
     for callback in (
         payment.inline_keyboard[1][0].callback_data,
         status.inline_keyboard[1][0].callback_data,
         reveal.inline_keyboard[0][0].callback_data,
         private_payment.inline_keyboard[0][0].callback_data,
-        pending_receipt.inline_keyboard[0][0].callback_data,
-        receipt.inline_keyboard[1][0].callback_data,
-        admin.inline_keyboard[0][0].callback_data,
-        admin.inline_keyboard[0][1].callback_data,
     ):
         assert len(callback.encode()) <= 64
         assert "+996" not in callback
@@ -100,8 +83,6 @@ def test_callback_data_is_short_and_contains_no_phone():
         reveal,
         private_payment,
         private_contact,
-        receipt,
-        pending_receipt,
     ):
         assert any(
             button.text == "🛟 Техподдержка"
@@ -118,11 +99,6 @@ def test_callback_data_is_short_and_contains_no_phone():
         "Базовая: 7 дней — 499 сом",
         "🛟 Техподдержка",
     ]
-    assert receipt.inline_keyboard[0][0].text == "💳 Оплатить 499 сом"
-    assert receipt.inline_keyboard[1][0].text == "✅ Я оплатил(а)"
-    assert receipt.inline_keyboard[1][0].callback_data == "receipt:send"
-    assert len(receipt.inline_keyboard) == 3
-    assert pending_receipt.inline_keyboard[0][0].text == "⏳ Чек проверяется"
     assert len(private_contact.inline_keyboard) == 1
 
 
@@ -142,13 +118,12 @@ def test_payment_and_status_keyboards_keep_recovery_actions():
     )
     assert [row[0].text for row in payment.inline_keyboard] == [
         "💳 Оплатить 499 сом",
-        "✅ Я оплатил",
-        "🔄 Проверить оплату / Получить номер",
+        "📞 Получить номер",
         "🛟 Техподдержка",
     ]
     assert [row[0].text for row in status.inline_keyboard] == [
         "💳 Оплатить 499 сом",
-        "⏳ Проверить оплату / Получить номер",
+        "📞 Получить номер",
         "🛟 Техподдержка",
     ]
 

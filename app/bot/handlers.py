@@ -26,9 +26,8 @@ from app.payment_plans import (
 from app.payments.service import PaymentService
 from app.security import TokenSigner
 from app.support.handlers import begin_support
-from app.telegram.formatting import format_admin_card, format_apartment
+from app.telegram.formatting import format_apartment
 from app.telegram.keyboards import (
-    admin_keyboard,
     apartment_keyboard,
     payment_keyboard,
     private_payment_keyboard,
@@ -138,22 +137,21 @@ async def start_handler(
         apartment_text = format_apartment(result.apartment) if result.apartment else "Квартира"
         if result.status == "pending":
             text = (
-                "⏳ Оплата уже отправлена на проверку.\n\n"
+                "📞 Доступ готов к выдаче.\n\n"
                 f"{apartment_text}\n\n"
-                "Повторно оплачивать не нужно. После подтверждения полная карточка "
-                "с номером придёт сюда автоматически."
+                "Нажмите «Получить номер»."
             )
         elif result.status == "awaiting_receipt":
             text = (
-                "💳 Оплата ещё не отправлена на проверку.\n\n"
+                "💳 Оплата\n\n"
                 f"{apartment_text}\n\n"
-                "Оплатите выбранный тариф и нажмите «Я оплатил»."
+                "После оплаты нажмите «Получить номер»."
             )
         elif result.status == "rejected":
             text = (
-                "❌ Оплата не подтверждена.\n\n"
+                "💳 Откройте оплату повторно.\n\n"
                 f"{apartment_text}\n\n"
-                "Выберите тариф, оплатите и снова нажмите «Я оплатил»."
+                "Выберите тариф ниже."
             )
         else:
             text = (
@@ -242,7 +240,7 @@ async def plan_handler(
         await callback.answer("✅ Карточка с номером отправлена вам.")
         return
     if access.status == "pending":
-        await callback.answer("⏳ Ваша оплата уже проверяется.", show_alert=True)
+        await callback.answer("Нажмите «Получить номер» на экране оплаты.", show_alert=True)
         return
     try:
         submission = await service.begin_payment(
@@ -273,75 +271,6 @@ async def plan_handler(
                 price=price,
             ),
         )
-
-
-@router.message(F.chat.type == "private", F.photo | F.document)
-async def receipt_handler(
-    message: Message,
-    service: PaymentService,
-    payments: PaymentRepository,
-    signer: TokenSigner,
-    settings: Settings,
-    bot: Bot,
-) -> None:
-    if message.photo:
-        file_id = message.photo[-1].file_id
-        file_type = "photo"
-    elif message.document:
-        file_id = message.document.file_id
-        file_type = "document"
-    else:
-        return
-    request = await service.submit_receipt(
-        user_id=message.from_user.id,
-        file_id=file_id,
-        file_type=file_type,
-    )
-    if request is None:
-        await message.answer(
-            "Сначала откройте нужную квартиру, нажмите «Посмотреть номер» "
-            "и оформите недельный доступ."
-        )
-        return
-    await message.answer(
-        "✅ Чек получен и отправлен на проверку.\n\n"
-        "Пожалуйста, подождите. После подтверждения бот сразу пришлёт карточку с номером."
-    )
-    if request.status == "approved":
-        return
-    if not settings.admin_user_id or not await payments.claim_admin_notification(request.id):
-        return
-    try:
-        caption = format_admin_card(request)
-        markup = admin_keyboard(request.id, signer=signer)
-        if file_type == "photo":
-            admin_message = await bot.send_photo(
-                settings.admin_user_id,
-                file_id,
-                caption=caption,
-                reply_markup=markup,
-            )
-        else:
-            admin_message = await bot.send_document(
-                settings.admin_user_id,
-                file_id,
-                caption=caption,
-                reply_markup=markup,
-            )
-    except Exception as exc:
-        await payments.release_admin_notification(request.id)
-        logger.error("Admin receipt notification failed: %s", type(exc).__name__)
-        return
-    await payments.finish_admin_notification(request.id, admin_message.message_id)
-
-
-@router.callback_query(F.data == "receipt:send")
-async def receipt_prompt_handler(callback: CallbackQuery) -> None:
-    await callback.answer(
-        "🧾 Отправьте в этот чат фото или файл чека. Бот примет его и сообщит "
-        "результат проверки здесь.",
-        show_alert=True,
-    )
 
 
 @router.callback_query(F.data == "menu:status")
@@ -422,7 +351,7 @@ async def contact_handler(
     result = await service.contact_status(callback.from_user.id, apartment_id)
     if result.status == "approved" and result.apartment:
         await callback.answer(
-            "✅ Оплата подтверждена. Откройте личный чат бота из обновлённой кнопки.",
+            "✅ Доступ активен. Откройте личный чат бота из обновлённой кнопки.",
             show_alert=True,
         )
         if callback.message:
@@ -441,7 +370,7 @@ async def contact_handler(
             apartment_id=apartment_id,
         )
         payment_url, price = _payment_details(result.plan, settings)
-        await callback.answer("⏳ Оплата уже отправлена на проверку.", show_alert=True)
+        await callback.answer("Нажмите «Получить номер».", show_alert=True)
         if callback.message:
             try:
                 await callback.message.edit_reply_markup(
@@ -499,15 +428,14 @@ async def view_contact_handler(
             await callback.answer("✅ Полная карточка отправлена вам в этот чат.")
         else:
             await callback.answer(
-                "✅ Оплата подтверждена. Откройте личный чат бота из карточки квартиры.",
+                "✅ Доступ активен. Откройте личный чат бота из карточки квартиры.",
                 show_alert=True,
             )
         return
     if result.status == "pending":
         payment_url, price = _payment_details(result.plan, settings)
         await callback.answer(
-            "⏳ Оплата ещё проверяется.\n\n"
-            "Кнопка останется на месте. После подтверждения нажмите её ещё раз.",
+            "Нажмите «Получить номер» для автоматической выдачи карточки.",
             show_alert=True,
         )
         if callback.message:
@@ -534,7 +462,7 @@ async def view_contact_handler(
         return
     if result.status == "awaiting_receipt":
         payment_url, price = _payment_details(result.plan, settings)
-        await callback.answer("После оплаты нажмите «Я оплатил».", show_alert=True)
+        await callback.answer("После оплаты нажмите «Получить номер».", show_alert=True)
         if callback.message:
             await callback.message.edit_reply_markup(
                 reply_markup=payment_keyboard(
@@ -548,7 +476,7 @@ async def view_contact_handler(
         return
     if result.status == "rejected":
         await callback.answer(
-            "❌ Оплата не подтверждена. Можно повторить оплату и отправить её снова.",
+            "Откройте оплату повторно или выберите другой тариф.",
             show_alert=True,
         )
         if callback.message:
@@ -574,7 +502,7 @@ async def view_contact_handler(
         await callback.answer("Квартира больше недоступна.", show_alert=True)
         return
     await callback.answer(
-        "Выберите тариф и после оплаты нажмите «Я оплатил».",
+        "Выберите тариф и после оплаты нажмите «Получить номер».",
         show_alert=True,
     )
     if callback.message:
@@ -615,108 +543,28 @@ async def paid_handler(
         await callback.answer("Недействительная кнопка.", show_alert=True)
         return
     result = await service.contact_status(callback.from_user.id, apartment_id)
-    if result.status == "approved" and result.apartment:
-        if callback.message and callback.message.chat.type == "private":
-            await send_private_contact(
-                bot,
-                user_id=callback.from_user.id,
-                apartment=result.apartment,
-                support_url=settings.support_bot_url,
-                max_photos=settings.max_photos_per_apartment,
-            )
-            await callback.answer("✅ Полная карточка отправлена вам в этот чат.")
-        else:
-            await callback.answer(
-                "✅ Оплата подтверждена. Откройте личный чат бота из карточки квартиры.",
-                show_alert=True,
-            )
-        return
-    if result.status == "pending":
-        await payments.mark_payment_claimed(
-            user_id=callback.from_user.id,
-            apartment_id=apartment_id,
-        )
-        payment_url, price = _payment_details(result.plan, settings)
-        await callback.answer(
-            "⏳ Оплата ещё проверяется. Повторно оплачивать не нужно.",
-            show_alert=True,
-        )
-        if callback.message:
-            try:
-                if callback.message.chat.type == "private":
-                    reply_markup = status_keyboard(
-                        apartment_id,
-                        signer=signer,
-                        payment_url=payment_url,
-                        support_url=settings.support_bot_url,
-                        price=price,
-                    )
-                else:
-                    reply_markup = status_keyboard(
-                        apartment_id,
-                        signer=signer,
-                        payment_url=payment_url,
-                        support_url=settings.support_bot_url,
-                        price=price,
-                    )
-                await callback.message.edit_reply_markup(reply_markup=reply_markup)
-            except Exception:
-                logger.exception("Could not restore pending payment keyboard")
-        return
-    if result.status == "awaiting_receipt":
-        payment_url, price = _payment_details(result.plan, settings)
+    if result.status in {"awaiting_receipt", "pending"}:
         request = await payments.mark_payment_claimed(
             user_id=callback.from_user.id,
             apartment_id=apartment_id,
         )
-        if request is None:
-            await callback.answer("Сначала откройте оплату.", show_alert=True)
-            return
-        if request.status == "approved":
-            approved = await service.contact_status(callback.from_user.id, apartment_id)
-            if approved.apartment:
-                await send_private_contact(
-                    bot,
-                    user_id=callback.from_user.id,
-                    apartment=approved.apartment,
-                    support_url=settings.support_bot_url,
-                    max_photos=settings.max_photos_per_apartment,
-                )
-            await callback.answer("✅ Полная карточка отправлена вам в этот чат.")
-            return
-        if settings.admin_user_id and await payments.claim_admin_notification(request.id):
-            try:
-                admin_message = await bot.send_message(
-                    settings.admin_user_id,
-                    format_admin_card(request),
-                    reply_markup=admin_keyboard(request.id, signer=signer),
-                )
-            except Exception:
-                await payments.release_admin_notification(request.id)
-                logger.exception("Admin payment notification failed")
-                await callback.answer(
-                    "Не удалось отправить оплату на проверку. Нажмите ещё раз.",
-                    show_alert=True,
-                )
-                return
-            await payments.finish_admin_notification(request.id, admin_message.message_id)
-        await callback.answer("✅ Заявка на проверку отправлена.", show_alert=True)
-        if callback.message:
-            await callback.message.edit_reply_markup(
-                reply_markup=status_keyboard(
-                    apartment_id,
-                    signer=signer,
-                    payment_url=payment_url,
-                    support_url=settings.support_bot_url,
-                    price=price,
-                )
-            )
+        if request is not None:
+            result = await service.contact_status(callback.from_user.id, apartment_id)
+    if result.status == "approved" and result.apartment:
+        await send_private_contact(
+            bot,
+            user_id=callback.from_user.id,
+            apartment=result.apartment,
+            support_url=settings.support_bot_url,
+            max_photos=settings.max_photos_per_apartment,
+        )
+        await callback.answer("✅ Карточка с номером отправлена вам.")
         return
     if result.status == "unavailable":
         await callback.answer("Квартира больше недоступна.", show_alert=True)
         return
     await callback.answer(
-        "Выберите тариф, оплатите и нажмите «Я оплатил».",
+        "Сначала выберите тариф и откройте оплату.",
         show_alert=True,
     )
     if callback.message:

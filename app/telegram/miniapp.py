@@ -100,9 +100,7 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     <a id="phone" class="phone hidden"></a>
     <button id="pay-week" class="primary hidden">Оплатить неделю — {WEEK_PRICE} сом</button>
     <button id="pay-month" class="primary hidden">Оплатить месяц — {MONTH_PRICE} сом</button>
-    <button id="check" class="secondary hidden">Я оплатил(а)</button>
-    <button id="checking" class="secondary hidden" disabled>⏳ Статус: оплата проверяется</button>
-    <button id="refresh" class="secondary hidden">Обновить статус</button>
+    <button id="access" class="secondary hidden">📞 Получить номер</button>
     <button id="accept" class="primary hidden">✅ Я ознакомлен(а) с условиями и согласен(на) со всеми пунктами</button>
     <button id="availability" class="secondary hidden">🔄 Проверить актуальность</button>
     <a id="privacy" class="button secondary hidden">🔒 Политика конфиденциальности</a>
@@ -117,7 +115,6 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
   const el = id => document.getElementById(id);
   let initData = query.get("tgWebAppData") || hash.get("tgWebAppData") || "";
   let startParam = query.get("tgWebAppStartParam") || hash.get("tgWebAppStartParam") || "";
-  let lastState = "";
   let paymentOpening = false;
 
   function telegramContext() {{
@@ -152,7 +149,6 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     return data;
   }}
   function render(data) {{
-    lastState = data.status;
     const approved = data.status === "approved";
     const accepted = Boolean(data.terms_accepted);
     el("title").textContent = approved ? "Квартира" : "Получить доступ";
@@ -165,9 +161,7 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     const canPay = accepted && data.status !== "approved" && data.status !== "pending";
     show("pay-week", canPay);
     show("pay-month", canPay && Boolean(data.monthly_available));
-    show("refresh", !approved && data.status !== "unpaid");
-    show("check", data.status === "awaiting_receipt");
-    show("checking", data.status === "pending");
+    show("access", data.status === "awaiting_receipt" || data.status === "pending");
     show("accept", !approved && !accepted);
     show("availability", !approved);
     show("privacy", !approved);
@@ -199,12 +193,10 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
       el("phone").href = "tel:" + String(data.phone || "").replace(/\\s+/g, "");
     }} else if (!accepted) {{
       message("Ознакомьтесь с условиями перед выбором тарифа.");
-    }} else if (data.status === "pending") {{
-      message("⏳ Оплата проверяется. Квартира сохранена — номер появится здесь после подтверждения.");
-    }} else if (data.status === "awaiting_receipt") {{
-      message("После оплаты нажмите «Я оплатил(а)». Мы проверим поступление.");
+    }} else if (data.status === "pending" || data.status === "awaiting_receipt") {{
+      message("После оплаты нажмите «Получить номер».");
     }} else if (data.status === "rejected") {{
-      message("Оплата не подтверждена. Можно повторить оплату и отправить новый чек.");
+      message("Откройте оплату повторно или выберите другой тариф.");
     }} else {{
       message("");
       show("status", false);
@@ -214,7 +206,6 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     await prepareTelegramContext();
     if (!initData || !startParam) {{
       message("Откройте это окно кнопкой под карточкой квартиры в Telegram.");
-      show("refresh", false);
       return;
     }}
     try {{
@@ -242,15 +233,14 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
   }}
   el("pay-week").onclick = () => startPayment("week", "pay-week");
   el("pay-month").onclick = () => startPayment("month", "pay-month");
-  el("check").onclick = async () => {{
-    el("check").disabled = true;
-    message("Проверяем заявку…");
+  el("access").onclick = async () => {{
+    el("access").disabled = true;
+    message("Выдаём карточку…");
     try {{
-      render(await api("/miniapp/api/check", {{}}));
+      render(await api("/miniapp/api/access", {{}}));
     }} catch (error) {{ message(error.message); }}
-    finally {{ el("check").disabled = false; }}
+    finally {{ el("access").disabled = false; }}
   }};
-  el("refresh").onclick = load;
   el("accept").onclick = async () => {{
     el("accept").disabled = true;
     try {{ render(await api("/miniapp/api/consent", {{}})); }}
@@ -264,7 +254,6 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     finally {{ el("availability").disabled = false; }}
   }};
   load();
-  setInterval(() => {{ if (lastState === "pending") load(); }}, 5000);
 }})();
 </script>
 </body>

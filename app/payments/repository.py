@@ -999,7 +999,7 @@ class PaymentRepository:
     async def apply_provider_result(
         self, payment_id: str, *, succeeded: bool, amount: int | float | None
     ) -> tuple[str, PaymentRequest | None]:
-        """Verify a provider result and queue successful payments for manual review."""
+        """Verify a provider result and activate access automatically."""
         async with self.sessions.begin() as session:
             result = await session.execute(
                 select(PaymentRequest)
@@ -1018,24 +1018,17 @@ class PaymentRepository:
             if not succeeded:
                 current.provider_status = "failed"
                 return "failed", current
-            if current.status == "pending" and current.provider_status == "succeeded":
-                request_id = current.id
-                outcome = "already_pending"
-            else:
-                current.status = "pending"
-                current.provider_status = "succeeded"
-                current.approved_at = None
-                current.approved_by = None
-                current.access_expires_at = None
-                current.rejected_at = None
-                current.rejected_by = None
-                request_id = current.id
-                outcome = "pending_review"
+            current.status = "pending"
+            current.provider_status = "succeeded"
+            current.approved_at = None
+            current.approved_by = None
+            current.access_expires_at = None
+            current.rejected_at = None
+            current.rejected_by = None
+            request_id = current.id
             await session.flush()
-        if outcome == "pending_review":
-            await self.decide(request_id, approve=True, admin_id=0)
-            return "approved", await self.get_request(request_id)
-        return outcome, await self.get_request(request_id)
+        await self.decide(request_id, approve=True, admin_id=0)
+        return "approved", await self.get_request(request_id)
 
     async def pending(self, limit: int = 20) -> list[PaymentRequest]:
         async with self.sessions() as session:

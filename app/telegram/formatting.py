@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from app.lalafo.models import LalafoAd
-from app.models import Apartment, PaymentRequest
-from app.payment_plans import plan_label, plan_price
+from app.models import Apartment
 
 
 def format_money(value: int) -> str:
@@ -72,48 +71,3 @@ def format_apartment(ad: LalafoAd | Apartment) -> str:
 def format_public_apartment(ad: LalafoAd | Apartment, *, bot_username: str) -> str:
     username = bot_username.lstrip("@")
     return f"{format_apartment(ad)}\n\n🔎 Ищете квартиру? Подайте заявку: @{username}"
-
-
-def user_label(request: PaymentRequest) -> str:
-    if request.username:
-        return f"@{request.username} (ID {request.telegram_user_id})"
-    return f"{request.first_name or 'Пользователь'} ({request.telegram_user_id})"
-
-
-def format_admin_card(request: PaymentRequest) -> str:
-    apartment = request.apartment
-    payment_line = f"💰 Оплата: {plan_price(request.plan)} сом"
-    lines = [
-        "💳 Проверка оплаты",
-        "",
-        f"🏠 Квартира #{apartment.id}",
-        f"👤 {user_label(request)}",
-        f"💳 Тариф: {plan_label(request.plan)}",
-        payment_line,
-        (
-            "🧾 Чек прикреплён клиентом"
-            if getattr(request, "receipt_file_id", None)
-            else (
-                "✅ Платёж подтверждён — выдайте доступ вручную"
-                if getattr(request, "provider_status", None) == "succeeded"
-                else "⏳ Клиент нажал «Я оплатил(а)» — проверьте поступление"
-            )
-        ),
-    ]
-    if apartment.district:
-        lines.append(f"📍 {apartment.district}")
-    lines.append(f"🏙 {apartment.city}")
-    return "\n".join(lines)
-
-
-def format_admin_decision(request: PaymentRequest, approved: bool) -> str:
-    plan_line = f"💳 {plan_label(request.plan)} · {plan_price(request.plan)} сом"
-    return "\n".join(
-        [
-            "✅ Оплата подтверждена" if approved else "❌ Оплата отклонена",
-            "",
-            f"🏠 Квартира #{request.apartment.id}",
-            f"👤 {user_label(request)}",
-            plan_line,
-        ]
-    )
