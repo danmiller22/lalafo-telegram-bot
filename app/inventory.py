@@ -556,6 +556,7 @@ class InventoryRepository:
         period = discovery_period_start(now)
         period_start = period.astimezone(timezone.utc)
         period_end = period_start + timedelta(hours=12)
+        period_window_key = f"{period.strftime('%Y%m%dT%H')}-two-hour-batches"
         day_start_local = period.astimezone(BISHKEK).replace(hour=0)
         day_start = day_start_local.astimezone(timezone.utc)
         day_end = (day_start_local + timedelta(days=1)).astimezone(timezone.utc)
@@ -596,7 +597,28 @@ class InventoryRepository:
                 or 0
             )
             already_non_owners = published_non_owners + reserved_non_owners
-            published_in_period = int(
+            reserved_in_period = int(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(ApartmentInventoryQueue)
+                    .where(
+                        ApartmentInventoryQueue.window_key == period_window_key,
+                        ApartmentInventoryQueue.status.in_(
+                            ("queued", "publishing", "published")
+                        ),
+                    )
+                )
+                or 0
+            )
+            period_queue_apartment_ids = select(
+                ApartmentInventoryQueue.apartment_id
+            ).where(
+                ApartmentInventoryQueue.window_key == period_window_key,
+                ApartmentInventoryQueue.status.in_(
+                    ("queued", "publishing", "published")
+                ),
+            )
+            published_outside_queue = int(
                 await session.scalar(
                     select(func.count())
                     .select_from(Apartment)
@@ -604,23 +626,12 @@ class InventoryRepository:
                         Apartment.publication_status == "published",
                         Apartment.published_at >= period_start,
                         Apartment.published_at < period_end,
+                        Apartment.id.not_in(period_queue_apartment_ids),
                     )
                 )
                 or 0
             )
-            reserved_in_period = int(
-                await session.scalar(
-                    select(func.count())
-                    .select_from(ApartmentInventoryQueue)
-                    .where(
-                        ApartmentInventoryQueue.scheduled_at >= period_start,
-                        ApartmentInventoryQueue.scheduled_at < period_end,
-                        ApartmentInventoryQueue.status.in_(("queued", "publishing")),
-                    )
-                )
-                or 0
-            )
-            published_central = sum(
+            published_outside_queue_central = sum(
                 is_central(district)
                 for district in (
                     await session.scalars(
@@ -628,6 +639,7 @@ class InventoryRepository:
                             Apartment.publication_status == "published",
                             Apartment.published_at >= period_start,
                             Apartment.published_at < period_end,
+                            Apartment.id.not_in(period_queue_apartment_ids),
                         )
                     )
                 ).all()
@@ -639,10 +651,9 @@ class InventoryRepository:
                         select(Apartment.district)
                         .join(ApartmentInventoryQueue)
                         .where(
-                            ApartmentInventoryQueue.scheduled_at >= period_start,
-                            ApartmentInventoryQueue.scheduled_at < period_end,
+                            ApartmentInventoryQueue.window_key == period_window_key,
                             ApartmentInventoryQueue.status.in_(
-                                ("queued", "publishing")
+                                ("queued", "publishing", "published")
                             ),
                         )
                     )
@@ -699,11 +710,14 @@ class InventoryRepository:
             chooser = rng or random.SystemRandom()
             period_target, period_central_target = period_publication_targets(period)
             target_override = max(
-                0, period_target - published_in_period - reserved_in_period
+                0,
+                period_target - reserved_in_period - published_outside_queue,
             )
             central_override = max(
                 0,
-                period_central_target - published_central - reserved_central,
+                period_central_target
+                - reserved_central
+                - published_outside_queue_central,
             )
             planned = plan_period(
                 fresh_stock,

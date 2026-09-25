@@ -379,6 +379,20 @@ async def test_late_period_schedule_keeps_five_and_ninety_minute_cadence(reposit
     ]
     assert deltas == [5, 85] * 7 + [5]
 
+    assert (
+        await InventoryRepository(sessions).schedule_period(
+            now=now + timedelta(minutes=10), rng=random.Random(24)
+        )
+        == 0
+    )
+    async with sessions() as session:
+        assert (
+            await session.scalar(
+                select(func.count()).select_from(ApartmentInventoryQueue)
+            )
+            == 16
+        )
+
 
 @pytest.mark.asyncio
 async def test_claim_due_prioritizes_central_card_for_daily_share(repositories):
