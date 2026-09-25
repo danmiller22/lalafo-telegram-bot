@@ -44,6 +44,8 @@ def author_label(ad: LalafoAd | Apartment) -> str | None:
     seller_type = getattr(ad, "seller_type", "unknown")
     if seller_type == "owner":
         return "собственник"
+    if seller_type == "realtor":
+        return None
     return "возможно агент"
 
 

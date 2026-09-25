@@ -93,15 +93,15 @@ def test_allowed_and_format_has_no_source_or_description():
     assert ad.phone not in text
 
 
-def test_agency_listing_is_allowed_and_marked_as_possible_agent():
+def test_agency_listing_is_allowed_and_omits_author():
     ad = make_ad(owner_listing=False, rooms="1")
     assert is_allowed(
         ad, city="Бишкек", max_price=40000, rooms=SOURCE_ALLOWED_ROOMS
     )[0]
     text = format_apartment(ad)
     assert "риелтор" not in text.casefold()
-    assert f"👤 Автор: {author_label(ad)}" in text
-    assert author_label(ad) == "возможно агент"
+    assert "👤 Автор:" not in text
+    assert author_label(ad) is None
     assert "Статус:" not in text
 
 
@@ -306,14 +306,14 @@ def test_curated_rotation_never_reposts_published_apartments():
     assert [apartment.lalafo_id for apartment in eligible] == [103]
 
 
-def test_publish_batch_marks_realtors_as_possible_agents():
+def test_publish_batch_omits_realtor_author():
     realtor = make_ad(lalafo_id=1, district="ЦУМ", owner_listing=False)
     owner = make_ad(lalafo_id=2, district="Тунгуч", owner_listing=True)
 
     selected = select_publish_batch([realtor, owner], limit=2)
     assert {ad.lalafo_id for ad in selected} == {1, 2}
     assert "риелтор" not in format_apartment(realtor).casefold()
-    assert author_label(realtor) == "возможно агент"
+    assert author_label(realtor) is None
 
 
 def test_unknown_author_label_is_stable_and_exact():

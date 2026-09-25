@@ -198,7 +198,6 @@ def _manual_preview(data: dict) -> str:
     title = "Студия" if data["rooms"] == "studio" else "1-комнатная квартира"
     author = {
         "owner": "собственник",
-        "realtor": "возможно агент",
         "unknown": "возможно агент",
     }.get(data["seller_type"])
     price = f"{data['price']:,}".replace(",", " ")
