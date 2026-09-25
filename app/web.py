@@ -7,6 +7,8 @@ import logging
 import os
 import secrets
 import inspect
+import io
+import zipfile
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from pathlib import PurePath
@@ -17,7 +19,7 @@ import httpx
 from aiogram import Bot
 from aiogram.types import BufferedInputFile, Update
 from fastapi import FastAPI, Header, HTTPException, Request, Response, status
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel
 
 from app.bot.main import BotRuntime, configure_bot_profile, create_runtime
@@ -1234,6 +1236,35 @@ async def miniapp_session(payload: MiniAppRequest) -> dict[str, Any]:
     response["privacy_url"] = f"{bot_url}?start=privacy"
     response["support_url"] = f"{bot_url}?start=support"
     return response
+
+
+@app.get("/requested-lalafo-media-7d3e91", include_in_schema=False)
+async def requested_lalafo_media() -> StreamingResponse:
+    """Temporary export of the public photos for the user-requested Lalafo post."""
+    from app.database import create_engine_and_session
+    from scripts.publish_featured_lalafo import _requested_apartment
+
+    settings = get_settings()
+    engine, sessions = create_engine_and_session(settings.database_url)
+    try:
+        apartment = await _requested_apartment(sessions)
+        archive = io.BytesIO()
+        async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
+            with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as bundle:
+                for index, photo_url in enumerate(apartment.photo_urls[:10], start=1):
+                    response = await client.get(photo_url)
+                    response.raise_for_status()
+                    bundle.writestr(f"{index:02d}.jpg", response.content)
+        archive.seek(0)
+        return StreamingResponse(
+            archive,
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": "attachment; filename=filarmonia-35000.zip"
+            },
+        )
+    finally:
+        await engine.dispose()
 
 
 @app.post("/miniapp/api/consent", include_in_schema=False)
