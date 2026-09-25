@@ -28,9 +28,9 @@ MAX_PUBLICATIONS_PER_DAY = 60
 # The daily target is chosen once per Bishkek date, then split across the two
 # discovery periods so retries cannot increase the day's publication volume.
 # Seller type does not restrict publication; these values remain for compatibility.
-MIN_NON_OWNERS_PER_DAY = 10
-MAX_NON_OWNERS_PER_DAY = 10
-TARGET_NON_OWNERS_PER_PERIOD = 5
+MIN_NON_OWNERS_PER_DAY = 0
+MAX_NON_OWNERS_PER_DAY = MAX_PUBLICATIONS_PER_DAY
+TARGET_NON_OWNERS_PER_PERIOD = 0
 MAX_REPOSTS_PER_PERIOD = 0
 MAX_FRESH_STOCK_LOAD = 600
 # A blocked source must not leave the channel empty for half an hour.  The
@@ -312,7 +312,7 @@ def plan_period(
     *,
     period_start: datetime,
     non_owner_target: int = TARGET_NON_OWNERS_PER_PERIOD,
-    non_owner_limit: int = TARGET_NON_OWNERS_PER_PERIOD,
+    non_owner_limit: int = MAX_NON_OWNERS_PER_DAY,
     target_count_override: int | None = None,
     central_target_override: int | None = None,
     repeat_apartment_ids: set[int] | None = None,
@@ -400,12 +400,7 @@ def plan_period(
             zip(selected, schedule), start=1
         )
     ]
-    return _limit_non_owners(
-        planned,
-        apartments,
-        target=non_owner_target,
-        maximum=non_owner_limit,
-    )
+    return planned
 
 
 class InventoryRepository:

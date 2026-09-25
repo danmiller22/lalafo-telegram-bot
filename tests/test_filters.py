@@ -105,15 +105,16 @@ def test_agency_listing_is_allowed_and_marked_as_possible_agent():
     assert "Статус:" not in text
 
 
-def test_channel_source_omits_unknown_author():
+def test_channel_source_marks_unknown_as_possible_agent():
     ad = make_ad(
         source_url="https://t.me/owners_bishkek/123",
         owner_listing=False,
         seller_type="unknown",
     )
     text = format_apartment(ad)
-    assert "👤 Автор:" not in text
-    assert author_label(ad) is None
+    assert text.count("👤 Автор:") == 1
+    assert "👤 Автор: возможно агент" in text
+    assert author_label(ad) == "возможно агент"
     assert "Статус:" not in text
     assert "@owners_bishkek" not in text
 
@@ -321,7 +322,7 @@ def test_unknown_author_label_is_stable_and_exact():
         for index in range(40)
     ]
     labels = {author_label(ad) for ad in ads}
-    assert labels == {None}
+    assert labels == {"возможно агент"}
     assert all(author_label(ad) == author_label(ad) for ad in ads)
 
 

@@ -199,6 +199,7 @@ def _manual_preview(data: dict) -> str:
     author = {
         "owner": "собственник",
         "realtor": "возможно агент",
+        "unknown": "возможно агент",
     }.get(data["seller_type"])
     price = f"{data['price']:,}".replace(",", " ")
     lines = ["Проверьте карточку:", "", f"🏠 {title}"]

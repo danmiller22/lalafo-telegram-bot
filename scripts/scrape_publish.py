@@ -239,6 +239,7 @@ def apartment_to_ad(apartment) -> LalafoAd:
         no_subletting=apartment.no_subletting,
         owner_listing=apartment.owner_listing,
         seller_type=apartment.seller_type,
+        source_description=apartment.source_description or "",
         source_updated_at=apartment.source_updated_at,
     )
 

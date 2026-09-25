@@ -112,7 +112,7 @@ def test_period_accepts_agent_stock():
 
     planned = plan_period(stock, period_start=period_start, rng=random.Random(9))
 
-    assert len(planned) == 5
+    assert len(planned) == period_publication_targets(period_start)[0]
     assert all(item.apartment.seller_type == "realtor" for item in planned)
 
 
@@ -124,7 +124,7 @@ def test_period_fills_from_all_author_types():
 
     planned = plan_period(stock, period_start=period_start, rng=random.Random(10))
 
-    assert len(planned) == 6
+    assert len(planned) == period_publication_targets(period_start)[0]
     assert sum("золотой" in item.apartment.district.casefold() for item in planned) == 1
 
 
@@ -138,10 +138,10 @@ def test_central_realtors_can_fill_central_share():
     period_count, _ = period_publication_targets(period_start)
     assert len(planned) == period_count
     assert any(item.apartment.seller_type == "owner" for item in planned)
-    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 5
+    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 13
 
 
-def test_two_periods_place_ten_agents_at_random_positions():
+def test_two_periods_do_not_cap_agents():
     owners = _apartments(160, central=True, start_id=1)
     realtors = _apartments(80, central=False, start_id=500, owner=False)
     first_start = datetime(2026, 9, 13, 0, tzinfo=timezone(timedelta(hours=6)))
@@ -157,14 +157,7 @@ def test_two_periods_place_ten_agents_at_random_positions():
 
     assert sum(
         item.apartment.seller_type == "realtor" for item in first + second
-    ) == 10
-    first_positions = [
-        item.sequence for item in first if item.apartment.seller_type == "realtor"
-    ]
-    second_positions = [
-        item.sequence for item in second if item.apartment.seller_type == "realtor"
-    ]
-    assert first_positions != second_positions
+    ) > 10
 
 
 def test_unknown_authors_are_included():
