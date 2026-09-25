@@ -41,7 +41,7 @@ def _valid(ad, settings) -> tuple[bool, str]:
     )
     if not allowed:
         return False, reason
-    if ad.price < max(18_000, settings.min_price, minimum_price_for_rooms(ad.rooms)):
+    if ad.price < max(23_000, settings.min_price, minimum_price_for_rooms(ad.rooms)):
         return False, "min_price"
     if not ad.district and ad.price < 25_000:
         return False, "missing_district_below_25000"

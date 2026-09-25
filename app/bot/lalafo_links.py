@@ -24,6 +24,7 @@ from app.lalafo.models import LalafoAd
 from app.lalafo.phone import normalize_kg_phone
 from app.payments.repository import ApartmentRepository
 from app.security import TokenSigner
+from app.telegram.formatting import unknown_author_label
 from app.telegram.publisher import TelegramPublishError, TelegramPublisher
 from scripts.publish_inventory import _valid
 from scripts.select_lalafo_proxy import find_working_proxies
@@ -198,12 +199,16 @@ def _manual_preview(data: dict) -> str:
     title = "Студия" if data["rooms"] == "studio" else "1-комнатная квартира"
     author = {
         "owner": "собственник",
-        "unknown": "возможно агент",
-    }.get(data["seller_type"])
+        "realtor": "возможно агент",
+    }.get(data["seller_type"]) or unknown_author_label(
+        phone=data["phone"],
+        price=data["price"],
+        district=data["district"],
+        rooms=data["rooms"],
+    )
     price = f"{data['price']:,}".replace(",", " ")
     lines = ["Проверьте карточку:", "", f"🏠 {title}"]
-    if author:
-        lines.append(f"👤 Автор: {author}")
+    lines.append(f"👤 Автор: {author}")
     lines.extend(
         (
             f"📍 {data['district']}",
@@ -720,7 +725,7 @@ async def manual_card_price(
         price = int(digits) if digits.isdecimal() else 0
     except ValueError:
         price = 0
-    if not 18_000 <= price <= 40_000:
+    if not 23_000 <= price <= 40_000:
         await message.answer("Укажите цену от 18 000 до 40 000 сом.")
         return
     await state.update_data(price=price)

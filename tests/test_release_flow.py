@@ -18,7 +18,7 @@ from tests.helpers import make_ad
 
 @pytest.mark.parametrize(
     ("price", "accepted"),
-    [(17_999, False), (18_000, True), (40_000, True), (40_001, False)],
+    [(22_999, False), (23_000, True), (40_000, True), (40_001, False)],
 )
 def test_release_price_boundaries(price: int, accepted: bool) -> None:
     result, _ = _valid(

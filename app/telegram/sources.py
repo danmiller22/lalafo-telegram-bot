@@ -276,7 +276,7 @@ def parse_telegram_apartments(
         price = _telegram_price(text)
         rooms = _telegram_rooms(text)
         phone = _telegram_phone(text)
-        if price is None or not 18_000 <= price <= 40_000 or rooms is None or phone is None:
+        if price is None or not 23_000 <= price <= 40_000 or rooms is None or phone is None:
             continue
         photo_urls: list[str] = []
         for photo in wrapper.select(".tgme_widget_message_photo_wrap[style]"):
