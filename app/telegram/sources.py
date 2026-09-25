@@ -80,6 +80,10 @@ SEARCH_TERMS = (
     "квартира нужна",
     "квартира керек",
     "батир керек",
+    "үй керек",
+    "уй керек",
+    "арендага квартира",
+    "арендага батир",
     "квартира издейм",
     "батир издейм",
 )
@@ -291,6 +295,11 @@ def parse_telegram_apartments(
             if any(term in normalized for term in REALTOR_TERMS)
             else "unknown"
         )
+        district = _telegram_district(lines, text)
+        if not district:
+            if price < 25_000:
+                continue
+            district = "Центр"
         ads.append(
             LalafoAd(
                 lalafo_id=_telegram_source_id(data_post),
@@ -299,7 +308,7 @@ def parse_telegram_apartments(
                 price=price,
                 currency="KGS",
                 rooms=rooms,
-                district=_telegram_district(lines, text),
+                district=district,
                 city="Бишкек",
                 deposit=_integer(DEPOSIT_RE.search(text)),
                 photo_urls=photo_urls,

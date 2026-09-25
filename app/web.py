@@ -1127,7 +1127,7 @@ def _miniapp_result_payload(result) -> dict[str, Any]:
         response["phone"] = display_phone(apartment.phone)
         response["apartment"] = {
             "rooms": apartment.rooms,
-            "district": apartment.district or "Район не указан",
+            "district": apartment.district or "Центр",
             "city": apartment.city,
             "price": apartment.price,
             "deposit": apartment.deposit,

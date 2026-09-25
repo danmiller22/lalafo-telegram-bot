@@ -192,7 +192,8 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
       const price = Number(apartment.price || 0).toLocaleString("ru-RU");
       const deposit = apartment.deposit ? "\\n🔐 Депозит: " + Number(apartment.deposit).toLocaleString("ru-RU") + " сом" : "";
       const room = apartment.rooms === "studio" ? "Студия" : (apartment.rooms || "—") + "-комнатная квартира";
-      el("details").textContent = "🏠 " + room + "\\n👤 Автор: " + (apartment.author || "неизвестно") + "\\n📍 " + (apartment.district || "—") + "\\n🏙 " + (apartment.city || "Бишкек") + "\\n💰 " + price + " сом" + deposit;
+      const author = apartment.author ? "\\n👤 Автор: " + apartment.author : "";
+      el("details").textContent = "🏠 " + room + author + "\\n📍 " + (apartment.district || "Центр") + "\\n🏙 " + (apartment.city || "Бишкек") + "\\n💰 " + price + " сом" + deposit;
       if (apartment.description) el("details").textContent += "\\n\\n" + apartment.description;
       el("phone").textContent = "📞 " + data.phone;
       el("phone").href = "tel:" + String(data.phone || "").replace(/\\s+/g, "");

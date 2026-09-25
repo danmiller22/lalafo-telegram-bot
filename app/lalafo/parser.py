@@ -257,7 +257,10 @@ def parse_detail_data(raw: dict[str, Any], *, source_url: str) -> LalafoAd:
     rooms_value = str(params.get("Количество комнат") or "").strip().lower()
     room_map = {"студия": "studio", "1 комната": "1", "2 комнаты": "2"}
     rooms = room_map.get(rooms_value, rooms_value)
+    price = int(raw.get("price") or 0)
     district = _infer_district(raw, params)
+    if not district and price >= 25_000:
+        district = "Центр"
     deposit_value = params.get("Депозит, сом")
     try:
         deposit = int(str(deposit_value).replace(" ", "")) if deposit_value else None
@@ -282,7 +285,7 @@ def parse_detail_data(raw: dict[str, Any], *, source_url: str) -> LalafoAd:
         lalafo_id=int(raw["id"]),
         source_url=source_url,
         phone=normalize_kg_phone(raw.get("mobile")),
-        price=int(raw.get("price") or 0),
+        price=price,
         currency=str(raw.get("currency") or ""),
         rooms=rooms,
         district=district,
@@ -317,6 +320,8 @@ def is_allowed(ad: LalafoAd, *, city: str, max_price: int, rooms: tuple[str, ...
         return False, "wrong_currency"
     if ad.price <= 0 or ad.price > max_price:
         return False, "price"
+    if not ad.district and ad.price < 25_000:
+        return False, "missing_district_below_25000"
     if ad.rooms not in rooms:
         return False, "rooms"
     if not ad.photo_urls:

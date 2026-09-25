@@ -68,6 +68,17 @@ def test_filters_reject(overrides, reason):
     assert actual == reason
 
 
+def test_missing_district_requires_at_least_twenty_five_thousand():
+    allowed, reason = is_allowed(
+        make_ad(district=None, price=24_999),
+        city="Бишкек",
+        max_price=40_000,
+        rooms=SOURCE_ALLOWED_ROOMS,
+    )
+    assert allowed is False
+    assert reason == "missing_district_below_25000"
+
+
 def test_allowed_and_format_has_no_source_or_description():
     ad = make_ad(rooms="1")
     assert is_allowed(
@@ -94,16 +105,15 @@ def test_agency_listing_is_allowed_and_marked_as_possible_agent():
     assert "Статус:" not in text
 
 
-def test_channel_source_uses_single_author_label():
+def test_channel_source_omits_unknown_author():
     ad = make_ad(
         source_url="https://t.me/owners_bishkek/123",
         owner_listing=False,
         seller_type="unknown",
     )
     text = format_apartment(ad)
-    assert text.count("👤 Автор:") == 1
-    assert f"👤 Автор: {author_label(ad)}" in text
-    assert author_label(ad) == "возможно агент"
+    assert "👤 Автор:" not in text
+    assert author_label(ad) is None
     assert "Статус:" not in text
     assert "@owners_bishkek" not in text
 
@@ -111,7 +121,7 @@ def test_channel_source_uses_single_author_label():
 def test_missing_district_uses_labeled_demo_location_and_omits_deposit():
     text = format_apartment(make_ad(district=None, deposit=None, rooms="studio"))
     assert text == (
-        "🏠 Студия\n👤 Автор: собственник\n📍 Район не указан\n"
+        "🏠 Студия\n👤 Автор: собственник\n📍 Центр\n"
         "🏙 Бишкек\n💰 35 000 сом"
     )
 
@@ -311,7 +321,7 @@ def test_unknown_author_label_is_stable_and_exact():
         for index in range(40)
     ]
     labels = {author_label(ad) for ad in ads}
-    assert labels == {"возможно агент"}
+    assert labels == {None}
     assert all(author_label(ad) == author_label(ad) for ad in ads)
 
 

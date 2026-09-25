@@ -19,7 +19,7 @@ def room_title(rooms: str) -> str:
 
 def unknown_author_label(*, phone: str, price: int, district: str | None, rooms: str) -> str:
     """Backward-compatible helper for callers that still pass listing fields."""
-    return "возможно агент"
+    return ""
 
 
 def is_confirmed_owner(ad: LalafoAd | Apartment) -> bool:
@@ -39,26 +39,30 @@ def is_supported_source(ad: LalafoAd | Apartment) -> bool:
     ))
 
 
-def author_label(ad: LalafoAd | Apartment) -> str:
+def author_label(ad: LalafoAd | Apartment) -> str | None:
     """Keep the displayed author label stable across previews and reposts."""
     seller_type = getattr(ad, "seller_type", "unknown")
     if seller_type == "owner":
         return "собственник"
-    return "возможно агент"
+    if seller_type == "realtor":
+        return "возможно агент"
+    return None
 
 
 def seller_status(ad: LalafoAd | Apartment) -> str:
     """Backward-compatible value for internal callers and older tests."""
-    return author_label(ad)
+    return author_label(ad) or "неизвестно"
 
 
 def format_apartment(ad: LalafoAd | Apartment) -> str:
     lines = [f"🏠 {room_title(ad.rooms)}"]
-    lines.append(f"👤 Автор: {author_label(ad)}")
+    author = author_label(ad)
+    if author:
+        lines.append(f"👤 Автор: {author}")
     if ad.district:
         lines.append(f"📍 {ad.district}")
     else:
-        lines.append("📍 Район не указан")
+        lines.append("📍 Центр")
     lines.append(f"🏙 {ad.city}")
     lines.append(f"💰 {format_money(ad.price)} сом")
     if ad.deposit is not None:

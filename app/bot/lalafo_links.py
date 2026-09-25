@@ -196,20 +196,25 @@ async def _manual_callback_is_current(
 
 def _manual_preview(data: dict) -> str:
     title = "Студия" if data["rooms"] == "studio" else "1-комнатная квартира"
-    author = (
-        "собственник" if data["seller_type"] == "owner" else "возможно агент"
-    )
+    author = {
+        "owner": "собственник",
+        "realtor": "возможно агент",
+    }.get(data["seller_type"])
     price = f"{data['price']:,}".replace(",", " ")
-    return (
-        "Проверьте карточку:\n\n"
-        f"🏠 {title}\n"
-        f"👤 Автор: {author}\n"
-        f"📍 {data['district']}\n"
-        f"💰 {price} сом\n"
-        f"📞 {data['phone']}\n"
-        f"📷 Фото: {len(data['photo_urls'])}\n\n"
-        "Опубликовать в группе?"
+    lines = ["Проверьте карточку:", "", f"🏠 {title}"]
+    if author:
+        lines.append(f"👤 Автор: {author}")
+    lines.extend(
+        (
+            f"📍 {data['district']}",
+            f"💰 {price} сом",
+            f"📞 {data['phone']}",
+            f"📷 Фото: {len(data['photo_urls'])}",
+            "",
+            "Опубликовать в группе?",
+        )
     )
+    return "\n".join(lines)
 
 
 def normalize_district(text: str | None) -> str | None:

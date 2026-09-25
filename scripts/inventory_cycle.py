@@ -54,6 +54,17 @@ async def run(*, force_discovery: bool | None = None) -> int:
             "Publication history reset for code version %s; old Telegram messages were untouched",
             code_version[:12],
         )
+
+    # On a new code version, publish from validated saved stock before the
+    # longer availability sweep and source collection. This makes the first
+    # new card visible within the first scheduler minute.
+    early_publish_code: int | None = None
+    if force:
+        await inventory.schedule_period(now=now)
+        early_publish_code = await publish_one_due(
+            eligible_until=now + timedelta(days=1)
+        )
+
     if await inventory.claim_availability_sweep(now=now, interval_hours=12):
         apartments = ApartmentRepository(sessions)
         cutoff = now - timedelta(days=MAX_LISTING_AGE_DAYS)
@@ -86,9 +97,6 @@ async def run(*, force_discovery: bool | None = None) -> int:
     # Schedule existing stock first, but never let that suppress a requested
     # cloud collection.  The previous early return made a manual "collect now"
     # run publish one saved card without actually refreshing either source.
-    if force:
-        await inventory.schedule_period(now=now)
-
     period_key = await inventory.claim_discovery(now=now, force=force)
     await engine.dispose()
 
@@ -130,8 +138,9 @@ async def run(*, force_discovery: bool | None = None) -> int:
     # A forced recovery must not finish green with an empty queue.  When no
     # saved stock existed above, it reaches discovery and then publishes the
     # first newly scheduled card immediately instead of waiting for its slot.
-    eligible_until = now + timedelta(days=1) if force else None
-    return await publish_one_due(eligible_until=eligible_until)
+    if early_publish_code is not None:
+        return early_publish_code
+    return await publish_one_due()
 
 
 def main() -> None:

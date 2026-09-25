@@ -6,7 +6,7 @@ import math
 import random
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -28,9 +28,9 @@ MAX_PUBLICATIONS_PER_DAY = 60
 # The daily target is chosen once per Bishkek date, then split across the two
 # discovery periods so retries cannot increase the day's publication volume.
 # Seller type does not restrict publication; these values remain for compatibility.
-MIN_NON_OWNERS_PER_DAY = 0
-MAX_NON_OWNERS_PER_DAY = MAX_PUBLICATIONS_PER_DAY
-TARGET_NON_OWNERS_PER_PERIOD = 0
+MIN_NON_OWNERS_PER_DAY = 10
+MAX_NON_OWNERS_PER_DAY = 10
+TARGET_NON_OWNERS_PER_PERIOD = 5
 MAX_REPOSTS_PER_PERIOD = 0
 MAX_FRESH_STOCK_LOAD = 600
 # A blocked source must not leave the channel empty for half an hour.  The
@@ -38,7 +38,7 @@ MAX_FRESH_STOCK_LOAD = 600
 # Telegram reserve sources recover the queue on the next cloud tick.
 DISCOVERY_RETRY_MINUTES = 3
 MIN_HEALTHY_PERIOD_QUEUE = 20
-PUBLICATION_SPACING_MINUTES = 3
+PUBLICATION_SPACING_MINUTES = 1
 # Five batches in each 12-hour discovery period. Together they cover the day
 # from 05:00 through 23:00 Bishkek time at an exact two-hour cadence.
 MORNING_BATCH_HOURS = (5, 7, 9, 11, 13)
@@ -86,7 +86,7 @@ def randomized_period_times(
     count: int,
     rng: random.Random,
 ) -> list[datetime]:
-    """Build five two-hour batches with three minutes between cards.
+    """Build five two-hour batches with one minute between cards.
 
     The daily total stays pseudo-random at 50-60 cards, while each individual
     batch contains five or six cards for normal production targets. ``rng``
@@ -189,7 +189,7 @@ def _limit_non_owners(
     # Replace surplus realtor/unknown cards with verified owners. If verified
     # owner supply is thin, drop the surplus rather than misrepresenting it.
     if current_non_owners > maximum:
-        owner_candidates = [item for item in unused if _seller_type(item) == "owner"]
+        owner_candidates = [item for item in unused if _seller_type(item) != "realtor"]
         owner_candidates.sort(
             key=lambda item: _candidate_key(item, central=is_central(item.district))
         )
@@ -312,7 +312,7 @@ def plan_period(
     *,
     period_start: datetime,
     non_owner_target: int = TARGET_NON_OWNERS_PER_PERIOD,
-    non_owner_limit: int = MAX_NON_OWNERS_PER_DAY,
+    non_owner_limit: int = TARGET_NON_OWNERS_PER_PERIOD,
     target_count_override: int | None = None,
     central_target_override: int | None = None,
     repeat_apartment_ids: set[int] | None = None,
@@ -400,7 +400,12 @@ def plan_period(
             zip(selected, schedule), start=1
         )
     ]
-    return planned
+    return _limit_non_owners(
+        planned,
+        apartments,
+        target=non_owner_target,
+        maximum=non_owner_limit,
+    )
 
 
 class InventoryRepository:
@@ -574,6 +579,34 @@ class InventoryRepository:
                     ApartmentInventoryQueue.apartment_id.in_(invalid_room_ids)
                 )
             )
+            published_non_owners = int(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(Apartment)
+                    .where(
+                        Apartment.publication_status == "published",
+                        Apartment.published_at >= day_start,
+                        Apartment.published_at < day_end,
+                        func.coalesce(Apartment.seller_type, "unknown") == "realtor",
+                    )
+                )
+                or 0
+            )
+            reserved_non_owners = int(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(ApartmentInventoryQueue)
+                    .join(Apartment)
+                    .where(
+                        ApartmentInventoryQueue.scheduled_at >= day_start,
+                        ApartmentInventoryQueue.scheduled_at < day_end,
+                        ApartmentInventoryQueue.status.in_(("queued", "publishing")),
+                        func.coalesce(Apartment.seller_type, "unknown") == "realtor",
+                    )
+                )
+                or 0
+            )
+            already_non_owners = published_non_owners + reserved_non_owners
             published_today = int(
                 await session.scalar(
                     select(func.count())
@@ -626,6 +659,21 @@ class InventoryRepository:
                     )
                 ).all()
             )
+            remaining_non_owners = max(
+                0, MAX_NON_OWNERS_PER_DAY - already_non_owners
+            )
+            if period.astimezone(BISHKEK).hour == 0:
+                non_owner_target = min(
+                    TARGET_NON_OWNERS_PER_PERIOD, remaining_non_owners
+                )
+            else:
+                non_owner_target = min(
+                    remaining_non_owners,
+                    max(
+                        TARGET_NON_OWNERS_PER_PERIOD,
+                        MIN_NON_OWNERS_PER_DAY - already_non_owners,
+                    ),
+                )
             active_queue_ids = select(ApartmentInventoryQueue.apartment_id).where(
                 ApartmentInventoryQueue.status.in_(("queued", "publishing"))
             )
@@ -644,6 +692,10 @@ class InventoryRepository:
                             Apartment.fingerprint.not_in(queued_fingerprints),
                             Apartment.price.between(18_000, 40_000),
                             Apartment.rooms.in_(ALLOWED_ROOMS),
+                            or_(
+                                Apartment.district.is_not(None),
+                                Apartment.price >= 25_000,
+                            ),
                             Apartment.last_seen_at >= now - timedelta(days=2),
                         )
                         .order_by(
@@ -671,6 +723,8 @@ class InventoryRepository:
             planned = plan_period(
                 fresh_stock,
                 period_start=period,
+                non_owner_target=non_owner_target,
+                non_owner_limit=remaining_non_owners,
                 target_count_override=target_override,
                 central_target_override=central_override,
                 rng=chooser,

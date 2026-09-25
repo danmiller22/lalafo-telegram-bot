@@ -32,13 +32,8 @@ class AvailabilityResult:
     def message(self) -> str:
         stamp = self.checked_at.astimezone(_BISHKEK).strftime("%d.%m.%Y %H:%M")
         if self.status == "active":
-            return (
-                f"Объявление доступно на источнике. Последняя проверка: {stamp}. "
-                "Окончательную доступность квартиры подтвердите по телефону."
-            )
-        if self.status == "unavailable":
-            return f"Квартира больше недоступна. Последняя проверка: {stamp}."
-        return f"Не удалось проверить, попробуйте позже. Последняя проверка: {stamp}."
+            return f"Объявление актуально.\nПоследняя проверка: {stamp}."
+        return f"Объявление не актуально.\nПоследняя проверка: {stamp}."
 
 
 class AvailabilityService:

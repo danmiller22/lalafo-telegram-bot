@@ -47,7 +47,7 @@ def test_parses_fresh_owner_apartment_with_album_and_contact() -> None:
     assert len(ad.photo_urls) == 2
 
 
-def test_parses_studio_and_keeps_unknown_district_empty() -> None:
+def test_parses_studio_and_uses_center_for_missing_district_above_25k() -> None:
     html = _post(
         "Сдаётся студия. Аренда: 28 000 сом. Собственник. Телефон: 0705 123 457",
         post_id=105,
@@ -60,7 +60,7 @@ def test_parses_studio_and_keeps_unknown_district_empty() -> None:
 
     assert len(ads) == 1
     assert ads[0].rooms == "studio"
-    assert ads[0].district is None
+    assert ads[0].district == "Центр"
 
 
 def test_rejects_foreign_currency_rent_even_if_som_deposit_is_present() -> None:

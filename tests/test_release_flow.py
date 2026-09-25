@@ -86,7 +86,9 @@ async def test_availability_result_is_cached_for_twelve_hours(repositories, monk
     assert first.status == second.status == "active"
     assert second.cached is True
     assert calls == 1
-    assert "Последняя проверка:" in second.message
+    assert second.message.startswith("Объявление актуально.\nПоследняя проверка:")
+    assert "источник" not in second.message.casefold()
+    assert "телефон" not in second.message.casefold()
 
 
 @pytest.mark.asyncio
@@ -106,6 +108,7 @@ async def test_apartment_expires_two_days_after_publication(repositories) -> Non
 
     assert result.status == "unavailable"
     assert result.reason == "listing_age_limit"
+    assert result.message.startswith("Объявление не актуально.\nПоследняя проверка:")
     assert (await apartments.get(apartment.id)).active is False
 
 

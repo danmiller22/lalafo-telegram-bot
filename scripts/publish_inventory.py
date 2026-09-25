@@ -43,6 +43,8 @@ def _valid(ad, settings) -> tuple[bool, str]:
         return False, reason
     if ad.price < max(18_000, settings.min_price, minimum_price_for_rooms(ad.rooms)):
         return False, "min_price"
+    if not ad.district and ad.price < 25_000:
+        return False, "missing_district_below_25000"
     if len(ad.photo_urls) < SOURCE_MIN_PHOTOS:
         return False, "too_few_photos"
     if not ad.no_subletting:

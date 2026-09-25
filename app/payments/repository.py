@@ -498,6 +498,8 @@ class ApartmentRepository:
     async def upsert_discovered(
         self, ad: LalafoAd, *, discovery_priority: bool = False
     ) -> Apartment:
+        if not ad.district and ad.price >= 25_000:
+            ad = ad.model_copy(update={"district": "Центр"})
         fingerprint = ad_fingerprint(ad)
         now = datetime.now(timezone.utc)
         async with self.sessions.begin() as session:
