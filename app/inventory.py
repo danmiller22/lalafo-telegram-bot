@@ -848,9 +848,22 @@ class InventoryRepository:
                     ApartmentInventoryQueue.published_at.is_not(None),
                 )
             )
-            if latest_queue_publication is not None and as_utc(
-                latest_queue_publication
-            ) > now - timedelta(minutes=PUBLICATION_SPACING_MINUTES):
+            latest_apartment_publication = await session.scalar(
+                select(func.max(Apartment.published_at)).where(
+                    Apartment.published_at.is_not(None)
+                )
+            )
+            publication_times = [
+                as_utc(value)
+                for value in (
+                    latest_queue_publication,
+                    latest_apartment_publication,
+                )
+                if value is not None
+            ]
+            if publication_times and max(publication_times) > now - timedelta(
+                minutes=PUBLICATION_SPACING_MINUTES
+            ):
                 return None
             published_today = int(
                 await session.scalar(

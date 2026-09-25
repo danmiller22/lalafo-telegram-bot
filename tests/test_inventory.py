@@ -523,6 +523,40 @@ async def test_code_change_resets_dedupe_without_touching_old_message(repositori
 
 
 @pytest.mark.asyncio
+async def test_code_change_keeps_five_minute_publication_cooldown(repositories):
+    apartments, _, sessions = repositories
+    published = await apartments.upsert_discovered(make_ad(lalafo_id=88011))
+    queued = await apartments.upsert_discovered(make_ad(lalafo_id=88012))
+    published = await apartments.mark_published(
+        published.id, chat_id=-1001, message_id=511
+    )
+    assert published.published_at is not None
+    published_at = published.published_at
+
+    inventory = InventoryRepository(sessions)
+    assert await inventory.reset_publication_history_for_code("commit-cooldown") is True
+    async with sessions.begin() as session:
+        session.add(
+            ApartmentInventoryQueue(
+                apartment_id=queued.id,
+                scheduled_at=published_at,
+                window_key="new-code",
+                sequence=1,
+            )
+        )
+
+    assert (
+        await inventory.claim_due(now=published_at + timedelta(minutes=1)) is None
+    )
+    assert (
+        await inventory.claim_due(
+            now=published_at + timedelta(minutes=PUBLICATION_SPACING_MINUTES)
+        )
+        is not None
+    )
+
+
+@pytest.mark.asyncio
 async def test_availability_sweep_is_claimed_twice_daily(repositories):
     _, _, sessions = repositories
     inventory = InventoryRepository(sessions)
