@@ -183,7 +183,8 @@ class LalafoManagedAdsClient:
     async def login(self, login: str, password: str) -> ManagedSession:
         field = "email" if "@" in login else "mobile"
         response = await self._http.post(
-            "/api/auth/login", headers=self._headers(),
+            "/api/auth/login",
+            headers={**self._headers(), "X-Cache-Bypass": "yes"},
             json={field: login, "password": password},
         )
         if response.status_code in {401, 403, 422}:
