@@ -245,13 +245,7 @@ async def test_manual_card_accepts_unknown_author():
 
     assert state.state == lalafo_links.ManualCardPublish.waiting_for_confirmation
     assert state.data["seller_type"] == "unknown"
-    expected = lalafo_links.unknown_author_label(
-        phone=state.data["phone"],
-        price=state.data["price"],
-        district=state.data["district"],
-        rooms=state.data["rooms"],
-    )
-    assert f"Автор: {expected}" in reply.answer.await_args.args[0]
+    assert "Автор:" not in reply.answer.await_args.args[0]
 
 
 @pytest.mark.asyncio

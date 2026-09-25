@@ -24,7 +24,6 @@ from app.lalafo.models import LalafoAd
 from app.lalafo.phone import normalize_kg_phone
 from app.payments.repository import ApartmentRepository
 from app.security import TokenSigner
-from app.telegram.formatting import unknown_author_label
 from app.telegram.publisher import TelegramPublishError, TelegramPublisher
 from scripts.publish_inventory import _valid
 from scripts.select_lalafo_proxy import find_working_proxies
@@ -199,16 +198,11 @@ def _manual_preview(data: dict) -> str:
     title = "Студия" if data["rooms"] == "studio" else "1-комнатная квартира"
     author = {
         "owner": "собственник",
-        "realtor": "возможно собственник",
-    }.get(data["seller_type"]) or unknown_author_label(
-        phone=data["phone"],
-        price=data["price"],
-        district=data["district"],
-        rooms=data["rooms"],
-    )
+    }.get(data["seller_type"])
     price = f"{data['price']:,}".replace(",", " ")
     lines = ["Проверьте карточку:", "", f"🏠 {title}"]
-    lines.append(f"👤 Автор: {author}")
+    if author:
+        lines.append(f"👤 Автор: {author}")
     lines.extend(
         (
             f"📍 {data['district']}",

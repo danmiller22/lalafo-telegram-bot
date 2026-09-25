@@ -40,29 +40,24 @@ def is_supported_source(ad: LalafoAd | Apartment) -> bool:
     ))
 
 
-def author_label(ad: LalafoAd | Apartment) -> str:
+def author_label(ad: LalafoAd | Apartment) -> str | None:
     """Keep the displayed author label stable across previews and reposts."""
     seller_type = getattr(ad, "seller_type", "unknown")
     if seller_type == "owner":
         return "собственник"
-    if seller_type == "realtor":
-        return "возможно собственник"
-    return unknown_author_label(
-        phone=str(getattr(ad, "phone", "") or ""),
-        price=int(getattr(ad, "price", 0) or 0),
-        district=getattr(ad, "district", None),
-        rooms=str(getattr(ad, "rooms", "") or ""),
-    )
+    return None
 
 
 def seller_status(ad: LalafoAd | Apartment) -> str:
     """Backward-compatible value for internal callers and older tests."""
-    return author_label(ad)
+    return author_label(ad) or "неизвестно"
 
 
 def format_apartment(ad: LalafoAd | Apartment) -> str:
     lines = [f"🏠 {room_title(ad.rooms)}"]
-    lines.append(f"👤 Автор: {author_label(ad)}")
+    author = author_label(ad)
+    if author:
+        lines.append(f"👤 Автор: {author}")
     if ad.district:
         lines.append(f"📍 {ad.district}")
     else:
