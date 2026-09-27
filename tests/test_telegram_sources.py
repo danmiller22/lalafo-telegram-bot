@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 
+import pytest
+
 from app.telegram.sources import parse_telegram_apartments
 
 
@@ -113,6 +115,23 @@ def test_rejects_search_posts_shared_housing_and_old_cards() -> None:
     assert parse_telegram_apartments(search, now=now) == []
     assert parse_telegram_apartments(shared, now=now) == []
     assert parse_telegram_apartments(old, now=now) == []
+
+
+@pytest.mark.parametrize(
+    "lodging",
+    ["гостиница", "отель", "мотель", "хостел", "апарт-отель", "гостевой дом"],
+)
+def test_rejects_lodging_business_posts(lodging: str) -> None:
+    html = _post(
+        f"Сдаётся 1-комнатная квартира, {lodging}. Цена 30 000 сом. "
+        "Собственник. 0705 111 225",
+        post_id=700,
+    )
+
+    assert parse_telegram_apartments(
+        html,
+        now=datetime(2026, 9, 23, 7, tzinfo=timezone.utc),
+    ) == []
 
 
 def test_accepts_price_before_label_and_short_room_notation() -> None:

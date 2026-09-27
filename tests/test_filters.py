@@ -193,6 +193,36 @@ def test_substandard_housing_terms_are_rejected(term):
     assert is_substandard_structure(make_ad(source_description=f"Сдаётся {term}"))
 
 
+@pytest.mark.parametrize(
+    "term",
+    [
+        "гостиница",
+        "гостиничный номер",
+        "отель",
+        "мотель",
+        "хостел",
+        "апарт-отель",
+        "гостевой дом",
+        "hotel",
+        "motel",
+        "hostel",
+    ],
+)
+def test_lodging_businesses_are_rejected(term):
+    ad = make_ad(source_title=f"Сдаётся квартира, {term}")
+    assert is_substandard_structure(ad)
+    allowed, reason = is_allowed(
+        ad, city="Бишкек", max_price=40_000, rooms=SOURCE_ALLOWED_ROOMS
+    )
+    assert allowed is False
+    assert reason == "lodging_business"
+
+
+def test_kotelnaya_address_does_not_trigger_hotel_filter():
+    ad = make_ad(source_description="Квартира рядом с котельной")
+    assert not is_substandard_structure(ad)
+
+
 def test_people_looking_for_housing_are_rejected_in_russian_and_kyrgyz():
     ad = make_ad(source_title="КВАРТИРА КЕРЕК КВАРТИРА НУЖНА ДОО 25 000")
     assert is_substandard_structure(ad)

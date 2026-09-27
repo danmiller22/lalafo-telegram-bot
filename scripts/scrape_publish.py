@@ -26,6 +26,7 @@ from app.lalafo.phone import mask_phone
 from app.models import Apartment
 from app.state import PostedState, ad_fingerprint, normalized_district
 from app.telegram.formatting import format_apartment
+from app.telegram.source_filter import is_lodging_offer
 from app.telegram.sources import (
     fetch_lalafo_urls,
     fetch_telegram_apartments,
@@ -380,7 +381,7 @@ def is_substandard_structure(ad: LalafoAd) -> bool:
         "полуподвал",
         "коридорного типа",
     )
-    if any(term in text for term in blocked_terms):
+    if any(term in text for term in blocked_terms) or is_lodging_offer(text):
         return True
 
     params = {

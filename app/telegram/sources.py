@@ -11,7 +11,7 @@ import httpx
 from bs4 import BeautifulSoup
 
 from app.lalafo.models import LalafoAd
-from app.telegram.source_filter import is_owner_offer
+from app.telegram.source_filter import is_lodging_offer, is_owner_offer
 
 
 logger = logging.getLogger(__name__)
@@ -265,6 +265,8 @@ def parse_telegram_apartments(
         if any(term in normalized for term in SEARCH_TERMS):
             continue
         if any(term in normalized for term in SHARED_HOUSING_TERMS):
+            continue
+        if is_lodging_offer(text):
             continue
         if any(term in normalized for term in ("продам", "продается", "продаётся", "посуточно", "на сутки", "за сутки")):
             continue

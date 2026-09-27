@@ -10,6 +10,7 @@ from bs4 import BeautifulSoup
 from app.lalafo.deposit import parse_deposit
 from app.lalafo.models import LalafoAd, SearchAd, SearchPage
 from app.lalafo.phone import normalize_kg_phone
+from app.telegram.source_filter import is_lodging_offer
 
 
 class LalafoParseError(ValueError):
@@ -312,6 +313,8 @@ def parse_detail_page(html: str, *, source_url: str) -> LalafoAd:
 
 
 def is_allowed(ad: LalafoAd, *, city: str, max_price: int, rooms: tuple[str, ...]) -> tuple[bool, str]:
+    if is_lodging_offer(f"{ad.source_title} {ad.source_description}"):
+        return False, "lodging_business"
     if ad.category_id != 2044:
         return False, "wrong_category"
     if ad.city.casefold() != city.casefold():

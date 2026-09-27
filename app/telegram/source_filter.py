@@ -18,6 +18,16 @@ OWNER_TERMS = (
     "собственник", "хозяин", "хозяйка", "без посредников", "от хозяина",
     "агентствам не беспокоить", "риелторам не беспокоить", "без риелторов",
 )
+LODGING_RE = re.compile(
+    r"\b(?:гостини[цч]\w*|отел\w*|мотел\w*|хостел\w*|hotel\w*|motel\w*|hostel\w*|aparthotel\w*)\b"
+    r"|\bапарт[\s-]*отел\w*\b|\bгостев\w*\s+дом\w*\b",
+    re.I,
+)
+
+
+def is_lodging_offer(text: str) -> bool:
+    normalized = (text or "").casefold().replace("ё", "е")
+    return bool(LODGING_RE.search(normalized))
 
 
 def extract_kgs_price(text: str) -> int | None:
@@ -37,7 +47,11 @@ def is_apartment_offer(
     text: str, *, min_price: int = 25_000, max_price: int = 40_000
 ) -> bool:
     normalized = " ".join((text or "").casefold().replace("ё", "е").split())
-    if not normalized or any(term in normalized for term in SEARCH_TERMS):
+    if (
+        not normalized
+        or any(term in normalized for term in SEARCH_TERMS)
+        or is_lodging_offer(normalized)
+    ):
         return False
     if not any(term in normalized for term in OFFER_TERMS):
         return False
