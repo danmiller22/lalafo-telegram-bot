@@ -86,7 +86,7 @@ def test_allowed_and_format_has_no_source_or_description():
     )[0]
     text = format_apartment(ad)
     assert text == (
-        "🏠 1-комнатная квартира\n👤 Автор: собственник\n📍 7 мкр\n🏙 Бишкек\n"
+        "🏠 1-комнатная квартира\n📍 7 мкр\n🏙 Бишкек\n"
         "💰 35 000 сом\n🔐 Депозит: 20 000 сом"
     )
     assert "lalafo" not in text.lower()
@@ -120,7 +120,7 @@ def test_channel_source_always_marks_unknown_author():
 def test_missing_district_uses_labeled_demo_location_and_omits_deposit():
     text = format_apartment(make_ad(district=None, deposit=None, rooms="studio"))
     assert text == (
-        "🏠 Студия\n👤 Автор: собственник\n📍 Центр\n"
+        "🏠 Студия\n📍 Центр\n"
         "🏙 Бишкек\n💰 35 000 сом"
     )
 
@@ -132,17 +132,17 @@ def test_expanded_source_keeps_reposts_strictly_limited():
     assert SOURCE_MAX_POSTS_PER_RUN == 18
     assert SOURCE_PUBLISH_SPACING_SECONDS == 150
     assert SOURCE_MAX_SEARCH_PAGES == 12
-    assert SOURCE_MIN_PRICE == 23_000
+    assert SOURCE_MIN_PRICE == 25_000
     assert SOURCE_MAX_PRICE == 40_000
     assert SOURCE_MIN_PHOTOS == 1
-    assert MAX_REPOSTS_PER_RUN == 0
-    assert SOURCE_REPOST_AFTER_HOURS is None
-    assert TWO_BEDROOM_MIN_PRICE == 23_000
+    assert MAX_REPOSTS_PER_RUN == 18
+    assert SOURCE_REPOST_AFTER_HOURS == 48
+    assert TWO_BEDROOM_MIN_PRICE == 25_000
     assert TWO_BEDROOM_MAX_PRICE == 40_000
     assert TWO_BEDROOM_DAILY_LIMIT == 20
     assert TWO_BEDROOM_MAX_PER_RUN == 2
     assert settings.rooms == "studio,1"
-    assert settings.min_price == 23_000
+    assert settings.min_price == 25_000
     assert settings.max_price == 40_000
     assert settings.max_new_posts_per_run == 18
     assert settings.max_search_pages == 36
@@ -156,11 +156,11 @@ def test_source_urls_follow_the_operator_filters():
     assert "/semeynym/param-bez-detey/studentam/" in DEFAULT_SEARCH_URL
     assert "/bez-podseleniya/mozhno-s-zhivotnymi" in DEFAULT_SEARCH_URL
     assert "bez-zhivotnyh" not in DEFAULT_SEARCH_URL
-    assert "price[from]=23000&price[to]=40000" in DEFAULT_SEARCH_URL
+    assert "price[from]=25000&price[to]=40000" in DEFAULT_SEARCH_URL
     assert len(ADDITIONAL_SEARCH_URLS) == 1
     assert "/studio/1-bedroom/real-estate-agency" in ADDITIONAL_SEARCH_URLS[0]
     assert all("bez-podseleniya" not in url for url in ADDITIONAL_SEARCH_URLS)
-    assert all("price[from]=23000&price[to]=40000" in url for url in ADDITIONAL_SEARCH_URLS)
+    assert all("price[from]=25000&price[to]=40000" in url for url in ADDITIONAL_SEARCH_URLS)
 
 
 def test_owner_sources_receive_most_of_discovery_pool():
@@ -182,10 +182,10 @@ def test_inventory_sources_reserve_smaller_realtor_fallback():
     assert targets == [110, 220, 230, 240]
 
 
-def test_supported_room_types_have_twenty_three_thousand_price_floor():
-    assert minimum_price_for_rooms("studio") == 23_000
-    assert minimum_price_for_rooms("1") == 23_000
-    assert minimum_price_for_rooms("2") == 23_000
+def test_supported_room_types_have_twenty_five_thousand_price_floor():
+    assert minimum_price_for_rooms("studio") == 25_000
+    assert minimum_price_for_rooms("1") == 25_000
+    assert minimum_price_for_rooms("2") == 25_000
 
 
 @pytest.mark.parametrize("term", ["контейнер", "времянка", "вагончик", "барак"])
@@ -529,7 +529,7 @@ def test_publish_batch_never_contains_the_same_lalafo_ad_twice():
     assert len(next(ad for ad in selected if ad.lalafo_id == 777).photo_urls) == 2
 
 
-def test_publish_batch_excludes_previously_published_ad_entirely():
+def test_publish_batch_uses_eligible_repeat_after_fresh_card():
     duplicate = make_ad(lalafo_id=900, district="Тунгуч", phone="+996700000900")
     selected = select_publish_batch_with_reposts(
         [duplicate, duplicate, make_ad(lalafo_id=901, phone="+996700000901")],
@@ -537,7 +537,7 @@ def test_publish_batch_excludes_previously_published_ad_entirely():
         3,
     )
 
-    assert [ad.lalafo_id for ad in selected] == [901]
+    assert [ad.lalafo_id for ad in selected] == [901, 900]
 
 
 def test_candidate_deduplication_keeps_the_higher_quality_copy():
@@ -632,7 +632,7 @@ def test_publish_batch_uses_fresh_cards_when_repeats_are_unavailable():
     assert sum(ad.lalafo_id == 45 for ad in selected) == 0
 
 
-def test_publish_batch_does_not_fill_shortage_with_old_posts():
+def test_publish_batch_fills_shortage_with_eligible_reposts():
     fresh = [
         make_ad(lalafo_id=index, phone=f"+996700{index:06d}")
         for index in range(1, 11)
@@ -650,12 +650,12 @@ def test_publish_batch_does_not_fill_shortage_with_old_posts():
     selected = select_publish_batch_with_reposts(fresh + repeats, repost_times, 25)
     selected_ids = {ad.lalafo_id for ad in selected}
 
-    assert len(selected) == 10
-    assert {ad.lalafo_id for ad in fresh} == selected_ids
-    assert not ({ad.lalafo_id for ad in repeats} & selected_ids)
+    assert len(selected) == 25
+    assert {ad.lalafo_id for ad in fresh}.issubset(selected_ids)
+    assert len({ad.lalafo_id for ad in repeats} & selected_ids) == 15
 
 
-def test_publish_batch_never_adds_any_reposts():
+def test_publish_batch_caps_reposts_per_run():
     fresh = [
         make_ad(lalafo_id=index, phone=f"+996702{index:06d}")
         for index in range(1, 11)
@@ -672,5 +672,5 @@ def test_publish_batch_never_adds_any_reposts():
 
     selected = select_publish_batch_with_reposts(fresh + repeats, repost_times, 40)
 
-    assert len(selected) == 10
-    assert not ({ad.lalafo_id for ad in selected} & set(repost_times))
+    assert len(selected) == 28
+    assert len({ad.lalafo_id for ad in selected} & set(repost_times)) == 18

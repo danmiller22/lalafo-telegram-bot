@@ -40,10 +40,8 @@ def is_supported_source(ad: LalafoAd | Apartment) -> bool:
 
 
 def author_label(ad: LalafoAd | Apartment) -> str | None:
-    """Keep the displayed author label stable across previews and reposts."""
-    seller_type = getattr(ad, "seller_type", "unknown")
-    if seller_type == "owner":
-        return "собственник"
+    """Public cards intentionally omit author labels for every seller type."""
+    del ad
     return None
 
 

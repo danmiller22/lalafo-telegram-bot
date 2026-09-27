@@ -85,7 +85,7 @@ CENTRAL_DISTRICT_TERMS = (
 )
 # The fallback search includes owners and real-estate agents; detail-level
 # checks still remove shared housing and all public cards omit offerer type.
-SOURCE_MIN_PRICE = 23_000
+SOURCE_MIN_PRICE = 25_000
 SOURCE_MAX_PRICE = 40_000
 SOURCE_ALLOWED_ROOMS = ("studio", "1")
 SOURCE_MIN_PHOTOS = 1
@@ -93,8 +93,8 @@ SOURCE_MAX_POSTS_PER_RUN = 18
 SOURCE_PUBLISH_SPACING_SECONDS = 150
 SOURCE_MAX_SEARCH_PAGES = 12
 # Published apartments are terminal: every cycle must use fresh inventory.
-SOURCE_REPOST_AFTER_HOURS = None
-MAX_REPOSTS_PER_RUN = 0
+SOURCE_REPOST_AFTER_HOURS = 48
+MAX_REPOSTS_PER_RUN = 18
 CENTRAL_BATCH_SHARE = 0.50
 OWNER_OTHER_BATCH_SHARE = 0.50
 MAX_CANDIDATE_POOL = 300
@@ -104,7 +104,7 @@ REALTOR_CANDIDATE_RESERVE_SHARE = 0.08
 REALTOR_BATCH_SHARE = 0.04
 # Retained for historical reporting helpers; two-bedroom cards are no longer
 # eligible for discovery or publication.
-TWO_BEDROOM_MIN_PRICE = 23_000
+TWO_BEDROOM_MIN_PRICE = 25_000
 TWO_BEDROOM_MAX_PRICE = 40_000
 TWO_BEDROOM_DAILY_LIMIT = 20
 TWO_BEDROOM_MAX_PER_RUN = 2
@@ -623,8 +623,8 @@ def select_owners_then_realtors(
     """Prefer owner cards while allowing agents to fill any shortage."""
     if limit <= 0:
         return []
-    owners = [ad for ad in candidates if ad.owner_listing]
-    realtors = [ad for ad in candidates if not ad.owner_listing]
+    owners = [ad for ad in candidates if ad.seller_type == "owner" and ad.owner_listing]
+    realtors = [ad for ad in candidates if ad.seller_type == "realtor"]
     realtor_target = min(len(realtors), math.ceil(limit * REALTOR_BATCH_SHARE))
     owner_target = min(len(owners), limit - realtor_target)
     selected = select_publish_batch_with_reposts(owners, {}, owner_target)

@@ -128,7 +128,7 @@ async def test_manual_card_album_confirmation_and_publish(
     assert ad.phone == "+996700123456"
     from app.telegram.formatting import author_label
 
-    assert author_label(ad) == preview_author
+    assert author_label(ad) is None
     publish.assert_awaited_once_with(42, ad)
     apartments.mark_published.assert_awaited_once_with(
         42, chat_id=settings.telegram_group_id, message_id=987
@@ -445,7 +445,7 @@ async def test_confirmed_manual_card_reaches_album_keyboard_and_database(reposit
     assert [item.media for item in media] == ["file-1", "file-2", "file-3"]
     card = bot.send_message.await_args.kwargs
     assert "🏠 1-комнатная квартира" in card["text"]
-    assert "👤 Автор: собственник" in card["text"]
+    assert "👤 Автор:" not in card["text"]
     assert card["reply_markup"].inline_keyboard[0][0].text == "Получить номер"
     async with sessions() as session:
         stored = (

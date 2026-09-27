@@ -11,6 +11,7 @@ from app.inventory import (
     DISCOVERY_RETRY_MINUTES,
     InventoryRepository,
     PUBLICATION_SPACING_MINUTES,
+    daily_realtor_target,
     daily_publication_target,
     period_publication_targets,
     plan_period,
@@ -106,17 +107,29 @@ def test_period_rotates_confirmed_owners_across_available_districts():
     }
 
 
-def test_period_accepts_agent_stock():
+def test_period_balances_low_middle_and_high_price_buckets():
+    stock = _apartments(96, central=True, start_id=1)
+    for index, item in enumerate(stock):
+        item.price = (25_000, 30_000, 35_000)[index % 3]
+    period_start = datetime(2026, 9, 13, 0, tzinfo=timezone(timedelta(hours=6)))
+
+    planned = plan_period(stock, period_start=period_start, rng=random.Random(33))
+    buckets = {min(2, (item.apartment.price - 25_000) // 5_000) for item in planned}
+
+    assert buckets == {0, 1, 2}
+
+
+def test_period_caps_agent_only_stock():
     stock = _apartments(100, central=False, start_id=1, owner=False)
     period_start = datetime(2026, 9, 13, 0, tzinfo=timezone(timedelta(hours=6)))
 
     planned = plan_period(stock, period_start=period_start, rng=random.Random(9))
 
-    assert len(planned) == period_publication_targets(period_start)[0]
+    assert len(planned) == 3
     assert all(item.apartment.seller_type == "realtor" for item in planned)
 
 
-def test_period_fills_from_all_author_types():
+def test_period_keeps_owner_and_only_three_realtors():
     stock = _apartments(1, central=True, start_id=1) + _apartments(
         100, central=False, start_id=100, owner=False
     )
@@ -124,8 +137,9 @@ def test_period_fills_from_all_author_types():
 
     planned = plan_period(stock, period_start=period_start, rng=random.Random(10))
 
-    assert len(planned) == period_publication_targets(period_start)[0]
+    assert len(planned) == 4
     assert sum("золотой" in item.apartment.district.casefold() for item in planned) == 1
+    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 3
 
 
 def test_central_realtors_can_fill_central_share():
@@ -140,11 +154,11 @@ def test_central_realtors_can_fill_central_share():
     assert any(item.apartment.seller_type == "owner" for item in planned)
     assert (
         sum(item.apartment.seller_type == "realtor" for item in planned)
-        == central_count
+        == 3
     )
 
 
-def test_two_periods_do_not_cap_agents():
+def test_each_standalone_period_caps_agents():
     owners = _apartments(160, central=True, start_id=1)
     realtors = _apartments(80, central=False, start_id=500, owner=False)
     first_start = datetime(2026, 9, 13, 0, tzinfo=timezone(timedelta(hours=6)))
@@ -160,10 +174,10 @@ def test_two_periods_do_not_cap_agents():
 
     assert sum(
         item.apartment.seller_type == "realtor" for item in first + second
-    ) > 10
+    ) == 6
 
 
-def test_unknown_authors_are_included():
+def test_unknown_authors_are_excluded():
     stock = _apartments(100, central=True, start_id=1)
     for item in stock:
         item.owner_listing = False
@@ -172,8 +186,14 @@ def test_unknown_authors_are_included():
 
     planned = plan_period(stock, period_start=period_start, rng=random.Random(13))
 
-    assert len(planned) == period_publication_targets(period_start)[0]
-    assert all(item.apartment.seller_type == "unknown" for item in planned)
+    assert planned == []
+
+
+def test_daily_realtor_target_alternates_between_two_and_three():
+    start = datetime(2026, 9, 13, 0, tzinfo=timezone(timedelta(hours=6)))
+    assert {
+        daily_realtor_target(start + timedelta(days=offset)) for offset in range(4)
+    } == {2, 3}
 
 
 def test_period_does_not_cap_non_owners():
@@ -470,6 +490,88 @@ async def test_claim_due_accepts_queued_agents(repositories):
 
 
 @pytest.mark.asyncio
+async def test_schedule_uses_only_daily_realtor_allowance(repositories):
+    apartments, _, sessions = repositories
+    now = datetime(2026, 9, 23, 10, 0, tzinfo=timezone.utc)
+    for index in range(40):
+        await apartments.upsert_discovered(
+            make_ad(lalafo_id=30_000 + index, seller_type="owner", owner_listing=True)
+        )
+    for index in range(10):
+        await apartments.upsert_discovered(
+            make_ad(
+                lalafo_id=31_000 + index,
+                seller_type="realtor",
+                owner_listing=False,
+            )
+        )
+
+    await InventoryRepository(sessions).schedule_period(now=now, rng=random.Random(51))
+
+    async with sessions() as session:
+        realtor_count = int(
+            await session.scalar(
+                select(func.count())
+                .select_from(ApartmentInventoryQueue)
+                .join(Apartment)
+                .where(Apartment.seller_type == "realtor")
+            )
+            or 0
+        )
+        unknown_count = int(
+            await session.scalar(
+                select(func.count())
+                .select_from(ApartmentInventoryQueue)
+                .join(Apartment)
+                .where(Apartment.seller_type == "unknown")
+            )
+            or 0
+        )
+    assert realtor_count == daily_realtor_target(now)
+    assert unknown_count == 0
+
+
+@pytest.mark.asyncio
+async def test_schedule_repeats_only_after_forty_eight_hours(repositories):
+    apartments, _, sessions = repositories
+    now = datetime(2026, 9, 23, 10, 0, tzinfo=timezone.utc)
+    eligible = await apartments.upsert_discovered(make_ad(lalafo_id=32_001))
+    too_new = await apartments.upsert_discovered(make_ad(lalafo_id=32_002))
+    async with sessions.begin() as session:
+        await session.execute(
+            update(Apartment)
+            .where(Apartment.id == eligible.id)
+            .values(
+                publication_status="published",
+                published_at=now - timedelta(hours=49),
+                last_seen_at=now,
+            )
+        )
+        await session.execute(
+            update(Apartment)
+            .where(Apartment.id == too_new.id)
+            .values(
+                publication_status="published",
+                published_at=now - timedelta(hours=47),
+                last_seen_at=now,
+            )
+        )
+
+    await InventoryRepository(sessions).schedule_period(now=now, rng=random.Random(52))
+
+    async with sessions() as session:
+        queued_ids = set(
+            (
+                await session.scalars(
+                    select(ApartmentInventoryQueue.apartment_id)
+                )
+            ).all()
+        )
+    assert eligible.id in queued_ids
+    assert too_new.id not in queued_ids
+
+
+@pytest.mark.asyncio
 async def test_claim_due_skips_old_unsupported_source_even_if_owner(repositories):
     apartments, _, sessions = repositories
     now = datetime.now(timezone.utc)
@@ -537,7 +639,7 @@ async def test_thin_successful_discovery_is_rebuilt(repositories):
 
 
 @pytest.mark.asyncio
-async def test_code_change_resets_dedupe_without_touching_old_message(repositories):
+async def test_code_change_rebuilds_queue_without_erasing_repost_history(repositories):
     apartments, _, sessions = repositories
     apartment = await apartments.upsert_discovered(make_ad(lalafo_id=88001))
     await apartments.mark_published(apartment.id, chat_id=-1001, message_id=501)
@@ -554,7 +656,7 @@ async def test_code_change_resets_dedupe_without_touching_old_message(repositori
     inventory = InventoryRepository(sessions)
     assert await inventory.reset_publication_history_for_code("commit-one") is True
     refreshed = await apartments.get(apartment.id)
-    assert refreshed.publication_status == "discovered"
+    assert refreshed.publication_status == "published"
     assert refreshed.telegram_chat_id == -1001
     assert refreshed.telegram_message_id == 501
     assert refreshed.published_at is not None
