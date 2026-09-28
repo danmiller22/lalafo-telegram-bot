@@ -5,6 +5,7 @@ import logging
 import os
 import secrets
 import inspect
+import sys
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -392,6 +393,18 @@ async def _select_hosted_lalafo_proxies() -> None:
     logger.warning("Hosted publisher found no proxy; direct Lalafo route will be tried")
 
 
+async def _run_inventory_worker_process(settings: Any) -> int:
+    env = os.environ.copy()
+    env["LALAFO_PROXY_URL"] = settings.lalafo_proxy_url
+    process = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-m",
+        "scripts.publish_inventory_batch",
+        env=env,
+    )
+    return await process.wait()
+
+
 async def _execute_due_apartment_cycle() -> int:
     async with _run_lock:
         settings = get_settings()
@@ -409,7 +422,6 @@ async def _execute_due_apartment_cycle() -> int:
         try:
             from scripts.publish_if_due import publication_schedule_status
             from scripts.publish_if_due import publication_window_status
-            from scripts.publish_if_due import run as run_if_due
 
             schedule = await publication_schedule_status(
                 window_minutes=settings.hosted_apartment_publish_interval_minutes
@@ -448,20 +460,10 @@ async def _execute_due_apartment_cycle() -> int:
                 return 0
 
             await _select_hosted_lalafo_proxies()
-            def run_inventory_off_event_loop() -> int:
-                return asyncio.run(
-                    run_if_due(
-                        force=False,
-                        window_minutes=settings.hosted_apartment_publish_interval_minutes,
-                        max_attempts=3,
-                        wait_for_active_lease=False,
-                    )
-                )
-
             # Detail parsing and large HTML pages can monopolize the small web
-            # instance. Keep Telegram webhooks, payments, and /health responsive
-            # while the inventory collector works in its own thread.
-            exit_code = await asyncio.to_thread(run_inventory_off_event_loop)
+            # instance. A separate process keeps Telegram webhooks, payments,
+            # and /health responsive throughout inventory collection.
+            exit_code = await _run_inventory_worker_process(settings)
             after_schedule = await publication_schedule_status(
                 window_minutes=settings.hosted_apartment_publish_interval_minutes
             )

@@ -367,10 +367,8 @@ async def test_restart_replaces_only_unhealthy_auto_reply_worker(
 async def test_hosted_scheduler_runs_due_check_without_forcing_duplicates(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import scripts.publish_if_due
-
     select_proxies = AsyncMock()
-    run_if_due = AsyncMock(return_value=0)
+    run_worker = AsyncMock(return_value=0)
     publication_status = AsyncMock(side_effect=[(0, None), (5, None)])
     schedule_status = AsyncMock(
         side_effect=[
@@ -391,7 +389,8 @@ async def test_hosted_scheduler_runs_due_check_without_forcing_duplicates(
         ]
     )
     monkeypatch.setattr(web, "_select_hosted_lalafo_proxies", select_proxies)
-    monkeypatch.setattr(scripts.publish_if_due, "run", run_if_due)
+    monkeypatch.setattr(web, "_run_inventory_worker_process", run_worker)
+    import scripts.publish_if_due
     monkeypatch.setattr(
         scripts.publish_if_due,
         "publication_window_status",
@@ -406,12 +405,7 @@ async def test_hosted_scheduler_runs_due_check_without_forcing_duplicates(
     assert await web._execute_due_apartment_cycle() == 0
 
     select_proxies.assert_awaited_once()
-    run_if_due.assert_awaited_once_with(
-        force=False,
-        window_minutes=90,
-        max_attempts=3,
-        wait_for_active_lease=False,
-    )
+    run_worker.assert_awaited_once_with(get_settings())
     assert publication_status.await_count == 2
     assert schedule_status.await_count == 2
     assert web._apartment_scheduler_state["recent_published_count"] == 5
