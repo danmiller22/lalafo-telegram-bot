@@ -23,8 +23,8 @@ from app.telegram.formatting import is_supported_source
 BISHKEK = ZoneInfo("Asia/Bishkek")
 ALLOWED_ROOMS = frozenset({"studio", "1"})
 CENTRAL_DAILY_SHARE = 0.50
-MIN_PUBLICATIONS_PER_DAY = 32
-MAX_PUBLICATIONS_PER_DAY = 32
+MIN_PUBLICATIONS_PER_DAY = 50
+MAX_PUBLICATIONS_PER_DAY = 50
 # The daily target is chosen once per Bishkek date, then split across the two
 # discovery periods so retries cannot increase the day's publication volume.
 # The channel is owner-led. A small daily realtor sample keeps the feed useful
@@ -511,10 +511,22 @@ class InventoryRepository:
                     and lease > as_utc(now)
                 ):
                     return None
+                live_queue_count = int(
+                    await session.scalar(
+                        select(func.count())
+                        .select_from(ApartmentInventoryQueue)
+                        .where(
+                            ApartmentInventoryQueue.status.in_(
+                                ("queued", "publishing")
+                            )
+                        )
+                    )
+                    or 0
+                )
                 if (
                     not force
                     and row.status == "succeeded"
-                    and row.queued_count >= MIN_HEALTHY_PERIOD_QUEUE
+                    and live_queue_count >= MIN_HEALTHY_PERIOD_QUEUE
                 ):
                     return None
                 completed = as_utc(row.completed_at) if row.completed_at else None

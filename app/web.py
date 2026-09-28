@@ -39,9 +39,9 @@ from app.lalafo.mcp_server import lalafo_mcp, lalafo_mcp_app
 
 logger = logging.getLogger(__name__)
 
-# Apartment discovery stays in the isolated GitHub workflow. Koyeb runs only a
-# lightweight atomic queue dispatcher so GitHub cron delays cannot stop cards,
-# while proxy scans can never block Telegram webhooks or the payment Mini App.
+# Koyeb dispatches the durable queue and also refills it when stock runs low.
+# GitHub remains a second collector, but delayed public cron runs can no longer
+# leave the Telegram channel without apartments.
 IN_PROCESS_QUEUE_DISPATCHER_ENABLED = True
 app = FastAPI(title="Lalafo Telegram service", docs_url=None, redoc_url=None)
 
@@ -589,11 +589,22 @@ async def _inventory_queue_status() -> tuple[int, int, datetime | None]:
 
 
 async def _run_hosted_apartment_scheduler() -> None:
+    from app.inventory import MIN_HEALTHY_PERIOD_QUEUE
+
     settings = get_settings()
     check_seconds = max(30.0, settings.hosted_apartment_scheduler_check_seconds)
     while True:
         try:
-            await _execute_queue_dispatch()
+            queued_count, _, _ = await _inventory_queue_status()
+            if queued_count < MIN_HEALTHY_PERIOD_QUEUE:
+                logger.warning(
+                    "Apartment queue is thin (%d/%d); starting cloud refill",
+                    queued_count,
+                    MIN_HEALTHY_PERIOD_QUEUE,
+                )
+                await _execute_due_apartment_cycle()
+            else:
+                await _execute_queue_dispatch()
         except asyncio.CancelledError:
             raise
         except Exception as exc:

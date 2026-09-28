@@ -46,7 +46,7 @@ def _apartments(count: int, *, central: bool, start_id: int, owner: bool = True)
     ]
 
 
-def test_two_periods_plan_32_card_day_in_90_minute_launches():
+def test_two_periods_plan_50_card_day_in_90_minute_launches():
     stock = _apartments(220, central=True, start_id=1) + _apartments(
         100, central=False, start_id=300
     )
@@ -60,7 +60,7 @@ def test_two_periods_plan_32_card_day_in_90_minute_launches():
     )
     all_items = first + second
     daily_target = daily_publication_target(first_start)
-    assert daily_target == 32
+    assert daily_target == 50
     assert len(all_items) == daily_target
     assert sum(
         "золотой" in item.apartment.district.casefold() for item in all_items
@@ -77,15 +77,17 @@ def test_two_periods_plan_32_card_day_in_90_minute_launches():
             item.scheduled_at.astimezone(first_start.tzinfo)
             for item in period_items
         ]
-        launch_starts = local_times[::2]
-        assert len(launch_starts) == 8
-        assert all(
-            round((after - before).total_seconds()) == 90 * 60
-            for before, after in zip(launch_starts, launch_starts[1:])
-        )
-        for offset in range(0, len(local_times), 2):
-            batch = local_times[offset : offset + 2]
-            assert len(batch) == 2
+        launch_minutes = {
+            (value.hour * 60 + value.minute) // 90 * 90 for value in local_times
+        }
+        assert len(launch_minutes) == 8
+        for launch_minute in launch_minutes:
+            batch = [
+                value
+                for value in local_times
+                if (value.hour * 60 + value.minute) // 90 * 90 == launch_minute
+            ]
+            assert 3 <= len(batch) <= 4
             assert all(
                 round((after - before).total_seconds())
                 == PUBLICATION_SPACING_MINUTES * 60
@@ -213,7 +215,7 @@ def test_period_does_not_cap_non_owners():
     assert all(item.apartment.seller_type in {"owner", "realtor", "unknown"} for item in planned)
 
 
-def test_daily_target_is_fixed_at_reduced_volume():
+def test_daily_target_is_fixed_at_fifty_cards():
     period_start = datetime(2026, 9, 13, 0, tzinfo=timezone(timedelta(hours=6)))
 
     assert daily_publication_target(period_start) == daily_publication_target(
@@ -222,7 +224,7 @@ def test_daily_target_is_fixed_at_reduced_volume():
     assert {
         daily_publication_target(period_start + timedelta(days=offset))
         for offset in range(10)
-    } == {32}
+    } == {50}
 
 
 @pytest.mark.asyncio
@@ -382,7 +384,7 @@ async def test_late_period_schedule_keeps_five_and_ninety_minute_cadence(reposit
         now=now, rng=random.Random(23)
     )
 
-    assert queued == 16
+    assert queued == 25
     async with sessions() as session:
         scheduled = list(
             (
@@ -397,7 +399,9 @@ async def test_late_period_schedule_keeps_five_and_ninety_minute_cadence(reposit
         round((after - before).total_seconds() / 60)
         for before, after in zip(scheduled, scheduled[1:])
     ]
-    assert deltas == [5, 85] * 7 + [5]
+    assert len(deltas) == 24
+    assert deltas.count(5) == 17
+    assert len([value for value in deltas if value in {75, 80}]) == 7
 
     assert (
         await InventoryRepository(sessions).schedule_period(
@@ -410,7 +414,7 @@ async def test_late_period_schedule_keeps_five_and_ninety_minute_cadence(reposit
             await session.scalar(
                 select(func.count()).select_from(ApartmentInventoryQueue)
             )
-            == 16
+            == 25
         )
 
 

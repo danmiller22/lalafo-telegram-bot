@@ -452,6 +452,30 @@ async def test_hosted_queue_dispatcher_publishes_without_proxy_discovery(
 
 
 @pytest.mark.asyncio
+async def test_hosted_scheduler_refills_an_empty_queue(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    refill = AsyncMock(return_value=0)
+    dispatch = AsyncMock(return_value=0)
+    monkeypatch.setattr(
+        web,
+        "_inventory_queue_status",
+        AsyncMock(return_value=(0, 0, None)),
+    )
+    monkeypatch.setattr(web, "_execute_due_apartment_cycle", refill)
+    monkeypatch.setattr(web, "_execute_queue_dispatch", dispatch)
+    monkeypatch.setattr(
+        web.asyncio, "sleep", AsyncMock(side_effect=asyncio.CancelledError)
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        await web._run_hosted_apartment_scheduler()
+
+    refill.assert_awaited_once()
+    dispatch.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_dedicated_lalafo_webhook_keeps_pending_updates(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
