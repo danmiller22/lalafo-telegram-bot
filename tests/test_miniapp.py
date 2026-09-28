@@ -80,7 +80,7 @@ def test_mini_app_page_uses_automatic_access_delivery():
     assert "prepareTelegramContext" in html
     assert "Выберите банк" not in html
     assert "Выберите доступ:" not in html
-    assert "📞 Получить номер" in html
+    assert "✅ Я оплатил(а) — открыть номер" in html
     assert "Статус: оплата проверяется" not in html
     assert "Оплата проверяется" not in html
     assert 'const canPay = !approved && !waiting' in html
