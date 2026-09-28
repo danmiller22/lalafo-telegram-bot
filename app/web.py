@@ -626,6 +626,10 @@ async def _run_hosted_apartment_scheduler() -> None:
     settings = get_settings()
     check_seconds = max(30.0, settings.hosted_apartment_scheduler_check_seconds)
     next_refill_at = datetime.min.replace(tzinfo=UTC)
+    # Apply the current deployment's queue reset before inspecting its size.
+    # Otherwise an old healthy-sized queue can survive a code update forever.
+    await _refill_saved_inventory()
+    next_refill_at = datetime.now(UTC) + timedelta(minutes=DISCOVERY_RETRY_MINUTES)
     while True:
         try:
             queued_count, _, _ = await _inventory_queue_status()
