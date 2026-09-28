@@ -589,14 +589,17 @@ async def _inventory_queue_status() -> tuple[int, int, datetime | None]:
 
 
 async def _run_hosted_apartment_scheduler() -> None:
-    from app.inventory import MIN_HEALTHY_PERIOD_QUEUE
+    from app.inventory import DISCOVERY_RETRY_MINUTES, MIN_HEALTHY_PERIOD_QUEUE
 
     settings = get_settings()
     check_seconds = max(30.0, settings.hosted_apartment_scheduler_check_seconds)
+    next_refill_at = datetime.min.replace(tzinfo=UTC)
     while True:
         try:
             queued_count, _, _ = await _inventory_queue_status()
-            if queued_count < MIN_HEALTHY_PERIOD_QUEUE:
+            now = datetime.now(UTC)
+            if queued_count < MIN_HEALTHY_PERIOD_QUEUE and now >= next_refill_at:
+                next_refill_at = now + timedelta(minutes=DISCOVERY_RETRY_MINUTES)
                 logger.warning(
                     "Apartment queue is thin (%d/%d); starting cloud refill",
                     queued_count,
