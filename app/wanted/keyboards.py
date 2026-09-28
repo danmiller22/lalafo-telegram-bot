@@ -19,6 +19,12 @@ def main_menu_keyboard(
             ],
             [InlineKeyboardButton(text="📋 Мои заявки", callback_data="menu:mywanted")],
             [
+                InlineKeyboardButton(
+                    text="🔒 Политика конфиденциальности",
+                    callback_data="menu:privacy",
+                )
+            ],
+            [
                 InlineKeyboardButton(text="🛟 Техподдержка", callback_data="menu:support"),
                 InlineKeyboardButton(text="✅ Проверить бота", callback_data="menu:status"),
             ],

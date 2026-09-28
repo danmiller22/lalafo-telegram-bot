@@ -67,10 +67,34 @@ async def test_plain_start_shows_wanted_ad_button():
     assert markup.inline_keyboard[0][0].callback_data == "wanted:new"
     assert markup.inline_keyboard[1][0].text == "📋 Мои заявки"
     assert markup.inline_keyboard[1][0].callback_data == "menu:mywanted"
-    assert [button.callback_data for button in markup.inline_keyboard[2]] == [
+    assert markup.inline_keyboard[2][0].text == "🔒 Политика конфиденциальности"
+    assert markup.inline_keyboard[2][0].callback_data == "menu:privacy"
+    assert [button.callback_data for button in markup.inline_keyboard[3]] == [
         "menu:support",
         "menu:status",
     ]
+
+
+@pytest.mark.asyncio
+async def test_russian_start_alias_opens_the_same_menu():
+    message = SimpleNamespace(
+        text="/старт",
+        from_user=SimpleNamespace(id=100),
+        answer=AsyncMock(),
+    )
+    state = SimpleNamespace(clear=AsyncMock())
+
+    await start_handler(
+        message,
+        service=None,
+        signer=TokenSigner("a-very-long-test-secret"),
+        settings=Settings(),
+        bot=object(),
+        state=state,
+    )
+
+    assert "Сервис аренды квартир" in message.answer.await_args.args[0]
+    state.clear.assert_awaited_once()
 
 
 @pytest.mark.asyncio

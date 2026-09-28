@@ -68,6 +68,12 @@ async def _show_main_menu(message: Message, settings: Settings) -> None:
     )
 
 
+@router.message(
+    F.chat.type == "private",
+    F.text.func(
+        lambda text: (text or "").strip().casefold() in {"/старт", "старт"}
+    ),
+)
 @router.message(CommandStart())
 async def start_handler(
     message: Message,

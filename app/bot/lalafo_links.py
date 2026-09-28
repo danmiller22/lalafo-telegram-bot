@@ -570,17 +570,22 @@ async def manual_card_photos_done_button(
     await callback.answer()
 
 
-@manual_card_router.message(StateFilter(None), F.chat.type == "private", F.text)
+@manual_card_router.message(
+    StateFilter(None),
+    F.chat.type == "private",
+    F.text.func(
+        lambda text: (text or "").strip().casefold() in {"готово", "готов", "done"}
+    ),
+)
 async def manual_card_expired_state(
     message: Message, settings: Settings
 ) -> None:
     if not _is_manual_admin(message, settings):
         return
-    if (message.text or "").strip().casefold() in {"готово", "готов", "done"}:
-        await message.answer(
-            "Сценарий добавления не активен. Нажмите «Добавить карточку» "
-            "или отправьте /addcard, затем пришлите фотографии заново."
-        )
+    await message.answer(
+        "Сценарий добавления не активен. Нажмите «Добавить карточку» "
+        "или отправьте /addcard, затем пришлите фотографии заново."
+    )
 
 
 @manual_card_router.message(ManualCardPublish.waiting_for_phone, F.chat.type == "private", F.text)
