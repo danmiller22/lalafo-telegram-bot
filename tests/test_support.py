@@ -8,7 +8,12 @@ import pytest
 from app.config import Settings
 from app.security import TokenSigner
 from app.support.faq import FAQ_BY_KEY, fallback_answer, faq_for_text
-from app.support.handlers import support_back, support_faq_callback, support_question
+from app.support.handlers import (
+    SUPPORT_MENU_TEXT,
+    support_back,
+    support_faq_callback,
+    support_question,
+)
 from app.support.keyboards import (
     support_admin_keyboard,
     support_back_keyboard,
@@ -27,10 +32,11 @@ def test_support_url_always_opens_the_customer_bot():
 
 
 def test_faq_answers_only_confident_common_questions():
-    assert faq_for_text("Как получить номер собственника?").key == "phone"
     assert faq_for_text("как оплатить доступ").key == "payment"
     assert faq_for_text("сколько стоит тариф на неделю").key == "week"
     assert faq_for_text("оплатил но номера нет").key == "review"
+    assert faq_for_text("Как получить номер собственника?") is None
+    assert faq_for_text("что значит автор") is None
     assert faq_for_text("У меня необычная проблема с конкретной квартирой") is None
 
 
@@ -47,6 +53,13 @@ def test_support_menu_contains_every_faq_and_close_button():
 
     assert set(callbacks[:-1]) == {f"support:faq:{key}" for key in FAQ_BY_KEY}
     assert callbacks[-1] == "support:close"
+
+
+def test_support_menu_is_short_and_explains_the_service():
+    assert len(FAQ_BY_KEY) == 5
+    assert "автоматический отбор" in SUPPORT_MENU_TEXT
+    assert "риелторы" in SUPPORT_MENU_TEXT
+    assert "не отвечаем" in SUPPORT_MENU_TEXT
 
 
 def test_support_answer_has_only_back_button():
@@ -91,12 +104,12 @@ async def test_support_ticket_lifecycle(repositories):
 @pytest.mark.asyncio
 async def test_common_question_is_answered_directly():
     message = SimpleNamespace(
-        text="Как получить номер собственника?",
+        text="Как оплатить доступ?",
         answer=AsyncMock(),
     )
     await support_question(message)
 
-    assert "Получить номер" in message.answer.await_args.args[0]
+    assert "Я оплатил(а)" in message.answer.await_args.args[0]
     keyboard = message.answer.await_args.kwargs["reply_markup"]
     assert keyboard.inline_keyboard[0][0].callback_data == "support:back"
 
@@ -105,7 +118,7 @@ async def test_common_question_is_answered_directly():
 async def test_faq_button_replaces_menu_with_answer_and_back_button():
     message = SimpleNamespace(edit_text=AsyncMock())
     callback = SimpleNamespace(
-        data="support:faq:phone",
+        data="support:faq:payment",
         message=message,
         answer=AsyncMock(),
     )
