@@ -44,6 +44,20 @@ def test_main_and_dedicated_bots_use_separate_routers() -> None:
     assert lalafo_links.router.parent_router is None
 
 
+def test_forward_reupload_requires_exact_numeric_admin_id() -> None:
+    settings = Settings(admin_user_id=777, admin_username="owner_name")
+    exact_admin = SimpleNamespace(
+        from_user=SimpleNamespace(id=777, username="anything")
+    )
+    username_impostor = SimpleNamespace(
+        from_user=SimpleNamespace(id=123, username="owner_name")
+    )
+
+    assert lalafo_links._is_owner(exact_admin, settings)
+    assert not lalafo_links._is_owner(username_impostor, settings)
+    assert not lalafo_links._is_admin(username_impostor, settings)
+
+
 def test_repeat_is_blocked_for_48_hours() -> None:
     now = datetime(2026, 9, 17, 12, tzinfo=timezone.utc)
 

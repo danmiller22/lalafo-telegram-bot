@@ -4,7 +4,7 @@ import logging
 import re
 
 from aiogram import Bot, F, Router
-from aiogram.filters import StateFilter
+from aiogram.filters import Command, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
@@ -64,6 +64,25 @@ async def wanted_cancel(
                 ),
             ),
         )
+
+
+@router.message(StateFilter(WantedAdForm), Command("cancel"))
+async def wanted_cancel_message(
+    message: Message, state: FSMContext, settings: Settings
+) -> None:
+    """Let a customer leave the form even when an inline button is unavailable."""
+    await state.clear()
+    await message.answer(
+        "Создание заявки отменено.",
+        reply_markup=main_menu_keyboard(
+            settings.support_bot_url,
+            include_admin=bool(
+                settings.admin_user_id
+                and message.from_user
+                and message.from_user.id == settings.admin_user_id
+            ),
+        ),
+    )
 
 
 @router.callback_query(StateFilter(WantedAdForm.rooms), F.data.startswith("wanted:room:"))
@@ -205,38 +224,81 @@ async def wanted_create(
     signer: TokenSigner,
     settings: Settings,
 ) -> None:
+    if not callback.message or callback.message.chat.type != "private":
+        await callback.answer("Откройте личный чат бота.", show_alert=True)
+        return
+    payment_url = settings.wanted_finik_payment_url.strip()
+    if not payment_url.startswith(("https://", "http://")):
+        await callback.answer(
+            "Оплата заявки временно недоступна. Попробуйте позже или напишите в техподдержку.",
+            show_alert=True,
+        )
+        return
     data = await state.get_data()
     required = {"rooms", "district", "budget", "move_in", "tenants", "notes", "contact"}
     if not required.issubset(data):
         await state.clear()
         await callback.answer("Анкета устарела. Заполните её заново.", show_alert=True)
         return
-    ad = await wanted_ads.create(
-        user_id=callback.from_user.id,
-        username=callback.from_user.username,
-        first_name=callback.from_user.first_name,
-        rooms=str(data["rooms"]),
-        district=str(data["district"]),
-        budget=int(data["budget"]),
-        move_in=str(data["move_in"]),
-        tenants=str(data["tenants"]),
-        notes=str(data["notes"]),
-        contact=str(data["contact"]),
-    )
-    await state.clear()
-    await callback.answer()
-    if callback.message:
-        await callback.message.edit_text(
-            f"Заявка сохранена. Стоимость публикации — {WANTED_SEARCH_PRICE} сом.\n\n"
-            + format_wanted_ad(ad)
-            + "\n\nПосле оплаты нажмите «Проверить оплату».",
-            reply_markup=wanted_payment_keyboard(
-                ad.id,
-                signer=signer,
-                payment_url=settings.wanted_finik_payment_url,
-                support_url=settings.support_bot_url,
-            ),
+    try:
+        ad = await wanted_ads.create(
+            user_id=callback.from_user.id,
+            username=callback.from_user.username,
+            first_name=callback.from_user.first_name,
+            rooms=str(data["rooms"]),
+            district=str(data["district"]),
+            budget=int(data["budget"]),
+            move_in=str(data["move_in"]),
+            tenants=str(data["tenants"]),
+            notes=str(data["notes"]),
+            contact=str(data["contact"]),
         )
+    except Exception:
+        logger.exception("Could not create wanted ad for user %s", callback.from_user.id)
+        await callback.answer(
+            "Не удалось сохранить заявку. Попробуйте ещё раз.", show_alert=True
+        )
+        return
+
+    text = (
+        f"Заявка сохранена. Стоимость публикации — {WANTED_SEARCH_PRICE} сом.\n\n"
+        + format_wanted_ad(ad)
+        + "\n\nПосле оплаты нажмите «Проверить оплату»."
+    )
+    keyboard = wanted_payment_keyboard(
+        ad.id,
+        signer=signer,
+        payment_url=payment_url,
+        support_url=settings.support_bot_url,
+    )
+    await callback.answer()
+    try:
+        await callback.message.edit_text(
+            text,
+            reply_markup=keyboard,
+        )
+    except Exception:
+        logger.exception("Could not replace wanted ad preview for ad %s", ad.id)
+        await callback.message.answer(text, reply_markup=keyboard)
+    await state.clear()
+
+
+@router.message(StateFilter(WantedAdForm), ~CommandStart(), ~Command("cancel"))
+async def wanted_unexpected_input(message: Message) -> None:
+    """Prevent the form from looking frozen on unsupported input."""
+    await message.answer(
+        "Продолжите заполнение по подсказке выше или нажмите «Отмена».",
+        reply_markup=form_cancel_keyboard(),
+    )
+
+
+@router.callback_query(F.data.startswith("wanted:"))
+async def wanted_stale_button(callback: CallbackQuery) -> None:
+    """Explain stale form buttons instead of silently ignoring the click."""
+    await callback.answer(
+        "Эта форма уже завершена или устарела. Начните новую заявку.",
+        show_alert=True,
+    )
 
 
 @router.callback_query(F.data.startswith("wanted-paid:"))
@@ -324,6 +386,9 @@ async def _send_my_wanted_ads(
     signer: TokenSigner,
 ) -> None:
     rows = await wanted_ads.owned(user_id)
+    include_admin = bool(
+        settings.admin_user_id and user_id == settings.admin_user_id
+    )
     status_labels = {
         "awaiting_payment": "ожидает оплаты",
         "pending": "на проверке",
@@ -336,11 +401,7 @@ async def _send_my_wanted_ads(
             "У вас пока нет заявок.",
             reply_markup=main_menu_keyboard(
                 settings.support_bot_url,
-                include_admin=bool(
-                    getattr(message, "from_user", None)
-                    and settings.admin_user_id
-                    and message.from_user.id == settings.admin_user_id
-                ),
+                include_admin=include_admin,
             ),
         )
         return
@@ -364,10 +425,6 @@ async def _send_my_wanted_ads(
         "Чтобы разместить новую заявку, нажмите кнопку ниже.",
         reply_markup=main_menu_keyboard(
             settings.support_bot_url,
-            include_admin=bool(
-                getattr(message, "from_user", None)
-                and settings.admin_user_id
-                and message.from_user.id == settings.admin_user_id
-            ),
+            include_admin=include_admin,
         ),
     )

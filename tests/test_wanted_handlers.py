@@ -8,7 +8,12 @@ from app.config import Settings
 from app.security import TokenSigner
 from app.wanted.admin import wanted_admin_callback
 from app.support.handlers import support_button
-from app.wanted.handlers import my_wanted_ads_button, wanted_paid
+from app.wanted.handlers import (
+    my_wanted_ads_button,
+    wanted_cancel_message,
+    wanted_create,
+    wanted_paid,
+)
 from app.wanted.keyboards import wanted_public_keyboard
 
 
@@ -110,6 +115,98 @@ async def test_menu_my_wanted_button_uses_customer_id():
 
     wanted_ads.owned.assert_awaited_once_with(321)
     assert "нет заявок" in message.answer.await_args.args[0].casefold()
+
+
+@pytest.mark.asyncio
+async def test_my_wanted_menu_shows_add_card_only_to_numeric_admin():
+    message = SimpleNamespace(
+        chat=SimpleNamespace(type="private"),
+        from_user=SimpleNamespace(id=999),
+        answer=AsyncMock(),
+    )
+    callback = SimpleNamespace(
+        message=message,
+        from_user=SimpleNamespace(id=777),
+        answer=AsyncMock(),
+    )
+    wanted_ads = SimpleNamespace(owned=AsyncMock(return_value=[]))
+
+    await my_wanted_ads_button(
+        callback,
+        wanted_ads=wanted_ads,
+        settings=Settings(admin_user_id=777),
+        signer=TokenSigner("a-very-long-test-secret"),
+    )
+
+    markup = message.answer.await_args.kwargs["reply_markup"]
+    buttons = [button for row in markup.inline_keyboard for button in row]
+    assert any(button.callback_data == "manual:add" for button in buttons)
+
+
+@pytest.mark.asyncio
+async def test_my_wanted_menu_hides_add_card_from_customer():
+    message = SimpleNamespace(
+        chat=SimpleNamespace(type="private"),
+        from_user=SimpleNamespace(id=999),
+        answer=AsyncMock(),
+    )
+    callback = SimpleNamespace(
+        message=message,
+        from_user=SimpleNamespace(id=321),
+        answer=AsyncMock(),
+    )
+    wanted_ads = SimpleNamespace(owned=AsyncMock(return_value=[]))
+
+    await my_wanted_ads_button(
+        callback,
+        wanted_ads=wanted_ads,
+        settings=Settings(admin_user_id=777),
+        signer=TokenSigner("a-very-long-test-secret"),
+    )
+
+    markup = message.answer.await_args.kwargs["reply_markup"]
+    buttons = [button for row in markup.inline_keyboard for button in row]
+    assert all(button.callback_data != "manual:add" for button in buttons)
+
+
+@pytest.mark.asyncio
+async def test_wanted_form_can_be_cancelled_with_command():
+    message = SimpleNamespace(
+        from_user=SimpleNamespace(id=321),
+        answer=AsyncMock(),
+    )
+    state = SimpleNamespace(clear=AsyncMock())
+
+    await wanted_cancel_message(message, state, Settings(admin_user_id=777))
+
+    state.clear.assert_awaited_once()
+    markup = message.answer.await_args.kwargs["reply_markup"]
+    buttons = [button for row in markup.inline_keyboard for button in row]
+    assert all(button.callback_data != "manual:add" for button in buttons)
+
+
+@pytest.mark.asyncio
+async def test_wanted_create_does_not_lose_form_when_payment_is_unavailable():
+    callback = SimpleNamespace(
+        from_user=SimpleNamespace(id=321, username="tenant", first_name="Tenant"),
+        message=SimpleNamespace(chat=SimpleNamespace(type="private")),
+        answer=AsyncMock(),
+    )
+    state = SimpleNamespace(get_data=AsyncMock(), clear=AsyncMock())
+    wanted_ads = SimpleNamespace(create=AsyncMock())
+
+    await wanted_create(
+        callback,
+        state,
+        wanted_ads,
+        TokenSigner("a-very-long-test-secret"),
+        Settings(wanted_finik_payment_url=""),
+    )
+
+    wanted_ads.create.assert_not_awaited()
+    state.clear.assert_not_awaited()
+    callback.answer.assert_awaited_once()
+    assert callback.answer.await_args.kwargs["show_alert"] is True
 
 
 @pytest.mark.asyncio

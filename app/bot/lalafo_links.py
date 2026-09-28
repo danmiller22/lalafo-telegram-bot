@@ -98,29 +98,12 @@ def repost_available_at(
 
 def _is_admin(message: Message, settings: Settings) -> bool:
     user = message.from_user
-    if user is None:
-        return False
-    if settings.admin_user_id and user.id == settings.admin_user_id:
-        return True
-    return bool(
-        settings.admin_username
-        and getattr(user, "username", None)
-        and user.username.casefold() == settings.admin_username.lstrip("@").casefold()
-    )
+    return bool(user and settings.admin_user_id and user.id == settings.admin_user_id)
 
 
 def _is_owner(message: Message, settings: Settings) -> bool:
     """Strict owner check for manual card creation and duplication."""
-    user = message.from_user
-    if user is None:
-        return False
-    if settings.admin_user_id and user.id == settings.admin_user_id:
-        return True
-    return bool(
-        settings.admin_username
-        and user.username
-        and user.username.casefold() == settings.admin_username.lstrip("@").casefold()
-    )
+    return _is_manual_admin(message, settings)
 
 
 def _is_manual_admin(message: Message, settings: Settings) -> bool:
