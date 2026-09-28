@@ -29,9 +29,9 @@ MAX_PUBLICATIONS_PER_DAY = 50
 # discovery periods so retries cannot increase the day's publication volume.
 # The channel is owner-led. A small daily realtor sample keeps the feed useful
 # when owner stock is temporarily thin; unknown authors never enter the queue.
-MIN_NON_OWNERS_PER_DAY = 2
-MAX_NON_OWNERS_PER_DAY = 3
-TARGET_NON_OWNERS_PER_PERIOD = 1
+MIN_NON_OWNERS_PER_DAY = 15
+MAX_NON_OWNERS_PER_DAY = 15
+TARGET_NON_OWNERS_PER_PERIOD = 8
 # Fresh cards win. Listings may fill a shortage only after 48 hours.
 REPOST_AFTER_HOURS = 48
 MAX_REPOSTS_PER_PERIOD = MAX_PUBLICATIONS_PER_DAY // 2
@@ -72,9 +72,9 @@ def daily_publication_target(period_start: datetime) -> int:
 
 
 def daily_realtor_target(period_start: datetime) -> int:
-    """Alternate deterministically between two and three realtor cards per day."""
-    local_day = period_start.astimezone(BISHKEK).date()
-    return MIN_NON_OWNERS_PER_DAY + (local_day.toordinal() % 2)
+    """Return the fixed daily realtor allowance."""
+    del period_start
+    return MAX_NON_OWNERS_PER_DAY
 
 
 def period_publication_targets(period_start: datetime) -> tuple[int, int]:
