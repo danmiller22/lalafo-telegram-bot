@@ -396,11 +396,15 @@ async def _select_hosted_lalafo_proxies() -> None:
 async def _run_inventory_worker_process(settings: Any) -> int:
     env = os.environ.copy()
     env["LALAFO_PROXY_URL"] = settings.lalafo_proxy_url
+    process_options: dict[str, Any] = {}
+    if os.name != "nt":
+        process_options["preexec_fn"] = lambda: os.nice(15)
     process = await asyncio.create_subprocess_exec(
         sys.executable,
         "-m",
         "scripts.publish_inventory_batch",
         env=env,
+        **process_options,
     )
     return await process.wait()
 

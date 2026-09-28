@@ -111,11 +111,11 @@ async def run(*, force_discovery: bool | None = None) -> int:
         try:
             code = await discover(
                 discovery_only=True,
-                # The always-on web instance has a small CPU allowance. Thirty
-                # candidates refill more than one healthy queue while keeping
+                # The always-on web instance has a small CPU allowance. Twenty
+                # candidates refill a healthy queue while keeping
                 # customer bot responses fast. GitHub collectors retain the
                 # wider 80-candidate crawl.
-                candidate_pool_limit_override=30 if settings.run_bot else None,
+                candidate_pool_limit_override=20 if settings.run_bot else None,
             )
         except Exception as exc:
             raised_error = type(exc).__name__
