@@ -612,6 +612,65 @@ def test_automatic_checkout_is_enabled_when_finik_api_is_configured(
 
 
 @pytest.mark.asyncio
+async def test_miniapp_starts_a_checkout_bound_to_the_selected_apartment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bot_token = "123456:telegram-test-token"
+    callback_secret = "c" * 32
+    monkeypatch.setenv("RUN_BOT", "true")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", bot_token)
+    monkeypatch.setenv("CALLBACK_SECRET", callback_secret)
+    monkeypatch.setenv("FINIK_API_KEY", "configured")
+    monkeypatch.setenv("FINIK_ACCOUNT_ID", "corporate")
+    monkeypatch.setenv("FINIK_PRIVATE_KEY_PEM", "configured")
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_URL", "https://example.test/telegram/webhook")
+    get_settings.cache_clear()
+    apartment = SimpleNamespace(id=42)
+    unpaid = SimpleNamespace(status="unpaid", apartment=apartment, access_expires_at=None)
+    payment_request = SimpleNamespace(id=73, status="awaiting_receipt")
+    service = SimpleNamespace(
+        contact_status=AsyncMock(return_value=unpaid),
+        begin_payment=AsyncMock(
+            return_value=SimpleNamespace(request=payment_request, outcome="created")
+        ),
+    )
+    payments = SimpleNamespace()
+    monkeypatch.setattr(
+        web,
+        "_bot_runtime",
+        SimpleNamespace(workflow_data={"service": service, "payments": payments}),
+    )
+    checkout = AsyncMock(return_value="https://qr.finik.kg/request-73")
+    monkeypatch.setattr(web, "_finik_checkout_url", checkout)
+    signer = TokenSigner(callback_secret)
+    transport = httpx.ASGITransport(app=web.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/miniapp/api/start",
+            json={
+                "init_data": miniapp_init_data(bot_token=bot_token, user_id=778899),
+                "start_param": signer.sign_start_id("miniapp-apartment", 42),
+                "plan": MONTH_PLAN,
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["payment_url"] == "https://qr.finik.kg/request-73"
+    assert response.json()["automatic_payment"] is True
+    assert response.json()["monthly_available"] is True
+    service.begin_payment.assert_awaited_once_with(
+        user_id=778899,
+        apartment_id=42,
+        username="mini_user",
+        first_name="Test",
+        plan=MONTH_PLAN,
+    )
+    checkout.assert_awaited_once()
+    assert checkout.await_args.kwargs["apartment_id"] == 42
+    assert checkout.await_args.kwargs["plan"] == MONTH_PLAN
+
+
+@pytest.mark.asyncio
 async def test_miniapp_access_is_issued_without_admin_notification(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -621,6 +680,10 @@ async def test_miniapp_access_is_issued_without_admin_notification(
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", bot_token)
     monkeypatch.setenv("CALLBACK_SECRET", callback_secret)
     monkeypatch.setenv("ADMIN_USER_ID", "999")
+    monkeypatch.setenv("FINIK_API_KEY", "configured")
+    monkeypatch.setenv("FINIK_ACCOUNT_ID", "corporate")
+    monkeypatch.setenv("FINIK_PRIVATE_KEY_PEM", "configured")
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_URL", "https://example.test/telegram/webhook")
     get_settings.cache_clear()
     apartment = SimpleNamespace(
         id=42,
@@ -688,6 +751,59 @@ async def test_miniapp_access_is_issued_without_admin_notification(
     payments.claim_admin_notification.assert_not_awaited()
     payments.finish_admin_notification.assert_not_awaited()
     bot.send_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_successful_finik_webhook_activates_and_delivers_contact(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("RUN_BOT", "true")
+    monkeypatch.setenv("FINIK_API_KEY", "configured")
+    monkeypatch.setenv("FINIK_ACCOUNT_ID", "corporate")
+    monkeypatch.setenv("FINIK_PRIVATE_KEY_PEM", "configured")
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_URL", "https://example.test/telegram/webhook")
+    get_settings.cache_clear()
+    apartment = SimpleNamespace(id=42)
+    payment_request = SimpleNamespace(
+        id=73,
+        telegram_user_id=778899,
+        apartment=apartment,
+    )
+    payments = SimpleNamespace(
+        apply_provider_result=AsyncMock(return_value=("approved", payment_request))
+    )
+    bot = object()
+    monkeypatch.setattr(
+        web,
+        "_bot_runtime",
+        SimpleNamespace(bot=bot, workflow_data={"payments": payments}),
+    )
+    monkeypatch.setattr(web, "verify_request", lambda *_args, **_kwargs: True)
+    delivery = AsyncMock()
+    monkeypatch.setattr("app.telegram.private_delivery.send_private_contact", delivery)
+    transport = httpx.ASGITransport(app=web.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/finik/webhook",
+            headers={
+                "signature": "valid-signature",
+                "x-api-timestamp": str(int(time.time() * 1000)),
+            },
+            json={
+                "status": "success",
+                "amount": 499,
+                "fields": {"paymentId": "arenda-73"},
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "approved"}
+    payments.apply_provider_result.assert_awaited_once_with(
+        "arenda-73", succeeded=True, amount=499
+    )
+    delivery.assert_awaited_once()
+    assert delivery.await_args.kwargs["user_id"] == 778899
+    assert delivery.await_args.kwargs["apartment"] is apartment
 
 
 @pytest.mark.asyncio
