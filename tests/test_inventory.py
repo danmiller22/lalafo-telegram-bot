@@ -121,17 +121,17 @@ def test_period_balances_low_middle_and_high_price_buckets():
     assert buckets == {0, 1, 2}
 
 
-def test_period_caps_agent_only_stock_at_daily_limit():
+def test_agent_only_stock_keeps_period_filled_when_owners_are_missing():
     stock = _apartments(100, central=False, start_id=1, owner=False)
     period_start = datetime(2026, 9, 13, 0, tzinfo=timezone(timedelta(hours=6)))
 
     planned = plan_period(stock, period_start=period_start, rng=random.Random(9))
 
-    assert len(planned) == 15
+    assert len(planned) == 25
     assert all(item.apartment.seller_type == "realtor" for item in planned)
 
 
-def test_period_keeps_owner_and_up_to_fifteen_realtors():
+def test_period_uses_realtors_to_fill_owner_shortage():
     stock = _apartments(1, central=True, start_id=1) + _apartments(
         100, central=False, start_id=100, owner=False
     )
@@ -139,9 +139,9 @@ def test_period_keeps_owner_and_up_to_fifteen_realtors():
 
     planned = plan_period(stock, period_start=period_start, rng=random.Random(10))
 
-    assert len(planned) == 16
+    assert len(planned) == 25
     assert sum("золотой" in item.apartment.district.casefold() for item in planned) == 1
-    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 15
+    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 24
 
 
 def test_central_realtors_can_fill_central_share():
@@ -156,7 +156,7 @@ def test_central_realtors_can_fill_central_share():
     assert any(item.apartment.seller_type == "owner" for item in planned)
     assert (
         sum(item.apartment.seller_type == "realtor" for item in planned)
-        == 12
+        == 13
     )
 
 
@@ -191,11 +191,11 @@ def test_unknown_authors_are_excluded():
     assert planned == []
 
 
-def test_daily_realtor_target_is_fixed_at_fifteen():
+def test_daily_realtor_target_is_half_of_fifty():
     start = datetime(2026, 9, 13, 0, tzinfo=timezone(timedelta(hours=6)))
     assert {
         daily_realtor_target(start + timedelta(days=offset)) for offset in range(4)
-    } == {15}
+    } == {25}
 
 
 def test_period_does_not_cap_non_owners():

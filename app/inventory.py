@@ -27,11 +27,12 @@ MIN_PUBLICATIONS_PER_DAY = 50
 MAX_PUBLICATIONS_PER_DAY = 50
 # The daily target is chosen once per Bishkek date, then split across the two
 # discovery periods so retries cannot increase the day's publication volume.
-# The channel is owner-led. A small daily realtor sample keeps the feed useful
-# when owner stock is temporarily thin; unknown authors never enter the queue.
-MIN_NON_OWNERS_PER_DAY = 15
-MAX_NON_OWNERS_PER_DAY = 15
-TARGET_NON_OWNERS_PER_PERIOD = 8
+# Split the daily feed evenly between confirmed owners and realtors whenever
+# both pools have enough live cards. Either pool may fill a shortage so the
+# channel keeps publishing instead of stopping on a strict category quota.
+MIN_NON_OWNERS_PER_DAY = 25
+MAX_NON_OWNERS_PER_DAY = 25
+TARGET_NON_OWNERS_PER_PERIOD = 13
 # Fresh cards win. Listings may fill a shortage only after 48 hours.
 REPOST_AFTER_HOURS = 48
 MAX_REPOSTS_PER_PERIOD = MAX_PUBLICATIONS_PER_DAY // 2
@@ -72,7 +73,7 @@ def daily_publication_target(period_start: datetime) -> int:
 
 
 def daily_realtor_target(period_start: datetime) -> int:
-    """Return the fixed daily realtor allowance."""
+    """Return the 50% daily realtor target."""
     del period_start
     return MAX_NON_OWNERS_PER_DAY
 
@@ -85,6 +86,15 @@ def period_publication_targets(period_start: datetime) -> tuple[int, int]:
     if period_start.astimezone(BISHKEK).hour == 0:
         return first_count, first_central
     return daily_total - first_count, daily_central - first_central
+
+
+def period_realtor_target(period_start: datetime) -> int:
+    """Split the daily 50% realtor target across the two periods."""
+    daily_target = daily_realtor_target(period_start)
+    first_target = (daily_target + 1) // 2
+    if period_start.astimezone(BISHKEK).hour == 0:
+        return first_target
+    return daily_target - first_target
 
 
 def randomized_period_times(
@@ -175,7 +185,7 @@ def _limit_non_owners(
     target: int,
     maximum: int,
 ) -> list[PlannedApartment]:
-    """Keep a tiny explicit-realtor slice without penalizing unknown authors."""
+    """Aim for the requested realtor share and keep publishing on shortages."""
     maximum = max(0, maximum)
     target = min(maximum, max(0, target))
     result: list[PlannedApartment | None] = list(planned)
@@ -187,8 +197,8 @@ def _limit_non_owners(
         for item in result
     )
 
-    # Replace surplus realtor/unknown cards with verified owners. If verified
-    # owner supply is thin, drop the surplus rather than misrepresenting it.
+    # Replace surplus realtor cards with verified owners when possible. Keep
+    # the realtor card when no owner replacement exists so publication lives.
     if current_non_owners > maximum:
         owner_candidates = [
             item
@@ -224,7 +234,7 @@ def _limit_non_owners(
                     None,
                 )
             if replacement_index is None:
-                result[index] = None
+                continue
             else:
                 owner = owner_candidates.pop(replacement_index)
                 result[index] = PlannedApartment(
@@ -321,7 +331,7 @@ def plan_period(
     apartments: list[Apartment],
     *,
     period_start: datetime,
-    non_owner_target: int = TARGET_NON_OWNERS_PER_PERIOD,
+    non_owner_target: int | None = None,
     non_owner_limit: int = MAX_NON_OWNERS_PER_DAY,
     target_count_override: int | None = None,
     central_target_override: int | None = None,
@@ -330,6 +340,8 @@ def plan_period(
 ) -> list[PlannedApartment]:
     """Create half of a random 50-60-card day in two-hour mini-batches."""
     rng = rng or random.SystemRandom()
+    if non_owner_target is None:
+        non_owner_target = period_realtor_target(period_start)
     apartments = [
         item
         for item in apartments
@@ -694,18 +706,20 @@ class InventoryRepository:
                 ).all()
             )
             realtor_daily_target = daily_realtor_target(period)
+            realtor_period_target = period_realtor_target(period)
             remaining_non_owners = max(
                 0, realtor_daily_target - already_non_owners
             )
             if period.astimezone(BISHKEK).hour == 0:
                 non_owner_target = min(
-                    TARGET_NON_OWNERS_PER_PERIOD, remaining_non_owners
+                    realtor_period_target, remaining_non_owners
                 )
             else:
                 non_owner_target = min(
                     remaining_non_owners,
                     max(
                         TARGET_NON_OWNERS_PER_PERIOD,
+                        realtor_period_target,
                         realtor_daily_target - already_non_owners,
                     ),
                 )
@@ -953,39 +967,6 @@ class InventoryRepository:
                 )
                 or 0
             )
-            publishing_non_owners = int(
-                await session.scalar(
-                    select(func.count())
-                    .select_from(ApartmentInventoryQueue)
-                    .join(Apartment)
-                    .where(
-                        ApartmentInventoryQueue.status == "publishing",
-                        ApartmentInventoryQueue.claimed_at >= day_start,
-                        ApartmentInventoryQueue.claimed_at < day_end,
-                        func.coalesce(Apartment.seller_type, "unknown") == "realtor",
-                    )
-                )
-                or 0
-            )
-            non_owner_cap_reached = (
-                published_non_owners + publishing_non_owners
-                >= daily_realtor_target(now)
-            )
-            if non_owner_cap_reached:
-                excess_non_owners = (
-                    select(ApartmentInventoryQueue.id)
-                    .join(Apartment)
-                    .where(
-                        ApartmentInventoryQueue.status == "queued",
-                        ApartmentInventoryQueue.scheduled_at <= eligible_until,
-                        func.coalesce(Apartment.seller_type, "unknown") == "realtor",
-                    )
-                )
-                await session.execute(
-                    update(ApartmentInventoryQueue)
-                    .where(ApartmentInventoryQueue.id.in_(excess_non_owners))
-                    .values(status="skipped", last_error="daily_non_owner_cap")
-                )
             published_districts = (
                 await session.scalars(
                     select(Apartment.district).where(
@@ -1001,6 +982,7 @@ class InventoryRepository:
                     select(
                         ApartmentInventoryQueue.id,
                         Apartment.district,
+                        Apartment.seller_type,
                     )
                     .join(Apartment)
                     .where(
@@ -1029,13 +1011,35 @@ class InventoryRepository:
             central_needed = published_central < math.ceil(
                 (published_today + 1) * CENTRAL_DAILY_SHARE
             )
+            realtor_needed = published_non_owners < round(
+                (published_today + 1) * 0.50
+            )
+
+            def matches_seller(seller_type: str | None) -> bool:
+                return (seller_type == "realtor") == realtor_needed
+
             selected_id = next(
                 (
                     queue_id
-                    for queue_id, district in due_rows
-                    if central_needed and is_central(district)
+                    for queue_id, district, seller_type in due_rows
+                    if is_central(district) == central_needed
+                    and matches_seller(seller_type)
                 ),
-                due_rows[0][0],
+                next(
+                    (
+                        queue_id
+                        for queue_id, _district, seller_type in due_rows
+                        if matches_seller(seller_type)
+                    ),
+                    next(
+                        (
+                            queue_id
+                            for queue_id, district, _seller_type in due_rows
+                            if is_central(district) == central_needed
+                        ),
+                        due_rows[0][0],
+                    ),
+                ),
             )
             row = (
                 await session.scalars(

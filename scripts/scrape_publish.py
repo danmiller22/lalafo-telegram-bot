@@ -99,10 +99,10 @@ MAX_REPOSTS_PER_RUN = 18
 CENTRAL_BATCH_SHARE = 0.50
 OWNER_OTHER_BATCH_SHARE = 0.50
 MAX_CANDIDATE_POOL = 300
-# Keep a separate discovery reserve for agents so the daily 3-4 unknown-status
-# cards can still be selected, while the publication queue remains owner-led.
-REALTOR_CANDIDATE_RESERVE_SHARE = 0.08
-REALTOR_BATCH_SHARE = 0.04
+# Collect and select owners and realtors in equal shares. A category may fill
+# the other category's shortage so Telegram publication does not stop.
+REALTOR_CANDIDATE_RESERVE_SHARE = 0.50
+REALTOR_BATCH_SHARE = 0.50
 # Retained for historical reporting helpers; two-bedroom cards are no longer
 # eligible for discovery or publication.
 TWO_BEDROOM_MIN_PRICE = 25_000
@@ -446,7 +446,7 @@ def source_candidate_targets(
     batch_limit: int,
     owner_source_count: int | None = None,
 ) -> list[int]:
-    """Give owner searches most capacity while retaining an agent fallback."""
+    """Reserve half of the discovery pool for realtor searches."""
     if source_count <= 1:
         return [pool_limit]
     owner_source_count = min(
@@ -621,7 +621,7 @@ def select_owners_then_realtors(
     candidates: list[LalafoAd],
     limit: int,
 ) -> list[LalafoAd]:
-    """Prefer owner cards while allowing agents to fill any shortage."""
+    """Select equal owner/realtor shares and fill shortages from either pool."""
     if limit <= 0:
         return []
     owners = [ad for ad in candidates if ad.seller_type == "owner" and ad.owner_listing]
@@ -636,6 +636,16 @@ def select_owners_then_realtors(
         selected.extend(
             select_publish_batch_with_reposts(
                 remaining_owners, {}, limit - len(selected)
+            )
+        )
+    if len(selected) < limit:
+        selected_ids = {ad.lalafo_id for ad in selected}
+        remaining_realtors = [
+            ad for ad in realtors if ad.lalafo_id not in selected_ids
+        ]
+        selected.extend(
+            select_publish_batch_with_reposts(
+                remaining_realtors, {}, limit - len(selected)
             )
         )
     return selected
