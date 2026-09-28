@@ -47,7 +47,9 @@ async def run(*, force_discovery: bool | None = None) -> int:
     await init_db(engine)
     inventory = InventoryRepository(sessions)
     now = datetime.now(timezone.utc)
-    code_version = (os.getenv("GITHUB_SHA") or "").strip()
+    code_version = (
+        os.getenv("GITHUB_SHA") or os.getenv("KOYEB_GIT_SHA") or ""
+    ).strip()
     # Only the live web service owns deployment resets. GitHub jobs for older
     # commits may still be queued; letting them reset shared state would erase
     # inventory prepared by the newest deployment.

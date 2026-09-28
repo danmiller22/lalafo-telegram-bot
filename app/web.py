@@ -611,7 +611,9 @@ async def _refill_saved_inventory() -> int:
     try:
         await init_db(engine)
         inventory = InventoryRepository(sessions)
-        code_version = (os.getenv("GITHUB_SHA") or "").strip()
+        code_version = (
+            os.getenv("GITHUB_SHA") or os.getenv("KOYEB_GIT_SHA") or ""
+        ).strip()
         await inventory.reset_publication_history_for_code(code_version)
         return await inventory.schedule_period(now=datetime.now(UTC))
     finally:
