@@ -33,7 +33,8 @@ def test_support_url_always_opens_the_customer_bot():
 
 def test_faq_answers_only_confident_common_questions():
     assert faq_for_text("как оплатить доступ").key == "payment"
-    assert faq_for_text("сколько стоит тариф на неделю").key == "week"
+    assert faq_for_text("сколько стоит тариф на неделю").key == "payment"
+    assert faq_for_text("откуда квартиры").key == "about"
     assert faq_for_text("оплатил но номера нет").key == "review"
     assert faq_for_text("Как получить номер собственника?") is None
     assert faq_for_text("что значит автор") is None
@@ -57,9 +58,11 @@ def test_support_menu_contains_every_faq_and_close_button():
 
 def test_support_menu_is_short_and_explains_the_service():
     assert len(FAQ_BY_KEY) == 5
-    assert "автоматический отбор" in SUPPORT_MENU_TEXT
-    assert "риелторы" in SUPPORT_MENU_TEXT
-    assert "не отвечаем" in SUPPORT_MENU_TEXT
+    assert "автоматический отбор" not in SUPPORT_MENU_TEXT
+    assert "риелторы" not in SUPPORT_MENU_TEXT
+    assert "автоматический отбор" in FAQ_BY_KEY["about"].answer
+    assert "риелторы" in FAQ_BY_KEY["about"].answer
+    assert "не отвечаем" in FAQ_BY_KEY["about"].answer
 
 
 def test_support_answer_has_only_back_button():
