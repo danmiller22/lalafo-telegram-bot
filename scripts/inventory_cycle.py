@@ -109,7 +109,14 @@ async def run(*, force_discovery: bool | None = None) -> int:
         code = 1
         raised_error = None
         try:
-            code = await discover(discovery_only=True)
+            code = await discover(
+                discovery_only=True,
+                # The always-on web instance has a small CPU allowance. Thirty
+                # candidates refill more than one healthy queue while keeping
+                # customer bot responses fast. GitHub collectors retain the
+                # wider 80-candidate crawl.
+                candidate_pool_limit_override=30 if settings.run_bot else None,
+            )
         except Exception as exc:
             raised_error = type(exc).__name__
             logger.exception("Large apartment discovery failed; existing inventory retained")

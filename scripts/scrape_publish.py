@@ -641,7 +641,11 @@ def select_owners_then_realtors(
     return selected
 
 
-async def run(*, discovery_only: bool = False) -> int:
+async def run(
+    *,
+    discovery_only: bool = False,
+    candidate_pool_limit_override: int | None = None,
+) -> int:
     settings = get_settings()
     logging.basicConfig(
         level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -654,8 +658,14 @@ async def run(*, discovery_only: bool = False) -> int:
     limit = 1 if settings.test_mode else SOURCE_MAX_POSTS_PER_RUN
     # The unfiltered source is large. Inspect several pages so central bargains
     # can outrank nearer but weaker results from the first page.
-    candidate_pool_limit = 80 if discovery_only else max(
-        limit, min(limit * 15, MAX_CANDIDATE_POOL)
+    candidate_pool_limit = (
+        max(1, candidate_pool_limit_override)
+        if candidate_pool_limit_override is not None
+        else (
+            80
+            if discovery_only
+            else max(limit, min(limit * 15, MAX_CANDIDATE_POOL))
+        )
     )
     candidates = []
     candidate_ids: set[int] = set()
