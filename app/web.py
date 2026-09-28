@@ -448,12 +448,20 @@ async def _execute_due_apartment_cycle() -> int:
                 return 0
 
             await _select_hosted_lalafo_proxies()
-            exit_code = await run_if_due(
-                force=False,
-                window_minutes=settings.hosted_apartment_publish_interval_minutes,
-                max_attempts=3,
-                wait_for_active_lease=False,
-            )
+            def run_inventory_off_event_loop() -> int:
+                return asyncio.run(
+                    run_if_due(
+                        force=False,
+                        window_minutes=settings.hosted_apartment_publish_interval_minutes,
+                        max_attempts=3,
+                        wait_for_active_lease=False,
+                    )
+                )
+
+            # Detail parsing and large HTML pages can monopolize the small web
+            # instance. Keep Telegram webhooks, payments, and /health responsive
+            # while the inventory collector works in its own thread.
+            exit_code = await asyncio.to_thread(run_inventory_off_event_loop)
             after_schedule = await publication_schedule_status(
                 window_minutes=settings.hosted_apartment_publish_interval_minutes
             )
