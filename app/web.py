@@ -1358,7 +1358,12 @@ async def miniapp_issue_access(payload: MiniAppRequest) -> dict[str, Any]:
     if current.status == "approved":
         return _miniapp_result_payload(current)
     if current.status in {"awaiting_receipt", "pending"}:
-        if settings.finik_auto_enabled:
+        payment_record = await payments.get_access(user.id, apartment_id)
+        if (
+            settings.finik_auto_enabled
+            and payment_record is not None
+            and payment_record.provider_payment_id
+        ):
             return _miniapp_result_payload(current)
         request = await payments.mark_payment_claimed(user_id=user.id, apartment_id=apartment_id)
     else:
