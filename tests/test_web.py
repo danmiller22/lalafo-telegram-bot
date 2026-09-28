@@ -456,7 +456,7 @@ async def test_hosted_scheduler_refills_an_empty_queue(
         "_inventory_queue_status",
         AsyncMock(return_value=(0, 0, None)),
     )
-    monkeypatch.setattr(web, "_execute_due_apartment_cycle", refill)
+    monkeypatch.setattr(web, "_refill_saved_inventory", refill)
     monkeypatch.setattr(web, "_execute_queue_dispatch", dispatch)
     monkeypatch.setattr(
         web.asyncio, "sleep", AsyncMock(side_effect=asyncio.CancelledError)
@@ -466,7 +466,7 @@ async def test_hosted_scheduler_refills_an_empty_queue(
         await web._run_hosted_apartment_scheduler()
 
     refill.assert_awaited_once()
-    dispatch.assert_not_awaited()
+    dispatch.assert_awaited_once()
 
 
 @pytest.mark.asyncio

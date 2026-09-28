@@ -602,6 +602,22 @@ async def _inventory_queue_status() -> tuple[int, int, datetime | None]:
         await engine.dispose()
 
 
+async def _refill_saved_inventory() -> int:
+    from app.database import create_engine_and_session, init_db
+    from app.inventory import InventoryRepository
+
+    settings = get_settings()
+    engine, sessions = create_engine_and_session(settings.database_url)
+    try:
+        await init_db(engine)
+        inventory = InventoryRepository(sessions)
+        code_version = (os.getenv("GITHUB_SHA") or "").strip()
+        await inventory.reset_publication_history_for_code(code_version)
+        return await inventory.schedule_period(now=datetime.now(UTC))
+    finally:
+        await engine.dispose()
+
+
 async def _run_hosted_apartment_scheduler() -> None:
     from app.inventory import DISCOVERY_RETRY_MINUTES, MIN_HEALTHY_PERIOD_QUEUE
 
@@ -615,13 +631,12 @@ async def _run_hosted_apartment_scheduler() -> None:
             if queued_count < MIN_HEALTHY_PERIOD_QUEUE and now >= next_refill_at:
                 next_refill_at = now + timedelta(minutes=DISCOVERY_RETRY_MINUTES)
                 logger.warning(
-                    "Apartment queue is thin (%d/%d); starting cloud refill",
+                    "Apartment queue is thin (%d/%d); scheduling saved stock",
                     queued_count,
                     MIN_HEALTHY_PERIOD_QUEUE,
                 )
-                await _execute_due_apartment_cycle()
-            else:
-                await _execute_queue_dispatch()
+                await _refill_saved_inventory()
+            await _execute_queue_dispatch()
         except asyncio.CancelledError:
             raise
         except Exception as exc:
