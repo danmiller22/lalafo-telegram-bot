@@ -140,6 +140,7 @@ async def test_health_and_authentication() -> None:
         assert health.json() == {
             "status": "ok",
             "bot": "disabled",
+            "finik_auto_payment": "disabled",
             "telegram_setup": "disabled",
             "lalafo_link_bot": "disabled",
             "free_cloud_keepalive": "disabled",
