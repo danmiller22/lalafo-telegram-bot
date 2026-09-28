@@ -48,7 +48,12 @@ async def run(*, force_discovery: bool | None = None) -> int:
     inventory = InventoryRepository(sessions)
     now = datetime.now(timezone.utc)
     code_version = (os.getenv("GITHUB_SHA") or "").strip()
-    if await inventory.reset_publication_history_for_code(code_version):
+    # Only the live web service owns deployment resets. GitHub jobs for older
+    # commits may still be queued; letting them reset shared state would erase
+    # inventory prepared by the newest deployment.
+    if settings.run_bot and await inventory.reset_publication_history_for_code(
+        code_version
+    ):
         force = True
         logger.info(
             "Publication history reset for code version %s; old Telegram messages were untouched",
