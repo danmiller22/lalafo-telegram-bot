@@ -1117,6 +1117,7 @@ async def health() -> JSONResponse:
         content={
             "status": "ok",
             "bot": "running" if settings.run_bot else "disabled",
+            "finik_auto_payment": "ready" if settings.finik_auto_enabled else "disabled",
             "telegram_setup": (
                 dict(_bot_setup_state) if settings.run_bot else "disabled"
             ),
