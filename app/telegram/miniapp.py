@@ -94,7 +94,7 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     <a id="phone" class="phone hidden"></a>
     <button id="pay-week" class="primary hidden">Недельный тариф — {WEEK_PRICE} сом</button>
     <button id="pay-month" class="primary hidden">Месячный тариф — {MONTH_PRICE} сом</button>
-    <button id="access" class="secondary hidden">📞 Получить номер</button>
+    <button id="access" class="secondary hidden">✅ Я оплатил(а) — открыть номер</button>
     <a id="privacy" class="button secondary hidden">🔒 Политика конфиденциальности</a>
   </section>
 </main>
@@ -178,7 +178,7 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
       el("phone").textContent = "📞 " + data.phone;
       el("phone").href = "tel:" + String(data.phone || "").replace(/\\s+/g, "");
     }} else if (waiting) {{
-      message("Ждём подтверждение оплаты… Доступ откроется автоматически.");
+      message("После оплаты нажмите «Я оплатил(а) — открыть номер».");
     }} else if (data.status === "rejected") {{
       message("Откройте оплату повторно или выберите другой тариф.");
     }} else {{

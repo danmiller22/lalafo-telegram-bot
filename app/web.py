@@ -1351,20 +1351,13 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
 
 @app.post("/miniapp/api/access", include_in_schema=False)
 async def miniapp_issue_access(payload: MiniAppRequest) -> dict[str, Any]:
-    settings, runtime, user, apartment_id = _miniapp_context(payload)
+    _, runtime, user, apartment_id = _miniapp_context(payload)
     service = runtime.workflow_data["service"]
     payments = runtime.workflow_data["payments"]
     current = await service.contact_status(user.id, apartment_id)
     if current.status == "approved":
         return _miniapp_result_payload(current)
     if current.status in {"awaiting_receipt", "pending"}:
-        payment_record = await payments.get_access(user.id, apartment_id)
-        if (
-            settings.finik_auto_enabled
-            and payment_record is not None
-            and payment_record.provider_payment_id
-        ):
-            return _miniapp_result_payload(current)
         request = await payments.mark_payment_claimed(user_id=user.id, apartment_id=apartment_id)
     else:
         raise HTTPException(
