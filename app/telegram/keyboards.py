@@ -111,21 +111,27 @@ def private_payment_keyboard(
     rows = [
             [
                 InlineKeyboardButton(
-                    text=f"Базовая: 7 дней — {WEEK_PRICE} сом",
+                    text=f"Недельный тариф — {WEEK_PRICE} сом",
                     callback_data=f"plan:w:{signer.sign_id('plan-week', apartment_id)}",
                 )
             ],
         ]
-    if monthly_payment_url:
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    text=f"Премиум: 30 дней — {MONTH_PRICE} сом",
-                    callback_data=f"plan:m:{signer.sign_id('plan-month', apartment_id)}",
-                )
-            ]
-        )
-    rows.append(_support_and_privacy_row(support_url))
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=f"Месячный тариф — {MONTH_PRICE} сом",
+                callback_data=f"plan:m:{signer.sign_id('plan-month', apartment_id)}",
+            )
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="🔒 Политика конфиденциальности",
+                url=support_url.split("?", 1)[0] + "?start=privacy",
+            )
+        ]
+    )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

@@ -19,7 +19,6 @@ from app.payments.repository import PaymentRepository
 from app.payment_plans import (
     MONTH_PLAN,
     WEEK_PLAN,
-    WEEK_PRICE,
     plan_label,
     plan_price,
 )
@@ -32,12 +31,11 @@ from app.telegram.keyboards import (
     payment_keyboard,
     private_payment_keyboard,
     status_keyboard,
-    terms_keyboard,
 )
 from app.telegram.private_delivery import send_private_contact
 from app.wanted.keyboards import main_menu_keyboard
 from app.wanted.handlers import begin_wanted_form
-from app.terms import PRIVACY_TEXT, TERMS_TEXT, TermsConsentRepository
+from app.terms import PRIVACY_TEXT, TermsConsentRepository
 
 logger = logging.getLogger(__name__)
 router = Router(name="user")
@@ -120,20 +118,6 @@ async def start_handler(
         if result.status == "unavailable":
             await message.answer("Квартира больше недоступна.")
             return
-        if (
-            result.status in {"unpaid", "awaiting_receipt", "rejected"}
-            and terms_consents is not None
-            and not await terms_consents.accepted(message.from_user.id)
-        ):
-            await message.answer(
-                TERMS_TEXT,
-                reply_markup=terms_keyboard(
-                    apartment_id,
-                    signer=signer,
-                    bot_username=settings.telegram_bot_username,
-                ),
-            )
-            return
         apartment_text = format_apartment(result.apartment) if result.apartment else "Квартира"
         if result.status == "pending":
             text = (
@@ -154,12 +138,7 @@ async def start_handler(
                 "Выберите тариф ниже."
             )
         else:
-            text = (
-                "🔐 Доступ к номерам собственников\n\n"
-                f"{apartment_text}\n\n"
-                f"7 дней — {WEEK_PRICE} сом, 30 дней — 999 сом.\n"
-                "Выберите тариф ниже."
-            )
+            text = "Выберите тариф."
         reply_markup = (
             payment_keyboard(
                 apartment_id,
@@ -215,18 +194,6 @@ async def plan_handler(
     apartment_id = signer.verify_id(purpose, parts[2])
     if apartment_id is None:
         await callback.answer("Недействительная кнопка.", show_alert=True)
-        return
-    if terms_consents is not None and not await terms_consents.accepted(callback.from_user.id):
-        await callback.answer("Сначала ознакомьтесь с условиями.", show_alert=True)
-        if callback.message:
-            await callback.message.edit_text(
-                TERMS_TEXT,
-                reply_markup=terms_keyboard(
-                    apartment_id,
-                    signer=signer,
-                    bot_username=settings.telegram_bot_username,
-                ),
-            )
         return
     access = await service.contact_status(callback.from_user.id, apartment_id)
     if access.status == "approved" and access.apartment:

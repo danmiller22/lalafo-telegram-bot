@@ -23,16 +23,16 @@ from app.telegram.formatting import is_supported_source
 BISHKEK = ZoneInfo("Asia/Bishkek")
 ALLOWED_ROOMS = frozenset({"studio", "1"})
 CENTRAL_DAILY_SHARE = 0.50
-MIN_PUBLICATIONS_PER_DAY = 50
-MAX_PUBLICATIONS_PER_DAY = 50
+MIN_PUBLICATIONS_PER_DAY = 96
+MAX_PUBLICATIONS_PER_DAY = 96
 # The daily target is chosen once per Bishkek date, then split across the two
 # discovery periods so retries cannot increase the day's publication volume.
 # Split the daily feed evenly between confirmed owners and realtors whenever
 # both pools have enough live cards. Either pool may fill a shortage so the
 # channel keeps publishing instead of stopping on a strict category quota.
-MIN_NON_OWNERS_PER_DAY = 25
-MAX_NON_OWNERS_PER_DAY = 25
-TARGET_NON_OWNERS_PER_PERIOD = 13
+MIN_NON_OWNERS_PER_DAY = 48
+MAX_NON_OWNERS_PER_DAY = 48
+TARGET_NON_OWNERS_PER_PERIOD = 24
 # Fresh cards win. Listings may fill a shortage only after 48 hours.
 REPOST_AFTER_HOURS = 48
 MAX_REPOSTS_PER_PERIOD = MAX_PUBLICATIONS_PER_DAY // 2
@@ -42,10 +42,10 @@ MAX_FRESH_STOCK_LOAD = 600
 # Telegram reserve sources recover the queue on the next cloud tick.
 DISCOVERY_RETRY_MINUTES = 3
 MIN_HEALTHY_PERIOD_QUEUE = 12
-PUBLICATION_SPACING_MINUTES = 5
+PUBLICATION_SPACING_MINUTES = 15
 INVENTORY_CLAIM_LOCK_ID = 731_290_512
-# Eight launches in each 12-hour discovery period. Every launch contains two
-# cards five minutes apart; launches themselves begin every 90 minutes.
+# Eight launches in each 12-hour discovery period. Six cards per launch at
+# 15-minute spacing produce a steady average of four publications per hour.
 MORNING_BATCH_MINUTES = tuple(range(0, 12 * 60, 90))
 EVENING_BATCH_MINUTES = tuple(range(12 * 60, 24 * 60, 90))
 
@@ -67,7 +67,7 @@ def discovery_period_key(now: datetime | None = None) -> str:
 
 
 def daily_publication_target(period_start: datetime) -> int:
-    """Return the reduced fixed daily target for one Bishkek date."""
+    """Return the fixed four-per-hour daily target for one Bishkek date."""
     del period_start
     return MAX_PUBLICATIONS_PER_DAY
 
@@ -338,7 +338,7 @@ def plan_period(
     repeat_apartment_ids: set[int] | None = None,
     rng: random.Random | None = None,
 ) -> list[PlannedApartment]:
-    """Create half of a random 50-60-card day in two-hour mini-batches."""
+    """Create half of a 96-card day in 90-minute launches."""
     rng = rng or random.SystemRandom()
     if non_owner_target is None:
         non_owner_target = period_realtor_target(period_start)

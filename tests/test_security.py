@@ -81,7 +81,6 @@ def test_callback_data_is_short_and_contains_no_phone():
         payment,
         status,
         reveal,
-        private_payment,
         private_contact,
     ):
         assert any(
@@ -96,9 +95,16 @@ def test_callback_data_is_short_and_contains_no_phone():
         )
 
     assert [row[0].text for row in private_payment.inline_keyboard] == [
-        "Базовая: 7 дней — 499 сом",
-        "🛟 Техподдержка",
+        "Недельный тариф — 499 сом",
+        "Месячный тариф — 999 сом",
+        "🔒 Политика конфиденциальности",
     ]
+    assert private_payment.inline_keyboard[2][0].url.endswith("?start=privacy")
+    assert all(
+        button.text != "🛟 Техподдержка"
+        for row in private_payment.inline_keyboard
+        for button in row
+    )
     assert len(private_contact.inline_keyboard) == 1
 
 

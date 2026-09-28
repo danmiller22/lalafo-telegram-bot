@@ -1208,14 +1208,8 @@ async def miniapp_session(payload: MiniAppRequest) -> dict[str, Any]:
         )
     response = _miniapp_result_payload(result)
     response["monthly_available"] = bool(settings.monthly_finik_payment_url)
-    consent_repository = runtime.workflow_data.get("terms_consents")
-    response["terms_accepted"] = (
-        await consent_repository.accepted(user.id) if consent_repository is not None else True
-    )
-    response["terms_text"] = TERMS_TEXT
     bot_url = f"https://t.me/{settings.telegram_bot_username.lstrip('@')}"
     response["privacy_url"] = f"{bot_url}?start=privacy"
-    response["support_url"] = f"{bot_url}?start=support"
     return response
 
 
@@ -1245,11 +1239,6 @@ async def miniapp_availability(payload: MiniAppRequest) -> dict[str, Any]:
 async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
     settings, runtime, user, apartment_id = _miniapp_context(payload)
     service = runtime.workflow_data["service"]
-    if not await runtime.workflow_data["terms_consents"].accepted(user.id):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Сначала ознакомьтесь с условиями и подтвердите согласие.",
-        )
     result = await service.contact_status(user.id, apartment_id)
     plan = payload.plan if payload.plan in {WEEK_PLAN, MONTH_PLAN} else WEEK_PLAN
     fallback_payment_url = _finik_payment_url(settings, plan)

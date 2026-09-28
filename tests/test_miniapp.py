@@ -66,10 +66,10 @@ def test_mini_app_page_uses_automatic_access_delivery():
     assert "/miniapp/api/session" in html
     assert "/miniapp/api/start" in html
     assert "/miniapp/api/access" in html
-    assert "1 неделя доступа к номерам — 499 сом" in html
-    assert "1 месяц доступа к номерам — 999 сом" in html
-    assert "Оплатить неделю — 499 сом" in html
-    assert "Оплатить месяц — 999 сом" in html
+    assert "1 неделя доступа к номерам — 499 сом" not in html
+    assert "1 месяц доступа к номерам — 999 сом" not in html
+    assert "Недельный тариф — 499 сом" in html
+    assert "Месячный тариф — 999 сом" in html
     assert 'id="hero"' not in html
     assert 'id="apartment"' in html
     assert 'id="photos"' in html
@@ -83,13 +83,15 @@ def test_mini_app_page_uses_automatic_access_delivery():
     assert "📞 Получить номер" in html
     assert "Статус: оплата проверяется" not in html
     assert "Оплата проверяется" not in html
-    assert 'accepted && data.status !== "approved" && data.status !== "pending"' in html
+    assert 'const canPay = !approved && !waiting' in html
+    assert 'show("pay-month", canPay)' in html
     assert "Открываю Finik" not in html
     assert "Создаём защищённую ссылку" not in html
-    assert 'show("plans", !approved && accepted)' in html
-    assert "/miniapp/api/consent" in html
-    assert "/miniapp/api/availability" in html
-    assert 'show("status", !approved)' in html
+    assert 'id="terms"' not in html
+    assert 'id="accept"' not in html
+    assert 'id="availability"' not in html
+    assert 'id="support"' not in html
+    assert 'id="privacy"' in html
     assert 'id="refresh"' not in html
     assert '"\n🔐 Депозит: "' not in html
     assert '"\\n🔐 Депозит: "' in html

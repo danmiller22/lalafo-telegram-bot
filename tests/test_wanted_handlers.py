@@ -279,7 +279,13 @@ async def test_apartment_start_link_survives_cloud_signer_mismatch():
     )
 
     service.contact_status.assert_awaited_once_with(100, 152)
-    assert "Доступ к номерам собственников" in message.answer.await_args.args[0]
+    assert message.answer.await_args.args[0] == "Выберите тариф."
+    markup = message.answer.await_args.kwargs["reply_markup"]
+    assert [row[0].text for row in markup.inline_keyboard] == [
+        "Недельный тариф — 499 сом",
+        "Месячный тариф — 999 сом",
+        "🔒 Политика конфиденциальности",
+    ]
 
 
 @pytest.mark.asyncio

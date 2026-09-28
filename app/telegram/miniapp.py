@@ -70,43 +70,33 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     main {{ max-width: 540px; margin: 0 auto; padding: 16px 14px 28px; }}
     .card {{ background: var(--tg-theme-secondary-bg-color, #fff); border-radius: 20px; padding: 16px; box-shadow: 0 8px 28px #00000012; }}
     h1 {{ font-size: 21px; margin: 0 0 8px; }}
-    .plans {{ white-space: pre-line; line-height: 1.6; margin: 14px 0 8px; }}
     .status {{ border-radius: 13px; padding: 12px; margin: 12px 0; background: #12856a18; line-height: 1.4; }}
     .phone {{ font-size: 22px; font-weight: 800; color: #079b79; word-break: break-word; }}
     .photos {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin: 0 0 14px; }}
     .photos img {{ width: 100%; height: 118px; object-fit: cover; border-radius: 11px; }}
     .details {{ white-space: pre-line; font-size: 16px; font-weight: 650; line-height: 1.55; margin: 4px 0 12px; }}
-    .terms {{ white-space: pre-line; line-height: 1.45; font-size: 14px; }}
     button, .button {{ width: 100%; border: 0; border-radius: 14px; padding: 14px 16px; margin-top: 9px; font: inherit; font-weight: 750; text-align: center; cursor: pointer; text-decoration: none; display: block; }}
     .primary {{ background: var(--tg-theme-button-color, #079b79); color: var(--tg-theme-button-text-color, white); }}
     .secondary {{ background: #12856a18; color: var(--tg-theme-link-color, #07866b); }}
     button:disabled {{ cursor: default; opacity: .82; }}
     .hidden {{ display: none !important; }}
-    .foot {{ text-align: center; color: var(--tg-theme-hint-color, #6c7a76); font-size: 12px; margin-top: 14px; }}
   </style>
 </head>
 <body>
 <main>
   <section class="card">
     <h1 id="title">Получить доступ</h1>
-    <div id="plans" class="plans">1 неделя доступа к номерам — {WEEK_PRICE} сом
-1 месяц доступа к номерам — {MONTH_PRICE} сом</div>
-    <div id="terms" class="terms hidden"></div>
     <div id="apartment" class="hidden">
       <div id="photos" class="photos"></div>
       <div id="details" class="details"></div>
     </div>
-    <div id="status" class="status">Проверяем доступ…</div>
+    <div id="status" class="status hidden"></div>
     <a id="phone" class="phone hidden"></a>
-    <button id="pay-week" class="primary hidden">Оплатить неделю — {WEEK_PRICE} сом</button>
-    <button id="pay-month" class="primary hidden">Оплатить месяц — {MONTH_PRICE} сом</button>
+    <button id="pay-week" class="primary hidden">Недельный тариф — {WEEK_PRICE} сом</button>
+    <button id="pay-month" class="primary hidden">Месячный тариф — {MONTH_PRICE} сом</button>
     <button id="access" class="secondary hidden">📞 Получить номер</button>
-    <button id="accept" class="primary hidden">✅ Я ознакомлен(а) с условиями и согласен(на) со всеми пунктами</button>
-    <button id="availability" class="secondary hidden">🔄 Проверить актуальность</button>
     <a id="privacy" class="button secondary hidden">🔒 Политика конфиденциальности</a>
-    <a id="support" class="button secondary hidden">🛟 Техподдержка</a>
   </section>
-  <div id="foot" class="foot">Номер виден только пользователю с подтверждённым доступом</div>
 </main>
 <script>
 (() => {{
@@ -137,7 +127,10 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
   }}
 
   function show(id, visible) {{ el(id).classList.toggle("hidden", !visible); }}
-  function message(text) {{ el("status").textContent = text; }}
+  function message(text) {{
+    el("status").textContent = text;
+    show("status", Boolean(text));
+  }}
   async function api(path, body) {{
     const response = await fetch(path, {{
       method: "POST",
@@ -150,26 +143,18 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
   }}
   function render(data) {{
     const approved = data.status === "approved";
-    const accepted = Boolean(data.terms_accepted);
-    el("title").textContent = approved ? "Квартира" : "Получить доступ";
-    show("plans", !approved && accepted);
-    show("terms", !approved && !accepted);
+    const waiting = data.status === "awaiting_receipt" || data.status === "pending";
+    el("title").textContent = "Квартира";
+    show("title", approved);
     show("apartment", approved);
-    show("foot", !approved);
-    show("status", !approved);
     show("phone", approved);
-    const canPay = accepted && data.status !== "approved" && data.status !== "pending";
+    const canPay = !approved && !waiting;
     show("pay-week", canPay);
-    show("pay-month", canPay && Boolean(data.monthly_available));
-    show("access", data.status === "awaiting_receipt" || data.status === "pending");
-    show("accept", !approved && !accepted);
-    show("availability", !approved);
+    show("pay-month", canPay);
+    show("access", waiting);
     show("privacy", !approved);
-    show("support", !approved);
     if (!approved) {{
-      el("terms").textContent = data.terms_text || "";
       el("privacy").href = data.privacy_url || "#";
-      el("support").href = data.support_url || "#";
     }}
     if (approved) {{
       const apartment = data.apartment || {{}};
@@ -191,9 +176,7 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
       if (apartment.description) el("details").textContent += "\\n\\n" + apartment.description;
       el("phone").textContent = "📞 " + data.phone;
       el("phone").href = "tel:" + String(data.phone || "").replace(/\\s+/g, "");
-    }} else if (!accepted) {{
-      message("Ознакомьтесь с условиями перед выбором тарифа.");
-    }} else if (data.status === "pending" || data.status === "awaiting_receipt") {{
+    }} else if (waiting) {{
       message("После оплаты нажмите «Получить номер».");
     }} else if (data.status === "rejected") {{
       message("Откройте оплату повторно или выберите другой тариф.");
@@ -240,18 +223,6 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
       render(await api("/miniapp/api/access", {{}}));
     }} catch (error) {{ message(error.message); }}
     finally {{ el("access").disabled = false; }}
-  }};
-  el("accept").onclick = async () => {{
-    el("accept").disabled = true;
-    try {{ render(await api("/miniapp/api/consent", {{}})); }}
-    catch (error) {{ message(error.message); }}
-    finally {{ el("accept").disabled = false; }}
-  }};
-  el("availability").onclick = async () => {{
-    el("availability").disabled = true;
-    try {{ const data = await api("/miniapp/api/availability", {{}}); message(data.message); }}
-    catch (error) {{ message(error.message); }}
-    finally {{ el("availability").disabled = false; }}
   }};
   load();
 }})();
