@@ -22,10 +22,13 @@ from app.bot.main import BotRuntime, configure_bot_profile, create_runtime
 from app.config import get_settings
 from app.lalafo.auto_reply import LalafoAutoResponder
 from app.lalafo.models import LalafoAd
-from app.payment_plans import MONTH_PLAN, WEEK_PLAN, WEEK_PRICE
+from app.payment_plans import MONTH_PLAN, WEEK_PLAN, WEEK_PRICE, plan_price
 from app.finik import (
+    FinikClient,
     PRODUCTION_WEBHOOK_PUBLIC_KEY,
     canonical_request,
+    decode_private_key,
+    payment_configuration_id,
     payment_succeeded,
     verify_request,
 )
@@ -126,8 +129,60 @@ def _finik_payment_url(settings: Any, plan: str) -> str:
 
 
 def _uses_dynamic_finik(settings: Any, plan: str) -> bool:
-    """The current automatic flow uses the configured permanent tariff links."""
-    return False
+    return plan in {WEEK_PLAN, MONTH_PLAN} and settings.finik_auto_enabled
+
+
+async def _finik_checkout_url(
+    settings: Any,
+    payments: Any,
+    payment_request: Any,
+    *,
+    apartment_id: int,
+    plan: str,
+) -> str:
+    """Create a checkout whose PaymentId maps back to this exact request."""
+    if not _uses_dynamic_finik(settings, plan):
+        fallback = _finik_payment_url(settings, plan)
+        if not fallback:
+            raise RuntimeError("Finik payment is not configured")
+        return fallback
+
+    configuration_id = payment_configuration_id(
+        api_url=settings.finik_api_url,
+        account_id=settings.finik_account_id,
+    )
+    prepared = await payments.prepare_provider_payment(
+        payment_request.id,
+        f"arenda-{payment_request.id}-{secrets.token_hex(8)}",
+        configuration_id=configuration_id,
+    )
+    if prepared.provider_payment_url:
+        return prepared.provider_payment_url
+
+    signer = TokenSigner(settings.require_callback_secret())
+    start_param = signer.sign_start_id("miniapp-apartment", apartment_id)
+    bot_url = f"https://t.me/{settings.telegram_bot_username.lstrip('@')}"
+    client = FinikClient(
+        api_url=settings.finik_api_url,
+        api_key=settings.finik_api_key,
+        account_id=settings.finik_account_id,
+        private_key_pem=decode_private_key(
+            pem=settings.finik_private_key_pem,
+            encoded=settings.finik_private_key_b64,
+        ),
+    )
+    created = await client.create_payment(
+        payment_id=prepared.provider_payment_id,
+        amount=plan_price(plan),
+        redirect_url=f"{bot_url}/access?startapp={start_param}",
+        webhook_url=settings.require_public_base_url() + "/finik/webhook",
+    )
+    await payments.set_provider_payment_url(
+        prepared.id,
+        created.url,
+        configuration_id=configuration_id,
+    )
+    return created.url
 
 
 def _now() -> str:
@@ -1207,7 +1262,9 @@ async def miniapp_session(payload: MiniAppRequest) -> dict[str, Any]:
             detail="Квартира больше недоступна.",
         )
     response = _miniapp_result_payload(result)
-    response["monthly_available"] = bool(settings.monthly_finik_payment_url)
+    response["monthly_available"] = bool(
+        settings.monthly_finik_payment_url or _uses_dynamic_finik(settings, MONTH_PLAN)
+    )
     bot_url = f"https://t.me/{settings.telegram_bot_username.lstrip('@')}"
     response["privacy_url"] = f"{bot_url}?start=privacy"
     return response
@@ -1219,7 +1276,9 @@ async def miniapp_consent(payload: MiniAppRequest) -> dict[str, Any]:
     await runtime.workflow_data["terms_consents"].accept(user.id)
     result = await runtime.workflow_data["service"].contact_status(user.id, apartment_id)
     response = _miniapp_result_payload(result)
-    response["monthly_available"] = bool(settings.monthly_finik_payment_url)
+    response["monthly_available"] = bool(
+        settings.monthly_finik_payment_url or _uses_dynamic_finik(settings, MONTH_PLAN)
+    )
     response["terms_accepted"] = True
     response["terms_text"] = TERMS_TEXT
     bot_url = f"https://t.me/{settings.telegram_bot_username.lstrip('@')}"
@@ -1241,8 +1300,7 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
     service = runtime.workflow_data["service"]
     result = await service.contact_status(user.id, apartment_id)
     plan = payload.plan if payload.plan in {WEEK_PLAN, MONTH_PLAN} else WEEK_PLAN
-    fallback_payment_url = _finik_payment_url(settings, plan)
-    if not fallback_payment_url:
+    if not _uses_dynamic_finik(settings, plan) and not _finik_payment_url(settings, plan):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Этот тариф временно недоступен.",
@@ -1263,28 +1321,45 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Квартира больше недоступна.",
             ) from exc
+    payment_url = _finik_payment_url(settings, plan)
+    if payment_request is not None:
+        try:
+            payment_url = await _finik_checkout_url(
+                settings,
+                runtime.workflow_data["payments"],
+                payment_request,
+                apartment_id=apartment_id,
+                plan=plan,
+            )
+        except Exception as exc:
+            logger.exception("Could not create Finik checkout")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Не удалось открыть оплату. Попробуйте ещё раз через минуту.",
+            ) from exc
     response = _miniapp_result_payload(result)
     if payment_request is not None:
         response["status"] = payment_request.status
-    response["payment_url"] = fallback_payment_url
-    response["automatic_payment"] = False
-    response["monthly_available"] = bool(settings.monthly_finik_payment_url)
+    response["payment_url"] = payment_url
+    response["automatic_payment"] = _uses_dynamic_finik(settings, plan)
+    response["monthly_available"] = bool(
+        settings.monthly_finik_payment_url or _uses_dynamic_finik(settings, MONTH_PLAN)
+    )
     return response
 
 
 @app.post("/miniapp/api/access", include_in_schema=False)
 async def miniapp_issue_access(payload: MiniAppRequest) -> dict[str, Any]:
-    _, runtime, user, apartment_id = _miniapp_context(payload)
+    settings, runtime, user, apartment_id = _miniapp_context(payload)
     service = runtime.workflow_data["service"]
     payments = runtime.workflow_data["payments"]
     current = await service.contact_status(user.id, apartment_id)
     if current.status == "approved":
         return _miniapp_result_payload(current)
     if current.status in {"awaiting_receipt", "pending"}:
-        request = await payments.mark_payment_claimed(
-            user_id=user.id,
-            apartment_id=apartment_id,
-        )
+        if settings.finik_auto_enabled:
+            return _miniapp_result_payload(current)
+        request = await payments.mark_payment_claimed(user_id=user.id, apartment_id=apartment_id)
     else:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -1350,6 +1425,22 @@ async def finik_webhook(request: Request) -> dict[str, str]:
     if outcome == "amount_mismatch":
         logger.error("Finik amount mismatch for payment request %s", payment_request.id)
         raise HTTPException(status_code=status.HTTP_409_CONFLICT)
+    if outcome == "approved" and payment_request is not None and payment_request.apartment:
+        from app.telegram.private_delivery import send_private_contact
+
+        try:
+            await send_private_contact(
+                runtime.bot,
+                user_id=payment_request.telegram_user_id,
+                apartment=payment_request.apartment,
+                support_url=settings.support_bot_url,
+                max_photos=settings.max_photos_per_apartment,
+            )
+        except Exception:
+            logger.exception(
+                "Payment was approved but private apartment delivery failed for request %s",
+                payment_request.id,
+            )
     return {"status": outcome}
 
 

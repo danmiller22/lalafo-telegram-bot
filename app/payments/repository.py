@@ -716,25 +716,6 @@ class PaymentRepository:
                 or apartment.availability_status == "unavailable"
             ):
                 raise LookupError("Apartment is unavailable")
-            reusable = await session.execute(
-                select(PaymentRequest)
-                .where(
-                    PaymentRequest.telegram_user_id == user_id,
-                    PaymentRequest.plan == plan,
-                    PaymentRequest.status == "awaiting_receipt",
-                    PaymentRequest.provider_payment_id.is_not(None),
-                )
-                .order_by(PaymentRequest.created_at.desc())
-                .limit(1)
-            )
-            existing_checkout = reusable.scalar_one_or_none()
-            if existing_checkout is not None:
-                existing_checkout.username = username
-                existing_checkout.first_name = first_name
-                return PaymentSubmission(
-                    request=existing_checkout,
-                    outcome="awaiting_receipt",
-                )
             result = await session.execute(
                 select(PaymentRequest).where(
                     PaymentRequest.telegram_user_id == user_id,

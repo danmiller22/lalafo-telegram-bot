@@ -106,6 +106,7 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
   let initData = query.get("tgWebAppData") || hash.get("tgWebAppData") || "";
   let startParam = query.get("tgWebAppStartParam") || hash.get("tgWebAppStartParam") || "";
   let paymentOpening = false;
+  let paymentPoll = null;
 
   function telegramContext() {{
     const current = window.Telegram && window.Telegram.WebApp;
@@ -177,7 +178,7 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
       el("phone").textContent = "📞 " + data.phone;
       el("phone").href = "tel:" + String(data.phone || "").replace(/\\s+/g, "");
     }} else if (waiting) {{
-      message("После оплаты нажмите «Получить номер».");
+      message("Ждём подтверждение оплаты… Доступ откроется автоматически.");
     }} else if (data.status === "rejected") {{
       message("Откройте оплату повторно или выберите другой тариф.");
     }} else {{
@@ -205,6 +206,7 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     try {{
       const data = await api("/miniapp/api/start", {{plan}});
       render(data);
+      startPaymentPolling();
       const current = telegramContext();
       if (current) current.openLink(data.payment_url); else location.href = data.payment_url;
     }} catch (error) {{ message(error.message); }}
@@ -214,6 +216,28 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
       paymentOpening = false;
     }}
   }}
+  function startPaymentPolling() {{
+    if (paymentPoll) clearInterval(paymentPoll);
+    let attempts = 0;
+    paymentPoll = setInterval(async () => {{
+      attempts += 1;
+      try {{
+        const data = await api("/miniapp/api/session", {{}});
+        render(data);
+        if (data.status === "approved" || attempts >= 60) {{
+          clearInterval(paymentPoll);
+          paymentPoll = null;
+        }}
+      }} catch (_) {{
+        if (attempts >= 60) {{ clearInterval(paymentPoll); paymentPoll = null; }}
+      }}
+    }}, 2000);
+  }}
+  document.addEventListener("visibilitychange", () => {{
+    if (!document.hidden && !el("access").classList.contains("hidden")) {{
+      startPaymentPolling();
+    }}
+  }});
   el("pay-week").onclick = () => startPayment("week", "pay-week");
   el("pay-month").onclick = () => startPayment("month", "pay-month");
   el("access").onclick = async () => {{

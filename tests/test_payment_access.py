@@ -97,7 +97,7 @@ async def test_verified_finik_payment_is_approved_without_manual_review(
 
 
 @pytest.mark.asyncio
-async def test_open_checkout_is_reused_for_same_customer_and_plan(
+async def test_open_checkout_is_kept_on_the_selected_apartment(
     repositories, service
 ):
     apartments, payments, _ = repositories
@@ -120,8 +120,9 @@ async def test_open_checkout_is_reused_for_same_customer_and_plan(
         plan=WEEK_PLAN,
     )
 
-    assert second.request.id == first.request.id
-    assert second.request.provider_payment_id == "stable-payment"
+    assert second.request.id != first.request.id
+    assert second.request.apartment_id == second_apartment.id
+    assert second.request.provider_payment_id is None
 
 
 @pytest.mark.asyncio
