@@ -671,6 +671,56 @@ async def test_miniapp_starts_a_checkout_bound_to_the_selected_apartment(
 
 
 @pytest.mark.asyncio
+async def test_miniapp_uses_configured_payment_url_without_waiting_for_finik(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bot_token = "123456:telegram-test-token"
+    callback_secret = "c" * 32
+    monkeypatch.setenv("RUN_BOT", "true")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", bot_token)
+    monkeypatch.setenv("CALLBACK_SECRET", callback_secret)
+    monkeypatch.setenv("MONTHLY_FINIK_PAYMENT_URL", "https://qr.finik.kg/monthly")
+    monkeypatch.setenv("FINIK_API_KEY", "configured")
+    monkeypatch.setenv("FINIK_ACCOUNT_ID", "corporate")
+    monkeypatch.setenv("FINIK_PRIVATE_KEY_PEM", "configured")
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_URL", "https://example.test/telegram/webhook")
+    get_settings.cache_clear()
+    apartment = SimpleNamespace(id=42)
+    unpaid = SimpleNamespace(status="unpaid", apartment=apartment, access_expires_at=None)
+    payment_request = SimpleNamespace(id=73, status="awaiting_receipt")
+    service = SimpleNamespace(
+        contact_status=AsyncMock(return_value=unpaid),
+        begin_payment=AsyncMock(
+            return_value=SimpleNamespace(request=payment_request, outcome="created")
+        ),
+    )
+    monkeypatch.setattr(
+        web,
+        "_bot_runtime",
+        SimpleNamespace(workflow_data={"service": service, "payments": SimpleNamespace()}),
+    )
+    checkout = AsyncMock(return_value="https://qr.finik.kg/request-73")
+    monkeypatch.setattr(web, "_finik_checkout_url", checkout)
+    signer = TokenSigner(callback_secret)
+    transport = httpx.ASGITransport(app=web.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/miniapp/api/start",
+            json={
+                "init_data": miniapp_init_data(bot_token=bot_token, user_id=778899),
+                "start_param": signer.sign_start_id("miniapp-apartment", 42),
+                "plan": MONTH_PLAN,
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["payment_url"] == "https://qr.finik.kg/monthly"
+    assert response.json()["automatic_payment"] is True
+    service.begin_payment.assert_awaited_once()
+    checkout.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_miniapp_access_is_issued_without_admin_notification(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

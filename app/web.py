@@ -1301,7 +1301,8 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
     service = runtime.workflow_data["service"]
     result = await service.contact_status(user.id, apartment_id)
     plan = payload.plan if payload.plan in {WEEK_PLAN, MONTH_PLAN} else WEEK_PLAN
-    if not _uses_dynamic_finik(settings, plan) and not _finik_payment_url(settings, plan):
+    payment_url = _finik_payment_url(settings, plan)
+    if not payment_url and not _uses_dynamic_finik(settings, plan):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Этот тариф временно недоступен.",
@@ -1322,8 +1323,7 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Квартира больше недоступна.",
             ) from exc
-    payment_url = _finik_payment_url(settings, plan)
-    if payment_request is not None:
+    if payment_request is not None and not payment_url:
         try:
             payment_url = await _finik_checkout_url(
                 settings,
