@@ -347,7 +347,7 @@ def plan_period(
         for item in apartments
         if item.rooms in ALLOWED_ROOMS
         and is_supported_source(item)
-        and 25_000 <= item.price <= 40_000
+        and 25_000 <= item.price <= 50_000
         and (
             (_seller_type(item) == "owner" and bool(item.owner_listing))
             or _seller_type(item) == "realtor"
@@ -739,7 +739,7 @@ class InventoryRepository:
                             _supported_source_filter(),
                             Apartment.id.not_in(active_queue_ids),
                             Apartment.fingerprint.not_in(queued_fingerprints),
-                            Apartment.price.between(25_000, 40_000),
+                            Apartment.price.between(25_000, 50_000),
                             Apartment.rooms.in_(ALLOWED_ROOMS),
                             (
                                 (
@@ -770,7 +770,7 @@ class InventoryRepository:
                             _supported_source_filter(),
                             Apartment.id.not_in(active_queue_ids),
                             Apartment.fingerprint.not_in(queued_fingerprints),
-                            Apartment.price.between(25_000, 40_000),
+                            Apartment.price.between(25_000, 50_000),
                             Apartment.rooms.in_(ALLOWED_ROOMS),
                             (
                                 (
@@ -890,7 +890,7 @@ class InventoryRepository:
             )
             ineligible_apartment_ids = select(Apartment.id).where(
                 (Apartment.price < 25_000)
-                | (Apartment.price > 40_000)
+                | (Apartment.price > 50_000)
                 | (
                     (func.coalesce(Apartment.seller_type, "unknown") != "realtor")
                     & (
@@ -989,7 +989,7 @@ class InventoryRepository:
                         ApartmentInventoryQueue.status == "queued",
                         ApartmentInventoryQueue.scheduled_at <= eligible_until,
                         Apartment.rooms.in_(ALLOWED_ROOMS),
-                        Apartment.price.between(25_000, 40_000),
+                        Apartment.price.between(25_000, 50_000),
                         (
                             (
                                 (Apartment.seller_type == "owner")
