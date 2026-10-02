@@ -592,7 +592,7 @@ async def test_miniapp_page_is_public_but_session_requires_telegram_auth(
     service.contact_status.assert_awaited_once_with(778899, 42)
 
 
-def test_automatic_checkout_is_enabled_when_finik_api_is_configured(
+def test_tariffs_always_use_the_configured_persistent_finik_links(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("FINIK_PAYMENT_URL", "https://qr.finik.kg/weekly")
@@ -604,15 +604,12 @@ def test_automatic_checkout_is_enabled_when_finik_api_is_configured(
     get_settings.cache_clear()
     settings = get_settings()
 
-    assert settings.finik_auto_enabled
-    assert web._uses_dynamic_finik(settings, WEEK_PLAN)
-    assert web._uses_dynamic_finik(settings, MONTH_PLAN)
     assert web._finik_payment_url(settings, WEEK_PLAN).endswith("/weekly")
     assert web._finik_payment_url(settings, MONTH_PLAN).endswith("/monthly")
 
 
 @pytest.mark.asyncio
-async def test_miniapp_starts_a_checkout_bound_to_the_selected_apartment(
+async def test_miniapp_does_not_create_a_separate_finik_without_a_persistent_link(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     bot_token = "123456:telegram-test-token"
@@ -627,21 +624,15 @@ async def test_miniapp_starts_a_checkout_bound_to_the_selected_apartment(
     get_settings.cache_clear()
     apartment = SimpleNamespace(id=42)
     unpaid = SimpleNamespace(status="unpaid", apartment=apartment, access_expires_at=None)
-    payment_request = SimpleNamespace(id=73, status="awaiting_receipt")
     service = SimpleNamespace(
         contact_status=AsyncMock(return_value=unpaid),
-        begin_payment=AsyncMock(
-            return_value=SimpleNamespace(request=payment_request, outcome="created")
-        ),
+        begin_payment=AsyncMock(),
     )
-    payments = SimpleNamespace()
     monkeypatch.setattr(
         web,
         "_bot_runtime",
-        SimpleNamespace(workflow_data={"service": service, "payments": payments}),
+        SimpleNamespace(workflow_data={"service": service}),
     )
-    checkout = AsyncMock(return_value="https://qr.finik.kg/request-73")
-    monkeypatch.setattr(web, "_finik_checkout_url", checkout)
     signer = TokenSigner(callback_secret)
     transport = httpx.ASGITransport(app=web.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -654,20 +645,9 @@ async def test_miniapp_starts_a_checkout_bound_to_the_selected_apartment(
             },
         )
 
-    assert response.status_code == 200
-    assert response.json()["payment_url"] == "https://qr.finik.kg/request-73"
-    assert response.json()["automatic_payment"] is True
-    assert response.json()["monthly_available"] is True
-    service.begin_payment.assert_awaited_once_with(
-        user_id=778899,
-        apartment_id=42,
-        username="mini_user",
-        first_name="Test",
-        plan=MONTH_PLAN,
-    )
-    checkout.assert_awaited_once()
-    assert checkout.await_args.kwargs["apartment_id"] == 42
-    assert checkout.await_args.kwargs["plan"] == MONTH_PLAN
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Этот тариф временно недоступен."
+    service.begin_payment.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -699,8 +679,6 @@ async def test_miniapp_uses_configured_payment_url_without_waiting_for_finik(
         "_bot_runtime",
         SimpleNamespace(workflow_data={"service": service, "payments": SimpleNamespace()}),
     )
-    checkout = AsyncMock(return_value="https://qr.finik.kg/request-73")
-    monkeypatch.setattr(web, "_finik_checkout_url", checkout)
     signer = TokenSigner(callback_secret)
     transport = httpx.ASGITransport(app=web.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -715,9 +693,8 @@ async def test_miniapp_uses_configured_payment_url_without_waiting_for_finik(
 
     assert response.status_code == 200
     assert response.json()["payment_url"] == "https://qr.finik.kg/monthly"
-    assert response.json()["automatic_payment"] is True
+    assert response.json()["automatic_payment"] is False
     service.begin_payment.assert_awaited_once()
-    checkout.assert_not_awaited()
 
 
 @pytest.mark.asyncio
