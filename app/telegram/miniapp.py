@@ -108,7 +108,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
 <body>
 <main id="lifetime-checkout">
   <div class="brand">Arenda.KG</div>
-  <h1 id="title">Доступ к базе</h1>
+  <h1 id="title" class="hidden"></h1>
   <p id="intro" class="intro"></p>
   <div id="status" class="status hidden" role="status" aria-live="polite"></div>
   <div id="tariff-description" class="intro hidden">
@@ -217,8 +217,8 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     const waiting = data.plan === "lifetime" && (data.status === "awaiting_receipt" || data.status === "pending");
     if (data.receipt_url) receiptUrl = data.receipt_url;
     selectedPlan = "lifetime";
-    el("title").textContent = approved ? "Квартира" : waiting ? "Оплата" : "Доступ к контактам";
-    show("title", true);
+    el("title").textContent = approved ? "Квартира" : waiting ? "Оплата" : "";
+    show("title", approved || waiting);
     el("intro").textContent = approved ? "" : waiting ? "Навсегда · {LIFETIME_PRICE} сом" : "";
     show("intro", waiting);
     show("apartment", approved);
