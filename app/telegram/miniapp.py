@@ -9,7 +9,6 @@ from html import escape
 from urllib.parse import parse_qsl
 
 from app.payment_plans import MONTH_PRICE, WEEK_PRICE
-from app.terms import TERMS_TEXT
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,87 +54,49 @@ def verify_telegram_init_data(
         return None
 
 
-def mini_app_html(*, title: str = "Доступ к квартире", payment_urls: dict[str, str] | None = None) -> str:
+def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     safe_title = escape(title)
-    safe_terms = escape(TERMS_TEXT).replace("\n", "<br>")
-    # Script-safe JSON: configured public checkout URLs are not credentials.
-    checkout_json = json.dumps(payment_urls or {}, ensure_ascii=True).replace("<", "\\u003c")
     return f"""<!doctype html>
 <html lang="ru">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
   <title>{safe_title}</title>
   <script async src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
-    :root {{ color-scheme: light dark; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; --accent: #087f68; --muted: var(--tg-theme-hint-color, #64746e); --surface: var(--tg-theme-secondary-bg-color, #fff); }}
+    :root {{ color-scheme: light dark; font-family: Inter, system-ui, sans-serif; }}
     * {{ box-sizing: border-box; }}
-    body {{ margin: 0; background: var(--tg-theme-bg-color, #f3f6f5); color: var(--tg-theme-text-color, #172b24); }}
-    main {{ max-width: 480px; margin: 0 auto; padding: 22px 16px calc(24px + env(safe-area-inset-bottom)); }}
-    .brand {{ font-size: 14px; font-weight: 800; color: var(--tg-theme-link-color, #087f68); margin-bottom: 20px; }}
-    h1 {{ font-size: 27px; line-height: 1.15; letter-spacing: -.6px; margin: 0 0 8px; }}
-    .intro {{ font-size: 15px; color: var(--muted); line-height: 1.5; margin: 0 0 20px; }}
-    .tariff, .checkout {{ background: var(--surface); border: 1px solid #879b922b; border-radius: 18px; padding: 18px; margin: 0 0 14px; }}
-    .tariff-head {{ display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }}
-    .period {{ font-size: 20px; font-weight: 750; }}
-    .price {{ font-size: 24px; font-weight: 800; white-space: nowrap; }}
-    .caption {{ font-size: 14px; color: var(--muted); line-height: 1.4; margin: 6px 0 16px; }}
-    button, .button {{ display: block; width: 100%; min-height: 52px; border: 0; border-radius: 12px; padding: 15px; font: inherit; font-size: 17px; font-weight: 700; text-align: center; text-decoration: none; cursor: pointer; touch-action: manipulation; }}
-    .primary {{ background: var(--accent); color: #fff; }}
-    .secondary {{ background: transparent; color: var(--tg-theme-link-color, #087f68); border: 1px solid #879b9260; }}
-    button:disabled {{ cursor: default; background: #879b9230; color: var(--muted); }}
-    button:focus-visible, a:focus-visible, summary:focus-visible {{ outline: 3px solid #38a88b; outline-offset: 3px; }}
-    .consent {{ display: flex; align-items: flex-start; gap: 10px; font-size: 14px; line-height: 1.45; margin-bottom: 16px; cursor: pointer; }}
-    input[type=checkbox] {{ flex: 0 0 22px; width: 22px; height: 22px; margin: 0; accent-color: var(--accent); }}
-    .consent a {{ color: var(--tg-theme-link-color, #087f68); text-underline-offset: 3px; }}
-    .step {{ display: flex; align-items: center; gap: 9px; font-size: 17px; font-weight: 750; margin-bottom: 12px; }}
-    .step span {{ display: grid; place-items: center; width: 25px; height: 25px; border-radius: 50%; background: #087f6818; color: var(--tg-theme-link-color, #087f68); font-size: 13px; }}
-    .receipt-step {{ margin-top: 22px; }}
-    .status {{ padding: 12px 14px; margin: 0 0 14px; border-radius: 12px; background: #087f6818; font-size: 15px; line-height: 1.4; }}
-    details {{ font-size: 14px; line-height: 1.55; color: var(--muted); margin: 18px 0; }}
-    summary {{ cursor: pointer; padding: 8px 0; }}
-    .privacy {{ display: block; text-align: center; font-size: 13px; color: var(--muted); margin-top: 20px; text-decoration: none; padding: 8px; }}
-    .phone {{ display: block; background: var(--accent); color: #fff; border-radius: 12px; padding: 16px; font-size: 22px; font-weight: 800; text-align: center; text-decoration: none; word-break: break-word; margin-top: 16px; }}
-    .photos {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 16px; }}
-    .photos img {{ width: 100%; height: 140px; object-fit: cover; border-radius: 12px; }}
-    .details {{ white-space: pre-line; font-size: 16px; line-height: 1.6; }}
+    body {{ margin: 0; background: var(--tg-theme-bg-color, #f4f6f7); color: var(--tg-theme-text-color, #15201d); }}
+    main {{ max-width: 540px; margin: 0 auto; padding: 16px 14px 28px; }}
+    .card {{ background: var(--tg-theme-secondary-bg-color, #fff); border-radius: 20px; padding: 16px; box-shadow: 0 8px 28px #00000012; }}
+    h1 {{ font-size: 21px; margin: 0 0 8px; }}
+    .status {{ border-radius: 13px; padding: 12px; margin: 12px 0; background: #12856a18; line-height: 1.4; }}
+    .phone {{ font-size: 22px; font-weight: 800; color: #079b79; word-break: break-word; }}
+    .photos {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin: 0 0 14px; }}
+    .photos img {{ width: 100%; height: 118px; object-fit: cover; border-radius: 11px; }}
+    .details {{ white-space: pre-line; font-size: 16px; font-weight: 650; line-height: 1.55; margin: 4px 0 12px; }}
+    button, .button {{ width: 100%; border: 0; border-radius: 14px; padding: 14px 16px; margin-top: 9px; font: inherit; font-weight: 750; text-align: center; cursor: pointer; text-decoration: none; display: block; }}
+    .primary {{ background: var(--tg-theme-button-color, #079b79); color: var(--tg-theme-button-text-color, white); }}
+    .secondary {{ background: #12856a18; color: var(--tg-theme-link-color, #07866b); }}
+    button:disabled {{ cursor: default; opacity: .82; }}
     .hidden {{ display: none !important; }}
   </style>
 </head>
 <body>
-<main id="simple-checkout">
-  <div class="brand">Arenda.KG</div>
-  <h1 id="title">Доступ к базе</h1>
-  <p id="intro" class="intro"></p>
-  <div id="status" class="status hidden" role="status" aria-live="polite"></div>
-  <section id="week-card" class="tariff hidden" aria-label="Доступ на 7 дней">
-    <div class="tariff-head"><span class="period">7 дней</span><span class="price">{WEEK_PRICE} сом</span></div>
-    <p class="caption">Доступ к номерам в базе квартир</p>
-    <label id="consent-week-row" class="consent hidden"><input id="consent-week" type="checkbox"><span>Согласен(на) с <a href="#agreement" class="terms-link">пользовательским соглашением</a></span></label>
-    <button id="pay-week" class="primary hidden" disabled>Оплатить {WEEK_PRICE} сом</button>
+<main>
+  <section class="card">
+    <h1 id="title">Получить доступ</h1>
+    <div id="apartment" class="hidden">
+      <div id="photos" class="photos"></div>
+      <div id="details" class="details"></div>
+    </div>
+    <div id="status" class="status hidden"></div>
+    <a id="phone" class="phone hidden"></a>
+    <button id="pay-week" class="primary hidden">Недельный тариф — {WEEK_PRICE} сом</button>
+    <button id="pay-month" class="primary hidden">Месячный тариф — {MONTH_PRICE} сом</button>
+    <button id="access" class="secondary hidden">✅ Я оплатил(а) — открыть номер</button>
+    <a id="privacy" class="button secondary hidden">🔒 Политика конфиденциальности</a>
   </section>
-  <section id="month-card" class="tariff hidden" aria-label="Доступ на 30 дней">
-    <div class="tariff-head"><span class="period">30 дней</span><span class="price">{MONTH_PRICE} сом</span></div>
-    <p class="caption">Доступ к номерам в базе квартир</p>
-    <label id="consent-month-row" class="consent hidden"><input id="consent-month" type="checkbox"><span>Согласен(на) с <a href="#agreement" class="terms-link">пользовательским соглашением</a></span></label>
-    <button id="pay-month" class="primary hidden" disabled>Оплатить {MONTH_PRICE} сом</button>
-  </section>
-  <section id="checkout" class="checkout hidden">
-    <div id="payment-step" class="step"><span>1</span>Оплата через Finik</div>
-    <label id="consent-checkout-row" class="consent hidden"><input id="consent-checkout" type="checkbox"><span>Согласен(на) с <a href="#agreement" class="terms-link">пользовательским соглашением</a></span></label>
-    <button id="reopen-payment" class="secondary hidden" disabled>Открыть Finik</button>
-    <div class="step receipt-step"><span>2</span>Чек оплаты</div>
-    <input id="receipt-file" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" class="hidden">
-    <button id="access" class="primary hidden">Загрузить чек</button>
-    <p class="caption" style="margin:10px 0 0">Фото или PDF · до 10 МБ</p>
-  </section>
-  <div id="apartment" class="hidden">
-    <div id="photos" class="photos"></div>
-    <div id="details" class="details"></div>
-  </div>
-  <a id="phone" class="phone hidden"></a>
-  <details id="agreement" class="hidden"><summary>Пользовательское соглашение</summary><p>{safe_terms}</p></details>
-  <a id="privacy" class="privacy hidden">Политика конфиденциальности</a>
 </main>
 <script>
 (() => {{
@@ -146,11 +107,6 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
   let startParam = query.get("tgWebAppStartParam") || hash.get("tgWebAppStartParam") || "";
   let paymentOpening = false;
   let paymentPoll = null;
-  let paymentStart = null;
-  let accessApproved = false;
-  let selectedPlan = "week";
-  const consentReady = {{week: false, month: false}};
-  const paymentUrls = {checkout_json};
 
   function telegramContext() {{
     const current = window.Telegram && window.Telegram.WebApp;
@@ -187,41 +143,21 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     return data;
   }}
   function render(data) {{
-    // A response sent before access was granted must not undo the success screen.
-    if (accessApproved && data.status !== "approved") return;
     const approved = data.status === "approved";
     const waiting = data.status === "awaiting_receipt" || data.status === "pending";
-    if (data.plan === "week" || data.plan === "month") selectedPlan = data.plan;
-    el("title").textContent = approved ? "Квартира" : waiting ? "Оплата и чек" : "Выберите доступ";
-    show("title", true);
-    el("intro").textContent = approved ? "" : waiting ? (selectedPlan === "month" ? "30 дней · {MONTH_PRICE} сом" : "7 дней · {WEEK_PRICE} сом") : "Номера объявлений в базе квартир";
-    show("intro", !approved);
+    el("title").textContent = "Квартира";
+    show("title", approved);
     show("apartment", approved);
     show("phone", approved);
     const canPay = !approved && !waiting;
-    show("week-card", canPay);
-    show("month-card", canPay && data.monthly_available !== false);
-    show("checkout", waiting);
-    show("payment-step", data.status === "awaiting_receipt");
-    show("consent-checkout-row", data.status === "awaiting_receipt");
-    el("consent-checkout").checked = el("consent-" + selectedPlan).checked;
     show("pay-week", canPay);
-    show("pay-month", canPay && data.monthly_available !== false);
+    show("pay-month", canPay);
     show("access", waiting);
-    show("reopen-payment", data.status === "awaiting_receipt");
-    show("agreement", !approved && data.status !== "pending");
-    show("consent-week-row", canPay);
-    show("consent-month-row", canPay && data.monthly_available !== false);
-    updateConsentButtons();
     show("privacy", !approved);
     if (!approved) {{
       el("privacy").href = data.privacy_url || "#";
     }}
     if (approved) {{
-      accessApproved = true;
-      if (paymentPoll) clearTimeout(paymentPoll);
-      paymentPoll = null;
-      message("");
       const apartment = data.apartment || {{}};
       const photos = el("photos");
       photos.replaceChildren();
@@ -241,11 +177,8 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
       if (apartment.description) el("details").textContent += "\\n\\n" + apartment.description;
       el("phone").textContent = "📞 " + data.phone;
       el("phone").href = "tel:" + String(data.phone || "").replace(/\\s+/g, "");
-    }} else if (data.status === "pending") {{
-      message("Загрузите чек оплаты.");
-      startPaymentPolling();
     }} else if (waiting) {{
-      message("");
+      message("После оплаты нажмите «Я оплатил(а) — открыть номер».");
     }} else if (data.status === "rejected") {{
       message("Откройте оплату повторно или выберите другой тариф.");
     }} else {{
@@ -265,122 +198,55 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     catch (error) {{ message(error.message); }}
   }}
   async function startPayment(plan, buttonId) {{
-    if (paymentOpening || accessApproved || !consentReady[plan] || !el("consent-" + plan).checked) return;
-    selectedPlan = plan;
+    if (paymentOpening) return;
     paymentOpening = true;
     const button = el(buttonId);
     const originalText = button.textContent;
     button.disabled = true;
     try {{
-      const readyUrl = paymentUrls[plan];
-      // Start recording the request, but do not delay a ready checkout link.
-      paymentStart = api("/miniapp/api/start", {{plan}});
-      if (readyUrl) {{
-        const current = telegramContext();
-        if (current) current.openLink(readyUrl); else location.href = readyUrl;
-      }}
-      const data = await paymentStart;
+      const data = await api("/miniapp/api/start", {{plan}});
       render(data);
       startPaymentPolling();
-      if (!readyUrl) {{
-        const current = telegramContext();
-        if (current) current.openLink(data.payment_url); else location.href = data.payment_url;
-      }}
+      const current = telegramContext();
+      if (current) current.openLink(data.payment_url); else location.href = data.payment_url;
     }} catch (error) {{ message(error.message); }}
     finally {{
-      updateConsentButtons();
+      button.disabled = false;
       button.textContent = originalText;
       paymentOpening = false;
     }}
   }}
   function startPaymentPolling() {{
-    if (paymentPoll || accessApproved) return;
-    const poll = async () => {{
+    if (paymentPoll) clearInterval(paymentPoll);
+    let attempts = 0;
+    paymentPoll = setInterval(async () => {{
+      attempts += 1;
       try {{
         const data = await api("/miniapp/api/session", {{}});
         render(data);
-        if (data.status === "approved" || data.status === "rejected") {{
+        if (data.status === "approved" || attempts >= 60) {{
+          clearInterval(paymentPoll);
           paymentPoll = null;
-          return;
         }}
-      }} catch (_) {{}}
-      if (!accessApproved) paymentPoll = setTimeout(poll, 5000);
-    }};
-    paymentPoll = setTimeout(poll, 5000);
+      }} catch (_) {{
+        if (attempts >= 60) {{ clearInterval(paymentPoll); paymentPoll = null; }}
+      }}
+    }}, 2000);
   }}
   document.addEventListener("visibilitychange", () => {{
-    if (!document.hidden && !accessApproved) {{
+    if (!document.hidden && !el("access").classList.contains("hidden")) {{
       startPaymentPolling();
     }}
   }});
-  function updateConsentButtons() {{
-    for (const plan of ["week", "month"]) {{
-      el("pay-" + plan).disabled = !consentReady[plan] || !el("consent-" + plan).checked;
-    }}
-    el("reopen-payment").disabled = !consentReady[selectedPlan] || !el("consent-" + selectedPlan).checked;
-  }}
-  for (const plan of ["week", "month"]) {{
-    el("consent-" + plan).onchange = async () => {{
-      consentReady[plan] = false;
-      updateConsentButtons();
-      if (!el("consent-" + plan).checked) return;
-      try {{
-        await api("/miniapp/api/consent", {{}});
-        consentReady[plan] = el("consent-" + plan).checked;
-      }} catch (error) {{
-        el("consent-" + plan).checked = false;
-        message(error.message);
-      }}
-      updateConsentButtons();
-    }};
-  }}
-  el("consent-checkout").onchange = async () => {{
-    const checkbox = el("consent-" + selectedPlan);
-    checkbox.checked = el("consent-checkout").checked;
-    await checkbox.onchange();
-    el("consent-checkout").checked = checkbox.checked;
-  }};
-  for (const link of document.querySelectorAll(".terms-link")) {{
-    link.onclick = event => {{
-      event.preventDefault();
-      event.stopPropagation();
-      el("agreement").open = true;
-      el("agreement").scrollIntoView({{behavior: "smooth", block: "start"}});
-    }};
-  }}
   el("pay-week").onclick = () => startPayment("week", "pay-week");
   el("pay-month").onclick = () => startPayment("month", "pay-month");
-  el("reopen-payment").onclick = () => {{
-    if (accessApproved || !consentReady[selectedPlan] || !el("consent-" + selectedPlan).checked) return;
-    const url = paymentUrls[selectedPlan];
-    if (url) {{
-      const current = telegramContext();
-      if (current) current.openLink(url); else location.href = url;
-    }} else {{
-      startPayment(selectedPlan, "reopen-payment");
-    }}
-  }};
-  el("access").onclick = () => el("receipt-file").click();
-  el("receipt-file").onchange = async () => {{
-    const file = el("receipt-file").files[0];
-    if (!file) return;
-    if (file.size > 10 * 1024 * 1024) {{ message("Размер файла — до 10 МБ."); return; }}
+  el("access").onclick = async () => {{
     el("access").disabled = true;
-    message("Загрузка…");
+    message("Выдаём карточку…");
     try {{
-      const receiptData = await new Promise((resolve, reject) => {{
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result).split(",")[1]);
-        reader.onerror = () => reject(new Error("Не удалось прочитать файл."));
-        reader.readAsDataURL(file);
-      }});
-      if (paymentStart) await paymentStart;
-      render(await api("/miniapp/api/access", {{receipt_data: receiptData}}));
+      render(await api("/miniapp/api/access", {{}}));
     }} catch (error) {{ message(error.message); }}
-    finally {{
-      el("access").disabled = false;
-      el("receipt-file").value = "";
-    }}
+    finally {{ el("access").disabled = false; }}
   }};
   load();
 }})();

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 from datetime import UTC, datetime
 import hashlib
 import hmac
@@ -142,8 +141,6 @@ async def test_health_and_authentication() -> None:
             "status": "ok",
             "bot": "disabled",
             "finik_auto_payment": "disabled",
-        "payment_access_mode": "receipt_upload",
-        "payment_review": "admin_missing",
             "telegram_setup": "disabled",
             "lalafo_link_bot": "disabled",
             "free_cloud_keepalive": "disabled",
@@ -595,7 +592,7 @@ async def test_miniapp_page_is_public_but_session_requires_telegram_auth(
     service.contact_status.assert_awaited_once_with(778899, 42)
 
 
-def test_tariffs_always_use_the_configured_persistent_finik_links(
+def test_automatic_checkout_is_enabled_when_finik_api_is_configured(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("FINIK_PAYMENT_URL", "https://qr.finik.kg/weekly")
@@ -607,12 +604,15 @@ def test_tariffs_always_use_the_configured_persistent_finik_links(
     get_settings.cache_clear()
     settings = get_settings()
 
+    assert settings.finik_auto_enabled
+    assert web._uses_dynamic_finik(settings, WEEK_PLAN)
+    assert web._uses_dynamic_finik(settings, MONTH_PLAN)
     assert web._finik_payment_url(settings, WEEK_PLAN).endswith("/weekly")
     assert web._finik_payment_url(settings, MONTH_PLAN).endswith("/monthly")
 
 
 @pytest.mark.asyncio
-async def test_miniapp_does_not_create_a_separate_finik_without_a_persistent_link(
+async def test_miniapp_starts_a_checkout_bound_to_the_selected_apartment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     bot_token = "123456:telegram-test-token"
@@ -627,15 +627,21 @@ async def test_miniapp_does_not_create_a_separate_finik_without_a_persistent_lin
     get_settings.cache_clear()
     apartment = SimpleNamespace(id=42)
     unpaid = SimpleNamespace(status="unpaid", apartment=apartment, access_expires_at=None)
+    payment_request = SimpleNamespace(id=73, status="awaiting_receipt")
     service = SimpleNamespace(
         contact_status=AsyncMock(return_value=unpaid),
-        begin_payment=AsyncMock(),
+        begin_payment=AsyncMock(
+            return_value=SimpleNamespace(request=payment_request, outcome="created")
+        ),
     )
+    payments = SimpleNamespace()
     monkeypatch.setattr(
         web,
         "_bot_runtime",
-        SimpleNamespace(workflow_data={"service": service}),
+        SimpleNamespace(workflow_data={"service": service, "payments": payments}),
     )
+    checkout = AsyncMock(return_value="https://qr.finik.kg/request-73")
+    monkeypatch.setattr(web, "_finik_checkout_url", checkout)
     signer = TokenSigner(callback_secret)
     transport = httpx.ASGITransport(app=web.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -648,15 +654,25 @@ async def test_miniapp_does_not_create_a_separate_finik_without_a_persistent_lin
             },
         )
 
-    assert response.status_code == 503
-    assert response.json()["detail"] == "Этот тариф временно недоступен."
-    service.begin_payment.assert_not_awaited()
+    assert response.status_code == 200
+    assert response.json()["payment_url"] == "https://qr.finik.kg/request-73"
+    assert response.json()["automatic_payment"] is True
+    assert response.json()["monthly_available"] is True
+    service.begin_payment.assert_awaited_once_with(
+        user_id=778899,
+        apartment_id=42,
+        username="mini_user",
+        first_name="Test",
+        plan=MONTH_PLAN,
+    )
+    checkout.assert_awaited_once()
+    assert checkout.await_args.kwargs["apartment_id"] == 42
+    assert checkout.await_args.kwargs["plan"] == MONTH_PLAN
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("consent", [True, False])
 async def test_miniapp_uses_configured_payment_url_without_waiting_for_finik(
-    monkeypatch: pytest.MonkeyPatch, consent: bool,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     bot_token = "123456:telegram-test-token"
     callback_secret = "c" * 32
@@ -681,8 +697,10 @@ async def test_miniapp_uses_configured_payment_url_without_waiting_for_finik(
     monkeypatch.setattr(
         web,
         "_bot_runtime",
-        SimpleNamespace(workflow_data={"service": service, "payments": SimpleNamespace(), "terms_consents": SimpleNamespace(accepted=AsyncMock(return_value=consent))}),
+        SimpleNamespace(workflow_data={"service": service, "payments": SimpleNamespace()}),
     )
+    checkout = AsyncMock(return_value="https://qr.finik.kg/request-73")
+    monkeypatch.setattr(web, "_finik_checkout_url", checkout)
     signer = TokenSigner(callback_secret)
     transport = httpx.ASGITransport(app=web.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -695,20 +713,16 @@ async def test_miniapp_uses_configured_payment_url_without_waiting_for_finik(
             },
         )
 
-    if not consent:
-        assert response.status_code == 403
-        service.begin_payment.assert_not_awaited()
-        return
     assert response.status_code == 200
     assert response.json()["payment_url"] == "https://qr.finik.kg/monthly"
-    assert response.json()["automatic_payment"] is False
+    assert response.json()["automatic_payment"] is True
     service.begin_payment.assert_awaited_once()
+    checkout.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("upload", ["pdf", "missing", "invalid", "failed"])
-async def test_miniapp_access_requires_uploaded_receipt(
-    monkeypatch: pytest.MonkeyPatch, upload: str,
+async def test_miniapp_access_is_issued_without_admin_notification(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     bot_token = "123456:telegram-test-token"
     callback_secret = "c" * 32
@@ -739,8 +753,6 @@ async def test_miniapp_access_requires_uploaded_receipt(
     )
     request = SimpleNamespace(
         id=73,
-        apartment_id=42,
-        created_at=datetime.now(UTC),
         telegram_user_id=778899,
         username="mini_user",
         first_name="Test",
@@ -753,23 +765,21 @@ async def test_miniapp_access_requires_uploaded_receipt(
         contact_status=AsyncMock(side_effect=[awaiting, approved]),
     )
     payments = SimpleNamespace(
-        grant_with_receipt=AsyncMock(return_value=request),
+        mark_payment_claimed=AsyncMock(return_value=request),
         get_access=AsyncMock(),
         claim_admin_notification=AsyncMock(return_value=True),
         finish_admin_notification=AsyncMock(return_value=True),
         release_admin_notification=AsyncMock(),
     )
     bot = SimpleNamespace(
-        send_document=AsyncMock(return_value=SimpleNamespace(document=SimpleNamespace(file_id="receipt-file"))),
+        send_message=AsyncMock(return_value=SimpleNamespace(message_id=515)),
     )
-    if upload == "failed":
-        bot.send_document.side_effect = RuntimeError("Telegram unavailable")
     monkeypatch.setattr(
         web,
         "_bot_runtime",
         SimpleNamespace(
             bot=bot,
-            workflow_data={"service": service, "payments": payments, "signer": TokenSigner(callback_secret)},
+            workflow_data={"service": service, "payments": payments},
         ),
     )
     signer = TokenSigner(callback_secret)
@@ -780,26 +790,21 @@ async def test_miniapp_access_requires_uploaded_receipt(
             json={
                 "init_data": miniapp_init_data(bot_token=bot_token, user_id=778899),
                 "start_param": signer.sign_start_id("miniapp-apartment", 42),
-                "receipt_data": None if upload == "missing" else base64.b64encode(b"not a supported file" if upload == "invalid" else b"%PDF-1.4\nreceipt").decode(),
             },
         )
 
-    if upload != "pdf":
-        assert response.status_code == {"missing": 400, "invalid": 415, "failed": 503}[upload]
-        payments.grant_with_receipt.assert_not_awaited()
-        return
     assert response.status_code == 200
     assert response.json()["status"] == "approved"
-    assert "phone" in response.json()
-    payments.grant_with_receipt.assert_awaited_once_with(
-        user_id=778899, apartment_id=42, file_id="receipt-file", file_type="document",
+    payments.mark_payment_claimed.assert_awaited_once_with(
+        user_id=778899, apartment_id=42
     )
-    bot.send_document.assert_awaited_once()
     payments.claim_admin_notification.assert_not_awaited()
+    payments.finish_admin_notification.assert_not_awaited()
+    bot.send_message.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_successful_finik_webhook_records_without_delivering_contact(
+async def test_successful_finik_webhook_activates_and_delivers_contact(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("RUN_BOT", "true")
@@ -815,7 +820,7 @@ async def test_successful_finik_webhook_records_without_delivering_contact(
         apartment=apartment,
     )
     payments = SimpleNamespace(
-        apply_provider_result=AsyncMock(return_value=("recorded", payment_request))
+        apply_provider_result=AsyncMock(return_value=("approved", payment_request))
     )
     bot = object()
     monkeypatch.setattr(
@@ -842,11 +847,13 @@ async def test_successful_finik_webhook_records_without_delivering_contact(
         )
 
     assert response.status_code == 200
-    assert response.json() == {"status": "recorded"}
+    assert response.json() == {"status": "approved"}
     payments.apply_provider_result.assert_awaited_once_with(
         "arenda-73", succeeded=True, amount=499
     )
-    delivery.assert_not_awaited()
+    delivery.assert_awaited_once()
+    assert delivery.await_args.kwargs["user_id"] == 778899
+    assert delivery.await_args.kwargs["apartment"] is apartment
 
 
 @pytest.mark.asyncio
@@ -868,6 +875,6 @@ async def test_payment_redirect_replaces_button_and_opens_finik(
         response = await client.get(f"/pay/{token}")
         invalid = await client.get(f"/pay/{token}x")
     assert response.status_code == 302
-    assert "/access?startapp=" in response.headers["location"]
+    assert response.headers["location"] == "https://qr.finik.kg/test-payment"
     assert invalid.status_code == 404
     edit_markup.assert_awaited_once()

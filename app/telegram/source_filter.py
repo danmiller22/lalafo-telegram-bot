@@ -44,7 +44,7 @@ def extract_kgs_price(text: str) -> int | None:
 
 
 def is_apartment_offer(
-    text: str, *, min_price: int = 25_000, max_price: int = 50_000
+    text: str, *, min_price: int = 25_000, max_price: int = 40_000
 ) -> bool:
     normalized = " ".join((text or "").casefold().replace("ё", "е").split())
     if (

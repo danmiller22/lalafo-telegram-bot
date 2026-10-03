@@ -87,7 +87,7 @@ CENTRAL_DISTRICT_TERMS = (
 # The fallback search includes owners and real-estate agents; detail-level
 # checks still remove shared housing and all public cards omit offerer type.
 SOURCE_MIN_PRICE = 25_000
-SOURCE_MAX_PRICE = 50_000
+SOURCE_MAX_PRICE = 40_000
 SOURCE_ALLOWED_ROOMS = ("studio", "1")
 SOURCE_MIN_PHOTOS = 1
 SOURCE_MAX_POSTS_PER_RUN = 18
@@ -106,7 +106,7 @@ REALTOR_BATCH_SHARE = 0.50
 # Retained for historical reporting helpers; two-bedroom cards are no longer
 # eligible for discovery or publication.
 TWO_BEDROOM_MIN_PRICE = 25_000
-TWO_BEDROOM_MAX_PRICE = 50_000
+TWO_BEDROOM_MAX_PRICE = 40_000
 TWO_BEDROOM_DAILY_LIMIT = 20
 TWO_BEDROOM_MAX_PER_RUN = 2
 MANAGED_PROFILE_MAX_PER_RUN = 3
