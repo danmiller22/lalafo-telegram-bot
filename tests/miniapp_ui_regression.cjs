@@ -22,7 +22,7 @@ function setup(initial, fetchOverride) {
     FileReader: class { readAsDataURL() { this.result = "data:application/pdf;base64,JVBERi0xLjQ="; this.onload(); } },
     location: {search: '?tgWebAppData=test&tgWebAppStartParam=test', hash: ''},
     window: {Telegram: {WebApp: {ready() {}, expand() {}, openLink(url) { opened.push(url); }}}},
-    document: {getElementById: node, addEventListener() {}},
+    document: {getElementById: node, addEventListener() {}, querySelectorAll() { return []; }},
     setTimeout(fn) { const id = nextTimer++; timers.set(id, fn); return id; },
     clearTimeout(id) { timers.delete(id); },
     fetch: fetchOverride || (() => Promise.resolve(response(initial))),
@@ -38,8 +38,11 @@ function setup(initial, fetchOverride) {
   assert.equal(restored.node('reopen-payment').hidden, false);
   restored.node('reopen-payment').onclick();
   assert.deepEqual(restored.opened, []);
-  restored.node('consent-month').checked = true;
-  await restored.node('consent-month').onchange();
+  assert.equal(restored.node('checkout').hidden, false);
+  assert.equal(restored.node('week-card').hidden, true);
+  assert.equal(restored.node('month-card').hidden, true);
+  restored.node('consent-checkout').checked = true;
+  await restored.node('consent-checkout').onchange();
   restored.node('reopen-payment').onclick();
   restored.node('reopen-payment').onclick();
   assert.deepEqual(restored.opened, ['https://example.com/month', 'https://example.com/month']);
@@ -55,6 +58,9 @@ function setup(initial, fetchOverride) {
     return Promise.resolve(response({status: 'approved', phone: '+996555000000', apartment: {}}));
   });
   await new Promise(setImmediate);
+  assert.equal(race.node('week-card').hidden, false);
+  assert.equal(race.node('month-card').hidden, false);
+  assert.equal(race.node('checkout').hidden, true);
   await race.node('pay-week').onclick();
   assert.deepEqual(race.opened, []);
   race.node('consent-week').checked = true;

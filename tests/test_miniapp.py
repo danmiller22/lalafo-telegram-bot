@@ -71,8 +71,10 @@ def test_mini_app_page_requires_agreement_and_receipt():
     assert "/miniapp/api/access" in html
     assert "1 неделя доступа к номерам — 499 сом" not in html
     assert "1 месяц доступа к номерам — 999 сом" not in html
-    assert "Недельный тариф — 499 сом" in html
-    assert "Месячный тариф — 999 сом" in html
+    assert "Оплатить 499 сом" in html
+    assert "7 дней" in html
+    assert "Оплатить 999 сом" in html
+    assert "30 дней" in html
     assert 'id="hero"' not in html
     assert 'id="apartment"' in html
     assert 'id="photos"' in html

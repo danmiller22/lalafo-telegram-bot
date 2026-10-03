@@ -64,51 +64,78 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
 <html lang="ru">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>{safe_title}</title>
   <script async src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
-    :root {{ color-scheme: light dark; font-family: Inter, system-ui, sans-serif; }}
+    :root {{ color-scheme: light dark; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; --accent: #087f68; --muted: var(--tg-theme-hint-color, #64746e); --surface: var(--tg-theme-secondary-bg-color, #fff); }}
     * {{ box-sizing: border-box; }}
-    body {{ margin: 0; background: var(--tg-theme-bg-color, #f4f6f7); color: var(--tg-theme-text-color, #15201d); }}
-    main {{ max-width: 540px; margin: 0 auto; padding: 16px 14px 28px; }}
-    .card {{ background: var(--tg-theme-secondary-bg-color, #fff); border-radius: 20px; padding: 16px; box-shadow: 0 8px 28px #00000012; }}
-    h1 {{ font-size: 21px; margin: 0 0 8px; }}
-    .status {{ border-radius: 13px; padding: 12px; margin: 12px 0; background: #12856a18; line-height: 1.4; }}
-    .phone {{ font-size: 22px; font-weight: 800; color: #079b79; word-break: break-word; }}
-    .photos {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin: 0 0 14px; }}
-    .photos img {{ width: 100%; height: 118px; object-fit: cover; border-radius: 11px; }}
-    .details {{ white-space: pre-line; font-size: 16px; font-weight: 650; line-height: 1.55; margin: 4px 0 12px; }}
-    button, .button {{ width: 100%; border: 0; border-radius: 14px; padding: 14px 16px; margin-top: 9px; font: inherit; font-weight: 750; text-align: center; cursor: pointer; text-decoration: none; display: block; }}
-    .primary {{ background: var(--tg-theme-button-color, #079b79); color: var(--tg-theme-button-text-color, white); }}
-    .secondary {{ background: #12856a18; color: var(--tg-theme-link-color, #07866b); }}
-    button:disabled {{ cursor: default; opacity: .45; }}
-    label {{ display: block; font-size: 14px; line-height: 1.4; margin: 10px 0 16px; }}
-    input[type=checkbox] {{ width: 20px; height: 20px; vertical-align: middle; }}
-    details {{ font-size: 14px; line-height: 1.5; }}
+    body {{ margin: 0; background: var(--tg-theme-bg-color, #f3f6f5); color: var(--tg-theme-text-color, #172b24); }}
+    main {{ max-width: 480px; margin: 0 auto; padding: 22px 16px calc(24px + env(safe-area-inset-bottom)); }}
+    .brand {{ font-size: 14px; font-weight: 800; color: var(--tg-theme-link-color, #087f68); margin-bottom: 20px; }}
+    h1 {{ font-size: 27px; line-height: 1.15; letter-spacing: -.6px; margin: 0 0 8px; }}
+    .intro {{ font-size: 15px; color: var(--muted); line-height: 1.5; margin: 0 0 20px; }}
+    .tariff, .checkout {{ background: var(--surface); border: 1px solid #879b922b; border-radius: 18px; padding: 18px; margin: 0 0 14px; }}
+    .tariff-head {{ display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }}
+    .period {{ font-size: 20px; font-weight: 750; }}
+    .price {{ font-size: 24px; font-weight: 800; white-space: nowrap; }}
+    .caption {{ font-size: 14px; color: var(--muted); line-height: 1.4; margin: 6px 0 16px; }}
+    button, .button {{ display: block; width: 100%; min-height: 52px; border: 0; border-radius: 12px; padding: 15px; font: inherit; font-size: 17px; font-weight: 700; text-align: center; text-decoration: none; cursor: pointer; touch-action: manipulation; }}
+    .primary {{ background: var(--accent); color: #fff; }}
+    .secondary {{ background: transparent; color: var(--tg-theme-link-color, #087f68); border: 1px solid #879b9260; }}
+    button:disabled {{ cursor: default; background: #879b9230; color: var(--muted); }}
+    button:focus-visible, a:focus-visible, summary:focus-visible {{ outline: 3px solid #38a88b; outline-offset: 3px; }}
+    .consent {{ display: flex; align-items: flex-start; gap: 10px; font-size: 14px; line-height: 1.45; margin-bottom: 16px; cursor: pointer; }}
+    input[type=checkbox] {{ flex: 0 0 22px; width: 22px; height: 22px; margin: 0; accent-color: var(--accent); }}
+    .consent a {{ color: var(--tg-theme-link-color, #087f68); text-underline-offset: 3px; }}
+    .step {{ display: flex; align-items: center; gap: 9px; font-size: 17px; font-weight: 750; margin-bottom: 12px; }}
+    .step span {{ display: grid; place-items: center; width: 25px; height: 25px; border-radius: 50%; background: #087f6818; color: var(--tg-theme-link-color, #087f68); font-size: 13px; }}
+    .receipt-step {{ margin-top: 22px; }}
+    .status {{ padding: 12px 14px; margin: 0 0 14px; border-radius: 12px; background: #087f6818; font-size: 15px; line-height: 1.4; }}
+    details {{ font-size: 14px; line-height: 1.55; color: var(--muted); margin: 18px 0; }}
+    summary {{ cursor: pointer; padding: 8px 0; }}
+    .privacy {{ display: block; text-align: center; font-size: 13px; color: var(--muted); margin-top: 20px; text-decoration: none; padding: 8px; }}
+    .phone {{ display: block; background: var(--accent); color: #fff; border-radius: 12px; padding: 16px; font-size: 22px; font-weight: 800; text-align: center; text-decoration: none; word-break: break-word; margin-top: 16px; }}
+    .photos {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 16px; }}
+    .photos img {{ width: 100%; height: 140px; object-fit: cover; border-radius: 12px; }}
+    .details {{ white-space: pre-line; font-size: 16px; line-height: 1.6; }}
     .hidden {{ display: none !important; }}
   </style>
 </head>
 <body>
-<main>
-  <section class="card">
-    <h1 id="title">Получить доступ</h1>
-    <div id="apartment" class="hidden">
-      <div id="photos" class="photos"></div>
-      <div id="details" class="details"></div>
-    </div>
-    <div id="status" class="status hidden"></div>
-    <a id="phone" class="phone hidden"></a>
-    <details id="agreement" class="hidden"><summary>Пользовательское соглашение</summary><p>{safe_terms}</p></details>
-    <button id="pay-week" class="primary hidden">Недельный тариф — {WEEK_PRICE} сом</button>
-    <label id="consent-week-row" class="hidden"><input id="consent-week" type="checkbox"> Согласен(на) с пользовательским соглашением</label>
-    <button id="pay-month" class="primary hidden">Месячный тариф — {MONTH_PRICE} сом</button>
-    <label id="consent-month-row" class="hidden"><input id="consent-month" type="checkbox"> Согласен(на) с пользовательским соглашением</label>
-    <button id="reopen-payment" class="primary hidden">Открыть оплату</button>
-    <input id="receipt-file" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" class="hidden">
-    <button id="access" class="secondary hidden">Загрузить чек</button>
-    <a id="privacy" class="button secondary hidden">🔒 Политика конфиденциальности</a>
+<main id="simple-checkout">
+  <div class="brand">Arenda.KG</div>
+  <h1 id="title">Доступ к базе</h1>
+  <p id="intro" class="intro"></p>
+  <div id="status" class="status hidden" role="status" aria-live="polite"></div>
+  <section id="week-card" class="tariff hidden" aria-label="Доступ на 7 дней">
+    <div class="tariff-head"><span class="period">7 дней</span><span class="price">{WEEK_PRICE} сом</span></div>
+    <p class="caption">Доступ к номерам в базе квартир</p>
+    <label id="consent-week-row" class="consent hidden"><input id="consent-week" type="checkbox"><span>Согласен(на) с <a href="#agreement" class="terms-link">пользовательским соглашением</a></span></label>
+    <button id="pay-week" class="primary hidden" disabled>Оплатить {WEEK_PRICE} сом</button>
   </section>
+  <section id="month-card" class="tariff hidden" aria-label="Доступ на 30 дней">
+    <div class="tariff-head"><span class="period">30 дней</span><span class="price">{MONTH_PRICE} сом</span></div>
+    <p class="caption">Доступ к номерам в базе квартир</p>
+    <label id="consent-month-row" class="consent hidden"><input id="consent-month" type="checkbox"><span>Согласен(на) с <a href="#agreement" class="terms-link">пользовательским соглашением</a></span></label>
+    <button id="pay-month" class="primary hidden" disabled>Оплатить {MONTH_PRICE} сом</button>
+  </section>
+  <section id="checkout" class="checkout hidden">
+    <div id="payment-step" class="step"><span>1</span>Оплата через Finik</div>
+    <label id="consent-checkout-row" class="consent hidden"><input id="consent-checkout" type="checkbox"><span>Согласен(на) с <a href="#agreement" class="terms-link">пользовательским соглашением</a></span></label>
+    <button id="reopen-payment" class="secondary hidden" disabled>Открыть Finik</button>
+    <div class="step receipt-step"><span>2</span>Чек оплаты</div>
+    <input id="receipt-file" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" class="hidden">
+    <button id="access" class="primary hidden">Загрузить чек</button>
+    <p class="caption" style="margin:10px 0 0">Фото или PDF · до 10 МБ</p>
+  </section>
+  <div id="apartment" class="hidden">
+    <div id="photos" class="photos"></div>
+    <div id="details" class="details"></div>
+  </div>
+  <a id="phone" class="phone hidden"></a>
+  <details id="agreement" class="hidden"><summary>Пользовательское соглашение</summary><p>{safe_terms}</p></details>
+  <a id="privacy" class="privacy hidden">Политика конфиденциальности</a>
 </main>
 <script>
 (() => {{
@@ -165,18 +192,26 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     const approved = data.status === "approved";
     const waiting = data.status === "awaiting_receipt" || data.status === "pending";
     if (data.plan === "week" || data.plan === "month") selectedPlan = data.plan;
-    el("title").textContent = "Квартира";
-    show("title", approved);
+    el("title").textContent = approved ? "Квартира" : waiting ? "Оплата и чек" : "Выберите доступ";
+    show("title", true);
+    el("intro").textContent = approved ? "" : waiting ? (selectedPlan === "month" ? "30 дней · {MONTH_PRICE} сом" : "7 дней · {WEEK_PRICE} сом") : "Номера объявлений в базе квартир";
+    show("intro", !approved);
     show("apartment", approved);
     show("phone", approved);
     const canPay = !approved && !waiting;
+    show("week-card", canPay);
+    show("month-card", canPay && data.monthly_available !== false);
+    show("checkout", waiting);
+    show("payment-step", data.status === "awaiting_receipt");
+    show("consent-checkout-row", data.status === "awaiting_receipt");
+    el("consent-checkout").checked = el("consent-" + selectedPlan).checked;
     show("pay-week", canPay);
     show("pay-month", canPay && data.monthly_available !== false);
     show("access", waiting);
     show("reopen-payment", data.status === "awaiting_receipt");
     show("agreement", !approved && data.status !== "pending");
-    show("consent-week-row", canPay || (data.status === "awaiting_receipt" && selectedPlan === "week"));
-    show("consent-month-row", (canPay && data.monthly_available !== false) || (data.status === "awaiting_receipt" && selectedPlan === "month"));
+    show("consent-week-row", canPay);
+    show("consent-month-row", canPay && data.monthly_available !== false);
     updateConsentButtons();
     show("privacy", !approved);
     if (!approved) {{
@@ -297,6 +332,20 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
         message(error.message);
       }}
       updateConsentButtons();
+    }};
+  }}
+  el("consent-checkout").onchange = async () => {{
+    const checkbox = el("consent-" + selectedPlan);
+    checkbox.checked = el("consent-checkout").checked;
+    await checkbox.onchange();
+    el("consent-checkout").checked = checkbox.checked;
+  }};
+  for (const link of document.querySelectorAll(".terms-link")) {{
+    link.onclick = event => {{
+      event.preventDefault();
+      event.stopPropagation();
+      el("agreement").open = true;
+      el("agreement").scrollIntoView({{behavior: "smooth", block: "start"}});
     }};
   }}
   el("pay-week").onclick = () => startPayment("week", "pay-week");
