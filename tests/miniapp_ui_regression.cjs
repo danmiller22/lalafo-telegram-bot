@@ -22,7 +22,7 @@ function setup(initial, fetchOverride, dynamic = false) {
     URLSearchParams,
     FileReader: class { readAsDataURL() { this.result = "data:application/pdf;base64,JVBERi0xLjQ="; this.onload(); } },
     location: {search: '?tgWebAppData=test&tgWebAppStartParam=test', hash: ''},
-    window: {Telegram: {WebApp: {ready() {}, expand() {}, openLink(url) { opened.push(url); }}}},
+    window: {Telegram: {WebApp: {ready() {}, expand() {}, openLink(url) { opened.push(url); }, openTelegramLink(url) { opened.push(url); }}}},
     document: {getElementById: node, addEventListener() {}, querySelectorAll() { return [node("terms-link")]; }},
     setTimeout(fn) { const id = nextTimer++; timers.set(id, fn); return id; },
     clearTimeout(id) { timers.delete(id); },
@@ -46,7 +46,7 @@ function setup(initial, fetchOverride, dynamic = false) {
   let sessionCalls = 0, resolvePoll;
   const race = setup(null, path => {
     if (path.endsWith('/session')) {
-      if (++sessionCalls === 1) return Promise.resolve(response({status: 'unpaid'}));
+      if (++sessionCalls === 1) return Promise.resolve(response({status: 'unpaid', receipt_url: 'https://t.me/bot?start=receipt_test'}));
       return new Promise(resolve => { resolvePoll = resolve; });
     }
     if (path.endsWith('/consent')) return Promise.resolve(response({terms_accepted: true}));
@@ -70,8 +70,9 @@ function setup(initial, fetchOverride, dynamic = false) {
   const inFlight = callback();
   assert.equal(race.node('phone').hidden, true);
   await race.node('access').onclick();
-  assert.equal(race.node('phone').hidden, false);
-  resolvePoll(response({status: 'awaiting_receipt'}));
+  assert.equal(race.node('phone').hidden, true);
+  assert.equal(race.opened.at(-1), 'https://t.me/bot?start=receipt_test');
+  resolvePoll(response({status: 'approved', phone: '+996555000000', apartment: {}}));
   await inFlight;
   assert.equal(race.node('phone').hidden, false);
   assert.equal(race.node('access').hidden, true);
@@ -83,13 +84,13 @@ function setup(initial, fetchOverride, dynamic = false) {
   assert.equal(pending.node('phone').hidden, true);
   assert.equal(pending.node('access').hidden, false);
   assert.equal(pending.node('reopen-payment').hidden, true);
-  assert.equal(pending.node('status').textContent, 'Нажмите «Я оплатил(а)».');
+  assert.equal(pending.node('status').textContent, 'Загрузите чек об оплате.');
   assert.equal(pending.timers.size, 1);
   let finishStart;
   const warm = setup(null, path => {
     if (path.endsWith('/prepare')) return Promise.resolve(response({payment_url: 'https://example.com/prepared', expires_at_ms: Date.now() + 300000}));
     if (path.endsWith('/start')) return new Promise(resolve => { finishStart = resolve; });
-    return Promise.resolve(response({status: 'unpaid'}));
+    return Promise.resolve(response({status: 'unpaid', receipt_url: 'https://t.me/bot?start=receipt_test'}));
   }, true);
   await new Promise(setImmediate);
   assert.equal(warm.node('pay-lifetime').disabled, false);

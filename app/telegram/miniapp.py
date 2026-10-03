@@ -120,7 +120,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     <div id="payment-step" class="step"><span>1</span>Оплата через Finik</div>
     <button id="reopen-payment" class="secondary hidden">Открыть Finik</button>
     <div class="step receipt-step"><span>2</span>Подтверждение</div>
-    <button id="access" class="primary hidden">Я оплатил(а)</button>
+    <button id="access" class="primary hidden">Загрузить чек</button>
   </section>
   <div id="apartment" class="hidden">
     <div id="photos" class="photos"></div>
@@ -145,6 +145,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
   let paymentPoll = null;
   let paymentStart = null;
   let accessApproved = false;
+  let receiptUrl = "";
   let selectedPlan = "lifetime";
   const paymentUrls = {checkout_json};
   let preparedUntil = Infinity;
@@ -214,6 +215,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     if (accessApproved && data.status !== "approved") return;
     const approved = data.status === "approved";
     const waiting = data.plan === "lifetime" && (data.status === "awaiting_receipt" || data.status === "pending");
+    if (data.receipt_url) receiptUrl = data.receipt_url;
     selectedPlan = "lifetime";
     el("title").textContent = approved ? "Квартира" : waiting ? "Оплата" : "Доступ к контактам";
     show("title", true);
@@ -258,7 +260,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
       el("phone").textContent = "📞 " + data.phone;
       el("phone").href = "tel:" + String(data.phone || "").replace(/\\s+/g, "");
     }} else if (waiting && data.status === "pending") {{
-      message("Нажмите «Я оплатил(а)».");
+      message("Загрузите чек об оплате.");
       startPaymentPolling();
     }} else if (waiting) {{
       message("");
@@ -361,10 +363,12 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
   }};
   el("access").onclick = async () => {{
     el("access").disabled = true;
-    message("Обработка…");
     try {{
       if (paymentStart) await paymentStart;
-      render(await api("/miniapp/api/access", {{}}));
+      if (!receiptUrl) render(await api("/miniapp/api/session", {{}}));
+      if (!receiptUrl) throw new Error("Не удалось открыть чат. Попробуйте ещё раз.");
+      const current = telegramContext();
+      if (current) current.openTelegramLink(receiptUrl); else location.href = receiptUrl;
     }} catch (error) {{ message(error.message); }}
     finally {{ el("access").disabled = false; }}
   }};

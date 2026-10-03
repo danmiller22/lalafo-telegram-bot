@@ -68,7 +68,7 @@ def test_mini_app_page_has_one_lifetime_tariff_and_linked_agreement():
 
     assert "/miniapp/api/session" in html
     assert "/miniapp/api/start" in html
-    assert "/miniapp/api/access" in html
+    assert "openTelegramLink" in html
     assert "Доступ к контактам навсегда — 699 сом." in html
     assert ">Оплатить 699 сом</button>" in html
     assert "499" not in html and "999" not in html
@@ -83,11 +83,13 @@ def test_mini_app_page_has_one_lifetime_tariff_and_linked_agreement():
     assert "prepareTelegramContext" in html
     assert "Выберите банк" not in html
     assert "Выберите доступ:" not in html
-    assert "Я оплатил(а)" in html
+    assert "Загрузить чек" in html
     assert 'id="receipt-file"' not in html
     assert "receipt_data" not in html
     assert "Статус: оплата проверяется" not in html
-    assert "Нажмите «Я оплатил(а)»." in html
+    assert "Загрузите чек об оплате." in html
+    assert "current.openTelegramLink(receiptUrl)" in html
+    assert "/miniapp/api/access" not in html
     assert "/miniapp/api/consent" not in html
     assert 'type="checkbox"' not in html
     assert '<dialog id="agreement"' in html

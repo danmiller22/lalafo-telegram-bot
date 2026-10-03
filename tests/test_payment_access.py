@@ -52,7 +52,7 @@ async def test_payment_state_machine(repositories, service):
 
 
 @pytest.mark.asyncio
-async def test_verified_finik_payment_is_approved_without_manual_review(
+async def test_verified_finik_payment_still_requires_receipt(
     repositories, service
 ):
     apartments, payments, _ = repositories
@@ -76,7 +76,8 @@ async def test_verified_finik_payment_is_approved_without_manual_review(
     approved_outcome, _ = await payments.apply_provider_result(
         "payment-9191", succeeded=True, amount=499
     )
-    assert approved_outcome == "approved"
+    assert approved_outcome == "awaiting_receipt"
+    await payments.submit_receipt(user_id=9191, file_id="receipt", file_type="photo")
     approved = await service.contact_status(9191, apartment.id)
     assert approved.status == "approved"
     expiry = approved.access_expires_at
@@ -223,7 +224,7 @@ async def test_auto_approved_submission_does_not_notify_admin(repositories, serv
 
 
 @pytest.mark.asyncio
-async def test_miniapp_payment_claim_auto_approves_once(repositories, service):
+async def test_payment_claim_cannot_grant_access_without_receipt(repositories, service):
     apartments, payments, _ = repositories
     apartment = await apartments.upsert_discovered(make_ad(lalafo_id=446))
     submission = await service.begin_payment(
@@ -243,11 +244,12 @@ async def test_miniapp_payment_claim_auto_approves_once(repositories, service):
 
     assert first is not None
     assert first.id == submission.request.id
-    assert first.status == "approved"
+    assert first.status == "awaiting_receipt"
     assert first.receipt_file_id is None
     assert repeated is not None
     assert repeated.id == first.id
-    assert repeated.status == "approved"
+    assert repeated.status == "awaiting_receipt"
+    assert (await service.contact_status(302, apartment.id)).status == "awaiting_receipt"
 
 
 @pytest.mark.asyncio
@@ -279,7 +281,7 @@ async def test_monthly_access_unlocks_all_apartments(repositories, service):
         first_name="Monthly",
         plan=MONTH_PLAN,
     )
-    await payments.mark_payment_claimed(user_id=451, apartment_id=first.id)
+    await payments.submit_receipt(user_id=451, apartment_id=first.id, file_id="receipt", file_type="photo")
     assert await service.decide(
         submission.request.id, approve=True, actor_id=999
     ) == "already_approved"

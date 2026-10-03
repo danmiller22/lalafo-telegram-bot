@@ -789,17 +789,19 @@ class PaymentRepository:
             return PaymentSubmission(request=request, outcome=outcome)
 
     async def submit_receipt(
-        self, *, user_id: int, file_id: str, file_type: str
+        self, *, user_id: int, file_id: str, file_type: str, apartment_id: int | None = None
     ) -> PaymentRequest | None:
+        if not file_id or file_type not in {"photo", "document"}:
+            raise ValueError("A receipt photo or document is required")
         async with self.sessions.begin() as session:
+            query = select(PaymentRequest).where(
+                PaymentRequest.telegram_user_id == user_id,
+                PaymentRequest.status.in_(["awaiting_receipt", "pending"]),
+            )
+            if apartment_id is not None:
+                query = query.where(PaymentRequest.apartment_id == apartment_id)
             result = await session.execute(
-                select(PaymentRequest)
-                .where(
-                    PaymentRequest.telegram_user_id == user_id,
-                    PaymentRequest.status == "awaiting_receipt",
-                )
-                .order_by(PaymentRequest.created_at.desc())
-                .limit(1)
+                query.order_by(PaymentRequest.created_at.desc()).limit(1).with_for_update()
             )
             request = result.scalar_one_or_none()
             if request is None:
@@ -816,30 +818,12 @@ class PaymentRepository:
     async def mark_payment_claimed(
         self, *, user_id: int, apartment_id: int
     ) -> PaymentRequest | None:
-        """Move one Mini App payment to review without requiring a receipt.
-
-        The apartment id keeps simultaneous customer flows isolated, while the
-        conditional update makes repeated taps idempotent.
-        """
-        async with self.sessions.begin() as session:
-            result = await session.execute(
-                select(PaymentRequest).where(
-                    PaymentRequest.telegram_user_id == user_id,
-                    PaymentRequest.apartment_id == apartment_id,
-                ).with_for_update()
-            )
-            request = result.scalar_one_or_none()
-            if request is None:
-                return None
-            should_approve = request.status in {"awaiting_receipt", "pending"}
-            if request.status == "awaiting_receipt":
-                request.status = "pending"
-                request.admin_message_id = None
-                await session.flush()
-            request_id = request.id
-        if should_approve:
-            await self.decide(request_id, approve=True, admin_id=0)
-        return await self.get_request(request_id)
+        """A payment claim alone never grants access; a receipt is required."""
+        async with self.sessions() as session:
+            return await session.scalar(select(PaymentRequest).where(
+                PaymentRequest.telegram_user_id == user_id,
+                PaymentRequest.apartment_id == apartment_id,
+            ))
 
     async def set_admin_message(self, request_id: int, message_id: int) -> None:
         async with self.sessions.begin() as session:
@@ -1018,7 +1002,7 @@ class PaymentRepository:
     async def apply_provider_result(
         self, payment_id: str, *, succeeded: bool, amount: int | float | None
     ) -> tuple[str, PaymentRequest | None]:
-        """Verify a provider result and activate access automatically."""
+        """Record a verified payment; access also requires an uploaded receipt."""
         async with self.sessions.begin() as session:
             result = await session.execute(
                 select(PaymentRequest)
@@ -1037,8 +1021,11 @@ class PaymentRepository:
             if not succeeded:
                 current.provider_status = "failed"
                 return "failed", current
-            current.status = "pending"
             current.provider_status = "succeeded"
+            if not current.receipt_file_id:
+                current.status = "awaiting_receipt"
+                return "awaiting_receipt", current
+            current.status = "pending"
             current.approved_at = None
             current.approved_by = None
             current.access_expires_at = None

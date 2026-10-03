@@ -143,6 +143,7 @@ async def test_health_and_authentication() -> None:
             "finik_auto_payment": "disabled",
         "payment_access_mode": "automatic",
         "listing_validity_days": 4,
+        "payment_receipt_required": True,
         "contact_tariff": {"plan": "lifetime", "price": 699, "expires": False, "storage": "persistent_ledger"},
         "payment_review": "admin_missing",
             "telegram_setup": "disabled",
@@ -726,7 +727,7 @@ async def test_miniapp_uses_configured_payment_url_without_waiting_for_finik(
 
 
 @pytest.mark.asyncio
-async def test_miniapp_access_is_issued_without_admin_notification(
+async def test_miniapp_access_without_receipt_is_denied(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     bot_token = "123456:telegram-test-token"
@@ -798,11 +799,9 @@ async def test_miniapp_access_is_issued_without_admin_notification(
             },
         )
 
-    assert response.status_code == 200
-    assert response.json()["status"] == "approved"
-    payments.mark_payment_claimed.assert_awaited_once_with(
-        user_id=778899, apartment_id=42
-    )
+    assert response.status_code == 409
+    assert "чек" in response.json()["detail"]
+    payments.mark_payment_claimed.assert_not_awaited()
     payments.claim_admin_notification.assert_not_awaited()
     payments.finish_admin_notification.assert_not_awaited()
     bot.send_message.assert_not_awaited()

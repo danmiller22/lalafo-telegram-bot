@@ -1125,6 +1125,7 @@ async def health() -> JSONResponse:
             "finik_auto_payment": "ready" if settings.finik_auto_enabled else "disabled",
             "payment_access_mode": "automatic",
             "listing_validity_days": MAX_LISTING_AGE_DAYS,
+            "payment_receipt_required": True,
             "contact_tariff": {"plan": LIFETIME_PLAN, "price": LIFETIME_PRICE, "expires": False, "storage": "persistent_ledger"},
             "payment_review": "ready" if settings.admin_user_id > 0 else "admin_missing",
             "telegram_setup": (
@@ -1277,6 +1278,8 @@ async def miniapp_session(payload: MiniAppRequest) -> dict[str, Any]:
     response["monthly_available"] = False
     bot_url = f"https://t.me/{settings.telegram_bot_username.lstrip('@')}"
     response["privacy_url"] = f"{bot_url}?start=privacy"
+    receipt_token = TokenSigner(settings.require_callback_secret()).sign_start_id("receipt", apartment_id)
+    response["receipt_url"] = f"{bot_url}?start=receipt_{receipt_token}"
     return response
 
 
@@ -1291,6 +1294,8 @@ async def miniapp_consent(payload: MiniAppRequest) -> dict[str, Any]:
     response["terms_text"] = TERMS_TEXT
     bot_url = f"https://t.me/{settings.telegram_bot_username.lstrip('@')}"
     response["privacy_url"] = f"{bot_url}?start=privacy"
+    receipt_token = TokenSigner(settings.require_callback_secret()).sign_start_id("receipt", apartment_id)
+    response["receipt_url"] = f"{bot_url}?start=receipt_{receipt_token}"
     response["support_url"] = f"{bot_url}?start=support"
     return response
 
@@ -1390,21 +1395,10 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
 async def miniapp_issue_access(payload: MiniAppRequest) -> dict[str, Any]:
     _, runtime, user, apartment_id = _miniapp_context(payload)
     service = runtime.workflow_data["service"]
-    payments = runtime.workflow_data["payments"]
     current = await service.contact_status(user.id, apartment_id)
     if current.status == "approved":
         return _miniapp_result_payload(current)
-    if current.status in {"awaiting_receipt", "pending"}:
-        request = await payments.mark_payment_claimed(user_id=user.id, apartment_id=apartment_id)
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Сначала откройте ссылку на оплату.",
-        )
-    if request is None:
-        raise HTTPException(status_code=409, detail="Сначала откройте оплату.")
-    result = await service.contact_status(user.id, apartment_id)
-    return _miniapp_result_payload(result)
+    raise HTTPException(status_code=409, detail="Загрузите чек об оплате в чат бота.")
 
 
 @app.post("/finik/webhook", include_in_schema=False)

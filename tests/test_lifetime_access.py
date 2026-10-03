@@ -20,12 +20,14 @@ async def test_lifetime_grant_covers_other_and_future_apartments(repositories, s
         assert outcome == "amount_mismatch"
         assert (await service.contact_status(880, first.id)).status != "approved"
         outcome, _ = await payments.apply_provider_result("lifetime-test", succeeded=True, amount=LIFETIME_PRICE)
-        assert outcome == "approved"
+        assert outcome == "awaiting_receipt"
+        assert (await service.contact_status(880, first.id)).status == "awaiting_receipt"
+        await payments.submit_receipt(user_id=880, apartment_id=first.id, file_id="receipt", file_type="photo")
         outcome, _ = await payments.apply_provider_result("lifetime-test", succeeded=True, amount=LIFETIME_PRICE)
         assert outcome == "already_approved"
     else:
-        await payments.mark_payment_claimed(user_id=880, apartment_id=first.id)
-        await payments.mark_payment_claimed(user_id=880, apartment_id=first.id)
+        await payments.submit_receipt(user_id=880, apartment_id=first.id, file_id="receipt", file_type="photo")
+        await payments.submit_receipt(user_id=880, apartment_id=first.id, file_id="receipt", file_type="photo")
     async with sessions() as session:
         history = (await session.scalars(select(PaymentHistory))).all()
     assert len(history) == 1
@@ -123,6 +125,9 @@ async def test_lifetime_miniapp_checkout_and_auto_access_end_to_end(repositories
             again = await client.post("/miniapp/api/start", json=payload)
             assert again.json()["payment_url"] == started.json()["payment_url"]
             assert len(captured) == 1
+            denied = await client.post("/miniapp/api/access", json=payload)
+            assert denied.status_code == 409
+            await payments.submit_receipt(user_id=880, apartment_id=first.id, file_id="receipt", file_type="photo")
             granted = await client.post("/miniapp/api/access", json=payload)
             assert granted.json()["status"] == "approved"
             repeated = await client.post("/miniapp/api/access", json=payload)
@@ -161,7 +166,7 @@ async def test_lifetime_access_survives_original_checkout_cleanup(repositories, 
     first = await apartments.upsert_discovered(make_ad(lalafo_id=88301))
     second = await apartments.upsert_discovered(make_ad(lalafo_id=88302))
     submission = await service.begin_payment(user_id=883, apartment_id=first.id, username=None, first_name="Test", plan=LIFETIME_PLAN)
-    await payments.mark_payment_claimed(user_id=883, apartment_id=first.id)
+    await payments.submit_receipt(user_id=883, apartment_id=first.id, file_id="receipt", file_type="document")
     # Match the checkout deletion caused by the apartment FK cascade.
     async with sessions.begin() as session:
         await session.execute(delete(PaymentRequest).where(PaymentRequest.id == submission.request.id))

@@ -3,8 +3,9 @@ from __future__ import annotations
 import logging
 
 from aiogram import Bot, F, Router
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 
 from app.bot.callbacks import (
@@ -38,6 +39,10 @@ from app.terms import PRIVACY_TEXT, TermsConsentRepository
 
 logger = logging.getLogger(__name__)
 router = Router(name="user")
+
+
+class ReceiptUpload(StatesGroup):
+    waiting = State()
 
 
 def _payment_details(plan: str | None, settings: Settings, *, signer: TokenSigner | None = None, apartment_id: int | None = None) -> tuple[str, int]:
@@ -104,6 +109,24 @@ async def start_handler(
         await state.clear()
         return
     await state.clear()
+    if payload.startswith("receipt_"):
+        apartment_id = signer.verify_start_id("receipt", payload[8:])
+        if apartment_id is None:
+            await message.answer("Откройте загрузку чека из окна оплаты.")
+            return
+        result = await service.contact_status(message.from_user.id, apartment_id)
+        if result.status == "approved" and result.apartment:
+            await send_private_contact(bot, user_id=message.from_user.id,
+                apartment=result.apartment, support_url=settings.support_bot_url,
+                max_photos=settings.max_photos_per_apartment)
+            return
+        if result.status not in {"awaiting_receipt", "pending"}:
+            await message.answer("Сначала откройте оплату кнопкой «Получить номер».")
+            return
+        await state.set_state(ReceiptUpload.waiting)
+        await state.update_data(receipt_apartment_id=apartment_id)
+        await message.answer("Отправьте чек об оплате: фото или PDF-файл.")
+        return
     if payload.startswith("pay_"):
         payment_token = payload[4:]
         apartment_id = signer.verify_start_id("payment-link", payment_token)
@@ -128,7 +151,7 @@ async def start_handler(
         apartment_text = format_apartment(result.apartment) if result.apartment else "Квартира"
         if result.status == "pending":
             text = (
-                "📞 Доступ готов к выдаче.\n\n"
+                "📎 Загрузите чек об оплате.\n\n"
                 f"{apartment_text}\n\n"
                 "Нажмите «Получить номер»."
             )
@@ -136,7 +159,7 @@ async def start_handler(
             text = (
                 "💳 Оплата\n\n"
                 f"{apartment_text}\n\n"
-                "После оплаты нажмите «Получить номер»."
+                "После оплаты загрузите чек в чат бота."
             )
         elif result.status == "rejected":
             text = (
@@ -321,10 +344,6 @@ async def contact_handler(
             )
         return
     if result.status == "pending":
-        await payments.mark_payment_claimed(
-            user_id=callback.from_user.id,
-            apartment_id=apartment_id,
-        )
         payment_url, price = _payment_details(result.plan, settings, signer=signer, apartment_id=apartment_id)
         await callback.answer("Нажмите «Получить номер».", show_alert=True)
         if callback.message:
@@ -391,7 +410,7 @@ async def view_contact_handler(
     if result.status == "pending":
         payment_url, price = _payment_details(result.plan, settings, signer=signer, apartment_id=apartment_id)
         await callback.answer(
-            "Нажмите «Получить номер» для автоматической выдачи карточки.",
+            "Загрузите чек об оплате в личный чат бота.",
             show_alert=True,
         )
         if callback.message:
@@ -418,7 +437,7 @@ async def view_contact_handler(
         return
     if result.status == "awaiting_receipt":
         payment_url, price = _payment_details(result.plan, settings, signer=signer, apartment_id=apartment_id)
-        await callback.answer("После оплаты нажмите «Получить номер».", show_alert=True)
+        await callback.answer("После оплаты загрузите чек в чат бота.", show_alert=True)
         if callback.message:
             await callback.message.edit_reply_markup(
                 reply_markup=payment_keyboard(
@@ -499,13 +518,6 @@ async def paid_handler(
         await callback.answer("Недействительная кнопка.", show_alert=True)
         return
     result = await service.contact_status(callback.from_user.id, apartment_id)
-    if result.status in {"awaiting_receipt", "pending"}:
-        request = await payments.mark_payment_claimed(
-            user_id=callback.from_user.id,
-            apartment_id=apartment_id,
-        )
-        if request is not None:
-            result = await service.contact_status(callback.from_user.id, apartment_id)
     if result.status == "approved" and result.apartment:
         await send_private_contact(
             bot,
@@ -515,6 +527,11 @@ async def paid_handler(
             max_photos=settings.max_photos_per_apartment,
         )
         await callback.answer("✅ Карточка с номером отправлена вам.")
+        return
+    if result.status in {"awaiting_receipt", "pending"}:
+        await callback.answer("Отправьте чек об оплате в личный чат бота.", show_alert=True)
+        if callback.message and callback.message.chat.type == "private":
+            await callback.message.answer("Отправьте чек об оплате: фото или PDF-файл.")
         return
     if result.status == "unavailable":
         await callback.answer("Квартира больше недоступна.", show_alert=True)
@@ -536,3 +553,46 @@ async def paid_handler(
             )
         except Exception:
             logger.exception("Could not replace legacy payment keyboard")
+
+
+@router.message(StateFilter(None, ReceiptUpload.waiting), F.chat.type == "private", F.photo | F.document)
+async def receipt_handler(message: Message, payments: PaymentRepository,
+                          service: PaymentService, settings: Settings,
+                          bot: Bot, state: FSMContext) -> None:
+    document = message.document
+    if document and document.mime_type not in {"application/pdf", "image/jpeg", "image/png", "image/webp"}:
+        await message.answer("Отправьте чек фотографией или PDF-файлом.")
+        return
+    data = await state.get_data()
+    if await payments.active_weekly_access(message.from_user.id) is not None:
+        await state.clear()
+        apartment_id = data.get("receipt_apartment_id")
+        if apartment_id is not None:
+            result = await service.contact_status(message.from_user.id, apartment_id)
+            if result.status == "approved" and result.apartment:
+                await send_private_contact(bot, user_id=message.from_user.id,
+                    apartment=result.apartment, support_url=settings.support_bot_url,
+                    max_photos=settings.max_photos_per_apartment)
+                return
+        await message.answer("Доступ к контактам уже активен. Нажмите «Получить номер» под квартирой.")
+        return
+    file_id = message.photo[-1].file_id if message.photo else document.file_id
+    request = await payments.submit_receipt(
+        user_id=message.from_user.id, file_id=file_id,
+        file_type="photo" if message.photo else "document",
+        apartment_id=data.get("receipt_apartment_id"))
+    if request is None:
+        await message.answer("Откройте оплату кнопкой «Получить номер», затем загрузите чек.")
+        return
+    await state.clear()
+    await message.answer("Чек принят.")
+    result = await service.contact_status(message.from_user.id, request.apartment_id)
+    if result.status == "approved" and result.apartment:
+        await send_private_contact(bot, user_id=message.from_user.id,
+            apartment=result.apartment, support_url=settings.support_bot_url,
+            max_photos=settings.max_photos_per_apartment)
+
+
+@router.message(StateFilter(ReceiptUpload.waiting), F.chat.type == "private")
+async def receipt_file_prompt(message: Message) -> None:
+    await message.answer("Отправьте чек фотографией или PDF-файлом.")
