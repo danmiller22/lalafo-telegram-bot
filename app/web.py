@@ -1298,6 +1298,34 @@ async def miniapp_availability(payload: MiniAppRequest) -> dict[str, Any]:
     return {"status": result.status, "checked_at": result.checked_at.isoformat(), "message": result.message}
 
 
+@app.post("/miniapp/api/prepare", include_in_schema=False)
+async def miniapp_prepare_payment(payload: MiniAppRequest) -> dict[str, Any]:
+    settings, runtime, user, apartment_id = _miniapp_context(payload)
+    result = await runtime.workflow_data["service"].contact_status(user.id, apartment_id)
+    if result.status == "approved":
+        return _miniapp_result_payload(result)
+    payments = runtime.workflow_data["payments"]
+    try:
+        submission = await payments.submit(
+            user_id=user.id, apartment_id=apartment_id, username=user.username,
+            first_name=user.first_name, plan=LIFETIME_PLAN, prepare_only=True,
+        )
+        if submission.outcome == "approved":
+            return _miniapp_result_payload(await runtime.workflow_data["service"].contact_status(user.id, apartment_id))
+        url = await _finik_checkout_url(settings, payments, submission.request,
+                                        apartment_id=apartment_id, plan=LIFETIME_PLAN)
+        prepared = await payments.get_request(submission.request.id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail="Квартира больше недоступна.") from exc
+    except Exception as exc:
+        logger.exception("Could not prepare Finik checkout")
+        raise HTTPException(status_code=503, detail="Не удалось подготовить оплату. Попробуйте ещё раз.") from exc
+    created = prepared.created_at
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=UTC)
+    return {"payment_url": url, "expires_at_ms": int(created.timestamp() * 1000) + 300_000}
+
+
 @app.post("/miniapp/api/start", include_in_schema=False)
 async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
     settings, runtime, user, apartment_id = _miniapp_context(payload)
@@ -1327,6 +1355,8 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Квартира больше недоступна.",
             ) from exc
+    if payment_request is not None and payment_request.status == "approved":
+        return _miniapp_result_payload(await service.contact_status(user.id, apartment_id))
     if payment_request is not None and not payment_url:
         try:
             payment_url = await _finik_checkout_url(

@@ -5,7 +5,7 @@ const html = JSON.parse(fs.readFileSync(0, 'utf8'));
 const script = html.split('<script>')[1].split('</script>')[0];
 const response = data => ({ok: true, json: async () => data});
 
-function setup(initial, fetchOverride) {
+function setup(initial, fetchOverride, dynamic = false) {
   const nodes = {}, timers = new Map(), opened = [];
   let nextTimer = 1;
   const node = id => nodes[id] ||= {
@@ -28,7 +28,7 @@ function setup(initial, fetchOverride) {
     clearTimeout(id) { timers.delete(id); },
     fetch: fetchOverride || (() => Promise.resolve(response(initial))),
   };
-  vm.runInNewContext(script, context);
+  vm.runInNewContext(dynamic ? script.replace(/const paymentUrls = .*;/, "const paymentUrls = {};") : script, context);
   return {node, timers, opened};
 }
 
@@ -85,5 +85,19 @@ function setup(initial, fetchOverride) {
   assert.equal(pending.node('reopen-payment').hidden, true);
   assert.equal(pending.node('status').textContent, 'Нажмите «Я оплатил(а)».');
   assert.equal(pending.timers.size, 1);
+  let finishStart;
+  const warm = setup(null, path => {
+    if (path.endsWith('/prepare')) return Promise.resolve(response({payment_url: 'https://example.com/prepared', expires_at_ms: Date.now() + 300000}));
+    if (path.endsWith('/start')) return new Promise(resolve => { finishStart = resolve; });
+    return Promise.resolve(response({status: 'unpaid'}));
+  }, true);
+  await new Promise(setImmediate);
+  assert.equal(warm.node('pay-lifetime').disabled, false);
+  const opening = warm.node('pay-lifetime').onclick();
+  // Navigation happens synchronously, while the activation request is still unresolved.
+  assert.deepEqual(warm.opened, ['https://example.com/prepared']);
+  finishStart(response({status: 'awaiting_receipt', plan: 'lifetime'}));
+  await opening;
+  assert.equal(warm.node('access').hidden, false);
   console.log('Mini App UI regression checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

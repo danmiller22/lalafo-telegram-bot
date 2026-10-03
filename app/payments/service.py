@@ -38,7 +38,7 @@ class PaymentService:
             )
         request = await self.payments.get_access(user_id, apartment_id)
         if request is not None:
-            if request.status == "approved":
+            if request.status in {"approved", "prepared"}:
                 return ContactResult("unpaid", apartment)
             return ContactResult(
                 request.status, apartment, request.plan, request.access_expires_at

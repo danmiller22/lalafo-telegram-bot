@@ -94,6 +94,8 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     .tariff-button {{ margin-bottom: 12px; }}
     #tariff-description {{ color: var(--tg-theme-text-color, #172b24); font-size: 16px; line-height: 1.6; }}
     #tariff-description p {{ margin: 0 0 14px; }}
+    .access-offer {{ font-size: 26px; font-weight: 800; line-height: 1.3; }}
+    #tariff-description .agreement-caption {{ font-size: 12px; line-height: 1.5; color: var(--muted); }}
     .terms-link {{ color: var(--tg-theme-link-color, #087f68); text-underline-offset: 3px; }}
     .agreement-dialog {{ width: calc(100% - 32px); max-width: 480px; max-height: 85vh; overflow-y: auto; border: 1px solid #879b9260; border-radius: 18px; padding: 20px; background: var(--surface); color: var(--tg-theme-text-color, #172b24); }}
     .agreement-dialog::backdrop {{ background: #0008; }}
@@ -110,8 +112,8 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
   <p id="intro" class="intro"></p>
   <div id="status" class="status hidden" role="status" aria-live="polite"></div>
   <div id="tariff-description" class="intro hidden">
-    <p>Доступ к контактам навсегда — {LIFETIME_PRICE} сом.</p>
-    <p>Оплачивая доступ, вы подтверждаете, что ознакомились с <a href="#agreement" class="terms-link">пользовательским соглашением</a> и согласны с его условиями.</p>
+    <p class="access-offer">Доступ к контактам навсегда — {LIFETIME_PRICE} сом.</p>
+    <p class="agreement-caption">Оплачивая доступ, вы подтверждаете, что ознакомились с <a href="#agreement" class="terms-link">пользовательским соглашением</a> и согласны с его условиями.</p>
   </div>
   <button id="pay-lifetime" class="primary tariff-button hidden">Оплатить {LIFETIME_PRICE} сом</button>
   <section id="checkout" class="checkout hidden">
@@ -145,6 +147,33 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
   let accessApproved = false;
   let selectedPlan = "lifetime";
   const paymentUrls = {checkout_json};
+  let preparedUntil = Infinity;
+  let checkoutPreparation = null;
+  let refreshCheckoutTimer = null;
+
+  function prepareCheckout() {{
+    if (accessApproved || checkoutPreparation) return checkoutPreparation;
+    if (paymentUrls.lifetime && preparedUntil > Date.now()) return Promise.resolve();
+    el("pay-lifetime").disabled = true;
+    el("reopen-payment").disabled = true;
+    checkoutPreparation = api("/miniapp/api/prepare", {{}}).then(data => {{
+      if (data.status === "approved") {{ render(data); return; }}
+      paymentUrls.lifetime = data.payment_url;
+      preparedUntil = data.expires_at_ms;
+      el("pay-lifetime").disabled = false;
+      el("reopen-payment").disabled = false;
+      if (refreshCheckoutTimer) clearTimeout(refreshCheckoutTimer);
+      refreshCheckoutTimer = setTimeout(() => {{
+        paymentUrls.lifetime = "";
+        prepareCheckout();
+      }}, Math.max(1000, preparedUntil - Date.now()));
+    }}).catch(error => {{
+      message(error.message);
+      el("pay-lifetime").disabled = false;
+      el("reopen-payment").disabled = false;
+    }}).finally(() => {{ checkoutPreparation = null; }});
+    return checkoutPreparation;
+  }}
 
   function telegramContext() {{
     const current = window.Telegram && window.Telegram.WebApp;
@@ -206,6 +235,8 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
       accessApproved = true;
       if (paymentPoll) clearTimeout(paymentPoll);
       paymentPoll = null;
+      if (refreshCheckoutTimer) clearTimeout(refreshCheckoutTimer);
+      refreshCheckoutTimer = null;
       message("");
       const apartment = data.apartment || {{}};
       const photos = el("photos");
@@ -245,7 +276,9 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
       return;
     }}
     try {{
+      const preparation = prepareCheckout();
       render(await api("/miniapp/api/session", {{}}));
+      await preparation;
     }}
     catch (error) {{ message(error.message); }}
   }}
@@ -257,6 +290,10 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     const originalText = button.textContent;
     button.disabled = true;
     try {{
+      if (!paymentUrls[plan] || preparedUntil <= Date.now()) {{
+        paymentUrls[plan] = "";
+        await prepareCheckout();
+      }}
       const readyUrl = paymentUrls[plan];
       // Start recording the request, but do not delay a ready checkout link.
       paymentStart = api("/miniapp/api/start", {{plan}});
@@ -296,6 +333,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
   }}
   document.addEventListener("visibilitychange", () => {{
     if (!document.hidden && !accessApproved) {{
+      prepareCheckout();
       startPaymentPolling();
     }}
   }});

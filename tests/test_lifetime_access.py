@@ -104,6 +104,14 @@ async def test_lifetime_miniapp_checkout_and_auto_access_end_to_end(repositories
             initial = await client.post("/miniapp/api/session", json=payload)
             assert initial.json()["status"] == "unpaid"
             assert initial.json()["price"] == 699
+            prepared = await client.post("/miniapp/api/prepare", json=payload)
+            assert prepared.status_code == 200
+            assert prepared.json()["payment_url"] == "https://qr.finik.kg/lifetime-699"
+            assert len(captured) == 1
+            assert not await consents.accepted(880)
+            assert (await service.contact_status(880, first.id)).status == "unpaid"
+            premature = await client.post("/miniapp/api/access", json=payload)
+            assert premature.status_code == 409
             started = await client.post("/miniapp/api/start", json=payload)
             assert started.status_code == 200
             assert started.json()["plan"] == LIFETIME_PLAN
@@ -119,6 +127,9 @@ async def test_lifetime_miniapp_checkout_and_auto_access_end_to_end(repositories
             assert granted.json()["status"] == "approved"
             repeated = await client.post("/miniapp/api/access", json=payload)
             assert repeated.json()["status"] == "approved"
+            already_ready = await client.post("/miniapp/api/prepare", json=payload)
+            assert already_ready.json()["status"] == "approved"
+            assert len(captured) == 1
             payload["start_param"] = TokenSigner("c" * 32).sign_start_id("miniapp-apartment", second.id)
             next_card = await client.post("/miniapp/api/session", json=payload)
             assert next_card.json()["status"] == "approved"

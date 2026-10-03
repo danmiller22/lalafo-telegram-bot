@@ -695,6 +695,7 @@ class PaymentRepository:
         username: str | None,
         first_name: str | None,
         plan: str = LIFETIME_PLAN,
+        prepare_only: bool = False,
     ) -> PaymentSubmission:
         if plan not in {WEEK_PLAN, MONTH_PLAN, LIFETIME_PLAN}:
             raise ValueError("Unsupported access plan")
@@ -705,6 +706,7 @@ class PaymentRepository:
                 username=username,
                 first_name=first_name,
                 plan=plan,
+                prepare_only=prepare_only,
             )
         except IntegrityError:
             # A concurrent click may win the unique (user, apartment) insert.
@@ -715,6 +717,7 @@ class PaymentRepository:
                 username=username,
                 first_name=first_name,
                 plan=plan,
+                prepare_only=prepare_only,
             )
 
     async def _submit_once(
@@ -725,6 +728,7 @@ class PaymentRepository:
         username: str | None,
         first_name: str | None,
         plan: str,
+        prepare_only: bool,
     ) -> PaymentSubmission:
         async with self.sessions.begin() as session:
             apartment = await session.get(Apartment, apartment_id)
@@ -738,7 +742,7 @@ class PaymentRepository:
                 select(PaymentRequest).where(
                     PaymentRequest.telegram_user_id == user_id,
                     PaymentRequest.apartment_id == apartment_id,
-                )
+                ).with_for_update()
             )
             request = result.scalar_one_or_none()
             if request is None:
@@ -748,16 +752,22 @@ class PaymentRepository:
                     username=username,
                     first_name=first_name,
                     plan=plan,
-                    status="awaiting_receipt",
+                    status="prepared" if prepare_only else "awaiting_receipt",
                 )
                 session.add(request)
                 outcome = "created"
+            elif request.status == "approved" and request.plan == LIFETIME_PLAN and request.access_expires_at is None:
+                outcome = "approved"
+            elif request.status == "prepared" and request.plan == plan:
+                if not prepare_only:
+                    request.status = "awaiting_receipt"
+                outcome = request.status
             elif request.status == "pending" and request.plan == plan:
                 outcome = "pending"
             elif request.status == "awaiting_receipt" and request.plan == plan:
                 outcome = "awaiting_receipt"
             else:
-                request.status = "awaiting_receipt"
+                request.status = "prepared" if prepare_only else "awaiting_receipt"
                 request.plan = plan
                 request.username = username
                 request.first_name = first_name
@@ -960,7 +970,7 @@ class PaymentRepository:
             created_at = current.created_at.replace(tzinfo=timezone.utc) if current.created_at.tzinfo is None else current.created_at
             checkout_expired = (
                 current.plan == LIFETIME_PLAN
-                and current.status == "awaiting_receipt"
+                and current.status in {"prepared", "awaiting_receipt"}
                 and current.provider_payment_id is not None
                 and now - created_at >= timedelta(minutes=5)
             )
