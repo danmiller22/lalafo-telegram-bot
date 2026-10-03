@@ -141,6 +141,8 @@ async def test_health_and_authentication() -> None:
             "status": "ok",
             "bot": "disabled",
             "finik_auto_payment": "disabled",
+        "payment_access_mode": "automatic",
+        "payment_review": "admin_missing",
             "telegram_setup": "disabled",
             "lalafo_link_bot": "disabled",
             "free_cloud_keepalive": "disabled",
@@ -638,7 +640,7 @@ async def test_miniapp_starts_a_checkout_bound_to_the_selected_apartment(
     monkeypatch.setattr(
         web,
         "_bot_runtime",
-        SimpleNamespace(workflow_data={"service": service, "payments": payments}),
+        SimpleNamespace(workflow_data={"service": service, "payments": payments, "terms_consents": SimpleNamespace(accept=AsyncMock())}),
     )
     checkout = AsyncMock(return_value="https://qr.finik.kg/request-73")
     monkeypatch.setattr(web, "_finik_checkout_url", checkout)
@@ -697,7 +699,7 @@ async def test_miniapp_uses_configured_payment_url_without_waiting_for_finik(
     monkeypatch.setattr(
         web,
         "_bot_runtime",
-        SimpleNamespace(workflow_data={"service": service, "payments": SimpleNamespace()}),
+        SimpleNamespace(workflow_data={"service": service, "payments": SimpleNamespace(), "terms_consents": SimpleNamespace(accept=AsyncMock())}),
     )
     checkout = AsyncMock(return_value="https://qr.finik.kg/request-73")
     monkeypatch.setattr(web, "_finik_checkout_url", checkout)

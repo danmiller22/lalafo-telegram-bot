@@ -3,6 +3,9 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import shutil
+import subprocess
+from pathlib import Path
 from urllib.parse import urlencode
 
 from app.telegram.miniapp import mini_app_html, verify_telegram_init_data
@@ -60,7 +63,7 @@ def test_telegram_init_data_rejects_tampering_and_stale_payload():
     ) is None
 
 
-def test_mini_app_page_uses_automatic_access_delivery():
+def test_mini_app_page_has_two_tariffs_and_linked_agreement():
     html = mini_app_html()
 
     assert "/miniapp/api/session" in html
@@ -68,8 +71,12 @@ def test_mini_app_page_uses_automatic_access_delivery():
     assert "/miniapp/api/access" in html
     assert "1 неделя доступа к номерам — 499 сом" not in html
     assert "1 месяц доступа к номерам — 999 сом" not in html
-    assert "Недельный тариф — 499 сом" in html
-    assert "Месячный тариф — 999 сом" in html
+    assert "Неделя доступа к номерам хозяев — 499 сом." in html
+    assert ">Недельный тариф</button>" in html
+    assert "7 дней" in html
+    assert "Месячный доступ к номерам хозяев — 999 сом." in html
+    assert ">Месячный тариф</button>" in html
+    assert "30 дней" in html
     assert 'id="hero"' not in html
     assert 'id="apartment"' in html
     assert 'id="photos"' in html
@@ -80,11 +87,20 @@ def test_mini_app_page_uses_automatic_access_delivery():
     assert "prepareTelegramContext" in html
     assert "Выберите банк" not in html
     assert "Выберите доступ:" not in html
-    assert "✅ Я оплатил(а) — открыть номер" in html
+    assert "Я оплатил(а)" in html
+    assert 'id="receipt-file"' not in html
+    assert "receipt_data" not in html
     assert "Статус: оплата проверяется" not in html
-    assert "Оплата проверяется" not in html
+    assert "Нажмите «Я оплатил(а)»." in html
+    assert "/miniapp/api/consent" not in html
+    assert 'type="checkbox"' not in html
+    assert '<dialog id="agreement"' in html
+    assert "искусственного интеллекта" in html
+    assert "Риелторы и другие лица могут выдавать себя за хозяев" in html
+    first_screen = html.split('id="tariff-description"', 1)[1].split('id="checkout"', 1)[0]
+    assert first_screen.count("<button") == 2
     assert 'const canPay = !approved && !waiting' in html
-    assert 'show("pay-month", canPay)' in html
+    assert 'show("pay-month", canPay && data.monthly_available !== false)' in html
     assert "Открываю Finik" not in html
     assert "Создаём защищённую ссылку" not in html
     assert 'id="terms"' not in html
@@ -97,3 +113,31 @@ def test_mini_app_page_uses_automatic_access_delivery():
     assert '"\\n🔐 Депозит: "' in html
     assert "Без перехода в личный чат" not in html
     assert "команды /start" not in html
+
+
+def test_ready_checkout_opens_before_waiting_for_payment_request():
+    html = mini_app_html(payment_urls={"week": "https://example.com/pay?x=1"})
+    assert '"week": "https://example.com/pay?x=1"' in html
+    assert html.index("current.openLink(readyUrl)") < html.index("const data = await paymentStart")
+    assert "if (paymentStart) await paymentStart" in html
+    assert "setInterval" not in html
+    assert "setTimeout(poll, 5000)" in html
+
+
+def test_checkout_configuration_is_script_safe():
+    html = mini_app_html(payment_urls={"week": "https://example.com/</script>"})
+    assert "https://example.com/</script>" not in html
+    assert "https://example.com/\\u003c/script>" in html
+
+
+def test_miniapp_checkout_reopening_and_late_status_response():
+    if not shutil.which("node"):
+        import pytest
+        pytest.skip("Node.js is required for the browser script regression checks")
+    html = mini_app_html(payment_urls={
+        "week": "https://example.com/week", "month": "https://example.com/month",
+    })
+    subprocess.run(
+        ["node", str(Path(__file__).with_name("miniapp_ui_regression.cjs"))],
+        input=json.dumps(html), text=True, check=True, capture_output=True, timeout=15,
+    )

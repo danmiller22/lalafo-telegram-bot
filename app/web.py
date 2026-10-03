@@ -1118,6 +1118,8 @@ async def health() -> JSONResponse:
             "status": "ok",
             "bot": "running" if settings.run_bot else "disabled",
             "finik_auto_payment": "ready" if settings.finik_auto_enabled else "disabled",
+            "payment_access_mode": "automatic",
+            "payment_review": "ready" if settings.admin_user_id > 0 else "admin_missing",
             "telegram_setup": (
                 dict(_bot_setup_state) if settings.run_bot else "disabled"
             ),
@@ -1213,6 +1215,7 @@ def _miniapp_result_payload(result) -> dict[str, Any]:
     response: dict[str, Any] = {
         "status": result.status,
         "price": WEEK_PRICE,
+        "plan": getattr(result, "plan", None),
     }
     if result.status == "approved":
         response["phone"] = display_phone(apartment.phone)
@@ -1238,8 +1241,9 @@ def _miniapp_result_payload(result) -> dict[str, Any]:
 
 @app.get("/miniapp", response_class=HTMLResponse, include_in_schema=False)
 async def telegram_mini_app() -> HTMLResponse:
+    settings = get_settings()
     return HTMLResponse(
-        mini_app_html(),
+        mini_app_html(payment_urls={WEEK_PLAN: _finik_payment_url(settings, WEEK_PLAN), MONTH_PLAN: _finik_payment_url(settings, MONTH_PLAN)}),
         headers={
             "Cache-Control": "no-store",
             "Content-Security-Policy": (
@@ -1309,6 +1313,7 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
         )
     payment_request = None
     if result.status != "approved":
+        await runtime.workflow_data["terms_consents"].accept(user.id)
         try:
             submission = await service.begin_payment(
                 user_id=user.id,
@@ -1341,6 +1346,7 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
     response = _miniapp_result_payload(result)
     if payment_request is not None:
         response["status"] = payment_request.status
+        response["plan"] = getattr(payment_request, "plan", plan)
     response["payment_url"] = payment_url
     response["automatic_payment"] = _uses_dynamic_finik(settings, plan)
     response["monthly_available"] = bool(
