@@ -19,6 +19,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 
 from app.bot.main import BotRuntime, configure_bot_profile, create_runtime
+from app.availability import MAX_LISTING_AGE_DAYS
 from app.config import get_settings
 from app.lalafo.auto_reply import LalafoAutoResponder
 from app.lalafo.models import LalafoAd
@@ -1123,6 +1124,7 @@ async def health() -> JSONResponse:
             "bot": "running" if settings.run_bot else "disabled",
             "finik_auto_payment": "ready" if settings.finik_auto_enabled else "disabled",
             "payment_access_mode": "automatic",
+            "listing_validity_days": MAX_LISTING_AGE_DAYS,
             "contact_tariff": {"plan": LIFETIME_PLAN, "price": LIFETIME_PRICE, "expires": False, "storage": "persistent_ledger"},
             "payment_review": "ready" if settings.admin_user_id > 0 else "admin_missing",
             "telegram_setup": (

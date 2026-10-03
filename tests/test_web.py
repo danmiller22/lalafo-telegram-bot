@@ -142,6 +142,7 @@ async def test_health_and_authentication() -> None:
             "bot": "disabled",
             "finik_auto_payment": "disabled",
         "payment_access_mode": "automatic",
+        "listing_validity_days": 4,
         "contact_tariff": {"plan": "lifetime", "price": 699, "expires": False, "storage": "persistent_ledger"},
         "payment_review": "admin_missing",
             "telegram_setup": "disabled",

@@ -92,28 +92,28 @@ async def test_availability_result_is_cached_for_twelve_hours(repositories, monk
 
 
 @pytest.mark.asyncio
-async def test_apartment_expires_two_days_after_publication(repositories) -> None:
+@pytest.mark.parametrize(("age_days", "expected"), [(3, "active"), (4, "unavailable"), (5, "unavailable")])
+async def test_apartment_has_four_days_of_availability(repositories, age_days, expected) -> None:
     apartments, _, sessions = repositories
     apartment = await apartments.upsert_discovered(make_ad(lalafo_id=70004))
     async with sessions.begin() as session:
         await session.execute(
             update(type(apartment))
             .where(type(apartment).id == apartment.id)
-            .values(published_at=datetime.now(timezone.utc) - timedelta(days=2, minutes=1))
+            .values(published_at=datetime.now(timezone.utc) - timedelta(days=age_days, minutes=1))
         )
 
     result = await AvailabilityService(
         apartments, Settings(_env_file=None)
     ).check(apartment.id)
 
-    assert result.status == "unavailable"
-    assert result.reason == "listing_age_limit"
-    assert result.message.startswith("Объявление не актуально.\nПоследняя проверка:")
-    assert (await apartments.get(apartment.id)).active is False
+    assert result.status == expected
+    assert result.reason == ("listing_age_limit" if expected == "unavailable" else "publication_age_window")
+    assert (await apartments.get(apartment.id)).active is (expected == "active")
 
 
 @pytest.mark.asyncio
-async def test_today_card_gets_full_two_day_window_despite_old_status(repositories) -> None:
+async def test_today_card_gets_full_four_day_window_despite_old_status(repositories) -> None:
     apartments, _, _ = repositories
     apartment = await apartments.upsert_discovered(make_ad(lalafo_id=70005))
     apartment = await apartments.mark_published(
