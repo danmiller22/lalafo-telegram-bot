@@ -1058,6 +1058,8 @@ async def health() -> JSONResponse:
             "status": "ok",
             "bot": "running" if settings.run_bot else "disabled",
             "finik_auto_payment": "ready" if settings.finik_auto_enabled else "disabled",
+            "payment_access_mode": "manual",
+            "payment_review": "ready" if settings.admin_user_id > 0 else "admin_missing",
             "telegram_setup": (
                 dict(_bot_setup_state) if settings.run_bot else "disabled"
             ),
@@ -1248,6 +1250,8 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Этот тариф временно недоступен.",
         )
+    if result.status != "approved" and not await runtime.workflow_data["terms_consents"].accepted(user.id):
+        raise HTTPException(status_code=403, detail="Примите пользовательское соглашение.")
     payment_request = None
     if result.status != "approved":
         try:
@@ -1276,7 +1280,7 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
 
 @app.post("/miniapp/api/access", include_in_schema=False)
 async def miniapp_issue_access(payload: MiniAppRequest) -> dict[str, Any]:
-    _, runtime, user, apartment_id = _miniapp_context(payload)
+    settings, runtime, user, apartment_id = _miniapp_context(payload)
     service = runtime.workflow_data["service"]
     payments = runtime.workflow_data["payments"]
     current = await service.contact_status(user.id, apartment_id)
@@ -1291,13 +1295,19 @@ async def miniapp_issue_access(payload: MiniAppRequest) -> dict[str, Any]:
         )
     if request is None:
         raise HTTPException(status_code=409, detail="Сначала откройте оплату.")
+    from app.payments.review import notify_payment_admin
+    try:
+        await notify_payment_admin(runtime.bot, settings, payments, runtime.workflow_data["signer"], request)
+    except Exception as exc:
+        logger.exception("Could not notify payment administrator")
+        raise HTTPException(status_code=503, detail="Не удалось отправить заявку. Нажмите ещё раз.") from exc
     result = await service.contact_status(user.id, apartment_id)
     return _miniapp_result_payload(result)
 
 
 @app.post("/finik/webhook", include_in_schema=False)
 async def finik_webhook(request: Request) -> dict[str, str]:
-    """Verify a Finik callback and activate paid access automatically."""
+    """Verify a Finik callback and record payment evidence."""
     settings = get_settings()
     runtime = _bot_runtime
     if not settings.run_bot or runtime is None or not settings.finik_auto_enabled:
@@ -1349,22 +1359,6 @@ async def finik_webhook(request: Request) -> dict[str, str]:
     if outcome == "amount_mismatch":
         logger.error("Finik amount mismatch for payment request %s", payment_request.id)
         raise HTTPException(status_code=status.HTTP_409_CONFLICT)
-    if outcome == "approved" and payment_request is not None and payment_request.apartment:
-        from app.telegram.private_delivery import send_private_contact
-
-        try:
-            await send_private_contact(
-                runtime.bot,
-                user_id=payment_request.telegram_user_id,
-                apartment=payment_request.apartment,
-                support_url=settings.support_bot_url,
-                max_photos=settings.max_photos_per_apartment,
-            )
-        except Exception:
-            logger.exception(
-                "Payment was approved but private apartment delivery failed for request %s",
-                payment_request.id,
-            )
     return {"status": outcome}
 
 
@@ -1392,7 +1386,11 @@ async def open_finik_payment(token: str) -> RedirectResponse:
         )
     except Exception:
         logger.exception("Could not replace payment button with paid confirmation")
-    return RedirectResponse(settings.finik_payment_url, status_code=status.HTTP_302_FOUND)
+    miniapp_token = signer.sign_start_id("miniapp-apartment", apartment_id)
+    return RedirectResponse(
+        f"https://t.me/{settings.telegram_bot_username.lstrip('@')}/access?startapp={miniapp_token}",
+        status_code=status.HTTP_302_FOUND,
+    )
 
 
 @app.get("/status")

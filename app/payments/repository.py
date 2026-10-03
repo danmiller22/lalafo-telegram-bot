@@ -782,7 +782,6 @@ class PaymentRepository:
             request.admin_message_id = None
             await session.flush()
             request_id = request.id
-        await self.decide(request_id, approve=True, admin_id=0)
         return await self.get_request(request_id)
 
     async def mark_payment_claimed(
@@ -798,19 +797,16 @@ class PaymentRepository:
                 select(PaymentRequest).where(
                     PaymentRequest.telegram_user_id == user_id,
                     PaymentRequest.apartment_id == apartment_id,
-                )
+                ).with_for_update()
             )
             request = result.scalar_one_or_none()
             if request is None:
                 return None
-            should_approve = request.status in {"awaiting_receipt", "pending"}
             if request.status == "awaiting_receipt":
                 request.status = "pending"
                 request.admin_message_id = None
                 await session.flush()
             request_id = request.id
-        if should_approve:
-            await self.decide(request_id, approve=True, admin_id=0)
         return await self.get_request(request_id)
 
     async def set_admin_message(self, request_id: int, message_id: int) -> None:
@@ -877,12 +873,18 @@ class PaymentRepository:
                 )
             )
 
-    async def decide(self, request_id: int, *, approve: bool, admin_id: int) -> str:
+    async def decide(self, request_id: int, *, approve: bool, admin_id: int, generation: int | None = None) -> str:
         now = datetime.now(timezone.utc)
         async with self.sessions.begin() as session:
-            current = await session.get(PaymentRequest, request_id)
+            current = await session.scalar(
+                select(PaymentRequest).where(PaymentRequest.id == request_id).with_for_update()
+            )
             if current is None:
                 return "missing"
+            if generation is not None:
+                from app.payments.review import payment_generation
+                if payment_generation(current) != generation:
+                    return "stale"
             if current.status != "pending":
                 return f"already_{current.status}"
             if approve:
@@ -980,7 +982,7 @@ class PaymentRepository:
     async def apply_provider_result(
         self, payment_id: str, *, succeeded: bool, amount: int | float | None
     ) -> tuple[str, PaymentRequest | None]:
-        """Verify a provider result and activate access automatically."""
+        """Record provider evidence; only an administrator can grant access."""
         async with self.sessions.begin() as session:
             result = await session.execute(
                 select(PaymentRequest)
@@ -999,17 +1001,9 @@ class PaymentRepository:
             if not succeeded:
                 current.provider_status = "failed"
                 return "failed", current
-            current.status = "pending"
             current.provider_status = "succeeded"
-            current.approved_at = None
-            current.approved_by = None
-            current.access_expires_at = None
-            current.rejected_at = None
-            current.rejected_by = None
-            request_id = current.id
             await session.flush()
-        await self.decide(request_id, approve=True, admin_id=0)
-        return "approved", await self.get_request(request_id)
+            return "recorded", current
 
     async def pending(self, limit: int = 20) -> list[PaymentRequest]:
         async with self.sessions() as session:

@@ -83,14 +83,19 @@ def payment_keyboard(
     payment_url: str,
     support_url: str,
     price: int = WEEK_PRICE,
+    agreed: bool = False,
 ) -> InlineKeyboardMarkup:
+    plan = "m" if price == MONTH_PRICE else "w"
+    consent_token = signer.sign_id(f"pay-consent-{plan}", apartment_id)
     paid_token = signer.sign_id("paid", apartment_id)
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text=f"💳 Оплатить {price} сом", url=payment_url)],
+            [InlineKeyboardButton(text=f"Оплатить {price} сом", **({"url": payment_url} if agreed else {"callback_data": "paylocked"}))],
+            [InlineKeyboardButton(text="☑ Согласен(на) с соглашением" if agreed else "☐ Согласен(на) с соглашением", callback_data=f"{'payuncheck' if agreed else 'payconsent'}:{plan}:{consent_token}")],
+            [InlineKeyboardButton(text="Пользовательское соглашение", url=support_url.split("?", 1)[0] + "?start=terms")],
             [
                 InlineKeyboardButton(
-                    text="📞 Получить номер",
+                    text="Я оплатил(а)",
                     callback_data=f"paid:{paid_token}",
                 )
             ],
@@ -160,18 +165,8 @@ def status_keyboard(
     support_url: str,
     price: int = WEEK_PRICE,
 ) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text=f"💳 Оплатить {price} сом", url=payment_url)],
-            [
-                InlineKeyboardButton(
-                    text="📞 Получить номер",
-                    callback_data=f"paid:{signer.sign_id('paid', apartment_id)}",
-                )
-            ],
-            _support_row(support_url),
-        ]
-    )
+    return payment_keyboard(apartment_id, signer=signer, payment_url=payment_url,
+                            support_url=support_url, price=price)
 
 
 def reveal_keyboard(

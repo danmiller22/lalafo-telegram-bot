@@ -40,10 +40,10 @@ async def test_payment_state_machine(repositories, service):
         user_id=100, file_id="receipt-photo", file_type="photo"
     )
     assert receipt is not None
-    assert (await service.contact_status(100, apartment.id)).status == "approved"
+    assert (await service.contact_status(100, apartment.id)).status == "pending"
 
     assert await service.decide(first.request.id, approve=True, actor_id=111) == "forbidden"
-    assert await service.decide(first.request.id, approve=True, actor_id=999) == "already_approved"
+    assert await service.decide(first.request.id, approve=True, actor_id=999) == "approved"
     assert await service.decide(first.request.id, approve=False, actor_id=999) == "already_approved"
     approved = await service.contact_status(100, apartment.id)
     assert approved.status == "approved"
@@ -52,7 +52,7 @@ async def test_payment_state_machine(repositories, service):
 
 
 @pytest.mark.asyncio
-async def test_verified_finik_payment_is_approved_without_manual_review(
+async def test_verified_finik_payment_still_requires_manual_review(
     repositories, service
 ):
     apartments, payments, _ = repositories
@@ -76,7 +76,10 @@ async def test_verified_finik_payment_is_approved_without_manual_review(
     approved_outcome, _ = await payments.apply_provider_result(
         "payment-9191", succeeded=True, amount=499
     )
-    assert approved_outcome == "approved"
+    assert approved_outcome == "recorded"
+    assert (await service.contact_status(9191, apartment.id)).status == "awaiting_receipt"
+    await payments.mark_payment_claimed(user_id=9191, apartment_id=apartment.id)
+    assert await service.decide(submission.request.id, approve=True, actor_id=999) == "approved"
     approved = await service.contact_status(9191, apartment.id)
     assert approved.status == "approved"
     expiry = approved.access_expires_at
@@ -165,7 +168,7 @@ async def test_finik_link_is_rotated_after_merchant_change(repositories, service
 
 
 @pytest.mark.asyncio
-async def test_submitted_request_cannot_be_rejected_after_auto_approval(repositories, service):
+async def test_submitted_request_can_be_rejected_by_admin(repositories, service):
     apartments, _, _ = repositories
     apartment = await apartments.upsert_discovered(make_ad(lalafo_id=222))
     submission = await service.begin_payment(
@@ -178,8 +181,8 @@ async def test_submitted_request_cannot_be_rejected_after_auto_approval(reposito
     await service.submit_receipt(user_id=200, file_id="receipt", file_type="document")
     assert await service.decide(
         submission.request.id, approve=False, actor_id=999
-    ) == "already_approved"
-    assert (await service.contact_status(200, apartment.id)).status == "approved"
+    ) == "rejected"
+    assert (await service.contact_status(200, apartment.id)).status == "rejected"
 
 
 @pytest.mark.asyncio
@@ -202,7 +205,7 @@ async def test_missing_apartment_is_denied_but_inactive_card_remains_payable(
 
 
 @pytest.mark.asyncio
-async def test_auto_approved_submission_does_not_notify_admin(repositories, service):
+async def test_pending_submission_reserves_one_admin_notification(repositories, service):
     apartments, payments, _ = repositories
     apartment = await apartments.upsert_discovered(make_ad(lalafo_id=444))
     submission = await service.begin_payment(
@@ -214,16 +217,17 @@ async def test_auto_approved_submission_does_not_notify_admin(repositories, serv
     )
     await service.submit_receipt(user_id=300, file_id="receipt", file_type="photo")
 
+    assert await payments.claim_admin_notification(submission.request.id) is True
     assert await payments.claim_admin_notification(submission.request.id) is False
 
     request = await payments.get_request(submission.request.id)
     assert request is not None
-    assert request.status == "approved"
-    assert request.admin_message_id is None
+    assert request.status == "pending"
+    assert request.admin_message_id == -1
 
 
 @pytest.mark.asyncio
-async def test_miniapp_payment_claim_auto_approves_once(repositories, service):
+async def test_miniapp_payment_claim_stays_pending(repositories, service):
     apartments, payments, _ = repositories
     apartment = await apartments.upsert_discovered(make_ad(lalafo_id=446))
     submission = await service.begin_payment(
@@ -243,11 +247,11 @@ async def test_miniapp_payment_claim_auto_approves_once(repositories, service):
 
     assert first is not None
     assert first.id == submission.request.id
-    assert first.status == "approved"
+    assert first.status == "pending"
     assert first.receipt_file_id is None
     assert repeated is not None
     assert repeated.id == first.id
-    assert repeated.status == "approved"
+    assert repeated.status == "pending"
 
 
 @pytest.mark.asyncio
@@ -282,7 +286,7 @@ async def test_monthly_access_unlocks_all_apartments(repositories, service):
     await payments.mark_payment_claimed(user_id=451, apartment_id=first.id)
     assert await service.decide(
         submission.request.id, approve=True, actor_id=999
-    ) == "already_approved"
+    ) == "approved"
     access = await service.contact_status(451, second.id)
     assert access.status == "approved"
     assert access.plan == MONTH_PLAN
@@ -304,7 +308,7 @@ async def test_weekly_access_unlocks_every_apartment_and_expires(repositories, s
     await service.submit_receipt(user_id=700, file_id="weekly-check", file_type="photo")
     assert await service.decide(
         submission.request.id, approve=True, actor_id=999
-    ) == "already_approved"
+    ) == "approved"
 
     access = await service.contact_status(700, second.id)
     assert access.status == "approved"

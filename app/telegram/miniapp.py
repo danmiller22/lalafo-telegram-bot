@@ -9,6 +9,7 @@ from html import escape
 from urllib.parse import parse_qsl
 
 from app.payment_plans import MONTH_PRICE, WEEK_PRICE
+from app.terms import TERMS_TEXT
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +57,7 @@ def verify_telegram_init_data(
 
 def mini_app_html(*, title: str = "Доступ к квартире", payment_urls: dict[str, str] | None = None) -> str:
     safe_title = escape(title)
+    safe_terms = escape(TERMS_TEXT).replace("\n", "<br>")
     # Script-safe JSON: configured public checkout URLs are not credentials.
     checkout_json = json.dumps(payment_urls or {}, ensure_ascii=True).replace("<", "\\u003c")
     return f"""<!doctype html>
@@ -80,7 +82,10 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     button, .button {{ width: 100%; border: 0; border-radius: 14px; padding: 14px 16px; margin-top: 9px; font: inherit; font-weight: 750; text-align: center; cursor: pointer; text-decoration: none; display: block; }}
     .primary {{ background: var(--tg-theme-button-color, #079b79); color: var(--tg-theme-button-text-color, white); }}
     .secondary {{ background: #12856a18; color: var(--tg-theme-link-color, #07866b); }}
-    button:disabled {{ cursor: default; opacity: .82; }}
+    button:disabled {{ cursor: default; opacity: .45; }}
+    label {{ display: block; font-size: 14px; line-height: 1.4; margin: 10px 0 16px; }}
+    input[type=checkbox] {{ width: 20px; height: 20px; vertical-align: middle; }}
+    details {{ font-size: 14px; line-height: 1.5; }}
     .hidden {{ display: none !important; }}
   </style>
 </head>
@@ -94,10 +99,13 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     </div>
     <div id="status" class="status hidden"></div>
     <a id="phone" class="phone hidden"></a>
+    <details id="agreement" class="hidden"><summary>Пользовательское соглашение</summary><p>{safe_terms}</p></details>
     <button id="pay-week" class="primary hidden">Недельный тариф — {WEEK_PRICE} сом</button>
+    <label id="consent-week-row" class="hidden"><input id="consent-week" type="checkbox"> Согласен(на) с пользовательским соглашением</label>
     <button id="pay-month" class="primary hidden">Месячный тариф — {MONTH_PRICE} сом</button>
-    <button id="reopen-payment" class="primary hidden">💳 Открыть оплату повторно</button>
-    <button id="access" class="secondary hidden">✅ Я оплатил(а) — открыть номер</button>
+    <label id="consent-month-row" class="hidden"><input id="consent-month" type="checkbox"> Согласен(на) с пользовательским соглашением</label>
+    <button id="reopen-payment" class="primary hidden">Открыть оплату</button>
+    <button id="access" class="secondary hidden">Я оплатил(а)</button>
     <a id="privacy" class="button secondary hidden">🔒 Политика конфиденциальности</a>
   </section>
 </main>
@@ -113,6 +121,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
   let paymentStart = null;
   let accessApproved = false;
   let selectedPlan = "week";
+  const consentReady = {{week: false, month: false}};
   const paymentUrls = {checkout_json};
 
   function telegramContext() {{
@@ -162,8 +171,12 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     const canPay = !approved && !waiting;
     show("pay-week", canPay);
     show("pay-month", canPay && data.monthly_available !== false);
-    show("access", waiting);
-    show("reopen-payment", waiting);
+    show("access", data.status === "awaiting_receipt");
+    show("reopen-payment", data.status === "awaiting_receipt");
+    show("agreement", !approved && data.status !== "pending");
+    show("consent-week-row", canPay || (data.status === "awaiting_receipt" && selectedPlan === "week"));
+    show("consent-month-row", (canPay && data.monthly_available !== false) || (data.status === "awaiting_receipt" && selectedPlan === "month"));
+    updateConsentButtons();
     show("privacy", !approved);
     if (!approved) {{
       el("privacy").href = data.privacy_url || "#";
@@ -192,8 +205,11 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
       if (apartment.description) el("details").textContent += "\\n\\n" + apartment.description;
       el("phone").textContent = "📞 " + data.phone;
       el("phone").href = "tel:" + String(data.phone || "").replace(/\\s+/g, "");
+    }} else if (data.status === "pending") {{
+      message("Оплата на проверке.");
+      startPaymentPolling();
     }} else if (waiting) {{
-      message("После оплаты нажмите «Я оплатил(а) — открыть номер».");
+      message("");
     }} else if (data.status === "rejected") {{
       message("Откройте оплату повторно или выберите другой тариф.");
     }} else {{
@@ -213,7 +229,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     catch (error) {{ message(error.message); }}
   }}
   async function startPayment(plan, buttonId) {{
-    if (paymentOpening || accessApproved) return;
+    if (paymentOpening || accessApproved || !consentReady[plan] || !el("consent-" + plan).checked) return;
     selectedPlan = plan;
     paymentOpening = true;
     const button = el(buttonId);
@@ -236,39 +252,56 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
       }}
     }} catch (error) {{ message(error.message); }}
     finally {{
-      button.disabled = false;
+      updateConsentButtons();
       button.textContent = originalText;
       paymentOpening = false;
     }}
   }}
   function startPaymentPolling() {{
     if (paymentPoll || accessApproved) return;
-    let attempts = 0;
     const poll = async () => {{
-      attempts += 1;
       try {{
         const data = await api("/miniapp/api/session", {{}});
         render(data);
-        if (data.status === "approved" || attempts >= 60) {{
+        if (data.status === "approved" || data.status === "rejected") {{
           paymentPoll = null;
           return;
         }}
-      }} catch (_) {{
-        if (attempts >= 60) {{ paymentPoll = null; return; }}
-      }}
+      }} catch (_) {{}}
       if (!accessApproved) paymentPoll = setTimeout(poll, 5000);
     }};
     paymentPoll = setTimeout(poll, 5000);
   }}
   document.addEventListener("visibilitychange", () => {{
-    if (!document.hidden && !el("access").classList.contains("hidden")) {{
+    if (!document.hidden && !accessApproved) {{
       startPaymentPolling();
     }}
   }});
+  function updateConsentButtons() {{
+    for (const plan of ["week", "month"]) {{
+      el("pay-" + plan).disabled = !consentReady[plan] || !el("consent-" + plan).checked;
+    }}
+    el("reopen-payment").disabled = !consentReady[selectedPlan] || !el("consent-" + selectedPlan).checked;
+  }}
+  for (const plan of ["week", "month"]) {{
+    el("consent-" + plan).onchange = async () => {{
+      consentReady[plan] = false;
+      updateConsentButtons();
+      if (!el("consent-" + plan).checked) return;
+      try {{
+        await api("/miniapp/api/consent", {{}});
+        consentReady[plan] = el("consent-" + plan).checked;
+      }} catch (error) {{
+        el("consent-" + plan).checked = false;
+        message(error.message);
+      }}
+      updateConsentButtons();
+    }};
+  }}
   el("pay-week").onclick = () => startPayment("week", "pay-week");
   el("pay-month").onclick = () => startPayment("month", "pay-month");
   el("reopen-payment").onclick = () => {{
-    if (accessApproved) return;
+    if (accessApproved || !consentReady[selectedPlan] || !el("consent-" + selectedPlan).checked) return;
     const url = paymentUrls[selectedPlan];
     if (url) {{
       const current = telegramContext();
@@ -279,7 +312,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
   }};
   el("access").onclick = async () => {{
     el("access").disabled = true;
-    message("Выдаём карточку…");
+    message("Отправляем заявку…");
     try {{
       if (paymentStart) await paymentStart;
       render(await api("/miniapp/api/access", {{}}));

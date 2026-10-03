@@ -14,6 +14,7 @@ function setup(initial, fetchOverride) {
       toggle(_, hidden) { nodes[id].hidden = hidden; },
       contains() { return nodes[id].hidden; },
     },
+    checked: false,
     textContent: '', replaceChildren() {}, appendChild() {},
   };
   const context = {
@@ -35,6 +36,10 @@ function setup(initial, fetchOverride) {
   await new Promise(setImmediate);
   assert.equal(restored.node('reopen-payment').hidden, false);
   restored.node('reopen-payment').onclick();
+  assert.deepEqual(restored.opened, []);
+  restored.node('consent-month').checked = true;
+  await restored.node('consent-month').onchange();
+  restored.node('reopen-payment').onclick();
   restored.node('reopen-payment').onclick();
   assert.deepEqual(restored.opened, ['https://example.com/month', 'https://example.com/month']);
 
@@ -44,10 +49,15 @@ function setup(initial, fetchOverride) {
       if (++sessionCalls === 1) return Promise.resolve(response({status: 'unpaid'}));
       return new Promise(resolve => { resolvePoll = resolve; });
     }
+    if (path.endsWith('/consent')) return Promise.resolve(response({terms_accepted: true}));
     if (path.endsWith('/start')) return Promise.resolve(response({status: 'awaiting_receipt', plan: 'week'}));
     return Promise.resolve(response({status: 'approved', phone: '+996555000000', apartment: {}}));
   });
   await new Promise(setImmediate);
+  await race.node('pay-week').onclick();
+  assert.deepEqual(race.opened, []);
+  race.node('consent-week').checked = true;
+  await race.node('consent-week').onchange();
   await race.node('pay-week').onclick();
   const [id, callback] = [...race.timers.entries()][0];
   race.timers.delete(id);
@@ -61,5 +71,12 @@ function setup(initial, fetchOverride) {
   assert.equal(race.node('reopen-payment').hidden, true);
   assert.equal(race.timers.size, 0);
   assert.equal(race.node('status').hidden, true);
+  const pending = setup({status: 'pending', plan: 'week'});
+  await new Promise(setImmediate);
+  assert.equal(pending.node('phone').hidden, true);
+  assert.equal(pending.node('access').hidden, true);
+  assert.equal(pending.node('reopen-payment').hidden, true);
+  assert.equal(pending.node('status').textContent, 'Оплата на проверке.');
+  assert.equal(pending.timers.size, 1);
   console.log('Mini App UI regression checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

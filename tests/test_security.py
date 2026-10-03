@@ -75,7 +75,8 @@ def test_callback_data_is_short_and_contains_no_phone():
         for row in group.inline_keyboard
         for button in row
     )
-    assert payment.inline_keyboard[0][0].url == "https://qr.finik.kg/payment"
+    assert payment.inline_keyboard[0][0].url is None
+    assert payment.inline_keyboard[0][0].callback_data == "paylocked"
     for keyboard in (
         group,
         payment,
@@ -123,13 +124,17 @@ def test_payment_and_status_keyboards_keep_recovery_actions():
         support_url="https://t.me/support_test",
     )
     assert [row[0].text for row in payment.inline_keyboard] == [
-        "💳 Оплатить 499 сом",
-        "📞 Получить номер",
+        "Оплатить 499 сом",
+        "☐ Согласен(на) с соглашением",
+        "Пользовательское соглашение",
+        "Я оплатил(а)",
         "🛟 Техподдержка",
     ]
     assert [row[0].text for row in status.inline_keyboard] == [
-        "💳 Оплатить 499 сом",
-        "📞 Получить номер",
+        "Оплатить 499 сом",
+        "☐ Согласен(на) с соглашением",
+        "Пользовательское соглашение",
+        "Я оплатил(а)",
         "🛟 Техподдержка",
     ]
 

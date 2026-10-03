@@ -141,6 +141,8 @@ async def test_health_and_authentication() -> None:
             "status": "ok",
             "bot": "disabled",
             "finik_auto_payment": "disabled",
+        "payment_access_mode": "manual",
+        "payment_review": "admin_missing",
             "telegram_setup": "disabled",
             "lalafo_link_bot": "disabled",
             "free_cloud_keepalive": "disabled",
@@ -651,8 +653,9 @@ async def test_miniapp_does_not_create_a_separate_finik_without_a_persistent_lin
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("consent", [True, False])
 async def test_miniapp_uses_configured_payment_url_without_waiting_for_finik(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, consent: bool,
 ) -> None:
     bot_token = "123456:telegram-test-token"
     callback_secret = "c" * 32
@@ -677,7 +680,7 @@ async def test_miniapp_uses_configured_payment_url_without_waiting_for_finik(
     monkeypatch.setattr(
         web,
         "_bot_runtime",
-        SimpleNamespace(workflow_data={"service": service, "payments": SimpleNamespace()}),
+        SimpleNamespace(workflow_data={"service": service, "payments": SimpleNamespace(), "terms_consents": SimpleNamespace(accepted=AsyncMock(return_value=consent))}),
     )
     signer = TokenSigner(callback_secret)
     transport = httpx.ASGITransport(app=web.app)
@@ -691,6 +694,10 @@ async def test_miniapp_uses_configured_payment_url_without_waiting_for_finik(
             },
         )
 
+    if not consent:
+        assert response.status_code == 403
+        service.begin_payment.assert_not_awaited()
+        return
     assert response.status_code == 200
     assert response.json()["payment_url"] == "https://qr.finik.kg/monthly"
     assert response.json()["automatic_payment"] is False
@@ -698,7 +705,7 @@ async def test_miniapp_uses_configured_payment_url_without_waiting_for_finik(
 
 
 @pytest.mark.asyncio
-async def test_miniapp_access_is_issued_without_admin_notification(
+async def test_miniapp_access_waits_for_admin_notification(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     bot_token = "123456:telegram-test-token"
@@ -726,15 +733,17 @@ async def test_miniapp_access_is_issued_without_admin_notification(
         status="awaiting_receipt", apartment=apartment, access_expires_at=None
     )
     approved = SimpleNamespace(
-        status="approved", apartment=apartment, access_expires_at=None
+        status="pending", apartment=apartment, access_expires_at=None
     )
     request = SimpleNamespace(
         id=73,
+        apartment_id=42,
+        created_at=datetime.now(UTC),
         telegram_user_id=778899,
         username="mini_user",
         first_name="Test",
         plan="week",
-        status="approved",
+        status="pending",
         apartment=apartment,
         receipt_file_id=None,
     )
@@ -756,7 +765,7 @@ async def test_miniapp_access_is_issued_without_admin_notification(
         "_bot_runtime",
         SimpleNamespace(
             bot=bot,
-            workflow_data={"service": service, "payments": payments},
+            workflow_data={"service": service, "payments": payments, "signer": TokenSigner(callback_secret)},
         ),
     )
     signer = TokenSigner(callback_secret)
@@ -771,17 +780,20 @@ async def test_miniapp_access_is_issued_without_admin_notification(
         )
 
     assert response.status_code == 200
-    assert response.json()["status"] == "approved"
+    assert response.json()["status"] == "pending"
     payments.mark_payment_claimed.assert_awaited_once_with(
         user_id=778899, apartment_id=42
     )
-    payments.claim_admin_notification.assert_not_awaited()
-    payments.finish_admin_notification.assert_not_awaited()
-    bot.send_message.assert_not_awaited()
+    payments.claim_admin_notification.assert_awaited_once_with(73)
+    payments.finish_admin_notification.assert_awaited_once_with(73, 515)
+    bot.send_message.assert_awaited_once()
+    assert "phone" not in response.json()
+    assert bot.send_message.await_args.args[0] == 999
+    assert [button.text for button in bot.send_message.await_args.kwargs["reply_markup"].inline_keyboard[0]] == ["Дать доступ", "Не давать доступ"]
 
 
 @pytest.mark.asyncio
-async def test_successful_finik_webhook_activates_and_delivers_contact(
+async def test_successful_finik_webhook_records_without_delivering_contact(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("RUN_BOT", "true")
@@ -797,7 +809,7 @@ async def test_successful_finik_webhook_activates_and_delivers_contact(
         apartment=apartment,
     )
     payments = SimpleNamespace(
-        apply_provider_result=AsyncMock(return_value=("approved", payment_request))
+        apply_provider_result=AsyncMock(return_value=("recorded", payment_request))
     )
     bot = object()
     monkeypatch.setattr(
@@ -824,13 +836,11 @@ async def test_successful_finik_webhook_activates_and_delivers_contact(
         )
 
     assert response.status_code == 200
-    assert response.json() == {"status": "approved"}
+    assert response.json() == {"status": "recorded"}
     payments.apply_provider_result.assert_awaited_once_with(
         "arenda-73", succeeded=True, amount=499
     )
-    delivery.assert_awaited_once()
-    assert delivery.await_args.kwargs["user_id"] == 778899
-    assert delivery.await_args.kwargs["apartment"] is apartment
+    delivery.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -852,6 +862,6 @@ async def test_payment_redirect_replaces_button_and_opens_finik(
         response = await client.get(f"/pay/{token}")
         invalid = await client.get(f"/pay/{token}x")
     assert response.status_code == 302
-    assert response.headers["location"] == "https://qr.finik.kg/test-payment"
+    assert "/access?startapp=" in response.headers["location"]
     assert invalid.status_code == 404
     edit_markup.assert_awaited_once()

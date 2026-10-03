@@ -63,7 +63,7 @@ def test_telegram_init_data_rejects_tampering_and_stale_payload():
     ) is None
 
 
-def test_mini_app_page_uses_automatic_access_delivery():
+def test_mini_app_page_requires_agreement_and_manual_review():
     html = mini_app_html()
 
     assert "/miniapp/api/session" in html
@@ -83,9 +83,12 @@ def test_mini_app_page_uses_automatic_access_delivery():
     assert "prepareTelegramContext" in html
     assert "Выберите банк" not in html
     assert "Выберите доступ:" not in html
-    assert "✅ Я оплатил(а) — открыть номер" in html
+    assert "Я оплатил(а)" in html
     assert "Статус: оплата проверяется" not in html
-    assert "Оплата проверяется" not in html
+    assert "Оплата на проверке." in html
+    assert "/miniapp/api/consent" in html
+    assert 'id="consent-week"' in html
+    assert 'id="consent-month"' in html
     assert 'const canPay = !approved && !waiting' in html
     assert 'show("pay-month", canPay && data.monthly_available !== false)' in html
     assert "Открываю Finik" not in html

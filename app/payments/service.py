@@ -84,10 +84,10 @@ class PaymentService:
             user_id=user_id, file_id=file_id, file_type=file_type
         )
 
-    async def decide(self, request_id: int, *, approve: bool, actor_id: int) -> str:
+    async def decide(self, request_id: int, *, approve: bool, actor_id: int, generation: int | None = None) -> str:
         if not self.admin_user_id or actor_id != self.admin_user_id:
             return "forbidden"
-        return await self.payments.decide(request_id, approve=approve, admin_id=actor_id)
+        return await self.payments.decide(request_id, approve=approve, admin_id=actor_id, generation=generation)
 
     async def get_request(self, request_id: int) -> PaymentRequest | None:
         return await self.payments.get_request(request_id)

@@ -35,7 +35,8 @@ from app.telegram.keyboards import (
 from app.telegram.private_delivery import send_private_contact
 from app.wanted.keyboards import main_menu_keyboard
 from app.wanted.handlers import begin_wanted_form
-from app.terms import PRIVACY_TEXT, TermsConsentRepository
+from app.terms import PRIVACY_TEXT, TERMS_TEXT, TermsConsentRepository
+from app.payments.review import notify_payment_admin
 
 logger = logging.getLogger(__name__)
 router = Router(name="user")
@@ -91,6 +92,9 @@ async def start_handler(
     if payload == "support":
         await begin_support(message, state)
         return
+    if payload == "terms":
+        await message.answer(TERMS_TEXT)
+        return
     if payload == "privacy":
         await state.clear()
         await message.answer(PRIVACY_TEXT)
@@ -127,15 +131,14 @@ async def start_handler(
         apartment_text = format_apartment(result.apartment) if result.apartment else "Квартира"
         if result.status == "pending":
             text = (
-                "📞 Доступ готов к выдаче.\n\n"
-                f"{apartment_text}\n\n"
-                "Нажмите «Получить номер»."
+                "Оплата на проверке.\n\n"
+                f"{apartment_text}"
             )
         elif result.status == "awaiting_receipt":
             text = (
                 "💳 Оплата\n\n"
                 f"{apartment_text}\n\n"
-                "После оплаты нажмите «Получить номер»."
+                "После оплаты нажмите «Я оплатил(а)»."
             )
         elif result.status == "rejected":
             text = (
@@ -213,7 +216,7 @@ async def plan_handler(
         await callback.answer("✅ Карточка с номером отправлена вам.")
         return
     if access.status == "pending":
-        await callback.answer("Нажмите «Получить номер» на экране оплаты.", show_alert=True)
+        await callback.answer("Оплата на проверке.", show_alert=True)
         return
     try:
         submission = await service.begin_payment(
@@ -234,8 +237,7 @@ async def plan_handler(
         await callback.message.edit_text(
             "💳 Оплата\n\n"
             f"Тариф: {plan_label(plan)}\n"
-            f"Сумма: {price} сом\n\n"
-            "Нажмите кнопку ниже — откроется оплата Finik.",
+            f"Сумма: {price} сом",
             reply_markup=payment_keyboard(
                 apartment_id,
                 signer=signer,
@@ -244,6 +246,59 @@ async def plan_handler(
                 price=price,
             ),
         )
+
+
+@router.callback_query(F.data == "paylocked")
+async def payment_locked_handler(callback: CallbackQuery) -> None:
+    await callback.answer("Примите пользовательское соглашение.", show_alert=True)
+
+
+@router.callback_query(F.data.startswith("payuncheck:"))
+async def payment_uncheck_handler(callback: CallbackQuery, signer: TokenSigner,
+                                  settings: Settings) -> None:
+    parts = (callback.data or "").split(":", 2)
+    apartment_id = signer.verify_id(f"pay-consent-{parts[1]}", parts[2]) if len(parts) == 3 and parts[1] in {"w", "m"} else None
+    if apartment_id is None:
+        await callback.answer("Недействительная кнопка.", show_alert=True)
+        return
+    payment_url, price = _payment_details(WEEK_PLAN if parts[1] == "w" else MONTH_PLAN, settings)
+    await callback.answer()
+    if callback.message:
+        await callback.message.edit_reply_markup(reply_markup=payment_keyboard(
+            apartment_id, signer=signer, payment_url=payment_url,
+            support_url=settings.support_bot_url, price=price))
+
+
+@router.callback_query(F.data.startswith("payconsent:"))
+async def payment_consent_handler(callback: CallbackQuery, signer: TokenSigner,
+                                  settings: Settings, terms_consents: TermsConsentRepository,
+                                  service: PaymentService) -> None:
+    parts = (callback.data or "").split(":", 2)
+    if len(parts) != 3 or parts[1] not in {"w", "m"}:
+        await callback.answer("Недействительная кнопка.", show_alert=True)
+        return
+    apartment_id = signer.verify_id(f"pay-consent-{parts[1]}", parts[2])
+    if apartment_id is None:
+        await callback.answer("Недействительная кнопка.", show_alert=True)
+        return
+    await terms_consents.accept(callback.from_user.id)
+    plan = WEEK_PLAN if parts[1] == "w" else MONTH_PLAN
+    payment_url, price = _payment_details(plan, settings)
+    if not payment_url:
+        await callback.answer("Тариф недоступен.", show_alert=True)
+        return
+    result = await service.contact_status(callback.from_user.id, apartment_id)
+    if result.status == "pending":
+        await callback.answer("Оплата на проверке.", show_alert=True)
+        return
+    await service.begin_payment(user_id=callback.from_user.id, apartment_id=apartment_id,
+                                username=callback.from_user.username,
+                                first_name=callback.from_user.first_name, plan=plan)
+    await callback.answer()
+    if callback.message:
+        await callback.message.edit_reply_markup(reply_markup=payment_keyboard(
+            apartment_id, signer=signer, payment_url=payment_url,
+            support_url=settings.support_bot_url, price=price, agreed=True))
 
 
 @router.callback_query(F.data == "menu:status")
@@ -343,7 +398,7 @@ async def contact_handler(
             apartment_id=apartment_id,
         )
         payment_url, price = _payment_details(result.plan, settings)
-        await callback.answer("Нажмите «Получить номер».", show_alert=True)
+        await callback.answer("Оплата на проверке.", show_alert=True)
         if callback.message:
             try:
                 await callback.message.edit_reply_markup(
@@ -408,7 +463,7 @@ async def view_contact_handler(
     if result.status == "pending":
         payment_url, price = _payment_details(result.plan, settings)
         await callback.answer(
-            "Нажмите «Получить номер» для автоматической выдачи карточки.",
+            "Оплата на проверке.",
             show_alert=True,
         )
         if callback.message:
@@ -435,7 +490,7 @@ async def view_contact_handler(
         return
     if result.status == "awaiting_receipt":
         payment_url, price = _payment_details(result.plan, settings)
-        await callback.answer("После оплаты нажмите «Получить номер».", show_alert=True)
+        await callback.answer("После оплаты нажмите «Я оплатил(а)».", show_alert=True)
         if callback.message:
             await callback.message.edit_reply_markup(
                 reply_markup=payment_keyboard(
@@ -522,6 +577,12 @@ async def paid_handler(
             apartment_id=apartment_id,
         )
         if request is not None:
+            try:
+                await notify_payment_admin(bot, settings, payments, signer, request)
+            except Exception:
+                logger.exception("Could not notify payment administrator")
+                await callback.answer("Не удалось отправить заявку. Нажмите ещё раз.", show_alert=True)
+                return
             result = await service.contact_status(callback.from_user.id, apartment_id)
     if result.status == "approved" and result.apartment:
         await send_private_contact(
@@ -532,6 +593,9 @@ async def paid_handler(
             max_photos=settings.max_photos_per_apartment,
         )
         await callback.answer("✅ Карточка с номером отправлена вам.")
+        return
+    if result.status == "pending":
+        await callback.answer("Оплата на проверке.", show_alert=True)
         return
     if result.status == "unavailable":
         await callback.answer("Квартира больше недоступна.", show_alert=True)
