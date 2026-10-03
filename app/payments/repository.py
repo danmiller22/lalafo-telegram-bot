@@ -809,6 +809,34 @@ class PaymentRepository:
             request_id = request.id
         return await self.get_request(request_id)
 
+    async def grant_with_receipt(
+        self, *, user_id: int, apartment_id: int, file_id: str, file_type: str
+    ) -> PaymentRequest | None:
+        if not file_id or file_type not in {"photo", "document"}:
+            raise ValueError("Receipt file is required")
+        from app.payments.review import payment_generation
+        async with self.sessions.begin() as session:
+            request = await session.scalar(
+                select(PaymentRequest).where(
+                    PaymentRequest.telegram_user_id == user_id,
+                    PaymentRequest.apartment_id == apartment_id,
+                ).with_for_update()
+            )
+            if request is None or request.status not in {"awaiting_receipt", "pending", "approved"}:
+                return None
+            if request.status == "approved":
+                request_id = request.id
+                generation = payment_generation(request)
+            else:
+                request.receipt_file_id = file_id
+                request.receipt_file_type = file_type
+                request.status = "pending"
+                request_id = request.id
+                generation = payment_generation(request)
+                await session.flush()
+        await self.decide(request_id, approve=True, admin_id=0, generation=generation)
+        return await self.get_request(request_id)
+
     async def set_admin_message(self, request_id: int, message_id: int) -> None:
         async with self.sessions.begin() as session:
             await session.execute(
@@ -887,6 +915,8 @@ class PaymentRepository:
                     return "stale"
             if current.status != "pending":
                 return f"already_{current.status}"
+            if approve and admin_id == 0 and not current.receipt_file_id:
+                return "receipt_required"
             if approve:
                 current.status = "approved"
                 current.approved_at = now

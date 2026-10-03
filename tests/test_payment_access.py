@@ -416,3 +416,33 @@ async def test_published_apartment_blocks_district_alias_and_reused_photo_duplic
         8002,
         8003,
     }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("plan", [WEEK_PLAN, MONTH_PLAN])
+async def test_receipt_upload_grants_once_and_keeps_other_checkout_isolated(repositories, service, plan):
+    apartments, payments, sessions = repositories
+    first = await apartments.upsert_discovered(make_ad(lalafo_id=7771))
+    second = await apartments.upsert_discovered(make_ad(lalafo_id=7772))
+    submission = await service.begin_payment(user_id=777, apartment_id=first.id,
+                                             username=None, first_name="Buyer", plan=plan)
+    await service.begin_payment(user_id=778, apartment_id=second.id,
+                                username=None, first_name="Other", plan=WEEK_PLAN)
+    assert await payments.decide(submission.request.id, approve=True, admin_id=0) == "already_awaiting_receipt"
+    await payments.mark_payment_claimed(user_id=777, apartment_id=first.id)
+    assert await payments.decide(submission.request.id, approve=True, admin_id=0) == "receipt_required"
+    assert (await service.contact_status(777, first.id)).status == "pending"
+    with pytest.raises(ValueError):
+        await payments.grant_with_receipt(user_id=777, apartment_id=first.id, file_id="", file_type="photo")
+    request = await payments.grant_with_receipt(user_id=777, apartment_id=first.id,
+                                               file_id="uploaded-photo", file_type="photo")
+    assert request.status == "approved"
+    assert request.receipt_file_id == "uploaded-photo"
+    assert request.approved_by == 0
+    expiry = request.access_expires_at
+    repeated = await payments.grant_with_receipt(user_id=777, apartment_id=first.id,
+                                                file_id="second-upload", file_type="document")
+    assert repeated.access_expires_at == expiry
+    assert (await service.contact_status(778, second.id)).status == "awaiting_receipt"
+    async with sessions() as session:
+        assert await session.scalar(select(func.count(PaymentHistory.id))) == 1

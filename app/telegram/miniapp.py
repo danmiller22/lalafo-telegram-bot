@@ -105,7 +105,8 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     <button id="pay-month" class="primary hidden">Месячный тариф — {MONTH_PRICE} сом</button>
     <label id="consent-month-row" class="hidden"><input id="consent-month" type="checkbox"> Согласен(на) с пользовательским соглашением</label>
     <button id="reopen-payment" class="primary hidden">Открыть оплату</button>
-    <button id="access" class="secondary hidden">Я оплатил(а)</button>
+    <input id="receipt-file" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" class="hidden">
+    <button id="access" class="secondary hidden">Загрузить чек</button>
     <a id="privacy" class="button secondary hidden">🔒 Политика конфиденциальности</a>
   </section>
 </main>
@@ -171,7 +172,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     const canPay = !approved && !waiting;
     show("pay-week", canPay);
     show("pay-month", canPay && data.monthly_available !== false);
-    show("access", data.status === "awaiting_receipt");
+    show("access", waiting);
     show("reopen-payment", data.status === "awaiting_receipt");
     show("agreement", !approved && data.status !== "pending");
     show("consent-week-row", canPay || (data.status === "awaiting_receipt" && selectedPlan === "week"));
@@ -206,7 +207,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
       el("phone").textContent = "📞 " + data.phone;
       el("phone").href = "tel:" + String(data.phone || "").replace(/\\s+/g, "");
     }} else if (data.status === "pending") {{
-      message("Оплата на проверке.");
+      message("Загрузите чек оплаты.");
       startPaymentPolling();
     }} else if (waiting) {{
       message("");
@@ -310,14 +311,27 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
       startPayment(selectedPlan, "reopen-payment");
     }}
   }};
-  el("access").onclick = async () => {{
+  el("access").onclick = () => el("receipt-file").click();
+  el("receipt-file").onchange = async () => {{
+    const file = el("receipt-file").files[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {{ message("Размер файла — до 10 МБ."); return; }}
     el("access").disabled = true;
-    message("Отправляем заявку…");
+    message("Загрузка…");
     try {{
+      const receiptData = await new Promise((resolve, reject) => {{
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result).split(",")[1]);
+        reader.onerror = () => reject(new Error("Не удалось прочитать файл."));
+        reader.readAsDataURL(file);
+      }});
       if (paymentStart) await paymentStart;
-      render(await api("/miniapp/api/access", {{}}));
+      render(await api("/miniapp/api/access", {{receipt_data: receiptData}}));
     }} catch (error) {{ message(error.message); }}
-    finally {{ el("access").disabled = false; }}
+    finally {{
+      el("access").disabled = false;
+      el("receipt-file").value = "";
+    }}
   }};
   load();
 }})();

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import logging
 import os
 import secrets
@@ -13,10 +15,10 @@ from zoneinfo import ZoneInfo
 
 import httpx
 from aiogram import Bot
-from aiogram.types import Update
+from aiogram.types import Update, BufferedInputFile
 from fastapi import FastAPI, Header, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.bot.main import BotRuntime, configure_bot_profile, create_runtime
 from app.config import get_settings
@@ -106,6 +108,10 @@ class MiniAppRequest(BaseModel):
     init_data: str
     start_param: str
     plan: str | None = None
+
+
+class MiniAppReceiptRequest(MiniAppRequest):
+    receipt_data: str | None = Field(default=None, max_length=14_000_000)
 
 
 class LalafoRelayRequest(BaseModel):
@@ -1058,7 +1064,7 @@ async def health() -> JSONResponse:
             "status": "ok",
             "bot": "running" if settings.run_bot else "disabled",
             "finik_auto_payment": "ready" if settings.finik_auto_enabled else "disabled",
-            "payment_access_mode": "manual",
+            "payment_access_mode": "receipt_upload",
             "payment_review": "ready" if settings.admin_user_id > 0 else "admin_missing",
             "telegram_setup": (
                 dict(_bot_setup_state) if settings.run_bot else "disabled"
@@ -1279,28 +1285,50 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
 
 
 @app.post("/miniapp/api/access", include_in_schema=False)
-async def miniapp_issue_access(payload: MiniAppRequest) -> dict[str, Any]:
+async def miniapp_issue_access(payload: MiniAppReceiptRequest) -> dict[str, Any]:
     settings, runtime, user, apartment_id = _miniapp_context(payload)
     service = runtime.workflow_data["service"]
     payments = runtime.workflow_data["payments"]
     current = await service.contact_status(user.id, apartment_id)
     if current.status == "approved":
         return _miniapp_result_payload(current)
-    if current.status in {"awaiting_receipt", "pending"}:
-        request = await payments.mark_payment_claimed(user_id=user.id, apartment_id=apartment_id)
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Сначала откройте ссылку на оплату.",
-        )
-    if request is None:
+    if current.status not in {"awaiting_receipt", "pending"}:
         raise HTTPException(status_code=409, detail="Сначала откройте оплату.")
-    from app.payments.review import notify_payment_admin
+    if not payload.receipt_data:
+        raise HTTPException(status_code=400, detail="Загрузите чек оплаты.")
     try:
-        await notify_payment_admin(runtime.bot, settings, payments, runtime.workflow_data["signer"], request)
+        receipt = base64.b64decode(payload.receipt_data, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise HTTPException(status_code=400, detail="Не удалось прочитать файл.") from exc
+    if not receipt or len(receipt) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Размер файла — до 10 МБ.")
+    if receipt.startswith(b"%PDF-"):
+        extension = "pdf"
+    elif receipt.startswith(b"\xff\xd8\xff"):
+        extension = "jpg"
+    elif receipt.startswith(b"\x89PNG\r\n\x1a\n"):
+        extension = "png"
+    elif receipt.startswith(b"RIFF") and receipt[8:12] == b"WEBP":
+        extension = "webp"
+    else:
+        raise HTTPException(status_code=415, detail="Загрузите фото JPG, PNG, WEBP или PDF.")
+    if settings.admin_user_id <= 0:
+        raise HTTPException(status_code=503, detail="Загрузка временно недоступна.")
+    try:
+        message = await runtime.bot.send_document(
+            settings.admin_user_id,
+            BufferedInputFile(receipt, filename=f"receipt-{user.id}-{apartment_id}.{extension}"),
+            caption=f"Чек оплаты · Telegram ID: {user.id} · квартира #{apartment_id}",
+        )
     except Exception as exc:
-        logger.exception("Could not notify payment administrator")
-        raise HTTPException(status_code=503, detail="Не удалось отправить заявку. Нажмите ещё раз.") from exc
+        logger.exception("Receipt upload failed for apartment %s", apartment_id)
+        raise HTTPException(status_code=503, detail="Не удалось загрузить чек. Попробуйте ещё раз.") from exc
+    request = await payments.grant_with_receipt(
+        user_id=user.id, apartment_id=apartment_id,
+        file_id=message.document.file_id, file_type="document",
+    )
+    if request is None or request.status != "approved":
+        raise HTTPException(status_code=409, detail="Откройте оплату повторно.")
     result = await service.contact_status(user.id, apartment_id)
     return _miniapp_result_payload(result)
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 from datetime import UTC, datetime
 import hashlib
 import hmac
@@ -141,7 +142,7 @@ async def test_health_and_authentication() -> None:
             "status": "ok",
             "bot": "disabled",
             "finik_auto_payment": "disabled",
-        "payment_access_mode": "manual",
+        "payment_access_mode": "receipt_upload",
         "payment_review": "admin_missing",
             "telegram_setup": "disabled",
             "lalafo_link_bot": "disabled",
@@ -705,8 +706,9 @@ async def test_miniapp_uses_configured_payment_url_without_waiting_for_finik(
 
 
 @pytest.mark.asyncio
-async def test_miniapp_access_waits_for_admin_notification(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize("upload", ["pdf", "missing", "invalid", "failed"])
+async def test_miniapp_access_requires_uploaded_receipt(
+    monkeypatch: pytest.MonkeyPatch, upload: str,
 ) -> None:
     bot_token = "123456:telegram-test-token"
     callback_secret = "c" * 32
@@ -733,7 +735,7 @@ async def test_miniapp_access_waits_for_admin_notification(
         status="awaiting_receipt", apartment=apartment, access_expires_at=None
     )
     approved = SimpleNamespace(
-        status="pending", apartment=apartment, access_expires_at=None
+        status="approved", apartment=apartment, access_expires_at=None
     )
     request = SimpleNamespace(
         id=73,
@@ -743,7 +745,7 @@ async def test_miniapp_access_waits_for_admin_notification(
         username="mini_user",
         first_name="Test",
         plan="week",
-        status="pending",
+        status="approved",
         apartment=apartment,
         receipt_file_id=None,
     )
@@ -751,15 +753,17 @@ async def test_miniapp_access_waits_for_admin_notification(
         contact_status=AsyncMock(side_effect=[awaiting, approved]),
     )
     payments = SimpleNamespace(
-        mark_payment_claimed=AsyncMock(return_value=request),
+        grant_with_receipt=AsyncMock(return_value=request),
         get_access=AsyncMock(),
         claim_admin_notification=AsyncMock(return_value=True),
         finish_admin_notification=AsyncMock(return_value=True),
         release_admin_notification=AsyncMock(),
     )
     bot = SimpleNamespace(
-        send_message=AsyncMock(return_value=SimpleNamespace(message_id=515)),
+        send_document=AsyncMock(return_value=SimpleNamespace(document=SimpleNamespace(file_id="receipt-file"))),
     )
+    if upload == "failed":
+        bot.send_document.side_effect = RuntimeError("Telegram unavailable")
     monkeypatch.setattr(
         web,
         "_bot_runtime",
@@ -776,20 +780,22 @@ async def test_miniapp_access_waits_for_admin_notification(
             json={
                 "init_data": miniapp_init_data(bot_token=bot_token, user_id=778899),
                 "start_param": signer.sign_start_id("miniapp-apartment", 42),
+                "receipt_data": None if upload == "missing" else base64.b64encode(b"not a supported file" if upload == "invalid" else b"%PDF-1.4\nreceipt").decode(),
             },
         )
 
+    if upload != "pdf":
+        assert response.status_code == {"missing": 400, "invalid": 415, "failed": 503}[upload]
+        payments.grant_with_receipt.assert_not_awaited()
+        return
     assert response.status_code == 200
-    assert response.json()["status"] == "pending"
-    payments.mark_payment_claimed.assert_awaited_once_with(
-        user_id=778899, apartment_id=42
+    assert response.json()["status"] == "approved"
+    assert "phone" in response.json()
+    payments.grant_with_receipt.assert_awaited_once_with(
+        user_id=778899, apartment_id=42, file_id="receipt-file", file_type="document",
     )
-    payments.claim_admin_notification.assert_awaited_once_with(73)
-    payments.finish_admin_notification.assert_awaited_once_with(73, 515)
-    bot.send_message.assert_awaited_once()
-    assert "phone" not in response.json()
-    assert bot.send_message.await_args.args[0] == 999
-    assert [button.text for button in bot.send_message.await_args.kwargs["reply_markup"].inline_keyboard[0]] == ["Дать доступ", "Не давать доступ"]
+    bot.send_document.assert_awaited_once()
+    payments.claim_admin_notification.assert_not_awaited()
 
 
 @pytest.mark.asyncio

@@ -63,7 +63,7 @@ def test_telegram_init_data_rejects_tampering_and_stale_payload():
     ) is None
 
 
-def test_mini_app_page_requires_agreement_and_manual_review():
+def test_mini_app_page_requires_agreement_and_receipt():
     html = mini_app_html()
 
     assert "/miniapp/api/session" in html
@@ -83,9 +83,11 @@ def test_mini_app_page_requires_agreement_and_manual_review():
     assert "prepareTelegramContext" in html
     assert "Выберите банк" not in html
     assert "Выберите доступ:" not in html
-    assert "Я оплатил(а)" in html
+    assert "Загрузить чек" in html
+    assert 'id="receipt-file"' in html
+    assert "receipt_data: receiptData" in html
     assert "Статус: оплата проверяется" not in html
-    assert "Оплата на проверке." in html
+    assert "Загрузите чек оплаты." in html
     assert "/miniapp/api/consent" in html
     assert 'id="consent-week"' in html
     assert 'id="consent-month"' in html

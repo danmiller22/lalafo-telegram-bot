@@ -14,11 +14,12 @@ function setup(initial, fetchOverride) {
       toggle(_, hidden) { nodes[id].hidden = hidden; },
       contains() { return nodes[id].hidden; },
     },
-    checked: false,
+    checked: false, click() {},
     textContent: '', replaceChildren() {}, appendChild() {},
   };
   const context = {
     URLSearchParams,
+    FileReader: class { readAsDataURL() { this.result = "data:application/pdf;base64,JVBERi0xLjQ="; this.onload(); } },
     location: {search: '?tgWebAppData=test&tgWebAppStartParam=test', hash: ''},
     window: {Telegram: {WebApp: {ready() {}, expand() {}, openLink(url) { opened.push(url); }}}},
     document: {getElementById: node, addEventListener() {}},
@@ -62,7 +63,10 @@ function setup(initial, fetchOverride) {
   const [id, callback] = [...race.timers.entries()][0];
   race.timers.delete(id);
   const inFlight = callback();
-  await race.node('access').onclick();
+  race.node('access').onclick();
+  assert.equal(race.node('phone').hidden, true);
+  race.node('receipt-file').files = [{size: 20}];
+  await race.node('receipt-file').onchange();
   assert.equal(race.node('phone').hidden, false);
   resolvePoll(response({status: 'awaiting_receipt'}));
   await inFlight;
@@ -74,9 +78,9 @@ function setup(initial, fetchOverride) {
   const pending = setup({status: 'pending', plan: 'week'});
   await new Promise(setImmediate);
   assert.equal(pending.node('phone').hidden, true);
-  assert.equal(pending.node('access').hidden, true);
+  assert.equal(pending.node('access').hidden, false);
   assert.equal(pending.node('reopen-payment').hidden, true);
-  assert.equal(pending.node('status').textContent, 'Оплата на проверке.');
+  assert.equal(pending.node('status').textContent, 'Загрузите чек оплаты.');
   assert.equal(pending.timers.size, 1);
   console.log('Mini App UI regression checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

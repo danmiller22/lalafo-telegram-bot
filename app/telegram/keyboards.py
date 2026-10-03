@@ -95,7 +95,7 @@ def payment_keyboard(
             [InlineKeyboardButton(text="Пользовательское соглашение", url=support_url.split("?", 1)[0] + "?start=terms")],
             [
                 InlineKeyboardButton(
-                    text="Я оплатил(а)",
+                    text="Загрузить чек",
                     callback_data=f"paid:{paid_token}",
                 )
             ],
