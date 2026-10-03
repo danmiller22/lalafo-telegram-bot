@@ -23,16 +23,17 @@ from app.telegram.formatting import is_supported_source
 BISHKEK = ZoneInfo("Asia/Bishkek")
 ALLOWED_ROOMS = frozenset({"studio", "1"})
 CENTRAL_DAILY_SHARE = 0.50
+REALTOR_DAILY_SHARE = 0.65
 MIN_PUBLICATIONS_PER_DAY = 96
 MAX_PUBLICATIONS_PER_DAY = 96
 # The daily target is chosen once per Bishkek date, then split across the two
 # discovery periods so retries cannot increase the day's publication volume.
-# Split the daily feed evenly between confirmed owners and realtors whenever
+# Aim for 65% confirmed realtors and 35% confirmed owners whenever
 # both pools have enough live cards. Either pool may fill a shortage so the
 # channel keeps publishing instead of stopping on a strict category quota.
-MIN_NON_OWNERS_PER_DAY = 48
-MAX_NON_OWNERS_PER_DAY = 48
-TARGET_NON_OWNERS_PER_PERIOD = 24
+MIN_NON_OWNERS_PER_DAY = round(MAX_PUBLICATIONS_PER_DAY * REALTOR_DAILY_SHARE)
+MAX_NON_OWNERS_PER_DAY = MIN_NON_OWNERS_PER_DAY
+TARGET_NON_OWNERS_PER_PERIOD = (MAX_NON_OWNERS_PER_DAY + 1) // 2
 # Fresh cards win. Listings may fill a shortage only after 48 hours.
 REPOST_AFTER_HOURS = 48
 MAX_REPOSTS_PER_PERIOD = MAX_PUBLICATIONS_PER_DAY // 2
@@ -73,7 +74,7 @@ def daily_publication_target(period_start: datetime) -> int:
 
 
 def daily_realtor_target(period_start: datetime) -> int:
-    """Return the 50% daily realtor target."""
+    """Return the 65% daily realtor target."""
     del period_start
     return MAX_NON_OWNERS_PER_DAY
 
@@ -89,7 +90,7 @@ def period_publication_targets(period_start: datetime) -> tuple[int, int]:
 
 
 def period_realtor_target(period_start: datetime) -> int:
-    """Split the daily 50% realtor target across the two periods."""
+    """Split the daily 65% realtor target across the two periods."""
     daily_target = daily_realtor_target(period_start)
     first_target = (daily_target + 1) // 2
     if period_start.astimezone(BISHKEK).hour == 0:
@@ -1012,7 +1013,7 @@ class InventoryRepository:
                 (published_today + 1) * CENTRAL_DAILY_SHARE
             )
             realtor_needed = published_non_owners < round(
-                (published_today + 1) * 0.50
+                (published_today + 1) * REALTOR_DAILY_SHARE
             )
 
             def matches_seller(seller_type: str | None) -> bool:

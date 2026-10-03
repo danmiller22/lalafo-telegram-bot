@@ -156,7 +156,7 @@ def test_central_realtors_can_fill_central_share():
     assert any(item.apartment.seller_type == "owner" for item in planned)
     assert (
         sum(item.apartment.seller_type == "realtor" for item in planned)
-        == 24
+        == 31
     )
 
 
@@ -176,7 +176,7 @@ def test_each_standalone_period_caps_agents():
 
     assert sum(
         item.apartment.seller_type == "realtor" for item in first + second
-    ) == 48
+    ) == 62
 
 
 def test_unknown_authors_are_excluded():
@@ -191,11 +191,11 @@ def test_unknown_authors_are_excluded():
     assert planned == []
 
 
-def test_daily_realtor_target_is_half_of_ninety_six():
+def test_daily_realtor_target_is_65_percent_of_ninety_six():
     start = datetime(2026, 9, 13, 0, tzinfo=timezone(timedelta(hours=6)))
     assert {
         daily_realtor_target(start + timedelta(days=offset)) for offset in range(4)
-    } == {48}
+    } == {62}
 
 
 def test_period_does_not_cap_non_owners():
