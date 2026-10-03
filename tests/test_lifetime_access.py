@@ -141,3 +141,21 @@ async def test_expired_lifetime_finik_link_is_replaced(repositories, service):
     renewed = await payments.prepare_provider_payment(submission.request.id, "renewed-link")
     assert renewed.provider_payment_id == "renewed-link"
     assert renewed.provider_payment_url is None
+
+
+@pytest.mark.asyncio
+async def test_lifetime_access_survives_original_checkout_cleanup(repositories, service):
+    from sqlalchemy import delete
+    apartments, payments, sessions = repositories
+    first = await apartments.upsert_discovered(make_ad(lalafo_id=88301))
+    second = await apartments.upsert_discovered(make_ad(lalafo_id=88302))
+    submission = await service.begin_payment(user_id=883, apartment_id=first.id, username=None, first_name="Test", plan=LIFETIME_PLAN)
+    await payments.mark_payment_claimed(user_id=883, apartment_id=first.id)
+    # Match the checkout deletion caused by the apartment FK cascade.
+    async with sessions.begin() as session:
+        await session.execute(delete(PaymentRequest).where(PaymentRequest.id == submission.request.id))
+    access = await service.contact_status(883, second.id)
+    assert access.status == "approved"
+    assert access.plan == LIFETIME_PLAN
+    assert access.access_expires_at is None
+    assert (await service.contact_status(884, second.id)).status == "unpaid"

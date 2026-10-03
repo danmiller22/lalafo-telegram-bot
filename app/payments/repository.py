@@ -652,7 +652,7 @@ class PaymentRepository:
             )
             return result.scalar_one_or_none()
 
-    async def active_weekly_access(self, user_id: int) -> PaymentRequest | None:
+    async def active_weekly_access(self, user_id: int) -> PaymentRequest | PaymentHistory | None:
         now = datetime.now(timezone.utc)
         async with self.sessions() as session:
             result = await session.execute(
@@ -668,7 +668,24 @@ class PaymentRepository:
                 .order_by((PaymentRequest.plan == LIFETIME_PLAN).desc(), PaymentRequest.access_expires_at.desc())
                 .limit(1)
             )
-            return result.scalar_one_or_none()
+            active = result.scalar_one_or_none()
+            if active is not None:
+                return active
+            # Apartment cleanup cascades checkout deletion. The independent
+            # ledger keeps lifetime access valid for future apartments.
+            return await session.scalar(
+                select(PaymentHistory)
+                .where(
+                    PaymentHistory.telegram_user_id == user_id,
+                    PaymentHistory.plan == LIFETIME_PLAN,
+                    PaymentHistory.access_expires_at.is_(None),
+                    ~select(PaymentRequest.id).where(
+                        PaymentRequest.id == PaymentHistory.payment_request_id,
+                    ).exists(),
+                )
+                .order_by(PaymentHistory.paid_at.desc())
+                .limit(1)
+            )
 
     async def submit(
         self,
@@ -799,7 +816,7 @@ class PaymentRepository:
                 select(PaymentRequest).where(
                     PaymentRequest.telegram_user_id == user_id,
                     PaymentRequest.apartment_id == apartment_id,
-                )
+                ).with_for_update()
             )
             request = result.scalar_one_or_none()
             if request is None:

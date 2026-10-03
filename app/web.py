@@ -1121,6 +1121,7 @@ async def health() -> JSONResponse:
             "bot": "running" if settings.run_bot else "disabled",
             "finik_auto_payment": "ready" if settings.finik_auto_enabled else "disabled",
             "payment_access_mode": "automatic",
+            "contact_tariff": {"plan": LIFETIME_PLAN, "price": LIFETIME_PRICE, "expires": False, "storage": "persistent_ledger"},
             "payment_review": "ready" if settings.admin_user_id > 0 else "admin_missing",
             "telegram_setup": (
                 dict(_bot_setup_state) if settings.run_bot else "disabled"
