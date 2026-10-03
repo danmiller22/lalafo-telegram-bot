@@ -84,7 +84,7 @@ def test_mini_app_page_uses_automatic_access_delivery():
     assert "Статус: оплата проверяется" not in html
     assert "Оплата проверяется" not in html
     assert 'const canPay = !approved && !waiting' in html
-    assert 'show("pay-month", canPay)' in html
+    assert 'show("pay-month", canPay && data.monthly_available !== false)' in html
     assert "Открываю Finik" not in html
     assert "Создаём защищённую ссылку" not in html
     assert 'id="terms"' not in html
@@ -97,3 +97,18 @@ def test_mini_app_page_uses_automatic_access_delivery():
     assert '"\\n🔐 Депозит: "' in html
     assert "Без перехода в личный чат" not in html
     assert "команды /start" not in html
+
+
+def test_ready_checkout_opens_before_waiting_for_payment_request():
+    html = mini_app_html(payment_urls={"week": "https://example.com/pay?x=1"})
+    assert '"week": "https://example.com/pay?x=1"' in html
+    assert html.index("current.openLink(readyUrl)") < html.index("const data = await paymentStart")
+    assert "if (paymentStart) await paymentStart" in html
+    assert "setInterval" not in html
+    assert "setTimeout(poll, 5000)" in html
+
+
+def test_checkout_configuration_is_script_safe():
+    html = mini_app_html(payment_urls={"week": "https://example.com/</script>"})
+    assert "https://example.com/</script>" not in html
+    assert "https://example.com/\\u003c/script>" in html

@@ -1178,8 +1178,12 @@ def _miniapp_result_payload(result) -> dict[str, Any]:
 
 @app.get("/miniapp", response_class=HTMLResponse, include_in_schema=False)
 async def telegram_mini_app() -> HTMLResponse:
+    settings = get_settings()
     return HTMLResponse(
-        mini_app_html(),
+        mini_app_html(payment_urls={
+            WEEK_PLAN: _finik_payment_url(settings, WEEK_PLAN),
+            MONTH_PLAN: _finik_payment_url(settings, MONTH_PLAN),
+        }),
         headers={
             "Cache-Control": "no-store",
             "Content-Security-Policy": (

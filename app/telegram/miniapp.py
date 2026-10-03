@@ -54,8 +54,10 @@ def verify_telegram_init_data(
         return None
 
 
-def mini_app_html(*, title: str = "Доступ к квартире") -> str:
+def mini_app_html(*, title: str = "Доступ к квартире", payment_urls: dict[str, str] | None = None) -> str:
     safe_title = escape(title)
+    # Script-safe JSON: configured public checkout URLs are not credentials.
+    checkout_json = json.dumps(payment_urls or {}, ensure_ascii=True).replace("<", "\\u003c")
     return f"""<!doctype html>
 <html lang="ru">
 <head>
@@ -107,6 +109,8 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
   let startParam = query.get("tgWebAppStartParam") || hash.get("tgWebAppStartParam") || "";
   let paymentOpening = false;
   let paymentPoll = null;
+  let paymentStart = null;
+  const paymentUrls = {checkout_json};
 
   function telegramContext() {{
     const current = window.Telegram && window.Telegram.WebApp;
@@ -151,7 +155,7 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     show("phone", approved);
     const canPay = !approved && !waiting;
     show("pay-week", canPay);
-    show("pay-month", canPay);
+    show("pay-month", canPay && data.monthly_available !== false);
     show("access", waiting);
     show("privacy", !approved);
     if (!approved) {{
@@ -204,11 +208,20 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     const originalText = button.textContent;
     button.disabled = true;
     try {{
-      const data = await api("/miniapp/api/start", {{plan}});
+      const readyUrl = paymentUrls[plan];
+      // Start recording the request, but do not delay a ready checkout link.
+      paymentStart = api("/miniapp/api/start", {{plan}});
+      if (readyUrl) {{
+        const current = telegramContext();
+        if (current) current.openLink(readyUrl); else location.href = readyUrl;
+      }}
+      const data = await paymentStart;
       render(data);
       startPaymentPolling();
-      const current = telegramContext();
-      if (current) current.openLink(data.payment_url); else location.href = data.payment_url;
+      if (!readyUrl) {{
+        const current = telegramContext();
+        if (current) current.openLink(data.payment_url); else location.href = data.payment_url;
+      }}
     }} catch (error) {{ message(error.message); }}
     finally {{
       button.disabled = false;
@@ -217,21 +230,23 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     }}
   }}
   function startPaymentPolling() {{
-    if (paymentPoll) clearInterval(paymentPoll);
+    if (paymentPoll) return;
     let attempts = 0;
-    paymentPoll = setInterval(async () => {{
+    const poll = async () => {{
       attempts += 1;
       try {{
         const data = await api("/miniapp/api/session", {{}});
         render(data);
         if (data.status === "approved" || attempts >= 60) {{
-          clearInterval(paymentPoll);
           paymentPoll = null;
+          return;
         }}
       }} catch (_) {{
-        if (attempts >= 60) {{ clearInterval(paymentPoll); paymentPoll = null; }}
+        if (attempts >= 60) {{ paymentPoll = null; return; }}
       }}
-    }}, 2000);
+      paymentPoll = setTimeout(poll, 5000);
+    }};
+    paymentPoll = setTimeout(poll, 5000);
   }}
   document.addEventListener("visibilitychange", () => {{
     if (!document.hidden && !el("access").classList.contains("hidden")) {{
@@ -244,6 +259,7 @@ def mini_app_html(*, title: str = "Доступ к квартире") -> str:
     el("access").disabled = true;
     message("Выдаём карточку…");
     try {{
+      if (paymentStart) await paymentStart;
       render(await api("/miniapp/api/access", {{}}));
     }} catch (error) {{ message(error.message); }}
     finally {{ el("access").disabled = false; }}
