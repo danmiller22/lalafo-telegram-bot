@@ -33,16 +33,15 @@ function setup(initial, fetchOverride) {
 }
 
 (async () => {
-  // A restored monthly checkout must reopen the monthly URL without a new request.
-  const restored = setup({status: 'awaiting_receipt', plan: 'month'});
+  // A restored lifetime checkout must reopen its URL without a new request.
+  const restored = setup({status: 'awaiting_receipt', plan: 'lifetime'});
   await new Promise(setImmediate);
   assert.equal(restored.node('reopen-payment').hidden, false);
   assert.equal(restored.node('checkout').hidden, false);
-  assert.equal(restored.node('pay-week').hidden, true);
-  assert.equal(restored.node('pay-month').hidden, true);
+  assert.equal(restored.node('pay-lifetime').hidden, true);
   restored.node('reopen-payment').onclick();
   restored.node('reopen-payment').onclick();
-  assert.deepEqual(restored.opened, ['https://example.com/month', 'https://example.com/month']);
+  assert.deepEqual(restored.opened, ['https://example.com/lifetime', 'https://example.com/lifetime']);
 
   let sessionCalls = 0, resolvePoll;
   const race = setup(null, path => {
@@ -51,12 +50,11 @@ function setup(initial, fetchOverride) {
       return new Promise(resolve => { resolvePoll = resolve; });
     }
     if (path.endsWith('/consent')) return Promise.resolve(response({terms_accepted: true}));
-    if (path.endsWith('/start')) return Promise.resolve(response({status: 'awaiting_receipt', plan: 'week'}));
+    if (path.endsWith('/start')) return Promise.resolve(response({status: 'awaiting_receipt', plan: 'lifetime'}));
     return Promise.resolve(response({status: 'approved', phone: '+996555000000', apartment: {}}));
   });
   await new Promise(setImmediate);
-  assert.equal(race.node('pay-week').hidden, false);
-  assert.equal(race.node('pay-month').hidden, false);
+  assert.equal(race.node('pay-lifetime').hidden, false);
   assert.equal(race.node('tariff-description').hidden, false);
   assert.equal(race.node('access').hidden, true);
   assert.equal(race.node('reopen-payment').hidden, true);
@@ -65,8 +63,8 @@ function setup(initial, fetchOverride) {
   race.node('close-agreement').onclick();
   assert.equal(race.node('agreement').open, false);
   assert.equal(race.node('checkout').hidden, true);
-  await race.node('pay-week').onclick();
-  assert.deepEqual(race.opened, ['https://example.com/week']);
+  await race.node('pay-lifetime').onclick();
+  assert.deepEqual(race.opened, ['https://example.com/lifetime']);
   const [id, callback] = [...race.timers.entries()][0];
   race.timers.delete(id);
   const inFlight = callback();
@@ -80,7 +78,7 @@ function setup(initial, fetchOverride) {
   assert.equal(race.node('reopen-payment').hidden, true);
   assert.equal(race.timers.size, 0);
   assert.equal(race.node('status').hidden, true);
-  const pending = setup({status: 'pending', plan: 'week'});
+  const pending = setup({status: 'pending', plan: 'lifetime'});
   await new Promise(setImmediate);
   assert.equal(pending.node('phone').hidden, true);
   assert.equal(pending.node('access').hidden, false);

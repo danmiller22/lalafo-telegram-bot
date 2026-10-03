@@ -5,6 +5,8 @@ from datetime import datetime, timedelta
 
 WEEK_PLAN = "week"
 MONTH_PLAN = "month"
+LIFETIME_PLAN = "lifetime"
+LIFETIME_PRICE = 699
 WEEK_PRICE = 499
 MONTH_PRICE = 999
 WANTED_SEARCH_PRICE = 100
@@ -13,7 +15,7 @@ MONTH_DURATION = timedelta(days=30)
 
 
 def plan_price(plan: str) -> int:
-    prices = {WEEK_PLAN: WEEK_PRICE, MONTH_PLAN: MONTH_PRICE}
+    prices = {WEEK_PLAN: WEEK_PRICE, MONTH_PLAN: MONTH_PRICE, LIFETIME_PLAN: LIFETIME_PRICE}
     try:
         return prices[plan]
     except KeyError as exc:
@@ -21,7 +23,7 @@ def plan_price(plan: str) -> int:
 
 
 def plan_label(plan: str) -> str:
-    labels = {WEEK_PLAN: "Базовая: 7 дней", MONTH_PLAN: "Премиум: 30 дней"}
+    labels = {WEEK_PLAN: "Базовая: 7 дней", MONTH_PLAN: "Премиум: 30 дней", LIFETIME_PLAN: "Доступ к контактам навсегда"}
     return labels.get(plan, "Неизвестный тариф")
 
 

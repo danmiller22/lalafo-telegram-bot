@@ -185,7 +185,7 @@ class PaymentRequest(Base):
     )
     username: Mapped[str | None] = mapped_column(String(64))
     first_name: Mapped[str | None] = mapped_column(String(255))
-    plan: Mapped[str] = mapped_column(String(16), nullable=False, default="week")
+    plan: Mapped[str] = mapped_column(String(16), nullable=False, default="lifetime")
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
     receipt_file_id: Mapped[str | None] = mapped_column(String(255))
     receipt_file_type: Mapped[str | None] = mapped_column(String(16))
@@ -224,7 +224,7 @@ class PaymentHistory(Base):
     amount: Mapped[int] = mapped_column(Integer, nullable=False)
     provider_payment_id: Mapped[str] = mapped_column(String(64), nullable=False)
     paid_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    access_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    access_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class SupportTicket(Base):

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from html import escape
 from urllib.parse import parse_qsl
 
-from app.payment_plans import MONTH_PRICE, WEEK_PRICE
+from app.payment_plans import LIFETIME_PRICE
 from app.terms import TERMS_TEXT
 
 
@@ -104,18 +104,16 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
   </style>
 </head>
 <body>
-<main id="two-tariff-checkout">
+<main id="lifetime-checkout">
   <div class="brand">Arenda.KG</div>
   <h1 id="title">Доступ к базе</h1>
   <p id="intro" class="intro"></p>
   <div id="status" class="status hidden" role="status" aria-live="polite"></div>
   <div id="tariff-description" class="intro hidden">
-    <p>Неделя доступа к номерам хозяев — {WEEK_PRICE} сом.</p>
-    <p>Месячный доступ к номерам хозяев — {MONTH_PRICE} сом.</p>
+    <p>Доступ к контактам навсегда — {LIFETIME_PRICE} сом.</p>
     <p>Оплачивая доступ, вы подтверждаете, что ознакомились с <a href="#agreement" class="terms-link">пользовательским соглашением</a> и согласны с его условиями.</p>
   </div>
-  <button id="pay-week" class="primary tariff-button hidden">Недельный тариф</button>
-  <button id="pay-month" class="primary tariff-button hidden">Месячный тариф</button>
+  <button id="pay-lifetime" class="primary tariff-button hidden">Оплатить {LIFETIME_PRICE} сом</button>
   <section id="checkout" class="checkout hidden">
     <div id="payment-step" class="step"><span>1</span>Оплата через Finik</div>
     <button id="reopen-payment" class="secondary hidden">Открыть Finik</button>
@@ -145,7 +143,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
   let paymentPoll = null;
   let paymentStart = null;
   let accessApproved = false;
-  let selectedPlan = "week";
+  let selectedPlan = "lifetime";
   const paymentUrls = {checkout_json};
 
   function telegramContext() {{
@@ -186,11 +184,11 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     // A response sent before access was granted must not undo the success screen.
     if (accessApproved && data.status !== "approved") return;
     const approved = data.status === "approved";
-    const waiting = data.status === "awaiting_receipt" || data.status === "pending";
-    if (data.plan === "week" || data.plan === "month") selectedPlan = data.plan;
-    el("title").textContent = approved ? "Квартира" : waiting ? "Оплата" : "Выберите доступ";
+    const waiting = data.plan === "lifetime" && (data.status === "awaiting_receipt" || data.status === "pending");
+    selectedPlan = "lifetime";
+    el("title").textContent = approved ? "Квартира" : waiting ? "Оплата" : "Доступ к контактам";
     show("title", true);
-    el("intro").textContent = approved ? "" : waiting ? (selectedPlan === "month" ? "30 дней · {MONTH_PRICE} сом" : "7 дней · {WEEK_PRICE} сом") : "";
+    el("intro").textContent = approved ? "" : waiting ? "Навсегда · {LIFETIME_PRICE} сом" : "";
     show("intro", waiting);
     show("apartment", approved);
     show("phone", approved);
@@ -198,10 +196,9 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     show("tariff-description", canPay);
     show("checkout", waiting);
     show("payment-step", data.status === "awaiting_receipt");
-    show("pay-week", canPay);
-    show("pay-month", canPay && data.monthly_available !== false);
+    show("pay-lifetime", canPay);
     show("access", waiting);
-    show("reopen-payment", data.status === "awaiting_receipt");
+    show("reopen-payment", waiting && data.status === "awaiting_receipt");
     if (!approved) {{
       el("privacy").href = data.privacy_url || "#";
     }}
@@ -229,13 +226,13 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
       if (apartment.description) el("details").textContent += "\\n\\n" + apartment.description;
       el("phone").textContent = "📞 " + data.phone;
       el("phone").href = "tel:" + String(data.phone || "").replace(/\\s+/g, "");
-    }} else if (data.status === "pending") {{
+    }} else if (waiting && data.status === "pending") {{
       message("Нажмите «Я оплатил(а)».");
       startPaymentPolling();
     }} else if (waiting) {{
       message("");
     }} else if (data.status === "rejected") {{
-      message("Откройте оплату повторно или выберите другой тариф.");
+      message("Откройте оплату повторно.");
     }} else {{
       message("");
       show("status", false);
@@ -269,6 +266,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
       }}
       const data = await paymentStart;
       render(data);
+      if (data.status === "approved") return;
       startPaymentPolling();
       if (!readyUrl) {{
         const current = telegramContext();
@@ -312,8 +310,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     const agreement = el("agreement");
     if (agreement.close) agreement.close(); else agreement.removeAttribute("open");
   }};
-  el("pay-week").onclick = () => startPayment("week", "pay-week");
-  el("pay-month").onclick = () => startPayment("month", "pay-month");
+  el("pay-lifetime").onclick = () => startPayment("lifetime", "pay-lifetime");
   el("reopen-payment").onclick = () => {{
     if (accessApproved) return;
     const url = paymentUrls[selectedPlan];

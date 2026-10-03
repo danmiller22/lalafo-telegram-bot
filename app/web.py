@@ -22,7 +22,7 @@ from app.bot.main import BotRuntime, configure_bot_profile, create_runtime
 from app.config import get_settings
 from app.lalafo.auto_reply import LalafoAutoResponder
 from app.lalafo.models import LalafoAd
-from app.payment_plans import MONTH_PLAN, WEEK_PLAN, WEEK_PRICE, plan_price
+from app.payment_plans import LIFETIME_PLAN, LIFETIME_PRICE, MONTH_PLAN, WEEK_PLAN, plan_price
 from app.finik import (
     FinikClient,
     PRODUCTION_WEBHOOK_PUBLIC_KEY,
@@ -121,6 +121,8 @@ class LalafoIngestRequest(BaseModel):
 
 
 def _finik_payment_url(settings: Any, plan: str) -> str:
+    if plan == LIFETIME_PLAN:
+        return settings.lifetime_finik_payment_url
     return (
         settings.monthly_finik_payment_url
         if plan == MONTH_PLAN
@@ -129,7 +131,7 @@ def _finik_payment_url(settings: Any, plan: str) -> str:
 
 
 def _uses_dynamic_finik(settings: Any, plan: str) -> bool:
-    return plan in {WEEK_PLAN, MONTH_PLAN} and settings.finik_auto_enabled
+    return plan in {LIFETIME_PLAN, WEEK_PLAN, MONTH_PLAN} and settings.finik_auto_enabled
 
 
 async def _finik_checkout_url(
@@ -1214,7 +1216,7 @@ def _miniapp_result_payload(result) -> dict[str, Any]:
         )
     response: dict[str, Any] = {
         "status": result.status,
-        "price": WEEK_PRICE,
+        "price": LIFETIME_PRICE,
         "plan": getattr(result, "plan", None),
     }
     if result.status == "approved":
@@ -1243,7 +1245,7 @@ def _miniapp_result_payload(result) -> dict[str, Any]:
 async def telegram_mini_app() -> HTMLResponse:
     settings = get_settings()
     return HTMLResponse(
-        mini_app_html(payment_urls={WEEK_PLAN: _finik_payment_url(settings, WEEK_PLAN), MONTH_PLAN: _finik_payment_url(settings, MONTH_PLAN)}),
+        mini_app_html(payment_urls={LIFETIME_PLAN: _finik_payment_url(settings, LIFETIME_PLAN)}),
         headers={
             "Cache-Control": "no-store",
             "Content-Security-Policy": (
@@ -1267,9 +1269,7 @@ async def miniapp_session(payload: MiniAppRequest) -> dict[str, Any]:
             detail="Квартира больше недоступна.",
         )
     response = _miniapp_result_payload(result)
-    response["monthly_available"] = bool(
-        settings.monthly_finik_payment_url or _uses_dynamic_finik(settings, MONTH_PLAN)
-    )
+    response["monthly_available"] = False
     bot_url = f"https://t.me/{settings.telegram_bot_username.lstrip('@')}"
     response["privacy_url"] = f"{bot_url}?start=privacy"
     return response
@@ -1281,9 +1281,7 @@ async def miniapp_consent(payload: MiniAppRequest) -> dict[str, Any]:
     await runtime.workflow_data["terms_consents"].accept(user.id)
     result = await runtime.workflow_data["service"].contact_status(user.id, apartment_id)
     response = _miniapp_result_payload(result)
-    response["monthly_available"] = bool(
-        settings.monthly_finik_payment_url or _uses_dynamic_finik(settings, MONTH_PLAN)
-    )
+    response["monthly_available"] = False
     response["terms_accepted"] = True
     response["terms_text"] = TERMS_TEXT
     bot_url = f"https://t.me/{settings.telegram_bot_username.lstrip('@')}"
@@ -1304,7 +1302,7 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
     settings, runtime, user, apartment_id = _miniapp_context(payload)
     service = runtime.workflow_data["service"]
     result = await service.contact_status(user.id, apartment_id)
-    plan = payload.plan if payload.plan in {WEEK_PLAN, MONTH_PLAN} else WEEK_PLAN
+    plan = LIFETIME_PLAN
     payment_url = _finik_payment_url(settings, plan)
     if not payment_url and not _uses_dynamic_finik(settings, plan):
         raise HTTPException(
@@ -1349,9 +1347,7 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
         response["plan"] = getattr(payment_request, "plan", plan)
     response["payment_url"] = payment_url
     response["automatic_payment"] = _uses_dynamic_finik(settings, plan)
-    response["monthly_available"] = bool(
-        settings.monthly_finik_payment_url or _uses_dynamic_finik(settings, MONTH_PLAN)
-    )
+    response["monthly_available"] = False
     return response
 
 
@@ -1460,6 +1456,8 @@ async def open_finik_payment(token: str) -> RedirectResponse:
     if values is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     apartment_id, chat_id, message_id = values
+    start_param = signer.sign_start_id("miniapp-apartment", apartment_id)
+    checkout_url = f"https://t.me/{settings.telegram_bot_username.lstrip('@')}/access?startapp={start_param}"
     try:
         await runtime.bot.edit_message_reply_markup(
             chat_id=chat_id,
@@ -1467,13 +1465,13 @@ async def open_finik_payment(token: str) -> RedirectResponse:
             reply_markup=payment_keyboard(
                 apartment_id,
                 signer=signer,
-                payment_url=settings.finik_payment_url,
+                payment_url=checkout_url,
                 support_url=settings.support_bot_url,
             ),
         )
     except Exception:
         logger.exception("Could not replace payment button with paid confirmation")
-    return RedirectResponse(settings.finik_payment_url, status_code=status.HTTP_302_FOUND)
+    return RedirectResponse(checkout_url, status_code=status.HTTP_302_FOUND)
 
 
 @app.get("/status")

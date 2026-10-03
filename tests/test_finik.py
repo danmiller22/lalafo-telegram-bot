@@ -79,7 +79,7 @@ def test_payment_configuration_id_changes_with_merchant() -> None:
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("amount", "expected_description"),
-    [(499, "Недельный тариф"), (999, "Месячный тариф")],
+    [(499, "Недельный тариф"), (999, "Месячный тариф"), (699, "Доступ к контактам навсегда")],
 )
 async def test_checkout_uses_neutral_tariff_description(
     amount: int, expected_description: str

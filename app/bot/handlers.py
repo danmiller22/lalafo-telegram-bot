@@ -17,8 +17,7 @@ from app.config import Settings
 from app.availability import AvailabilityService
 from app.payments.repository import PaymentRepository
 from app.payment_plans import (
-    MONTH_PLAN,
-    WEEK_PLAN,
+    LIFETIME_PLAN,
     plan_label,
     plan_price,
 )
@@ -41,10 +40,12 @@ logger = logging.getLogger(__name__)
 router = Router(name="user")
 
 
-def _payment_details(plan: str | None, settings: Settings) -> tuple[str, int]:
-    if plan == MONTH_PLAN:
-        return settings.monthly_finik_payment_url, plan_price(MONTH_PLAN)
-    return settings.finik_payment_url, plan_price(WEEK_PLAN)
+def _payment_details(plan: str | None, settings: Settings, *, signer: TokenSigner | None = None, apartment_id: int | None = None) -> tuple[str, int]:
+    url = settings.lifetime_finik_payment_url
+    if not url and signer is not None and apartment_id is not None:
+        token = signer.sign_start_id("miniapp-apartment", apartment_id)
+        url = f"https://t.me/{settings.telegram_bot_username.lstrip('@')}/access?startapp={token}"
+    return url, plan_price(LIFETIME_PLAN)
 
 
 def _start_payload(message: Message) -> str:
@@ -141,35 +142,14 @@ async def start_handler(
             text = (
                 "💳 Откройте оплату повторно.\n\n"
                 f"{apartment_text}\n\n"
-                "Выберите тариф ниже."
+                "Доступ к контактам навсегда — 699 сом."
             )
         else:
-            text = "Выберите тариф."
-        reply_markup = (
-            payment_keyboard(
-                apartment_id,
-                signer=signer,
-                payment_url=_payment_details(result.plan, settings)[0],
-                support_url=settings.support_bot_url,
-                price=_payment_details(result.plan, settings)[1],
-            )
-            if result.status == "awaiting_receipt"
-            else status_keyboard(
-                apartment_id,
-                signer=signer,
-                payment_url=_payment_details(result.plan, settings)[0],
-                support_url=settings.support_bot_url,
-                price=_payment_details(result.plan, settings)[1],
-            )
-            if result.status == "pending"
-            else private_payment_keyboard(
-                apartment_id,
-                signer=signer,
-                payment_url=settings.finik_payment_url,
-                support_url=settings.support_bot_url,
-                pending=result.status == "pending",
-                monthly_payment_url=settings.monthly_finik_payment_url,
-            )
+            text = "Доступ к контактам навсегда — 699 сом."
+        reply_markup = private_payment_keyboard(
+            apartment_id, signer=signer,
+            payment_url=settings.lifetime_finik_payment_url,
+            support_url=settings.support_bot_url,
         )
         await message.answer(text, reply_markup=reply_markup)
         return
@@ -186,17 +166,12 @@ async def plan_handler(
     terms_consents: TermsConsentRepository | None = None,
 ) -> None:
     parts = (callback.data or "").split(":", 2)
-    if len(parts) != 3 or parts[1] not in {"w", "m"}:
+    if len(parts) != 3 or parts[1] not in {"l", "w", "m"}:
         await callback.answer("Недействительная кнопка.", show_alert=True)
         return
-    plan = WEEK_PLAN if parts[1] == "w" else MONTH_PLAN
-    purpose = "plan-week" if plan == WEEK_PLAN else "plan-month"
+    plan = LIFETIME_PLAN
+    purpose = {"l": "plan-lifetime", "w": "plan-week", "m": "plan-month"}[parts[1]]
     payment_url, price = _payment_details(plan, settings)
-    if not payment_url:
-        await callback.answer(
-            "Тариф на 30 дней подключается. Выберите 7 дней.", show_alert=True
-        )
-        return
     apartment_id = signer.verify_id(purpose, parts[2])
     if apartment_id is None:
         await callback.answer("Недействительная кнопка.", show_alert=True)
@@ -212,9 +187,6 @@ async def plan_handler(
         )
         await callback.answer("✅ Карточка с номером отправлена вам.")
         return
-    if access.status == "pending":
-        await callback.answer("Нажмите «Получить номер» на экране оплаты.", show_alert=True)
-        return
     try:
         submission = await service.begin_payment(
             user_id=callback.from_user.id,
@@ -229,6 +201,17 @@ async def plan_handler(
     if submission.outcome == "approved":
         await callback.answer("✅ Этот номер уже доступен вам.", show_alert=True)
         return
+    if not payment_url:
+        try:
+            from app.web import _finik_checkout_url
+            payment_url = await _finik_checkout_url(
+                settings, service.payments, submission.request,
+                apartment_id=apartment_id, plan=plan,
+            )
+        except Exception:
+            logger.exception("Could not create lifetime Finik checkout")
+            await callback.answer("Не удалось открыть оплату. Попробуйте ещё раз.", show_alert=True)
+            return
     await callback.answer()
     if callback.message:
         await callback.message.edit_text(
@@ -274,11 +257,11 @@ async def terms_accept_handler(
     await callback.answer("Условия приняты.")
     if callback.message:
         await callback.message.edit_text(
-            "Выберите тариф доступа к контактам объявлений.",
+            "Доступ к контактам навсегда — 699 сом.",
             reply_markup=private_payment_keyboard(
                 apartment_id,
                 signer=signer,
-                payment_url=settings.finik_payment_url,
+                payment_url=settings.lifetime_finik_payment_url,
                 support_url=settings.support_bot_url,
                 monthly_payment_url=settings.monthly_finik_payment_url,
             ),
@@ -342,7 +325,7 @@ async def contact_handler(
             user_id=callback.from_user.id,
             apartment_id=apartment_id,
         )
-        payment_url, price = _payment_details(result.plan, settings)
+        payment_url, price = _payment_details(result.plan, settings, signer=signer, apartment_id=apartment_id)
         await callback.answer("Нажмите «Получить номер».", show_alert=True)
         if callback.message:
             try:
@@ -406,7 +389,7 @@ async def view_contact_handler(
             )
         return
     if result.status == "pending":
-        payment_url, price = _payment_details(result.plan, settings)
+        payment_url, price = _payment_details(result.plan, settings, signer=signer, apartment_id=apartment_id)
         await callback.answer(
             "Нажмите «Получить номер» для автоматической выдачи карточки.",
             show_alert=True,
@@ -434,7 +417,7 @@ async def view_contact_handler(
                 logger.exception("Could not restore pending payment keyboard")
         return
     if result.status == "awaiting_receipt":
-        payment_url, price = _payment_details(result.plan, settings)
+        payment_url, price = _payment_details(result.plan, settings, signer=signer, apartment_id=apartment_id)
         await callback.answer("После оплаты нажмите «Получить номер».", show_alert=True)
         if callback.message:
             await callback.message.edit_reply_markup(
@@ -449,7 +432,7 @@ async def view_contact_handler(
         return
     if result.status == "rejected":
         await callback.answer(
-            "Откройте оплату повторно или выберите другой тариф.",
+            "Откройте оплату повторно.",
             show_alert=True,
         )
         if callback.message:
@@ -457,7 +440,7 @@ async def view_contact_handler(
                 private_payment_keyboard(
                     apartment_id,
                     signer=signer,
-                    payment_url=settings.finik_payment_url,
+                    payment_url=settings.lifetime_finik_payment_url,
                     support_url=settings.support_bot_url,
                     monthly_payment_url=settings.monthly_finik_payment_url,
                 )
@@ -475,7 +458,7 @@ async def view_contact_handler(
         await callback.answer("Квартира больше недоступна.", show_alert=True)
         return
     await callback.answer(
-        "Выберите тариф и после оплаты нажмите «Получить номер».",
+        "Оплатите доступ и нажмите «Получить номер».",
         show_alert=True,
     )
     if callback.message:
@@ -484,7 +467,7 @@ async def view_contact_handler(
                 private_payment_keyboard(
                     apartment_id,
                     signer=signer,
-                    payment_url=settings.finik_payment_url,
+                    payment_url=settings.lifetime_finik_payment_url,
                     support_url=settings.support_bot_url,
                     monthly_payment_url=settings.monthly_finik_payment_url,
                 )
@@ -546,7 +529,7 @@ async def paid_handler(
                 reply_markup=private_payment_keyboard(
                     apartment_id,
                     signer=signer,
-                    payment_url=settings.finik_payment_url,
+                    payment_url=settings.lifetime_finik_payment_url,
                     support_url=settings.support_bot_url,
                     monthly_payment_url=settings.monthly_finik_payment_url,
                 )

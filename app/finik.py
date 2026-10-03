@@ -114,7 +114,7 @@ class FinikClient:
         # validity window keeps abandoned one-off checkouts from accumulating as
         # active payment links while preserving unique PaymentIds for webhooks.
         expires_at = int(timestamp) + 5 * 60 * 1000
-        description = "Месячный тариф" if amount == 999 else "Недельный тариф"
+        description = {699: "Доступ к контактам навсегда", 999: "Месячный тариф", 499: "Недельный тариф"}.get(amount, "Оплата Arenda.KG")
         body: dict[str, Any] = {
             "Amount": amount,
             "CardType": "FINIK_QR",

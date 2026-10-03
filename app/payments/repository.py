@@ -5,14 +5,14 @@ from datetime import datetime, timedelta, timezone
 from pathlib import PurePosixPath
 from urllib.parse import urlsplit
 
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from app.lalafo.models import PHONE_SOURCE_VERSION, LalafoAd
 from app.models import Apartment, ApartmentInventoryQueue, DailyFeaturedPublication, PaymentHistory, PaymentRequest
-from app.payment_plans import MONTH_PLAN, WEEK_PLAN, expires_at_for, plan_price
+from app.payment_plans import LIFETIME_PLAN, MONTH_PLAN, WEEK_PLAN, expires_at_for, plan_price
 from app.state import ad_fingerprint, same_listing
 from app.telegram.keyboards import APARTMENT_KEYBOARD_VERSION
 
@@ -659,12 +659,13 @@ class PaymentRepository:
                 select(PaymentRequest)
                 .where(
                     PaymentRequest.telegram_user_id == user_id,
-                    PaymentRequest.plan.in_((WEEK_PLAN, MONTH_PLAN)),
                     PaymentRequest.status == "approved",
-                    PaymentRequest.access_expires_at.is_not(None),
-                    PaymentRequest.access_expires_at > now,
+                    or_(
+                        and_(PaymentRequest.plan == LIFETIME_PLAN, PaymentRequest.access_expires_at.is_(None)),
+                        and_(PaymentRequest.plan.in_((WEEK_PLAN, MONTH_PLAN)), PaymentRequest.access_expires_at > now),
+                    ),
                 )
-                .order_by(PaymentRequest.access_expires_at.desc())
+                .order_by((PaymentRequest.plan == LIFETIME_PLAN).desc(), PaymentRequest.access_expires_at.desc())
                 .limit(1)
             )
             return result.scalar_one_or_none()
@@ -676,9 +677,9 @@ class PaymentRepository:
         apartment_id: int,
         username: str | None,
         first_name: str | None,
-        plan: str = WEEK_PLAN,
+        plan: str = LIFETIME_PLAN,
     ) -> PaymentSubmission:
-        if plan not in {WEEK_PLAN, MONTH_PLAN}:
+        if plan not in {WEEK_PLAN, MONTH_PLAN, LIFETIME_PLAN}:
             raise ValueError("Unsupported access plan")
         try:
             return await self._submit_once(
@@ -734,7 +735,7 @@ class PaymentRepository:
                 )
                 session.add(request)
                 outcome = "created"
-            elif request.status == "pending":
+            elif request.status == "pending" and request.plan == plan:
                 outcome = "pending"
             elif request.status == "awaiting_receipt" and request.plan == plan:
                 outcome = "awaiting_receipt"
@@ -880,7 +881,7 @@ class PaymentRepository:
     async def decide(self, request_id: int, *, approve: bool, admin_id: int) -> str:
         now = datetime.now(timezone.utc)
         async with self.sessions.begin() as session:
-            current = await session.get(PaymentRequest, request_id)
+            current = await session.scalar(select(PaymentRequest).where(PaymentRequest.id == request_id).with_for_update())
             if current is None:
                 return "missing"
             if current.status != "pending":
@@ -890,7 +891,7 @@ class PaymentRepository:
                 current.approved_at = now
                 current.approved_by = admin_id
                 current.access_expires_at = expires_at_for(current.plan, now)
-                if current.access_expires_at is not None:
+                if current.access_expires_at is not None or current.plan == LIFETIME_PLAN:
                     session.add(
                         PaymentHistory(
                             payment_request_id=current.id,
@@ -938,9 +939,19 @@ class PaymentRepository:
             configuration_changed = bool(
                 configuration_id and current.provider_status not in expected_statuses
             )
-            if not current.provider_payment_id or configuration_changed:
+            now = datetime.now(timezone.utc)
+            created_at = current.created_at.replace(tzinfo=timezone.utc) if current.created_at.tzinfo is None else current.created_at
+            checkout_expired = (
+                current.plan == LIFETIME_PLAN
+                and current.status == "awaiting_receipt"
+                and current.provider_payment_id is not None
+                and now - created_at >= timedelta(minutes=5)
+            )
+            if not current.provider_payment_id or configuration_changed or checkout_expired:
                 current.provider_payment_id = payment_id
                 current.provider_payment_url = None
+                if current.plan == LIFETIME_PLAN:
+                    current.created_at = now
                 current.provider_status = (
                     f"created:{configuration_id}" if configuration_id else "created"
                 )

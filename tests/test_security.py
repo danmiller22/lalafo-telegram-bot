@@ -95,11 +95,10 @@ def test_callback_data_is_short_and_contains_no_phone():
         )
 
     assert [row[0].text for row in private_payment.inline_keyboard] == [
-        "Недельный тариф — 499 сом",
-        "Месячный тариф — 999 сом",
+        "Оплатить 699 сом",
         "🔒 Политика конфиденциальности",
     ]
-    assert private_payment.inline_keyboard[2][0].url.endswith("?start=privacy")
+    assert private_payment.inline_keyboard[1][0].url.endswith("?start=privacy")
     assert all(
         button.text != "🛟 Техподдержка"
         for row in private_payment.inline_keyboard
@@ -123,12 +122,12 @@ def test_payment_and_status_keyboards_keep_recovery_actions():
         support_url="https://t.me/support_test",
     )
     assert [row[0].text for row in payment.inline_keyboard] == [
-        "💳 Оплатить 499 сом",
+        "💳 Оплатить 699 сом",
         "📞 Получить номер",
         "🛟 Техподдержка",
     ]
     assert [row[0].text for row in status.inline_keyboard] == [
-        "💳 Оплатить 499 сом",
+        "💳 Оплатить 699 сом",
         "📞 Получить номер",
         "🛟 Техподдержка",
     ]
