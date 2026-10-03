@@ -618,6 +618,7 @@ def test_automatic_checkout_is_enabled_when_finik_api_is_configured(
 async def test_miniapp_starts_a_checkout_bound_to_the_selected_apartment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setenv("LIFETIME_FINIK_PAYMENT_URL", "")
     bot_token = "123456:telegram-test-token"
     callback_secret = "c" * 32
     monkeypatch.setenv("RUN_BOT", "true")
@@ -718,7 +719,7 @@ async def test_miniapp_uses_configured_payment_url_without_waiting_for_finik(
 
     assert response.status_code == 200
     assert response.json()["payment_url"] == "https://qr.finik.kg/lifetime"
-    assert response.json()["automatic_payment"] is True
+    assert response.json()["automatic_payment"] is False
     service.begin_payment.assert_awaited_once()
     checkout.assert_not_awaited()
 
@@ -882,3 +883,11 @@ async def test_old_payment_redirect_opens_current_miniapp_tariff(
     assert signer.verify_start_id("miniapp-apartment", response.headers["location"].split("startapp=", 1)[1]) == 11
     assert invalid.status_code == 404
     edit_markup.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_default_lifetime_checkout_uses_ready_link_even_with_api_credentials():
+    from app.config import Settings
+    settings = Settings(_env_file=None, lifetime_finik_payment_url="https://qr.finik.kg/e0c9972e-0f05-4dc3-99fd-96ec1debea1f?type=t", finik_api_key="configured", finik_account_id="configured", finik_private_key_pem="configured")
+    assert not web._uses_dynamic_finik(settings, LIFETIME_PLAN)
+    assert await web._finik_checkout_url(settings, object(), object(), apartment_id=42, plan=LIFETIME_PLAN) == settings.lifetime_finik_payment_url

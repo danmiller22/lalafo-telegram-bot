@@ -131,6 +131,8 @@ def _finik_payment_url(settings: Any, plan: str) -> str:
 
 
 def _uses_dynamic_finik(settings: Any, plan: str) -> bool:
+    if plan == LIFETIME_PLAN and settings.lifetime_finik_payment_url:
+        return False
     return plan in {LIFETIME_PLAN, WEEK_PLAN, MONTH_PLAN} and settings.finik_auto_enabled
 
 
