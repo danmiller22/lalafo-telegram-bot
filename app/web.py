@@ -1153,6 +1153,7 @@ def _miniapp_result_payload(result) -> dict[str, Any]:
     response: dict[str, Any] = {
         "status": result.status,
         "price": WEEK_PRICE,
+        "plan": getattr(result, "plan", None),
     }
     if result.status == "approved":
         response["phone"] = display_phone(apartment.phone)
@@ -1266,6 +1267,7 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
     response = _miniapp_result_payload(result)
     if payment_request is not None:
         response["status"] = payment_request.status
+        response["plan"] = getattr(payment_request, "plan", plan)
     response["payment_url"] = payment_url
     response["automatic_payment"] = False
     response["monthly_available"] = bool(settings.monthly_finik_payment_url)

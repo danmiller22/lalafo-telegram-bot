@@ -3,6 +3,9 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import shutil
+import subprocess
+from pathlib import Path
 from urllib.parse import urlencode
 
 from app.telegram.miniapp import mini_app_html, verify_telegram_init_data
@@ -112,3 +115,16 @@ def test_checkout_configuration_is_script_safe():
     html = mini_app_html(payment_urls={"week": "https://example.com/</script>"})
     assert "https://example.com/</script>" not in html
     assert "https://example.com/\\u003c/script>" in html
+
+
+def test_miniapp_checkout_reopening_and_late_status_response():
+    if not shutil.which("node"):
+        import pytest
+        pytest.skip("Node.js is required for the browser script regression checks")
+    html = mini_app_html(payment_urls={
+        "week": "https://example.com/week", "month": "https://example.com/month",
+    })
+    subprocess.run(
+        ["node", str(Path(__file__).with_name("miniapp_ui_regression.cjs"))],
+        input=json.dumps(html), text=True, check=True, capture_output=True, timeout=15,
+    )

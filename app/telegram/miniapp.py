@@ -96,6 +96,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     <a id="phone" class="phone hidden"></a>
     <button id="pay-week" class="primary hidden">Недельный тариф — {WEEK_PRICE} сом</button>
     <button id="pay-month" class="primary hidden">Месячный тариф — {MONTH_PRICE} сом</button>
+    <button id="reopen-payment" class="primary hidden">💳 Открыть оплату повторно</button>
     <button id="access" class="secondary hidden">✅ Я оплатил(а) — открыть номер</button>
     <a id="privacy" class="button secondary hidden">🔒 Политика конфиденциальности</a>
   </section>
@@ -110,6 +111,8 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
   let paymentOpening = false;
   let paymentPoll = null;
   let paymentStart = null;
+  let accessApproved = false;
+  let selectedPlan = "week";
   const paymentUrls = {checkout_json};
 
   function telegramContext() {{
@@ -147,8 +150,11 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     return data;
   }}
   function render(data) {{
+    // A response sent before access was granted must not undo the success screen.
+    if (accessApproved && data.status !== "approved") return;
     const approved = data.status === "approved";
     const waiting = data.status === "awaiting_receipt" || data.status === "pending";
+    if (data.plan === "week" || data.plan === "month") selectedPlan = data.plan;
     el("title").textContent = "Квартира";
     show("title", approved);
     show("apartment", approved);
@@ -157,11 +163,16 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     show("pay-week", canPay);
     show("pay-month", canPay && data.monthly_available !== false);
     show("access", waiting);
+    show("reopen-payment", waiting);
     show("privacy", !approved);
     if (!approved) {{
       el("privacy").href = data.privacy_url || "#";
     }}
     if (approved) {{
+      accessApproved = true;
+      if (paymentPoll) clearTimeout(paymentPoll);
+      paymentPoll = null;
+      message("");
       const apartment = data.apartment || {{}};
       const photos = el("photos");
       photos.replaceChildren();
@@ -202,7 +213,8 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     catch (error) {{ message(error.message); }}
   }}
   async function startPayment(plan, buttonId) {{
-    if (paymentOpening) return;
+    if (paymentOpening || accessApproved) return;
+    selectedPlan = plan;
     paymentOpening = true;
     const button = el(buttonId);
     const originalText = button.textContent;
@@ -230,7 +242,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     }}
   }}
   function startPaymentPolling() {{
-    if (paymentPoll) return;
+    if (paymentPoll || accessApproved) return;
     let attempts = 0;
     const poll = async () => {{
       attempts += 1;
@@ -244,7 +256,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
       }} catch (_) {{
         if (attempts >= 60) {{ paymentPoll = null; return; }}
       }}
-      paymentPoll = setTimeout(poll, 5000);
+      if (!accessApproved) paymentPoll = setTimeout(poll, 5000);
     }};
     paymentPoll = setTimeout(poll, 5000);
   }}
@@ -255,6 +267,16 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
   }});
   el("pay-week").onclick = () => startPayment("week", "pay-week");
   el("pay-month").onclick = () => startPayment("month", "pay-month");
+  el("reopen-payment").onclick = () => {{
+    if (accessApproved) return;
+    const url = paymentUrls[selectedPlan];
+    if (url) {{
+      const current = telegramContext();
+      if (current) current.openLink(url); else location.href = url;
+    }} else {{
+      startPayment(selectedPlan, "reopen-payment");
+    }}
+  }};
   el("access").onclick = async () => {{
     el("access").disabled = true;
     message("Выдаём карточку…");
