@@ -66,7 +66,7 @@ async def test_old_pending_checkout_can_switch_to_lifetime(repositories, service
 
 
 @pytest.mark.asyncio
-async def test_lifetime_miniapp_checkout_and_auto_access_end_to_end(repositories, service, monkeypatch):
+async def test_weekly_miniapp_checkout_and_auto_access_end_to_end(repositories, service, monkeypatch):
     import json
     from types import SimpleNamespace
     import httpx
@@ -86,7 +86,7 @@ async def test_lifetime_miniapp_checkout_and_auto_access_end_to_end(repositories
         "RUN_BOT": "true", "TELEGRAM_BOT_TOKEN": "123456:test-token",
         "CALLBACK_SECRET": "c" * 32, "FINIK_API_KEY": "test",
         "FINIK_ACCOUNT_ID": "test-merchant", "FINIK_PRIVATE_KEY_PEM": private_pem,
-        "FINIK_PRIVATE_KEY_B64": "", "FINIK_PAYMENT_URL": "https://qr.finik.kg/old-499",
+        "FINIK_PRIVATE_KEY_B64": "", "WEEKLY_FINIK_PAYMENT_URL": "",
         "MONTHLY_FINIK_PAYMENT_URL": "https://qr.finik.kg/old-999", "LIFETIME_FINIK_PAYMENT_URL": "",
         "TELEGRAM_WEBHOOK_URL": "https://example.test/telegram/webhook",
     }.items():
@@ -98,17 +98,17 @@ async def test_lifetime_miniapp_checkout_and_auto_access_end_to_end(repositories
     async def provider(request):
         captured.append(json.loads(request.content))
         assert request.headers["signature"]
-        return httpx.Response(201, json={"url": "https://qr.finik.kg/lifetime-699"})
+        return httpx.Response(201, json={"url": "https://qr.finik.kg/weekly-500"})
     async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as finik_http:
         monkeypatch.setattr(web, "FinikClient", lambda **kwargs: FinikClient(client=finik_http, **kwargs))
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=web.app), base_url="http://test") as client:
             payload = {"init_data": miniapp_init_data(bot_token="123456:test-token", user_id=880), "start_param": TokenSigner("c" * 32).sign_start_id("miniapp-apartment", first.id), "plan": "month"}
             initial = await client.post("/miniapp/api/session", json=payload)
             assert initial.json()["status"] == "unpaid"
-            assert initial.json()["price"] == 699
+            assert initial.json()["price"] == 500
             prepared = await client.post("/miniapp/api/prepare", json=payload)
             assert prepared.status_code == 200
-            assert prepared.json()["payment_url"] == "https://qr.finik.kg/lifetime-699"
+            assert prepared.json()["payment_url"] == "https://qr.finik.kg/weekly-500"
             assert len(captured) == 1
             assert not await consents.accepted(880)
             assert (await service.contact_status(880, first.id)).status == "unpaid"
@@ -116,18 +116,15 @@ async def test_lifetime_miniapp_checkout_and_auto_access_end_to_end(repositories
             assert premature.status_code == 409
             started = await client.post("/miniapp/api/start", json=payload)
             assert started.status_code == 200
-            assert started.json()["plan"] == LIFETIME_PLAN
-            assert started.json()["payment_url"] == "https://qr.finik.kg/lifetime-699"
+            assert started.json()["plan"] == WEEK_PLAN
+            assert started.json()["payment_url"] == "https://qr.finik.kg/weekly-500"
             assert await consents.accepted(880)
             assert len(captured) == 1
-            assert captured[0]["Amount"] == 699
-            assert captured[0]["Data"]["description"] == "Доступ к контактам навсегда"
+            assert captured[0]["Amount"] == 500
+            assert captured[0]["Data"]["description"] == "Недельный тариф"
             again = await client.post("/miniapp/api/start", json=payload)
             assert again.json()["payment_url"] == started.json()["payment_url"]
             assert len(captured) == 1
-            denied = await client.post("/miniapp/api/access", json=payload)
-            assert denied.status_code == 409
-            await payments.submit_receipt(user_id=880, apartment_id=first.id, file_id="receipt", file_type="photo")
             granted = await client.post("/miniapp/api/access", json=payload)
             assert granted.json()["status"] == "approved"
             repeated = await client.post("/miniapp/api/access", json=payload)

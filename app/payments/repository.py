@@ -672,13 +672,21 @@ class PaymentRepository:
             if active is not None:
                 return active
             # Apartment cleanup cascades checkout deletion. The independent
-            # ledger keeps lifetime access valid for future apartments.
+            # ledger keeps paid access valid for future apartments.
             return await session.scalar(
                 select(PaymentHistory)
                 .where(
                     PaymentHistory.telegram_user_id == user_id,
-                    PaymentHistory.plan == LIFETIME_PLAN,
-                    PaymentHistory.access_expires_at.is_(None),
+                    or_(
+                        and_(
+                            PaymentHistory.plan == LIFETIME_PLAN,
+                            PaymentHistory.access_expires_at.is_(None),
+                        ),
+                        and_(
+                            PaymentHistory.plan.in_((WEEK_PLAN, MONTH_PLAN)),
+                            PaymentHistory.access_expires_at > now,
+                        ),
+                    ),
                     ~select(PaymentRequest.id).where(
                         PaymentRequest.id == PaymentHistory.payment_request_id,
                     ).exists(),
@@ -818,12 +826,28 @@ class PaymentRepository:
     async def mark_payment_claimed(
         self, *, user_id: int, apartment_id: int
     ) -> PaymentRequest | None:
-        """A payment claim alone never grants access; a receipt is required."""
-        async with self.sessions() as session:
-            return await session.scalar(select(PaymentRequest).where(
-                PaymentRequest.telegram_user_id == user_id,
-                PaymentRequest.apartment_id == apartment_id,
-            ))
+        """Grant the selected access immediately after the customer confirms payment."""
+        async with self.sessions.begin() as session:
+            request = await session.scalar(
+                select(PaymentRequest)
+                .where(
+                    PaymentRequest.telegram_user_id == user_id,
+                    PaymentRequest.apartment_id == apartment_id,
+                )
+                .order_by(PaymentRequest.created_at.desc())
+                .limit(1)
+                .with_for_update()
+            )
+            if request is None:
+                return None
+            if request.status == "approved":
+                return request
+            if request.status not in {"prepared", "awaiting_receipt", "pending"}:
+                return request
+            request.status = "pending"
+            request_id = request.id
+        await self.decide(request_id, approve=True, admin_id=0)
+        return await self.get_request(request_id)
 
     async def set_admin_message(self, request_id: int, message_id: int) -> None:
         async with self.sessions.begin() as session:

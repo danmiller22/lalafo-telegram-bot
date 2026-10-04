@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from html import escape
 from urllib.parse import parse_qsl
 
-from app.payment_plans import LIFETIME_PRICE
+from app.payment_plans import WEEK_PRICE
 from app.terms import TERMS_TEXT
 
 
@@ -112,15 +112,15 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
   <p id="intro" class="intro"></p>
   <div id="status" class="status hidden" role="status" aria-live="polite"></div>
   <div id="tariff-description" class="intro hidden">
-    <p class="access-offer">Доступ к контактам навсегда — {LIFETIME_PRICE} сом.</p>
+    <p class="access-offer">Доступ к контактам на 7 дней — {WEEK_PRICE} сом.</p>
     <p class="agreement-caption">Оплачивая доступ, вы подтверждаете, что ознакомились с <a href="#agreement" class="terms-link">пользовательским соглашением</a> и согласны с его условиями.</p>
   </div>
-  <button id="pay-lifetime" class="primary tariff-button hidden">Оплатить {LIFETIME_PRICE} сом</button>
+  <button id="pay-lifetime" class="primary tariff-button hidden">Оплатить {WEEK_PRICE} сом</button>
   <section id="checkout" class="checkout hidden">
     <div id="payment-step" class="step"><span>1</span>Оплата через Finik</div>
     <button id="reopen-payment" class="secondary hidden">Открыть Finik</button>
-    <div class="step receipt-step"><span>2</span>Подтверждение</div>
-    <button id="access" class="primary hidden">Загрузить чек</button>
+    <div class="step receipt-step"><span>2</span>Получение номера</div>
+    <button id="access" class="primary hidden">Я оплатил(а) — открыть номер</button>
   </section>
   <div id="apartment" class="hidden">
     <div id="photos" class="photos"></div>
@@ -145,8 +145,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
   let paymentPoll = null;
   let paymentStart = null;
   let accessApproved = false;
-  let receiptUrl = "";
-  let selectedPlan = "lifetime";
+  let selectedPlan = "week";
   const paymentUrls = {checkout_json};
   let preparedUntil = Infinity;
   let checkoutPreparation = null;
@@ -154,18 +153,18 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
 
   function prepareCheckout() {{
     if (accessApproved || checkoutPreparation) return checkoutPreparation;
-    if (paymentUrls.lifetime && preparedUntil > Date.now()) return Promise.resolve();
+    if (paymentUrls.week && preparedUntil > Date.now()) return Promise.resolve();
     el("pay-lifetime").disabled = true;
     el("reopen-payment").disabled = true;
     checkoutPreparation = api("/miniapp/api/prepare", {{}}).then(data => {{
       if (data.status === "approved") {{ render(data); return; }}
-      paymentUrls.lifetime = data.payment_url;
+      paymentUrls.week = data.payment_url;
       preparedUntil = data.expires_at_ms;
       el("pay-lifetime").disabled = false;
       el("reopen-payment").disabled = false;
       if (refreshCheckoutTimer) clearTimeout(refreshCheckoutTimer);
       refreshCheckoutTimer = setTimeout(() => {{
-        paymentUrls.lifetime = "";
+        paymentUrls.week = "";
         prepareCheckout();
       }}, Math.max(1000, preparedUntil - Date.now()));
     }}).catch(error => {{
@@ -214,12 +213,11 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     // A response sent before access was granted must not undo the success screen.
     if (accessApproved && data.status !== "approved") return;
     const approved = data.status === "approved";
-    const waiting = data.plan === "lifetime" && (data.status === "awaiting_receipt" || data.status === "pending");
-    if (data.receipt_url) receiptUrl = data.receipt_url;
-    selectedPlan = "lifetime";
+    const waiting = data.plan === "week" && (data.status === "awaiting_receipt" || data.status === "pending");
+    selectedPlan = "week";
     el("title").textContent = approved ? "Квартира" : waiting ? "Оплата" : "";
     show("title", approved || waiting);
-    el("intro").textContent = approved ? "" : waiting ? "Навсегда · {LIFETIME_PRICE} сом" : "";
+    el("intro").textContent = approved ? "" : waiting ? "7 дней · {WEEK_PRICE} сом" : "";
     show("intro", waiting);
     show("apartment", approved);
     show("phone", approved);
@@ -260,7 +258,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
       el("phone").textContent = "📞 " + data.phone;
       el("phone").href = "tel:" + String(data.phone || "").replace(/\\s+/g, "");
     }} else if (waiting && data.status === "pending") {{
-      message("Загрузите чек об оплате.");
+      message("После оплаты нажмите «Я оплатил(а) — открыть номер».");
       startPaymentPolling();
     }} else if (waiting) {{
       message("");
@@ -350,7 +348,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     const agreement = el("agreement");
     if (agreement.close) agreement.close(); else agreement.removeAttribute("open");
   }};
-  el("pay-lifetime").onclick = () => startPayment("lifetime", "pay-lifetime");
+  el("pay-lifetime").onclick = () => startPayment("week", "pay-lifetime");
   el("reopen-payment").onclick = () => {{
     if (accessApproved) return;
     const url = paymentUrls[selectedPlan];
@@ -365,10 +363,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     el("access").disabled = true;
     try {{
       if (paymentStart) await paymentStart;
-      if (!receiptUrl) render(await api("/miniapp/api/session", {{}}));
-      if (!receiptUrl) throw new Error("Не удалось открыть чат. Попробуйте ещё раз.");
-      const current = telegramContext();
-      if (current) current.openTelegramLink(receiptUrl); else location.href = receiptUrl;
+      render(await api("/miniapp/api/access", {{}}));
     }} catch (error) {{ message(error.message); }}
     finally {{ el("access").disabled = false; }}
   }};

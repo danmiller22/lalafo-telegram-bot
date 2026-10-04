@@ -3,7 +3,7 @@ from __future__ import annotations
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from app.security import TokenSigner
-from app.payment_plans import LIFETIME_PRICE
+from app.payment_plans import WEEK_PRICE
 
 
 APARTMENT_KEYBOARD_VERSION = 15
@@ -82,7 +82,7 @@ def payment_keyboard(
     signer: TokenSigner,
     payment_url: str,
     support_url: str,
-    price: int = LIFETIME_PRICE,
+    price: int = WEEK_PRICE,
 ) -> InlineKeyboardMarkup:
     paid_token = signer.sign_id("paid", apartment_id)
     return InlineKeyboardMarkup(
@@ -109,8 +109,8 @@ def private_payment_keyboard(
     monthly_payment_url: str = "",
 ) -> InlineKeyboardMarkup:
     rows = [[InlineKeyboardButton(
-        text=f"Оплатить {LIFETIME_PRICE} сом",
-        callback_data=f"plan:l:{signer.sign_id('plan-lifetime', apartment_id)}",
+        text=f"Недельный тариф — {WEEK_PRICE} сом",
+        callback_data=f"plan:w:{signer.sign_id('plan-week', apartment_id)}",
     )]]
     rows.append(
         [
@@ -134,7 +134,7 @@ def private_contact_keyboard(*, support_url: str) -> InlineKeyboardMarkup:
 def finik_keyboard(payment_redirect_url: str, *, support_url: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text=f"💳 Оплатить {LIFETIME_PRICE} сом", url=payment_redirect_url)],
+            [InlineKeyboardButton(text=f"💳 Оплатить {WEEK_PRICE} сом", url=payment_redirect_url)],
             _support_row(support_url),
         ]
     )
@@ -146,7 +146,7 @@ def status_keyboard(
     signer: TokenSigner,
     payment_url: str,
     support_url: str,
-    price: int = LIFETIME_PRICE,
+    price: int = WEEK_PRICE,
 ) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[

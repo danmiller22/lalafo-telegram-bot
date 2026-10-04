@@ -74,16 +74,14 @@ async def test_receipt_requires_checkout_and_cannot_target_another_user(reposito
 
 
 @pytest.mark.asyncio
-async def test_legacy_pending_claim_does_not_unlock_access(repositories, service):
+async def test_pending_claim_unlocks_access_without_receipt(repositories, service):
     apartments, payments, sessions = repositories
     apartment = await apartments.upsert_discovered(make_ad(lalafo_id=9915))
     checkout = await service.begin_payment(user_id=905, apartment_id=apartment.id,
         username=None, first_name="Test", plan=LIFETIME_PLAN)
     async with sessions.begin() as session:
         await session.execute(update(PaymentRequest).where(PaymentRequest.id == checkout.request.id).values(status="pending"))
-    assert (await payments.mark_payment_claimed(user_id=905, apartment_id=apartment.id)).status == "pending"
-    assert (await service.contact_status(905, apartment.id)).status == "pending"
-    await payments.submit_receipt(user_id=905, file_id="receipt", file_type="photo", apartment_id=apartment.id)
+    assert (await payments.mark_payment_claimed(user_id=905, apartment_id=apartment.id)).status == "approved"
     assert (await service.contact_status(905, apartment.id)).status == "approved"
 
 

@@ -63,16 +63,15 @@ def test_telegram_init_data_rejects_tampering_and_stale_payload():
     ) is None
 
 
-def test_mini_app_page_has_one_lifetime_tariff_and_linked_agreement():
+def test_mini_app_page_has_one_weekly_tariff_and_linked_agreement():
     html = mini_app_html()
 
     assert "/miniapp/api/session" in html
     assert "/miniapp/api/start" in html
-    assert "openTelegramLink" in html
-    assert "Доступ к контактам навсегда — 699 сом." in html
-    assert ">Оплатить 699 сом</button>" in html
-    assert "499" not in html and "999" not in html
-    assert "Недельный тариф" not in html and "Месячный тариф" not in html
+    assert "Доступ к контактам на 7 дней — 500 сом." in html
+    assert ">Оплатить 500 сом</button>" in html
+    assert "499" not in html and "699" not in html and "999" not in html
+    assert "Месячный тариф" not in html
     assert 'id="hero"' not in html
     assert 'id="apartment"' in html
     assert 'id="photos"' in html
@@ -83,13 +82,13 @@ def test_mini_app_page_has_one_lifetime_tariff_and_linked_agreement():
     assert "prepareTelegramContext" in html
     assert "Выберите банк" not in html
     assert "Выберите доступ:" not in html
-    assert "Загрузить чек" in html
+    assert "Я оплатил(а) — открыть номер" in html
     assert 'id="receipt-file"' not in html
     assert "receipt_data" not in html
     assert "Статус: оплата проверяется" not in html
-    assert "Загрузите чек об оплате." in html
-    assert "current.openTelegramLink(receiptUrl)" in html
-    assert "/miniapp/api/access" not in html
+    assert "Загрузите чек об оплате." not in html
+    assert "openTelegramLink" not in html
+    assert "/miniapp/api/access" in html
     assert "/miniapp/api/consent" not in html
     assert 'type="checkbox"' not in html
     assert '<dialog id="agreement"' in html
@@ -114,8 +113,8 @@ def test_mini_app_page_has_one_lifetime_tariff_and_linked_agreement():
 
 
 def test_ready_checkout_opens_before_waiting_for_payment_request():
-    html = mini_app_html(payment_urls={"lifetime": "https://example.com/pay?x=1"})
-    assert '"lifetime": "https://example.com/pay?x=1"' in html
+    html = mini_app_html(payment_urls={"week": "https://example.com/pay?x=1"})
+    assert '"week": "https://example.com/pay?x=1"' in html
     assert html.index("current.openLink(readyUrl)") < html.index("const data = await paymentStart")
     assert "if (paymentStart) await paymentStart" in html
     assert "setInterval" not in html
@@ -123,7 +122,7 @@ def test_ready_checkout_opens_before_waiting_for_payment_request():
 
 
 def test_checkout_configuration_is_script_safe():
-    html = mini_app_html(payment_urls={"lifetime": "https://example.com/</script>"})
+    html = mini_app_html(payment_urls={"week": "https://example.com/</script>"})
     assert "https://example.com/</script>" not in html
     assert "https://example.com/\\u003c/script>" in html
 
@@ -133,7 +132,7 @@ def test_miniapp_checkout_reopening_and_late_status_response():
         import pytest
         pytest.skip("Node.js is required for the browser script regression checks")
     html = mini_app_html(payment_urls={
-        "lifetime": "https://example.com/lifetime",
+        "week": "https://example.com/week",
     })
     subprocess.run(
         ["node", str(Path(__file__).with_name("miniapp_ui_regression.cjs"))],

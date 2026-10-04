@@ -74,7 +74,7 @@ async def test_verified_finik_payment_still_requires_receipt(
     assert (await service.contact_status(9191, apartment.id)).status == "awaiting_receipt"
 
     approved_outcome, _ = await payments.apply_provider_result(
-        "payment-9191", succeeded=True, amount=499
+        "payment-9191", succeeded=True, amount=500
     )
     assert approved_outcome == "awaiting_receipt"
     await payments.submit_receipt(user_id=9191, file_id="receipt", file_type="photo")
@@ -83,7 +83,7 @@ async def test_verified_finik_payment_still_requires_receipt(
     expiry = approved.access_expires_at
     assert expiry is not None
     repeated, _ = await payments.apply_provider_result(
-        "payment-9191", succeeded=True, amount=499
+        "payment-9191", succeeded=True, amount=500
     )
     assert repeated == "already_approved"
     async with repositories[2]() as session:
@@ -224,7 +224,7 @@ async def test_auto_approved_submission_does_not_notify_admin(repositories, serv
 
 
 @pytest.mark.asyncio
-async def test_payment_claim_cannot_grant_access_without_receipt(repositories, service):
+async def test_payment_claim_grants_weekly_access_immediately(repositories, service):
     apartments, payments, _ = repositories
     apartment = await apartments.upsert_discovered(make_ad(lalafo_id=446))
     submission = await service.begin_payment(
@@ -244,12 +244,12 @@ async def test_payment_claim_cannot_grant_access_without_receipt(repositories, s
 
     assert first is not None
     assert first.id == submission.request.id
-    assert first.status == "awaiting_receipt"
+    assert first.status == "approved"
     assert first.receipt_file_id is None
     assert repeated is not None
     assert repeated.id == first.id
-    assert repeated.status == "awaiting_receipt"
-    assert (await service.contact_status(302, apartment.id)).status == "awaiting_receipt"
+    assert repeated.status == "approved"
+    assert (await service.contact_status(302, apartment.id)).status == "approved"
 
 
 @pytest.mark.asyncio

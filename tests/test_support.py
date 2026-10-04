@@ -112,7 +112,7 @@ async def test_common_question_is_answered_directly():
     )
     await support_question(message)
 
-    assert "Загрузить чек" in message.answer.await_args.args[0]
+    assert "Я оплатил(а) — открыть номер" in message.answer.await_args.args[0]
     keyboard = message.answer.await_args.kwargs["reply_markup"]
     assert keyboard.inline_keyboard[0][0].callback_data == "support:back"
 

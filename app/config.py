@@ -149,6 +149,11 @@ class Settings(BaseSettings):
     # specific, so keeping a historical QR here could send money to the wrong
     # account after a configuration change.
     finik_payment_url: str = ""
+    weekly_finik_payment_url: str = (
+        "https://qr.finik.kg/#00020101021232810011qr.finik.kg0114averspay-items"
+        "1032bbfd79c838a6483eb57bc42ea362fa811202121302125204482953034175405"
+        "500005908Finik-QR6304a55c"
+    )
     monthly_finik_payment_url: str = ""
     lifetime_finik_payment_url: str = "https://qr.finik.kg/e0c9972e-0f05-4dc3-99fd-96ec1debea1f?type=t"
     wanted_finik_payment_url: str = ""
@@ -191,7 +196,7 @@ class Settings(BaseSettings):
     apartment_publication_lease_seconds: int = 300
     apartment_publication_heartbeat_seconds: float = 60.0
     city: str = "Бишкек"
-    min_price: int = 25_000
+    min_price: int = 23_000
     max_price: int = 40_000
     rooms: str = "studio,1"
     max_new_posts_per_run: int = 18

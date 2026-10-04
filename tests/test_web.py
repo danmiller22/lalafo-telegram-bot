@@ -143,8 +143,8 @@ async def test_health_and_authentication() -> None:
             "finik_auto_payment": "disabled",
         "payment_access_mode": "automatic",
         "listing_validity_days": 4,
-        "payment_receipt_required": True,
-        "contact_tariff": {"plan": "lifetime", "price": 699, "expires": False, "storage": "persistent_ledger"},
+        "payment_receipt_required": False,
+        "contact_tariff": {"plan": "week", "price": 500, "expires": True, "storage": "persistent_ledger"},
         "payment_review": "admin_missing",
             "telegram_setup": "disabled",
             "lalafo_link_bot": "disabled",
@@ -588,7 +588,7 @@ async def test_miniapp_page_is_public_but_session_requires_telegram_auth(
     assert accepted.status_code == 200
     payload = accepted.json()
     assert payload["status"] == "unpaid"
-    assert payload["price"] == 699
+    assert payload["price"] == 500
     assert payload["monthly_available"] is False
     assert "terms_accepted" not in payload
     assert "terms_text" not in payload
@@ -600,7 +600,7 @@ async def test_miniapp_page_is_public_but_session_requires_telegram_auth(
 def test_automatic_checkout_is_enabled_when_finik_api_is_configured(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("FINIK_PAYMENT_URL", "https://qr.finik.kg/weekly")
+    monkeypatch.setenv("WEEKLY_FINIK_PAYMENT_URL", "https://qr.finik.kg/weekly")
     monkeypatch.setenv("MONTHLY_FINIK_PAYMENT_URL", "https://qr.finik.kg/monthly")
     monkeypatch.setenv("FINIK_API_KEY", "configured")
     monkeypatch.setenv("FINIK_ACCOUNT_ID", "corporate")
@@ -620,7 +620,7 @@ def test_automatic_checkout_is_enabled_when_finik_api_is_configured(
 async def test_miniapp_starts_a_checkout_bound_to_the_selected_apartment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("LIFETIME_FINIK_PAYMENT_URL", "")
+    monkeypatch.setenv("WEEKLY_FINIK_PAYMENT_URL", "")
     bot_token = "123456:telegram-test-token"
     callback_secret = "c" * 32
     monkeypatch.setenv("RUN_BOT", "true")
@@ -669,11 +669,11 @@ async def test_miniapp_starts_a_checkout_bound_to_the_selected_apartment(
         apartment_id=42,
         username="mini_user",
         first_name="Test",
-        plan=LIFETIME_PLAN,
+        plan=WEEK_PLAN,
     )
     checkout.assert_awaited_once()
     assert checkout.await_args.kwargs["apartment_id"] == 42
-    assert checkout.await_args.kwargs["plan"] == LIFETIME_PLAN
+    assert checkout.await_args.kwargs["plan"] == WEEK_PLAN
 
 
 @pytest.mark.asyncio
@@ -685,7 +685,7 @@ async def test_miniapp_uses_configured_payment_url_without_waiting_for_finik(
     monkeypatch.setenv("RUN_BOT", "true")
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", bot_token)
     monkeypatch.setenv("CALLBACK_SECRET", callback_secret)
-    monkeypatch.setenv("LIFETIME_FINIK_PAYMENT_URL", "https://qr.finik.kg/lifetime")
+    monkeypatch.setenv("WEEKLY_FINIK_PAYMENT_URL", "https://qr.finik.kg/weekly")
     monkeypatch.setenv("FINIK_API_KEY", "configured")
     monkeypatch.setenv("FINIK_ACCOUNT_ID", "corporate")
     monkeypatch.setenv("FINIK_PRIVATE_KEY_PEM", "configured")
@@ -720,14 +720,14 @@ async def test_miniapp_uses_configured_payment_url_without_waiting_for_finik(
         )
 
     assert response.status_code == 200
-    assert response.json()["payment_url"] == "https://qr.finik.kg/lifetime"
-    assert response.json()["automatic_payment"] is False
+    assert response.json()["payment_url"] == "https://qr.finik.kg/weekly"
+    assert response.json()["automatic_payment"] is True
     service.begin_payment.assert_awaited_once()
     checkout.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_miniapp_access_without_receipt_is_denied(
+async def test_miniapp_access_is_granted_after_customer_confirms_payment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     bot_token = "123456:telegram-test-token"
@@ -799,9 +799,9 @@ async def test_miniapp_access_without_receipt_is_denied(
             },
         )
 
-    assert response.status_code == 409
-    assert "чек" in response.json()["detail"]
-    payments.mark_payment_claimed.assert_not_awaited()
+    assert response.status_code == 200
+    assert response.json()["status"] == "approved"
+    payments.mark_payment_claimed.assert_awaited_once_with(user_id=778899, apartment_id=42)
     payments.claim_admin_notification.assert_not_awaited()
     payments.finish_admin_notification.assert_not_awaited()
     bot.send_message.assert_not_awaited()
@@ -866,7 +866,7 @@ async def test_old_payment_redirect_opens_current_miniapp_tariff(
 ) -> None:
     monkeypatch.setenv("RUN_BOT", "true")
     monkeypatch.setenv("CALLBACK_SECRET", "c" * 32)
-    monkeypatch.setenv("FINIK_PAYMENT_URL", "https://qr.finik.kg/test-payment")
+    monkeypatch.setenv("WEEKLY_FINIK_PAYMENT_URL", "https://qr.finik.kg/test-payment")
     get_settings.cache_clear()
     edit_markup = AsyncMock()
     web._bot_runtime = SimpleNamespace(

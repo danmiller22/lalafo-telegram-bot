@@ -18,7 +18,7 @@ from app.config import Settings
 from app.availability import AvailabilityService
 from app.payments.repository import PaymentRepository
 from app.payment_plans import (
-    LIFETIME_PLAN,
+    WEEK_PLAN,
     plan_label,
     plan_price,
 )
@@ -46,11 +46,11 @@ class ReceiptUpload(StatesGroup):
 
 
 def _payment_details(plan: str | None, settings: Settings, *, signer: TokenSigner | None = None, apartment_id: int | None = None) -> tuple[str, int]:
-    url = settings.lifetime_finik_payment_url
+    url = settings.weekly_finik_payment_url
     if not url and signer is not None and apartment_id is not None:
         token = signer.sign_start_id("miniapp-apartment", apartment_id)
         url = f"https://t.me/{settings.telegram_bot_username.lstrip('@')}/access?startapp={token}"
-    return url, plan_price(LIFETIME_PLAN)
+    return url, plan_price(WEEK_PLAN)
 
 
 def _start_payload(message: Message) -> str:
@@ -151,7 +151,7 @@ async def start_handler(
         apartment_text = format_apartment(result.apartment) if result.apartment else "Квартира"
         if result.status == "pending":
             text = (
-                "📎 Загрузите чек об оплате.\n\n"
+                "💳 Оплата\n\n"
                 f"{apartment_text}\n\n"
                 "Нажмите «Получить номер»."
             )
@@ -159,19 +159,19 @@ async def start_handler(
             text = (
                 "💳 Оплата\n\n"
                 f"{apartment_text}\n\n"
-                "После оплаты загрузите чек в чат бота."
+                "После оплаты нажмите «Получить номер»."
             )
         elif result.status == "rejected":
             text = (
                 "💳 Откройте оплату повторно.\n\n"
                 f"{apartment_text}\n\n"
-                "Доступ к контактам навсегда — 699 сом."
+                "Доступ к контактам на 7 дней — 500 сом."
             )
         else:
-            text = "Доступ к контактам навсегда — 699 сом."
+            text = "Доступ к контактам на 7 дней — 500 сом."
         reply_markup = private_payment_keyboard(
             apartment_id, signer=signer,
-            payment_url=settings.lifetime_finik_payment_url,
+            payment_url=settings.weekly_finik_payment_url,
             support_url=settings.support_bot_url,
         )
         await message.answer(text, reply_markup=reply_markup)
@@ -189,11 +189,11 @@ async def plan_handler(
     terms_consents: TermsConsentRepository | None = None,
 ) -> None:
     parts = (callback.data or "").split(":", 2)
-    if len(parts) != 3 or parts[1] not in {"l", "w", "m"}:
+    if len(parts) != 3 or parts[1] != "w":
         await callback.answer("Недействительная кнопка.", show_alert=True)
         return
-    plan = LIFETIME_PLAN
-    purpose = {"l": "plan-lifetime", "w": "plan-week", "m": "plan-month"}[parts[1]]
+    plan = WEEK_PLAN
+    purpose = "plan-week"
     payment_url, price = _payment_details(plan, settings)
     apartment_id = signer.verify_id(purpose, parts[2])
     if apartment_id is None:
@@ -232,7 +232,7 @@ async def plan_handler(
                 apartment_id=apartment_id, plan=plan,
             )
         except Exception:
-            logger.exception("Could not create lifetime Finik checkout")
+            logger.exception("Could not create weekly Finik checkout")
             await callback.answer("Не удалось открыть оплату. Попробуйте ещё раз.", show_alert=True)
             return
     await callback.answer()
@@ -280,11 +280,11 @@ async def terms_accept_handler(
     await callback.answer("Условия приняты.")
     if callback.message:
         await callback.message.edit_text(
-            "Доступ к контактам навсегда — 699 сом.",
+            "Доступ к контактам на 7 дней — 500 сом.",
             reply_markup=private_payment_keyboard(
                 apartment_id,
                 signer=signer,
-                payment_url=settings.lifetime_finik_payment_url,
+                payment_url=settings.weekly_finik_payment_url,
                 support_url=settings.support_bot_url,
                 monthly_payment_url=settings.monthly_finik_payment_url,
             ),
@@ -410,7 +410,7 @@ async def view_contact_handler(
     if result.status == "pending":
         payment_url, price = _payment_details(result.plan, settings, signer=signer, apartment_id=apartment_id)
         await callback.answer(
-            "Загрузите чек об оплате в личный чат бота.",
+            "После оплаты нажмите «Получить номер».",
             show_alert=True,
         )
         if callback.message:
@@ -437,7 +437,7 @@ async def view_contact_handler(
         return
     if result.status == "awaiting_receipt":
         payment_url, price = _payment_details(result.plan, settings, signer=signer, apartment_id=apartment_id)
-        await callback.answer("После оплаты загрузите чек в чат бота.", show_alert=True)
+        await callback.answer("После оплаты нажмите «Получить номер».", show_alert=True)
         if callback.message:
             await callback.message.edit_reply_markup(
                 reply_markup=payment_keyboard(
@@ -459,7 +459,7 @@ async def view_contact_handler(
                 private_payment_keyboard(
                     apartment_id,
                     signer=signer,
-                    payment_url=settings.lifetime_finik_payment_url,
+                    payment_url=settings.weekly_finik_payment_url,
                     support_url=settings.support_bot_url,
                     monthly_payment_url=settings.monthly_finik_payment_url,
                 )
@@ -486,7 +486,7 @@ async def view_contact_handler(
                 private_payment_keyboard(
                     apartment_id,
                     signer=signer,
-                    payment_url=settings.lifetime_finik_payment_url,
+                    payment_url=settings.weekly_finik_payment_url,
                     support_url=settings.support_bot_url,
                     monthly_payment_url=settings.monthly_finik_payment_url,
                 )
@@ -529,9 +529,23 @@ async def paid_handler(
         await callback.answer("✅ Карточка с номером отправлена вам.")
         return
     if result.status in {"awaiting_receipt", "pending"}:
-        await callback.answer("Отправьте чек об оплате в личный чат бота.", show_alert=True)
-        if callback.message and callback.message.chat.type == "private":
-            await callback.message.answer("Отправьте чек об оплате: фото или PDF-файл.")
+        request = await payments.mark_payment_claimed(
+            user_id=callback.from_user.id,
+            apartment_id=apartment_id,
+        )
+        if request is not None:
+            result = await service.contact_status(callback.from_user.id, apartment_id)
+        if result.status == "approved" and result.apartment:
+            await send_private_contact(
+                bot,
+                user_id=callback.from_user.id,
+                apartment=result.apartment,
+                support_url=settings.support_bot_url,
+                max_photos=settings.max_photos_per_apartment,
+            )
+            await callback.answer("✅ Карточка с номером отправлена вам.")
+            return
+        await callback.answer("Не удалось выдать доступ. Попробуйте ещё раз.", show_alert=True)
         return
     if result.status == "unavailable":
         await callback.answer("Квартира больше недоступна.", show_alert=True)
@@ -546,7 +560,7 @@ async def paid_handler(
                 reply_markup=private_payment_keyboard(
                     apartment_id,
                     signer=signer,
-                    payment_url=settings.lifetime_finik_payment_url,
+                    payment_url=settings.weekly_finik_payment_url,
                     support_url=settings.support_bot_url,
                     monthly_payment_url=settings.monthly_finik_payment_url,
                 )
@@ -582,7 +596,7 @@ async def receipt_handler(message: Message, payments: PaymentRepository,
         file_type="photo" if message.photo else "document",
         apartment_id=data.get("receipt_apartment_id"))
     if request is None:
-        await message.answer("Откройте оплату кнопкой «Получить номер», затем загрузите чек.")
+        await message.answer("Откройте оплату кнопкой «Получить номер».")
         return
     await state.clear()
     await message.answer("Чек принят.")

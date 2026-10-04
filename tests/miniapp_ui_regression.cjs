@@ -33,24 +33,24 @@ function setup(initial, fetchOverride, dynamic = false) {
 }
 
 (async () => {
-  // A restored lifetime checkout must reopen its URL without a new request.
-  const restored = setup({status: 'awaiting_receipt', plan: 'lifetime'});
+  // A restored weekly checkout must reopen its URL without a new request.
+  const restored = setup({status: 'awaiting_receipt', plan: 'week'});
   await new Promise(setImmediate);
   assert.equal(restored.node('reopen-payment').hidden, false);
   assert.equal(restored.node('checkout').hidden, false);
   assert.equal(restored.node('pay-lifetime').hidden, true);
   restored.node('reopen-payment').onclick();
   restored.node('reopen-payment').onclick();
-  assert.deepEqual(restored.opened, ['https://example.com/lifetime', 'https://example.com/lifetime']);
+  assert.deepEqual(restored.opened, ['https://example.com/week', 'https://example.com/week']);
 
   let sessionCalls = 0, resolvePoll;
   const race = setup(null, path => {
     if (path.endsWith('/session')) {
-      if (++sessionCalls === 1) return Promise.resolve(response({status: 'unpaid', receipt_url: 'https://t.me/bot?start=receipt_test'}));
+      if (++sessionCalls === 1) return Promise.resolve(response({status: 'unpaid'}));
       return new Promise(resolve => { resolvePoll = resolve; });
     }
     if (path.endsWith('/consent')) return Promise.resolve(response({terms_accepted: true}));
-    if (path.endsWith('/start')) return Promise.resolve(response({status: 'awaiting_receipt', plan: 'lifetime'}));
+    if (path.endsWith('/start')) return Promise.resolve(response({status: 'awaiting_receipt', plan: 'week'}));
     return Promise.resolve(response({status: 'approved', phone: '+996555000000', apartment: {}}));
   });
   await new Promise(setImmediate);
@@ -64,14 +64,13 @@ function setup(initial, fetchOverride, dynamic = false) {
   assert.equal(race.node('agreement').open, false);
   assert.equal(race.node('checkout').hidden, true);
   await race.node('pay-lifetime').onclick();
-  assert.deepEqual(race.opened, ['https://example.com/lifetime']);
+  assert.deepEqual(race.opened, ['https://example.com/week']);
   const [id, callback] = [...race.timers.entries()][0];
   race.timers.delete(id);
   const inFlight = callback();
   assert.equal(race.node('phone').hidden, true);
   await race.node('access').onclick();
-  assert.equal(race.node('phone').hidden, true);
-  assert.equal(race.opened.at(-1), 'https://t.me/bot?start=receipt_test');
+  assert.equal(race.node('phone').hidden, false);
   resolvePoll(response({status: 'approved', phone: '+996555000000', apartment: {}}));
   await inFlight;
   assert.equal(race.node('phone').hidden, false);
@@ -79,25 +78,25 @@ function setup(initial, fetchOverride, dynamic = false) {
   assert.equal(race.node('reopen-payment').hidden, true);
   assert.equal(race.timers.size, 0);
   assert.equal(race.node('status').hidden, true);
-  const pending = setup({status: 'pending', plan: 'lifetime'});
+  const pending = setup({status: 'pending', plan: 'week'});
   await new Promise(setImmediate);
   assert.equal(pending.node('phone').hidden, true);
   assert.equal(pending.node('access').hidden, false);
   assert.equal(pending.node('reopen-payment').hidden, true);
-  assert.equal(pending.node('status').textContent, 'Загрузите чек об оплате.');
+  assert.equal(pending.node('status').textContent, 'После оплаты нажмите «Я оплатил(а) — открыть номер».');
   assert.equal(pending.timers.size, 1);
   let finishStart;
   const warm = setup(null, path => {
     if (path.endsWith('/prepare')) return Promise.resolve(response({payment_url: 'https://example.com/prepared', expires_at_ms: Date.now() + 300000}));
     if (path.endsWith('/start')) return new Promise(resolve => { finishStart = resolve; });
-    return Promise.resolve(response({status: 'unpaid', receipt_url: 'https://t.me/bot?start=receipt_test'}));
+    return Promise.resolve(response({status: 'unpaid'}));
   }, true);
   await new Promise(setImmediate);
   assert.equal(warm.node('pay-lifetime').disabled, false);
   const opening = warm.node('pay-lifetime').onclick();
   // Navigation happens synchronously, while the activation request is still unresolved.
   assert.deepEqual(warm.opened, ['https://example.com/prepared']);
-  finishStart(response({status: 'awaiting_receipt', plan: 'lifetime'}));
+  finishStart(response({status: 'awaiting_receipt', plan: 'week'}));
   await opening;
   assert.equal(warm.node('access').hidden, false);
   console.log('Mini App UI regression checks passed');

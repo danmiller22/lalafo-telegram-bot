@@ -23,7 +23,7 @@ from app.availability import MAX_LISTING_AGE_DAYS
 from app.config import get_settings
 from app.lalafo.auto_reply import LalafoAutoResponder
 from app.lalafo.models import LalafoAd
-from app.payment_plans import LIFETIME_PLAN, LIFETIME_PRICE, MONTH_PLAN, WEEK_PLAN, plan_price
+from app.payment_plans import LIFETIME_PLAN, MONTH_PLAN, WEEK_PLAN, WEEK_PRICE, plan_price
 from app.finik import (
     FinikClient,
     PRODUCTION_WEBHOOK_PUBLIC_KEY,
@@ -127,7 +127,7 @@ def _finik_payment_url(settings: Any, plan: str) -> str:
     return (
         settings.monthly_finik_payment_url
         if plan == MONTH_PLAN
-        else settings.finik_payment_url
+        else settings.weekly_finik_payment_url
     )
 
 
@@ -1125,8 +1125,8 @@ async def health() -> JSONResponse:
             "finik_auto_payment": "ready" if settings.finik_auto_enabled else "disabled",
             "payment_access_mode": "automatic",
             "listing_validity_days": MAX_LISTING_AGE_DAYS,
-            "payment_receipt_required": True,
-            "contact_tariff": {"plan": LIFETIME_PLAN, "price": LIFETIME_PRICE, "expires": False, "storage": "persistent_ledger"},
+            "payment_receipt_required": False,
+            "contact_tariff": {"plan": WEEK_PLAN, "price": WEEK_PRICE, "expires": True, "storage": "persistent_ledger"},
             "payment_review": "ready" if settings.admin_user_id > 0 else "admin_missing",
             "telegram_setup": (
                 dict(_bot_setup_state) if settings.run_bot else "disabled"
@@ -1222,7 +1222,7 @@ def _miniapp_result_payload(result) -> dict[str, Any]:
         )
     response: dict[str, Any] = {
         "status": result.status,
-        "price": LIFETIME_PRICE,
+        "price": WEEK_PRICE,
         "plan": getattr(result, "plan", None),
     }
     if result.status == "approved":
@@ -1251,7 +1251,7 @@ def _miniapp_result_payload(result) -> dict[str, Any]:
 async def telegram_mini_app() -> HTMLResponse:
     settings = get_settings()
     return HTMLResponse(
-        mini_app_html(payment_urls={LIFETIME_PLAN: _finik_payment_url(settings, LIFETIME_PLAN)}),
+        mini_app_html(payment_urls={WEEK_PLAN: _finik_payment_url(settings, WEEK_PLAN)}),
         headers={
             "Cache-Control": "no-store",
             "Content-Security-Policy": (
@@ -1278,8 +1278,6 @@ async def miniapp_session(payload: MiniAppRequest) -> dict[str, Any]:
     response["monthly_available"] = False
     bot_url = f"https://t.me/{settings.telegram_bot_username.lstrip('@')}"
     response["privacy_url"] = f"{bot_url}?start=privacy"
-    receipt_token = TokenSigner(settings.require_callback_secret()).sign_start_id("receipt", apartment_id)
-    response["receipt_url"] = f"{bot_url}?start=receipt_{receipt_token}"
     return response
 
 
@@ -1294,8 +1292,6 @@ async def miniapp_consent(payload: MiniAppRequest) -> dict[str, Any]:
     response["terms_text"] = TERMS_TEXT
     bot_url = f"https://t.me/{settings.telegram_bot_username.lstrip('@')}"
     response["privacy_url"] = f"{bot_url}?start=privacy"
-    receipt_token = TokenSigner(settings.require_callback_secret()).sign_start_id("receipt", apartment_id)
-    response["receipt_url"] = f"{bot_url}?start=receipt_{receipt_token}"
     response["support_url"] = f"{bot_url}?start=support"
     return response
 
@@ -1317,12 +1313,12 @@ async def miniapp_prepare_payment(payload: MiniAppRequest) -> dict[str, Any]:
     try:
         submission = await payments.submit(
             user_id=user.id, apartment_id=apartment_id, username=user.username,
-            first_name=user.first_name, plan=LIFETIME_PLAN, prepare_only=True,
+            first_name=user.first_name, plan=WEEK_PLAN, prepare_only=True,
         )
         if submission.outcome == "approved":
             return _miniapp_result_payload(await runtime.workflow_data["service"].contact_status(user.id, apartment_id))
         url = await _finik_checkout_url(settings, payments, submission.request,
-                                        apartment_id=apartment_id, plan=LIFETIME_PLAN)
+                                        apartment_id=apartment_id, plan=WEEK_PLAN)
         prepared = await payments.get_request(submission.request.id)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail="Квартира больше недоступна.") from exc
@@ -1340,7 +1336,7 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
     settings, runtime, user, apartment_id = _miniapp_context(payload)
     service = runtime.workflow_data["service"]
     result = await service.contact_status(user.id, apartment_id)
-    plan = LIFETIME_PLAN
+    plan = WEEK_PLAN
     payment_url = _finik_payment_url(settings, plan)
     if not payment_url and not _uses_dynamic_finik(settings, plan):
         raise HTTPException(
@@ -1398,7 +1394,16 @@ async def miniapp_issue_access(payload: MiniAppRequest) -> dict[str, Any]:
     current = await service.contact_status(user.id, apartment_id)
     if current.status == "approved":
         return _miniapp_result_payload(current)
-    raise HTTPException(status_code=409, detail="Загрузите чек об оплате в чат бота.")
+    if current.status in {"awaiting_receipt", "pending"}:
+        request = await runtime.workflow_data["payments"].mark_payment_claimed(
+            user_id=user.id,
+            apartment_id=apartment_id,
+        )
+        if request is not None:
+            current = await service.contact_status(user.id, apartment_id)
+            if current.status == "approved":
+                return _miniapp_result_payload(current)
+    raise HTTPException(status_code=409, detail="Сначала откройте оплату.")
 
 
 @app.post("/finik/webhook", include_in_schema=False)

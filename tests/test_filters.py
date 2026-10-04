@@ -142,7 +142,7 @@ def test_expanded_source_keeps_reposts_strictly_limited():
     assert TWO_BEDROOM_DAILY_LIMIT == 20
     assert TWO_BEDROOM_MAX_PER_RUN == 2
     assert settings.rooms == "studio,1"
-    assert settings.min_price == 25_000
+    assert settings.min_price == 23_000
     assert settings.max_price == 40_000
     assert settings.max_new_posts_per_run == 18
     assert settings.max_search_pages == 36
