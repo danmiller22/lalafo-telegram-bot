@@ -150,6 +150,8 @@ Koyeb запускает `uvicorn app.web:app` и получает те же Tel
 - `RUN_TRIGGER_SECRET` — случайная строка не короче 32 символов;
 - `DRY_RUN=true` — HTTP-service сам не публикует объявления.
 - `LALAFO_AUTO_REPLY_ENABLED=true`;
+- `LALAFO_AUTO_REPLY_WEB_ENABLED=true` — запускает автоответчик только в
+  единственном Koyeb web-процессе;
 - `LALAFO_LOGIN` и `LALAFO_PASSWORD` — только в защищённых secrets Koyeb;
 - `LALAFO_AUTO_REPLY_POLL_SECONDS=10`. Значение меньше десяти секунд
   принудительно повышается до 10 секунд; используется фиксированный шаблон с
