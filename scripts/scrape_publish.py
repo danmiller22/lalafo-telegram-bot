@@ -621,34 +621,8 @@ def select_owners_then_realtors(
     candidates: list[LalafoAd],
     limit: int,
 ) -> list[LalafoAd]:
-    """Select equal owner/realtor shares and fill shortages from either pool."""
-    if limit <= 0:
-        return []
-    owners = [ad for ad in candidates if ad.seller_type == "owner" and ad.owner_listing]
-    realtors = [ad for ad in candidates if ad.seller_type == "realtor"]
-    realtor_target = min(len(realtors), math.ceil(limit * REALTOR_BATCH_SHARE))
-    owner_target = min(len(owners), limit - realtor_target)
-    selected = select_publish_batch_with_reposts(owners, {}, owner_target)
-    selected.extend(select_publish_batch_with_reposts(realtors, {}, realtor_target))
-    if len(selected) < limit:
-        selected_ids = {ad.lalafo_id for ad in selected}
-        remaining_owners = [ad for ad in owners if ad.lalafo_id not in selected_ids]
-        selected.extend(
-            select_publish_batch_with_reposts(
-                remaining_owners, {}, limit - len(selected)
-            )
-        )
-    if len(selected) < limit:
-        selected_ids = {ad.lalafo_id for ad in selected}
-        remaining_realtors = [
-            ad for ad in realtors if ad.lalafo_id not in selected_ids
-        ]
-        selected.extend(
-            select_publish_batch_with_reposts(
-                remaining_realtors, {}, limit - len(selected)
-            )
-        )
-    return selected
+    """Select all eligible listings without using author type as a filter."""
+    return select_publish_batch_with_reposts(candidates, {}, limit)
 
 
 async def run(

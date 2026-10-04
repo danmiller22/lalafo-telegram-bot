@@ -65,7 +65,6 @@ def test_approved_miniapp_payload_contains_apartment_card() -> None:
         "city": "Бишкек",
         "price": 35_000,
             "deposit": 5_000,
-            "author": None,
             "description": "",
         "photo_urls": [
             "https://img.example/1.jpg",

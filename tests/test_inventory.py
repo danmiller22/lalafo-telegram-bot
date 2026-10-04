@@ -13,6 +13,7 @@ from app.inventory import (
     PUBLICATION_SPACING_MINUTES,
     daily_realtor_target,
     daily_publication_target,
+    is_central,
     period_publication_targets,
     plan_period,
 )
@@ -154,13 +155,10 @@ def test_central_realtors_can_fill_central_share():
     period_count, central_count = period_publication_targets(period_start)
     assert len(planned) == period_count
     assert any(item.apartment.seller_type == "owner" for item in planned)
-    assert (
-        sum(item.apartment.seller_type == "realtor" for item in planned)
-        == 31
-    )
+    assert sum(is_central(item.apartment.district) for item in planned) == central_count
 
 
-def test_each_standalone_period_caps_agents():
+def test_each_standalone_period_ignores_author_type():
     owners = _apartments(160, central=True, start_id=1)
     realtors = _apartments(80, central=False, start_id=500, owner=False)
     first_start = datetime(2026, 9, 13, 0, tzinfo=timezone(timedelta(hours=6)))
@@ -174,12 +172,12 @@ def test_each_standalone_period_caps_agents():
         rng=random.Random(22),
     )
 
-    assert sum(
-        item.apartment.seller_type == "realtor" for item in first + second
-    ) == 62
+    assert len(first) == 48
+    assert len(second) == 48
+    assert {item.apartment.seller_type for item in first + second} == {"owner", "realtor"}
 
 
-def test_unknown_authors_are_excluded():
+def test_unknown_authors_are_published():
     stock = _apartments(100, central=True, start_id=1)
     for item in stock:
         item.owner_listing = False
@@ -188,7 +186,8 @@ def test_unknown_authors_are_excluded():
 
     planned = plan_period(stock, period_start=period_start, rng=random.Random(13))
 
-    assert planned == []
+    assert len(planned) == 48
+    assert all(item.apartment.seller_type == "unknown" for item in planned)
 
 
 def test_daily_realtor_target_is_65_percent_of_ninety_six():

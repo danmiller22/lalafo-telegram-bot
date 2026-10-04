@@ -52,9 +52,6 @@ def seller_status(ad: LalafoAd | Apartment) -> str:
 
 def format_apartment(ad: LalafoAd | Apartment) -> str:
     lines = [f"🏠 {room_title(ad.rooms)}"]
-    author = author_label(ad)
-    if author:
-        lines.append(f"👤 Автор: {author}")
     if ad.district:
         lines.append(f"📍 {ad.district}")
     else:

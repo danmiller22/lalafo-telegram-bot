@@ -186,107 +186,9 @@ def _limit_non_owners(
     target: int,
     maximum: int,
 ) -> list[PlannedApartment]:
-    """Aim for the requested realtor share and keep publishing on shortages."""
-    maximum = max(0, maximum)
-    target = min(maximum, max(0, target))
-    result: list[PlannedApartment | None] = list(planned)
-    used_ids = {item.apartment.id for item in planned}
-    unused = [item for item in apartments if item.id not in used_ids]
-
-    current_non_owners = sum(
-        item is not None and _seller_type(item.apartment) == "realtor"
-        for item in result
-    )
-
-    # Replace surplus realtor cards with verified owners when possible. Keep
-    # the realtor card when no owner replacement exists so publication lives.
-    if current_non_owners > maximum:
-        owner_candidates = [
-            item
-            for item in unused
-            if _seller_type(item) == "owner" and bool(item.owner_listing)
-        ]
-        owner_candidates.sort(
-            key=lambda item: _candidate_key(item, central=is_central(item.district))
-        )
-        surplus_indexes = [
-            index
-            for index, item in enumerate(result)
-            if item is not None and _seller_type(item.apartment) == "realtor"
-        ][maximum:]
-        for index in surplus_indexes:
-            old = result[index]
-            replacement_index = next(
-                (
-                    candidate_index
-                    for candidate_index, owner in enumerate(owner_candidates)
-                    if owner.rooms == old.apartment.rooms
-                    and is_central(owner.district) == is_central(old.apartment.district)
-                ),
-                None,
-            )
-            if replacement_index is None:
-                replacement_index = next(
-                    (
-                        candidate_index
-                        for candidate_index, owner in enumerate(owner_candidates)
-                        if owner.rooms == old.apartment.rooms
-                    ),
-                    None,
-                )
-            if replacement_index is None:
-                continue
-            else:
-                owner = owner_candidates.pop(replacement_index)
-                result[index] = PlannedApartment(
-                    apartment=owner,
-                    scheduled_at=old.scheduled_at,
-                    window_key=old.window_key,
-                    sequence=old.sequence,
-                )
-        current_non_owners = sum(
-            item is not None and _seller_type(item.apartment) == "realtor"
-            for item in result
-        )
-
-    if current_non_owners < target:
-        non_owner_candidates = [
-            item for item in unused if _seller_type(item) == "realtor"
-        ]
-        non_owner_candidates.sort(
-            key=lambda item: _candidate_key(item, central=is_central(item.district))
-        )
-        for candidate in non_owner_candidates:
-            replaceable = [
-                index
-                for index, item in enumerate(result)
-                if item is not None
-                and _seller_type(item.apartment) != "realtor"
-                and not item.apartment.discovery_priority
-                and item.apartment.rooms == candidate.rooms
-            ]
-            if not replaceable:
-                continue
-            replaceable.sort(
-                key=lambda index: (
-                    is_central(result[index].apartment.district)
-                    != is_central(candidate.district),
-                    result[index].scheduled_at,
-                )
-            )
-            index = replaceable[0]
-            old = result[index]
-            result[index] = PlannedApartment(
-                apartment=candidate,
-                scheduled_at=old.scheduled_at,
-                window_key=old.window_key,
-                sequence=old.sequence,
-            )
-            current_non_owners += 1
-            if current_non_owners >= target:
-                break
-
-    return [item for item in result if item is not None]
+    """Keep every eligible card regardless of its declared author type."""
+    del apartments, target, maximum
+    return planned
 
 
 def _pick_for_window(
@@ -349,10 +251,6 @@ def plan_period(
         if item.rooms in ALLOWED_ROOMS
         and is_supported_source(item)
         and 25_000 <= item.price <= 40_000
-        and (
-            (_seller_type(item) == "owner" and bool(item.owner_listing))
-            or _seller_type(item) == "realtor"
-        )
     ]
     repeat_ids = set(repeat_apartment_ids or ()) if MAX_REPOSTS_PER_PERIOD else set()
     central_pool = sorted(
@@ -742,13 +640,6 @@ class InventoryRepository:
                             Apartment.fingerprint.not_in(queued_fingerprints),
                             Apartment.price.between(25_000, 40_000),
                             Apartment.rooms.in_(ALLOWED_ROOMS),
-                            (
-                                (
-                                    (Apartment.seller_type == "owner")
-                                    & Apartment.owner_listing.is_(True)
-                                )
-                                | (Apartment.seller_type == "realtor")
-                            ),
                             Apartment.last_seen_at >= now - timedelta(days=2),
                         )
                         .order_by(
@@ -773,13 +664,6 @@ class InventoryRepository:
                             Apartment.fingerprint.not_in(queued_fingerprints),
                             Apartment.price.between(25_000, 40_000),
                             Apartment.rooms.in_(ALLOWED_ROOMS),
-                            (
-                                (
-                                    (Apartment.seller_type == "owner")
-                                    & Apartment.owner_listing.is_(True)
-                                )
-                                | (Apartment.seller_type == "realtor")
-                            ),
                             Apartment.last_seen_at >= now - timedelta(days=2),
                         )
                         .order_by(Apartment.published_at.asc())
@@ -892,13 +776,6 @@ class InventoryRepository:
             ineligible_apartment_ids = select(Apartment.id).where(
                 (Apartment.price < 25_000)
                 | (Apartment.price > 40_000)
-                | (
-                    (func.coalesce(Apartment.seller_type, "unknown") != "realtor")
-                    & (
-                        (func.coalesce(Apartment.seller_type, "unknown") != "owner")
-                        | Apartment.owner_listing.is_not(True)
-                    )
-                )
             )
             await session.execute(
                 update(ApartmentInventoryQueue)
@@ -991,13 +868,6 @@ class InventoryRepository:
                         ApartmentInventoryQueue.scheduled_at <= eligible_until,
                         Apartment.rooms.in_(ALLOWED_ROOMS),
                         Apartment.price.between(25_000, 40_000),
-                        (
-                            (
-                                (Apartment.seller_type == "owner")
-                                & Apartment.owner_listing.is_(True)
-                            )
-                            | (Apartment.seller_type == "realtor")
-                        ),
                         _supported_source_filter(),
                     )
                     .order_by(
@@ -1012,35 +882,12 @@ class InventoryRepository:
             central_needed = published_central < math.ceil(
                 (published_today + 1) * CENTRAL_DAILY_SHARE
             )
-            realtor_needed = published_non_owners < round(
-                (published_today + 1) * REALTOR_DAILY_SHARE
-            )
-
-            def matches_seller(seller_type: str | None) -> bool:
-                return (seller_type == "realtor") == realtor_needed
-
             selected_id = next(
                 (
-                    queue_id
-                    for queue_id, district, seller_type in due_rows
+                    queue_id for queue_id, district, _seller_type in due_rows
                     if is_central(district) == central_needed
-                    and matches_seller(seller_type)
                 ),
-                next(
-                    (
-                        queue_id
-                        for queue_id, _district, seller_type in due_rows
-                        if matches_seller(seller_type)
-                    ),
-                    next(
-                        (
-                            queue_id
-                            for queue_id, district, _seller_type in due_rows
-                            if is_central(district) == central_needed
-                        ),
-                        due_rows[0][0],
-                    ),
-                ),
+                due_rows[0][0],
             )
             row = (
                 await session.scalars(

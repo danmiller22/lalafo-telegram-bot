@@ -34,7 +34,6 @@ from app.finik import (
     verify_request,
 )
 from app.security import TokenSigner
-from app.telegram.formatting import author_label
 from app.terms import TERMS_TEXT
 from app.telegram.keyboards import payment_keyboard
 from app.telegram.publisher import TelegramPublisher
@@ -1233,7 +1232,6 @@ def _miniapp_result_payload(result) -> dict[str, Any]:
             "city": apartment.city,
             "price": apartment.price,
             "deposit": apartment.deposit,
-            "author": author_label(apartment),
             "description": getattr(apartment, "source_description", None) or "",
             "photo_urls": [
                 url
