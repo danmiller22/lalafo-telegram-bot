@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from aiogram import Bot
+from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
 from aiogram.types import InputMediaPhoto, URLInputFile
 
 from app.lalafo.phone import display_phone
@@ -10,10 +12,29 @@ from app.models import Apartment
 from app.telegram.formatting import format_apartment
 from app.telegram.formatting import format_public_apartment
 from app.telegram.keyboards import apartment_keyboard
+from app.telegram.keyboards import matching_apartment_keyboard
 from app.security import TokenSigner
 
 logger = logging.getLogger(__name__)
 TELEGRAM_ALBUM_LIMIT = 10
+
+
+def public_description(value: str | None) -> str:
+    """Remove contact routes before showing a source description for free."""
+    text = (value or "").strip()
+    if not text:
+        return ""
+    text = re.sub(
+        r"(?<!\d)(?:(?:\+?996|0)[\s()\-]*)?(?:2|5|7|9)\d{2}(?:[\s()\-]*\d){6}(?!\d)",
+        "[контакт доступен после оплаты]",
+        text,
+    )
+    return re.sub(
+        r"(?:https?://)?t\.me/[A-Za-z0-9_]+|@[A-Za-z0-9_]{4,}",
+        "[контакт доступен после оплаты]",
+        text,
+        flags=re.IGNORECASE,
+    )
 
 
 def format_private_contact(apartment: Apartment) -> str:
@@ -45,6 +66,8 @@ async def send_private_contact(
                 caption=text,
             )
             return
+        except (TelegramForbiddenError, TelegramRetryAfter):
+            raise
         except Exception as exc:
             logger.warning(
                 "Could not deliver private apartment photo; falling back to text: %s",
@@ -106,6 +129,8 @@ async def send_private_public_card(
                 reply_markup=keyboard,
             )
             return
+        except (TelegramForbiddenError, TelegramRetryAfter):
+            raise
         except Exception as exc:
             logger.warning("Could not deliver duplicate apartment photo: %s", type(exc).__name__)
     for offset in range(0, len(urls), TELEGRAM_ALBUM_LIMIT):
@@ -121,3 +146,59 @@ async def send_private_public_card(
         except Exception as exc:
             logger.warning("Could not deliver duplicate apartment album: %s", type(exc).__name__)
     await bot.send_message(user_id, text, reply_markup=keyboard)
+
+
+async def send_matching_card(
+    bot: Bot,
+    *,
+    user_id: int,
+    apartment: Apartment,
+    signer: TokenSigner,
+    bot_username: str,
+) -> int:
+    """Send a phone-free apartment card for hot and personalized feeds."""
+    keyboard = matching_apartment_keyboard(
+        apartment.id,
+        signer=signer,
+        bot_username=bot_username,
+    )
+    text = format_apartment(apartment)
+    description = public_description(apartment.source_description)
+    if description:
+        text = f"{text}\n\n{description[:2500]}"
+    urls = list(dict.fromkeys(apartment.photo_urls))
+    if len(urls) == 1 and len(text) <= 1024:
+        try:
+            message = await bot.send_photo(
+                user_id,
+                URLInputFile(urls[0], timeout=25),
+                caption=text,
+                reply_markup=keyboard,
+            )
+            return message.message_id
+        except (TelegramForbiddenError, TelegramRetryAfter):
+            raise
+        except Exception as exc:
+            logger.warning(
+                "Could not deliver matching apartment photo: %s",
+                type(exc).__name__,
+            )
+    for offset in range(0, len(urls), TELEGRAM_ALBUM_LIMIT):
+        chunk = urls[offset : offset + TELEGRAM_ALBUM_LIMIT]
+        try:
+            if len(chunk) == 1:
+                await bot.send_photo(user_id, URLInputFile(chunk[0], timeout=25))
+            else:
+                await bot.send_media_group(
+                    user_id,
+                    [InputMediaPhoto(media=URLInputFile(url, timeout=25)) for url in chunk],
+                )
+        except (TelegramForbiddenError, TelegramRetryAfter):
+            raise
+        except Exception as exc:
+            logger.warning(
+                "Could not deliver matching apartment album: %s",
+                type(exc).__name__,
+            )
+    message = await bot.send_message(user_id, text, reply_markup=keyboard)
+    return message.message_id

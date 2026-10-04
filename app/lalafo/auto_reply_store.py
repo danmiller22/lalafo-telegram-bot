@@ -149,6 +149,21 @@ class AutoReplyStore:
         }
         inserted = False
         async with self._sessions() as session, session.begin():
+            # One useful answer per conversation is enough. A burst of customer
+            # messages must not produce a burst of identical promotional replies.
+            recent = await session.scalar(
+                select(func.count())
+                .select_from(LalafoAutoReplyJob)
+                .where(
+                    LalafoAutoReplyJob.chat_key == chat_key,
+                    LalafoAutoReplyJob.status.in_(
+                        ("queued", "sending", "retry_wait", "sent")
+                    ),
+                    LalafoAutoReplyJob.updated_at >= now_ms - 24 * 60 * 60 * 1000,
+                )
+            )
+            if int(recent or 0) > 0:
+                return False
             if self._dialect == "postgresql":
                 statement = postgresql_insert(LalafoAutoReplyJob).values(**values)
                 statement = statement.on_conflict_do_nothing(index_elements=["inbound_key"])

@@ -18,7 +18,7 @@ _RENTED = re.compile(r"(?iu)\b(?:сдан[аоы]?|снят[аоы]?|неакт�
 _TAGS = re.compile(r"<[^>]+>")
 _BISHKEK = ZoneInfo("Asia/Bishkek")
 AVAILABILITY_CACHE_HOURS = 12
-MAX_LISTING_AGE_DAYS = 4
+MAX_LISTING_AGE_DAYS = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,7 +58,7 @@ class AvailabilityService:
             )
             return AvailabilityResult("unavailable", "listing_age_limit", now)
         if published_at:
-            # A newly published card receives one complete 96-hour window.
+            # A newly published card receives one complete 48-hour window.
             # Reposts must not inherit an old removal check from an earlier card.
             await self.apartments.set_availability(
                 apartment_id,

@@ -141,7 +141,7 @@ async def test_health_and_authentication() -> None:
             "bot": "disabled",
             "finik_auto_payment": "disabled",
         "payment_access_mode": "automatic",
-        "listing_validity_days": 4,
+        "listing_validity_days": 2,
         "payment_receipt_required": False,
         "contact_tariff": {"plan": "week", "price": 500, "expires": True, "storage": "persistent_ledger"},
         "payment_review": "admin_missing",
@@ -154,6 +154,7 @@ async def test_health_and_authentication() -> None:
                 "last_error": None,
                 "restart_count": 0,
             },
+            "personal_matching": "disabled",
             "lalafo_auto_reply": "disabled",
             "apartment_scheduler": "disabled",
         }

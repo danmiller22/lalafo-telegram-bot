@@ -63,6 +63,7 @@ _lalafo_restart_lock = asyncio.Lock()
 _apartment_scheduler_task: asyncio.Task[None] | None = None
 _service_keepalive_task: asyncio.Task[None] | None = None
 _background_watchdog_task: asyncio.Task[None] | None = None
+_matching_worker_task: asyncio.Task[None] | None = None
 _shutting_down = False
 _lalafo_mcp_context: Any | None = None
 _bot_setup_state: dict[str, Any] = {
@@ -731,7 +732,7 @@ def _task_error_name(task: asyncio.Task[None] | None) -> str | None:
 async def _repair_background_tasks_once() -> int:
     """Restart only stopped workers; never replace the payment runtime."""
     global _bot_setup_task, _lalafo_bot_setup_task, _lalafo_watchdog_task
-    global _apartment_scheduler_task, _service_keepalive_task
+    global _apartment_scheduler_task, _service_keepalive_task, _matching_worker_task
     settings = get_settings()
     if _shutting_down:
         return 0
@@ -759,6 +760,18 @@ async def _repair_background_tasks_once() -> int:
         )
         _lalafo_bot_setup_task = asyncio.create_task(
             _configure_lalafo_bot(), name="lalafo-telegram-setup-maintainer"
+        )
+        restarted += 1
+
+    if settings.run_bot and _bot_runtime is not None and _task_stopped(_matching_worker_task):
+        from app.matching.worker import run_matching_worker
+
+        logger.error(
+            "Restarting personal matching worker after %s",
+            _task_error_name(_matching_worker_task) or "stop",
+        )
+        _matching_worker_task = asyncio.create_task(
+            run_matching_worker(_bot_runtime), name="personal-matching-worker"
         )
         restarted += 1
 
@@ -841,7 +854,7 @@ async def startup() -> None:
     global _legacy_featured_cleanup_task
     global _keyboard_sync_task, _lalafo_auto_responder
     global _lalafo_watchdog_task, _apartment_scheduler_task
-    global _service_keepalive_task, _background_watchdog_task
+    global _service_keepalive_task, _background_watchdog_task, _matching_worker_task
     global _shutting_down
     global _lalafo_mcp_context
     settings = get_settings()
@@ -875,6 +888,12 @@ async def startup() -> None:
                 _configure_lalafo_bot(), name="lalafo-telegram-setup-maintainer"
             )
         logger.info("Telegram runtime ready; network setup continues in background")
+        from app.matching.worker import run_matching_worker
+
+        _matching_worker_task = asyncio.create_task(
+            run_matching_worker(_bot_runtime), name="personal-matching-worker"
+        )
+        logger.info("Personal apartment matching worker enabled")
         if (
             IN_PROCESS_QUEUE_DISPATCHER_ENABLED
             and settings.hosted_apartment_scheduler_enabled
@@ -917,7 +936,7 @@ async def shutdown() -> None:
     global _legacy_featured_cleanup_task
     global _keyboard_sync_task, _lalafo_auto_responder
     global _lalafo_watchdog_task, _apartment_scheduler_task
-    global _service_keepalive_task, _background_watchdog_task
+    global _service_keepalive_task, _background_watchdog_task, _matching_worker_task
     global _shutting_down
     global _lalafo_mcp_context
     _shutting_down = True
@@ -929,6 +948,11 @@ async def shutdown() -> None:
         with suppress(asyncio.CancelledError):
             await _background_watchdog_task
     _background_watchdog_task = None
+    if _matching_worker_task is not None and not _matching_worker_task.done():
+        _matching_worker_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await _matching_worker_task
+    _matching_worker_task = None
     if _service_keepalive_task is not None and not _service_keepalive_task.done():
         _service_keepalive_task.cancel()
         with suppress(asyncio.CancelledError):
@@ -1145,6 +1169,13 @@ async def health() -> JSONResponse:
                 else "disabled"
             ),
             "background_watchdog": dict(_background_watchdog_state),
+            "personal_matching": (
+                "running"
+                if settings.run_bot
+                and _matching_worker_task is not None
+                and not _matching_worker_task.done()
+                else "recovering" if settings.run_bot else "disabled"
+            ),
             "lalafo_auto_reply": auto_reply,
             "apartment_scheduler": (
                 {
@@ -1245,6 +1276,24 @@ def _miniapp_result_payload(result) -> dict[str, Any]:
     return response
 
 
+async def _record_funnel(
+    runtime: Any,
+    user_id: int,
+    event_name: str,
+    *,
+    apartment_id: int | None = None,
+) -> None:
+    matching = runtime.workflow_data.get("matching")
+    if matching is not None:
+        profile = await matching.profile(user_id)
+        await matching.event(
+            user_id,
+            event_name,
+            source=profile.source if profile is not None else "telegram",
+            apartment_id=apartment_id,
+        )
+
+
 @app.get("/miniapp", response_class=HTMLResponse, include_in_schema=False)
 async def telegram_mini_app() -> HTMLResponse:
     settings = get_settings()
@@ -1266,6 +1315,7 @@ async def telegram_mini_app() -> HTMLResponse:
 @app.post("/miniapp/api/session", include_in_schema=False)
 async def miniapp_session(payload: MiniAppRequest) -> dict[str, Any]:
     settings, runtime, user, apartment_id = _miniapp_context(payload)
+    await _record_funnel(runtime, user.id, "card_opened", apartment_id=apartment_id)
     result = await runtime.workflow_data["service"].contact_status(user.id, apartment_id)
     if result.status == "unavailable":
         raise HTTPException(
@@ -1333,6 +1383,7 @@ async def miniapp_prepare_payment(payload: MiniAppRequest) -> dict[str, Any]:
 async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
     settings, runtime, user, apartment_id = _miniapp_context(payload)
     service = runtime.workflow_data["service"]
+    await _record_funnel(runtime, user.id, "payment_opened", apartment_id=apartment_id)
     result = await service.contact_status(user.id, apartment_id)
     plan = WEEK_PLAN
     payment_url = _finik_payment_url(settings, plan)
@@ -1400,6 +1451,9 @@ async def miniapp_issue_access(payload: MiniAppRequest) -> dict[str, Any]:
         if request is not None:
             current = await service.contact_status(user.id, apartment_id)
             if current.status == "approved":
+                await _record_funnel(
+                    runtime, user.id, "access_granted", apartment_id=apartment_id
+                )
                 return _miniapp_result_payload(current)
     raise HTTPException(status_code=409, detail="Сначала откройте оплату.")
 

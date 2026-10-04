@@ -63,13 +63,15 @@ async def test_plain_start_shows_wanted_ad_button():
 
     state.clear.assert_awaited_once()
     markup = message.answer.await_args.kwargs["reply_markup"]
-    assert markup.inline_keyboard[0][0].text == "🔎 Подать заявку на поиск квартиры"
-    assert markup.inline_keyboard[0][0].callback_data == "wanted:new"
-    assert markup.inline_keyboard[1][0].text == "📋 Мои заявки"
-    assert markup.inline_keyboard[1][0].callback_data == "menu:mywanted"
-    assert markup.inline_keyboard[2][0].text == "🔒 Политика конфиденциальности"
-    assert markup.inline_keyboard[2][0].callback_data == "menu:privacy"
-    assert [button.callback_data for button in markup.inline_keyboard[3]] == [
+    assert markup.inline_keyboard[0][0].callback_data == "matching:mine"
+    assert [button.callback_data for button in markup.inline_keyboard[1]] == [
+        "matching:start",
+        "matching:toggle",
+    ]
+    assert markup.inline_keyboard[2][0].callback_data == "wanted:new"
+    assert markup.inline_keyboard[3][0].callback_data == "menu:mywanted"
+    assert markup.inline_keyboard[4][0].callback_data == "menu:privacy"
+    assert [button.callback_data for button in markup.inline_keyboard[5]] == [
         "menu:support",
         "menu:status",
     ]

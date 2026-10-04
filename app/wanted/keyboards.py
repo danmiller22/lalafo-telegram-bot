@@ -13,6 +13,22 @@ def main_menu_keyboard(
     rows = [
             [
                 InlineKeyboardButton(
+                    text="🏠 Моя подборка",
+                    callback_data="matching:mine",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="⚙️ Настроить подбор",
+                    callback_data="matching:start",
+                ),
+                InlineKeyboardButton(
+                    text="🔔 Уведомления",
+                    callback_data="matching:toggle",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
                     text="🔎 Подать заявку на поиск квартиры",
                     callback_data="wanted:new",
                 )

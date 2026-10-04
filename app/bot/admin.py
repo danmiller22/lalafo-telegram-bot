@@ -12,6 +12,7 @@ from app.payments.repository import ApartmentRepository
 from app.security import TokenSigner
 from app.telegram.private_delivery import send_private_public_card
 from app.wanted.repository import WantedAdRepository
+from app.matching.repository import MatchingRepository
 
 router = Router(name="admin")
 logger = logging.getLogger(__name__)
@@ -97,16 +98,29 @@ async def stats_handler(
     settings: Settings,
     apartments: ApartmentRepository,
     wanted_ads: WantedAdRepository,
+    matching: MatchingRepository,
 ) -> None:
     if not _is_admin(message.from_user.id, settings):
         return
     wanted_counts = await wanted_ads.counts()
+    funnel = await matching.stats(days=7)
     await message.answer(
         "\n".join(
             [
                 f"Опубликовано квартир: {await apartments.published_count()}",
                 f"Wanted ads pending: {wanted_counts.get('pending', 0)}",
                 f"Wanted ads published: {wanted_counts.get('published', 0)}",
+                "",
+                "Подбор за 7 дней:",
+                f"Переходы: {funnel.get('start', 0)}",
+                f"Из Lalafo: {funnel.get('lalafo:start', 0)}",
+                f"Горячие карточки: {funnel.get('hot_cards_shown', 0)}",
+                f"Сохранённые фильтры: {funnel.get('filter_saved', 0)}",
+                f"Открытия карточек: {funnel.get('card_opened', 0)}",
+                f"Открытия оплаты: {funnel.get('payment_opened', 0)}",
+                f"Выдачи доступа: {funnel.get('access_granted', 0)}",
+                f"Активные профили: {funnel.get('profiles', 0)}",
+                f"Автоуведомления: {funnel.get('notifications', 0)}",
             ]
         )
     )

@@ -99,6 +99,76 @@ class TermsConsent(Base):
     )
 
 
+class ApartmentSearchProfile(Base):
+    __tablename__ = "apartment_search_profiles"
+
+    telegram_user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    rooms: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    districts: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    all_districts: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    max_budget: Mapped[int] = mapped_column(Integer, nullable=False)
+    notifications_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )
+    source: Mapped[str] = mapped_column(String(32), nullable=False, default="telegram")
+    notifications_after: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow
+    )
+
+
+class ApartmentMatchDelivery(Base):
+    __tablename__ = "apartment_match_deliveries"
+    __table_args__ = (
+        UniqueConstraint(
+            "telegram_user_id", "apartment_id", name="uq_match_user_apartment"
+        ),
+        Index("ix_match_delivery_due", "status", "next_attempt_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    telegram_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    apartment_id: Mapped[int] = mapped_column(
+        ForeignKey("apartments.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    kind: Mapped[str] = mapped_column(String(16), nullable=False, default="notification")
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="queued")
+    telegram_message_id: Mapped[int | None] = mapped_column(BigInteger)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow
+    )
+
+    apartment: Mapped[Apartment] = relationship()
+
+
+class CustomerFunnelEvent(Base):
+    __tablename__ = "customer_funnel_events"
+    __table_args__ = (
+        Index("ix_funnel_event_name_created", "event_name", "created_at"),
+        Index("ix_funnel_user_created", "telegram_user_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    telegram_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    event_name: Mapped[str] = mapped_column(String(40), nullable=False)
+    source: Mapped[str] = mapped_column(String(32), nullable=False, default="telegram")
+    apartment_id: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+
+
 class ApartmentInventoryQueue(Base):
     """A durable, one-time publication reservation for an apartment."""
 

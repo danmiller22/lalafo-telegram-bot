@@ -63,6 +63,27 @@ def apartment_keyboard(
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+def matching_apartment_keyboard(
+    apartment_id: int,
+    *,
+    signer: TokenSigner,
+    bot_username: str,
+) -> InlineKeyboardMarkup:
+    """Compact card keyboard for the private personalized feed."""
+    payment_token = signer.sign_start_id("miniapp-apartment", apartment_id)
+    bot_url = f"https://t.me/{bot_username.lstrip('@')}"
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="Получить номер",
+                    url=f"{bot_url}/{MINI_APP_SHORT_NAME}?startapp={payment_token}",
+                )
+            ]
+        ]
+    )
+
+
 def terms_keyboard(apartment_id: int, *, signer: TokenSigner, bot_username: str) -> InlineKeyboardMarkup:
     bot_url = f"https://t.me/{bot_username.lstrip('@')}"
     return InlineKeyboardMarkup(inline_keyboard=[

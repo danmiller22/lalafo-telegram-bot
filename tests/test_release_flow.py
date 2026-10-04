@@ -92,8 +92,8 @@ async def test_availability_result_is_cached_for_twelve_hours(repositories, monk
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(("age_days", "expected"), [(3, "active"), (4, "unavailable"), (5, "unavailable")])
-async def test_apartment_has_four_days_of_availability(repositories, age_days, expected) -> None:
+@pytest.mark.parametrize(("age_days", "expected"), [(1, "active"), (2, "unavailable"), (3, "unavailable")])
+async def test_apartment_has_two_days_of_availability(repositories, age_days, expected) -> None:
     apartments, _, sessions = repositories
     apartment = await apartments.upsert_discovered(make_ad(lalafo_id=70004))
     async with sessions.begin() as session:

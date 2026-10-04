@@ -4,7 +4,20 @@ from unittest.mock import AsyncMock
 import pytest
 from aiogram.types import URLInputFile
 
-from app.telegram.private_delivery import format_private_contact, send_private_contact
+from app.telegram.private_delivery import (
+    format_private_contact,
+    public_description,
+    send_private_contact,
+)
+
+
+def test_public_description_removes_phone_and_telegram_contact():
+    text = public_description(
+        "Сдаю квартиру. Телефон +996 555 123 456, Telegram @owner_name"
+    )
+    assert "+996" not in text
+    assert "@owner_name" not in text
+    assert "контакт доступен после оплаты" in text
 
 
 def test_private_contact_contains_full_card_and_phone():

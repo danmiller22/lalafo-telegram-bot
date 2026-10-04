@@ -177,9 +177,10 @@ def callbacks() -> tuple[AsyncMock, AsyncMock, list[str], list[bool]]:
 
 def test_fixed_text_exactly_matches_requested_one_line_reply() -> None:
     assert AUTO_REPLY_TEXT == (
-        "Здравствуйте! 👋 Квартира актуальна. Все актуальные варианты квартир собраны "
-        "в нашем Telegram-канале.  🏠 Новые варианты добавляются регулярно. 📞 Там же "
-        "можно получить контакт для связи.  👉 Telegram: https://t.me/arendabishkek3"
+        "Здравствуйте! 👋 В Telegram уже доступны свежие квартиры в Бишкеке. "
+        "При переходе бот сразу покажет два новых варианта, а затем можно настроить "
+        "автоматический подбор по районам и бюджету: "
+        "https://t.me/arenda312bot?start=lalafo"
     )
     assert "\n" not in AUTO_REPLY_TEXT
 
@@ -255,10 +256,21 @@ async def test_store_deduplicates_each_inbound_message_id(store: AutoReplyStore)
     chat = chat_ref()
     assert await store.enqueue(chat.chat_key, message("same"), "live", 1000)
     assert not await store.enqueue(chat.chat_key, message("same"), "live", 1001)
-    assert await store.enqueue(chat.chat_key, message("next"), "live", 1002)
+    assert not await store.enqueue(chat.chat_key, message("next"), "live", 1002)
     jobs = await store.list_jobs()
-    assert [job.inbound_id for job in jobs] == ["same", "next"]
-    assert jobs[0].ack != jobs[1].ack
+    assert [job.inbound_id for job in jobs] == ["same"]
+    assert jobs[0].ack
+
+
+@pytest.mark.asyncio
+async def test_store_allows_a_new_reply_after_twenty_four_hours(
+    store: AutoReplyStore,
+) -> None:
+    chat = chat_ref()
+    assert await store.enqueue(chat.chat_key, message("first"), "live", 1_000)
+    await store.mark_sent("missing", 1_000)
+    later = 1_000 + 24 * 60 * 60 * 1_000 + 1
+    assert await store.enqueue(chat.chat_key, message("later"), "live", later)
 
 
 @pytest.mark.asyncio
@@ -297,8 +309,8 @@ async def test_initial_sync_queues_each_unread_message_but_not_read_history(
     stats = await synchronizer.sync_after_connection()
     jobs = await store.list_jobs()
     assert stats["initial"] is True
-    assert stats["queued"] == 2
-    assert [job.inbound_id for job in jobs] == ["new-1", "new-2"]
+    assert stats["queued"] == 1
+    assert [job.inbound_id for job in jobs] == ["new-1"]
 
 
 @pytest.mark.asyncio
@@ -369,7 +381,7 @@ async def test_duplicate_live_event_and_backlog_produce_one_job(
 
 
 @pytest.mark.asyncio
-async def test_scheduler_sends_two_messages_in_same_chat_in_fifo_order(
+async def test_scheduler_sends_only_one_message_per_chat_during_cooldown(
     store: AutoReplyStore,
 ) -> None:
     chat = chat_ref()
@@ -391,8 +403,8 @@ async def test_scheduler_sends_two_messages_in_same_chat_in_fifo_order(
     await wait_scheduler(scheduler)
     await scheduler.pump()
     await wait_scheduler(scheduler)
-    assert [job.inbound_id for job in gateway.sent] == ["first", "second"]
-    assert sent.await_count == 2
+    assert [job.inbound_id for job in gateway.sent] == ["first"]
+    assert sent.await_count == 1
 
 
 @pytest.mark.asyncio

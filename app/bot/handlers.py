@@ -15,6 +15,8 @@ from app.bot.callbacks import (
     VIEW_PREFIX,
 )
 from app.config import Settings
+from app.matching.handlers import show_hot_start
+from app.matching.repository import MatchingRepository
 from app.availability import AvailabilityService
 from app.payments.repository import PaymentRepository
 from app.payment_plans import (
@@ -89,6 +91,7 @@ async def start_handler(
     bot: Bot,
     state: FSMContext,
     terms_consents: TermsConsentRepository | None = None,
+    matching: MatchingRepository | None = None,
 ) -> None:
     payload = _start_payload(message)
     if payload == "want":
@@ -101,12 +104,22 @@ async def start_handler(
         await state.clear()
         await message.answer(PRIVACY_TEXT)
         return
-    if not payload:
-        # A plain /start is the most common customer action.  Send the menu
-        # before doing even lightweight session cleanup so the visible response
-        # is never held behind unrelated state work.
-        await _show_main_menu(message, settings)
-        await state.clear()
+    if not payload or payload == "lalafo":
+        if matching is None:
+            # Keep direct unit-level callers and emergency deployments usable
+            # when the matching repository has not been wired yet.
+            await _show_main_menu(message, settings)
+            await state.clear()
+            return
+        await show_hot_start(
+            message,
+            bot=bot,
+            matching=matching,
+            signer=signer,
+            settings=settings,
+            state=state,
+            source="lalafo" if payload == "lalafo" else "telegram",
+        )
         return
     await state.clear()
     if payload.startswith("receipt_"):
