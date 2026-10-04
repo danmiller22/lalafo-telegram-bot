@@ -51,6 +51,12 @@ async def test_public_album_uses_fast_direct_telegram_urls() -> None:
     result = await publisher.publish(77, make_ad())
 
     assert result is card
+    card_call = bot.send_message.await_args
+    assert card_call.kwargs["parse_mode"] == "HTML"
+    assert (
+        '<a href="https://t.me/testbot?start=want">@testbot</a>'
+        in card_call.kwargs["text"]
+    )
     keyboard = bot.send_message.await_args.kwargs["reply_markup"]
     assert [button.text for row in keyboard.inline_keyboard for button in row] == [
         "Получить номер",

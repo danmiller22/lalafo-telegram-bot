@@ -154,7 +154,12 @@ class TelegramPublisher:
             return await self._retry(
                 self.bot.send_message,
                 chat_id=self.chat_id,
-                text=format_public_apartment(ad, bot_username=self.bot_username),
+                text=format_public_apartment(
+                    ad,
+                    bot_username=self.bot_username,
+                    wanted_deep_link=True,
+                ),
+                parse_mode="HTML",
                 reply_markup=apartment_keyboard(
                     apartment_id,
                     signer=self.signer,

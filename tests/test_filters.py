@@ -414,6 +414,19 @@ def test_public_card_has_short_bot_promotion():
     assert text.endswith("🔎 Ищете квартиру? Подайте заявку: @arenda312bot")
 
 
+def test_public_card_can_link_wanted_form_directly():
+    text = format_public_apartment(
+        make_ad(),
+        bot_username="@arenda312bot",
+        wanted_deep_link=True,
+    )
+
+    assert text.endswith(
+        '🔎 Ищете квартиру? Подайте заявку: '
+        '<a href="https://t.me/arenda312bot?start=want">@arenda312bot</a>'
+    )
+
+
 @pytest.mark.parametrize(
     "district",
     [

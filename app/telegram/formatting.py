@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from html import escape
+
 from app.lalafo.models import LalafoAd
 from app.models import Apartment
 
@@ -63,6 +65,16 @@ def format_apartment(ad: LalafoAd | Apartment) -> str:
     return "\n".join(lines)
 
 
-def format_public_apartment(ad: LalafoAd | Apartment, *, bot_username: str) -> str:
+def format_public_apartment(
+    ad: LalafoAd | Apartment,
+    *,
+    bot_username: str,
+    wanted_deep_link: bool = False,
+) -> str:
     username = bot_username.lstrip("@")
+    if wanted_deep_link:
+        apartment = escape(format_apartment(ad))
+        url = escape(f"https://t.me/{username}?start=want", quote=True)
+        mention = f'<a href="{url}">@{escape(username)}</a>'
+        return f"{apartment}\n\n🔎 Ищете квартиру? Подайте заявку: {mention}"
     return f"{format_apartment(ad)}\n\n🔎 Ищете квартиру? Подайте заявку: @{username}"
