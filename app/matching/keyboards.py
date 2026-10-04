@@ -11,7 +11,7 @@ def hot_start_keyboard() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="🏠 Настроить подбор",
+                    text="🏠 Смотреть все",
                     callback_data="matching:start",
                 )
             ]

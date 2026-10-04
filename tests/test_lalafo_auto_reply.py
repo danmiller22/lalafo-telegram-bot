@@ -177,10 +177,10 @@ def callbacks() -> tuple[AsyncMock, AsyncMock, list[str], list[bool]]:
 
 def test_fixed_text_exactly_matches_requested_one_line_reply() -> None:
     assert AUTO_REPLY_TEXT == (
-        "Здравствуйте! 👋 В Telegram уже доступны свежие квартиры в Бишкеке. "
-        "При переходе бот сразу покажет два новых варианта, а затем можно настроить "
-        "автоматический подбор по районам и бюджету: "
-        "https://t.me/arenda312bot?start=lalafo"
+        "Здравствуйте! 👋 Свежие квартиры уже в Telegram: "
+        "https://t.me/arenda312bot?start=lalafo "
+        "Бот сразу покажет 2 новых варианта с фото и ценой. Под подходящей "
+        "квартирой нажмите «Получить номер». Доступ ко всем контактам на 7 дней — 500 сом."
     )
     assert "\n" not in AUTO_REPLY_TEXT
 

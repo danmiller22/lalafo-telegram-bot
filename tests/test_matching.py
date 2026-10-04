@@ -65,10 +65,22 @@ async def test_new_customer_sees_two_hot_cards_before_filter_setup(repositories)
         source="lalafo",
     )
 
-    assert message.answer.await_args_list[0].args[0] == "🔥 Свежие квартиры прямо сейчас"
+    assert message.answer.await_args_list[0].args[0] == (
+        "🔥 Вот 2 свежие квартиры. Под подходящим вариантом нажмите "
+        "«Получить номер»."
+    )
     assert bot.send_photo.await_count == 2
+    first_card = bot.send_photo.await_args_list[0]
+    assert first_card.kwargs["caption"].startswith("🆕 Новое объявление:")
+    assert "Проверено:" in first_card.kwargs["caption"]
+    card_keyboard = first_card.kwargs["reply_markup"]
+    assert card_keyboard.inline_keyboard[0][0].text == (
+        "📞 Получить номер — 500 сом / 7 дней"
+    )
+    assert card_keyboard.inline_keyboard[1][0].text == "🏠 Смотреть все"
     footer = message.answer.await_args_list[-1].kwargs["reply_markup"]
     assert footer.inline_keyboard[0][0].callback_data == "matching:start"
+    assert footer.inline_keyboard[0][0].text == "🏠 Смотреть все"
 
 
 @pytest.mark.asyncio

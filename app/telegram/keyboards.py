@@ -76,10 +76,16 @@ def matching_apartment_keyboard(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="Получить номер",
+                    text=f"📞 Получить номер — {WEEK_PRICE} сом / 7 дней",
                     url=f"{bot_url}/{MINI_APP_SHORT_NAME}?startapp={payment_token}",
                 )
-            ]
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🏠 Смотреть все",
+                    callback_data="matching:start",
+                )
+            ],
         ]
     )
 

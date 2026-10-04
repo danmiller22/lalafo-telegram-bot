@@ -77,7 +77,10 @@ async def show_hot_start(
         return
 
     hot = await matching.hot_apartments(limit=2)
-    await message.answer("🔥 Свежие квартиры прямо сейчас")
+    await message.answer(
+        "🔥 Вот 2 свежие квартиры. Под подходящим вариантом нажмите "
+        "«Получить номер»."
+    )
     await _send_cards(
         bot,
         user_id=user_id,
@@ -92,8 +95,8 @@ async def show_hot_start(
     if hot:
         await matching.event(user_id, "hot_cards_shown", source=source)
     await message.answer(
-        "Настройте районы и бюджет — бот будет автоматически присылать "
-        "подходящие квартиры.",
+        "✨ Нажмите «Смотреть все», настройте районы и бюджет — новые "
+        "подходящие квартиры будут приходить автоматически.",
         reply_markup=hot_start_keyboard(),
     )
 

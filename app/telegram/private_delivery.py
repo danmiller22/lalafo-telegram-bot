@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import UTC
+from zoneinfo import ZoneInfo
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
@@ -17,6 +19,7 @@ from app.security import TokenSigner
 
 logger = logging.getLogger(__name__)
 TELEGRAM_ALBUM_LIMIT = 10
+BISHKEK_TIMEZONE = ZoneInfo("Asia/Bishkek")
 
 
 def public_description(value: str | None) -> str:
@@ -162,10 +165,23 @@ async def send_matching_card(
         signer=signer,
         bot_username=bot_username,
     )
-    text = format_apartment(apartment)
+    text = f"🆕 Новое объявление:\n\n{format_apartment(apartment)}"
     description = public_description(apartment.source_description)
     if description:
-        text = f"{text}\n\n{description[:2500]}"
+        text = f"{text}\n\nОписание:\n{description[:2200]}"
+    checked_at = (
+        apartment.availability_checked_at
+        or apartment.last_seen_at
+        or apartment.published_at
+        or apartment.updated_at
+    )
+    if checked_at is not None:
+        if checked_at.tzinfo is None:
+            checked_at = checked_at.replace(tzinfo=UTC)
+        checked_text = checked_at.astimezone(BISHKEK_TIMEZONE).strftime(
+            "%d.%m.%Y %H:%M"
+        )
+        text = f"{text}\n\nПроверено: {checked_text}"
     urls = list(dict.fromkeys(apartment.photo_urls))
     if len(urls) == 1 and len(text) <= 1024:
         try:
