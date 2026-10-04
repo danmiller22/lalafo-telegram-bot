@@ -7,6 +7,7 @@ import pytest
 from app.matching.repository import MatchingRepository, apartment_matches
 from app.matching.handlers import show_hot_start
 from app.config import Settings
+from app.models import DailyFeaturedPublication, LalafoAutoReplyMeta
 from app.security import TokenSigner
 from tests.helpers import make_ad
 
@@ -34,25 +35,83 @@ async def test_hot_feed_returns_two_fresh_different_districts(repositories):
 
 
 @pytest.mark.asyncio
-async def test_hot_feed_prefers_lalafo_for_conversion_entry(repositories):
+async def test_hot_feed_prefers_ads_from_owner_lalafo_profile(repositories):
     apartments, _, sessions = repositories
     matching = MatchingRepository(sessions)
-    lalafo = await apartments.upsert_discovered(
+    profile_source = await apartments.upsert_discovered(
         make_ad(lalafo_id=7011, district="Асанбай")
     )
-    telegram = await apartments.upsert_discovered(
+    cheaper_general = await apartments.upsert_discovered(
         make_ad(
             lalafo_id=-7012,
             district="Центр",
+            price=23_000,
             source_url="https://t.me/s/rental_property_bishkek/7012",
         )
     )
-    await apartments.mark_published(lalafo.id, chat_id=-100, message_id=1)
-    await apartments.mark_published(telegram.id, chat_id=-100, message_id=2)
+    await apartments.mark_published(profile_source.id, chat_id=-100, message_id=1)
+    await apartments.mark_published(cheaper_general.id, chat_id=-100, message_id=2)
+    async with sessions.begin() as session:
+        session.add(
+            DailyFeaturedPublication(
+                business_date=datetime.now(timezone.utc).date(),
+                slot=1,
+                source_apartment_id=profile_source.id,
+                source_lalafo_id=profile_source.lalafo_id,
+                managed_lalafo_ad_id=99007011,
+                managed_lalafo_ad_url=(
+                    "https://lalafo.kg/bishkek/ads/profile-copy-id-99007011"
+                ),
+            )
+        )
 
-    hot = await matching.hot_apartments(limit=1, prefer_lalafo=True)
+    hot, profile_count = await matching.profile_hot_apartments(limit=1)
 
-    assert [item.id for item in hot] == [lalafo.id]
+    assert [item.id for item in hot] == [profile_source.id]
+    assert profile_count == 1
+
+
+@pytest.mark.asyncio
+async def test_hot_feed_falls_back_to_best_value_when_profile_is_empty(repositories):
+    apartments, _, sessions = repositories
+    matching = MatchingRepository(sessions)
+    expensive = await apartments.upsert_discovered(
+        make_ad(lalafo_id=7021, district="Центр", price=35_000)
+    )
+    best_value = await apartments.upsert_discovered(
+        make_ad(lalafo_id=7022, district="Асанбай", price=23_000)
+    )
+    for item in (expensive, best_value):
+        await apartments.mark_published(item.id, chat_id=-100, message_id=item.id)
+
+    hot, profile_count = await matching.profile_hot_apartments(limit=1)
+
+    assert [item.id for item in hot] == [best_value.id]
+    assert profile_count == 0
+
+
+@pytest.mark.asyncio
+async def test_hot_feed_includes_requested_ad_saved_in_profile_marker(repositories):
+    apartments, _, sessions = repositories
+    matching = MatchingRepository(sessions)
+    profile_source = await apartments.upsert_discovered(
+        make_ad(lalafo_id=7031, district="Филармония", price=35_000)
+    )
+    async with sessions.begin() as session:
+        session.add(
+            LalafoAutoReplyMeta(
+                key="requested_lalafo_filarmonia_35000",
+                value=(
+                    '{"ad_id":99007031,"status":"active",'
+                    f'"source_apartment_id":{profile_source.id}}}'
+                ),
+            )
+        )
+
+    hot, profile_count = await matching.profile_hot_apartments(limit=1)
+
+    assert [item.id for item in hot] == [profile_source.id]
+    assert profile_count == 1
 
 
 @pytest.mark.asyncio
@@ -88,8 +147,8 @@ async def test_new_customer_sees_two_hot_cards_before_filter_setup(repositories)
     )
 
     assert message.answer.await_args_list[0].args[0] == (
-        "🔥 Вот свежие квартиры с Lalafo. Под подходящим вариантом нажмите "
-        "«Получить номер»."
+        "🔥 Вот самые выгодные свежие квартиры. Под подходящим вариантом "
+        "нажмите «Получить номер»."
     )
     assert bot.send_photo.await_count == 2
     first_card = bot.send_photo.await_args_list[0]

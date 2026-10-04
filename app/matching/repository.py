@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
@@ -14,6 +15,8 @@ from app.models import (
     ApartmentMatchDelivery,
     ApartmentSearchProfile,
     CustomerFunnelEvent,
+    DailyFeaturedPublication,
+    LalafoAutoReplyMeta,
 )
 from app.state import normalized_district
 
@@ -170,16 +173,27 @@ class MatchingRepository:
             )
 
     async def hot_apartments(
-        self, limit: int = 2, *, prefer_lalafo: bool = False
+        self, limit: int = 2, *, exclude_ids: set[int] | None = None
     ) -> list[Apartment]:
-        rows = [item for item in await self._fresh_apartments() if item.photo_urls]
-        if prefer_lalafo:
-            # Lalafo visitors arrive with the intent to ask about an apartment.
-            # Keep that intent by putting fresh Lalafo cards first, while still
-            # falling back to the full inventory when Lalafo has fewer cards.
-            rows.sort(
-                key=lambda item: "lalafo.kg" not in (item.source_url or "").casefold()
+        excluded = exclude_ids or set()
+        rows = [
+            item
+            for item in await self._fresh_apartments()
+            if item.photo_urls and item.id not in excluded
+        ]
+        # When no exact profile card is available, use the strongest general
+        # offer: lower rent first, then a fuller photo set and freshness.
+        rows.sort(
+            key=lambda item: (
+                item.price,
+                -len(item.photo_urls or []),
+                -(
+                    _aware(item.published_at)
+                    or _aware(item.updated_at)
+                    or datetime(1970, 1, 1, tzinfo=timezone.utc)
+                ).timestamp(),
             )
+        )
         selected: list[Apartment] = []
         seen_districts: set[str] = set()
         for item in rows:
@@ -193,6 +207,104 @@ class MatchingRepository:
         selected_ids = {item.id for item in selected}
         selected.extend(item for item in rows if item.id not in selected_ids)
         return selected[:limit]
+
+    async def profile_hot_apartments(
+        self, limit: int = 2
+    ) -> tuple[list[Apartment], int]:
+        """Show sources behind ads currently present in the owner's Lalafo profile.
+
+        Managed profile ads hide the source phone, so the durable mapping points
+        back to the verified source apartment that can be unlocked after payment.
+        Missing slots are filled with the best fresh offers from the full feed.
+        """
+        async with self.sessions() as session:
+            references = list(
+                (
+                    await session.execute(
+                        select(
+                            DailyFeaturedPublication.source_apartment_id,
+                            DailyFeaturedPublication.source_lalafo_id,
+                        )
+                        .where(
+                            or_(
+                                DailyFeaturedPublication.managed_lalafo_ad_id.is_not(None),
+                                DailyFeaturedPublication.managed_lalafo_ad_url.is_not(None),
+                            ),
+                            DailyFeaturedPublication.deactivated_at.is_(None),
+                        )
+                        .order_by(DailyFeaturedPublication.created_at.desc())
+                    )
+                ).all()
+            )
+            marker_rows = list(
+                (
+                    await session.scalars(
+                        select(LalafoAutoReplyMeta).where(
+                            LalafoAutoReplyMeta.value.contains("source_apartment_id")
+                        )
+                    )
+                ).all()
+            )
+            marker_references: list[tuple[int | None, int | None]] = []
+            for marker in marker_rows:
+                try:
+                    payload = json.loads(marker.value)
+                    status = str(payload.get("status") or "").casefold()
+                    source_id = int(payload["source_apartment_id"])
+                except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+                    continue
+                if status in {"deactivated", "rejected", "banned"}:
+                    continue
+                marker_references.append((source_id, None))
+            references = marker_references + references
+            apartment_ids = {
+                apartment_id
+                for apartment_id, _ in references
+                if apartment_id is not None
+            }
+            lalafo_ids = {
+                lalafo_id for _, lalafo_id in references if lalafo_id is not None
+            }
+            profile_rows: list[Apartment] = []
+            if apartment_ids or lalafo_ids:
+                profile_rows = list(
+                    (
+                        await session.scalars(
+                            select(Apartment).where(
+                                or_(
+                                    Apartment.id.in_(apartment_ids),
+                                    Apartment.lalafo_id.in_(lalafo_ids),
+                                ),
+                                Apartment.active.is_(True),
+                                Apartment.rooms.in_(("studio", "1")),
+                                Apartment.price.between(MIN_PRICE, MAX_PRICE),
+                                Apartment.phone != "",
+                                Apartment.availability_status != "unavailable",
+                            )
+                        )
+                    ).all()
+                )
+        by_id = {item.id: item for item in profile_rows if item.photo_urls}
+        by_lalafo_id = {
+            item.lalafo_id: item for item in profile_rows if item.photo_urls
+        }
+        selected: list[Apartment] = []
+        selected_ids: set[int] = set()
+        for source_id, source_lalafo_id in references:
+            apartment = by_id.get(source_id) or by_lalafo_id.get(source_lalafo_id)
+            if apartment is None or apartment.id in selected_ids:
+                continue
+            selected.append(apartment)
+            selected_ids.add(apartment.id)
+            if len(selected) == limit:
+                return selected, len(selected)
+        profile_count = len(selected)
+        selected.extend(
+            await self.hot_apartments(
+                limit=limit - len(selected), exclude_ids=selected_ids
+            )
+        )
+        return selected[:limit], profile_count
 
     async def matching_apartments(
         self,

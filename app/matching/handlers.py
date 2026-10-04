@@ -76,14 +76,17 @@ async def show_hot_start(
         )
         return
 
-    hot = await matching.hot_apartments(limit=2, prefer_lalafo=True)
-    lalafo_first = bool(hot) and all(
-        "lalafo.kg" in (item.source_url or "").casefold() for item in hot
-    )
-    intro = "🔥 Вот свежие квартиры"
-    if lalafo_first:
-        intro += " с Lalafo"
-    intro += ". Под подходящим вариантом нажмите «Получить номер»."
+    hot, profile_count = await matching.profile_hot_apartments(limit=2)
+    if profile_count == len(hot) and profile_count:
+        intro = "🔥 Вот квартиры из нашего профиля Lalafo."
+    elif profile_count:
+        intro = (
+            "🔥 Сначала квартира из нашего профиля Lalafo, затем выгодный "
+            "свежий вариант."
+        )
+    else:
+        intro = "🔥 Вот самые выгодные свежие квартиры."
+    intro += " Под подходящим вариантом нажмите «Получить номер»."
     await message.answer(intro)
     await _send_cards(
         bot,
