@@ -23,7 +23,7 @@ function setup(initial, fetchOverride, dynamic = false) {
     FileReader: class { readAsDataURL() { this.result = "data:application/pdf;base64,JVBERi0xLjQ="; this.onload(); } },
     location: {search: '?tgWebAppData=test&tgWebAppStartParam=test', hash: ''},
     window: {Telegram: {WebApp: {ready() {}, expand() {}, openLink(url) { opened.push(url); }, openTelegramLink(url) { opened.push(url); }}}},
-    document: {getElementById: node, addEventListener() {}, querySelectorAll() { return [node("terms-link")]; }},
+    document: {getElementById: node, addEventListener() {}, querySelectorAll() { return []; }},
     setTimeout(fn) { const id = nextTimer++; timers.set(id, fn); return id; },
     clearTimeout(id) { timers.delete(id); },
     fetch: fetchOverride || (() => Promise.resolve(response(initial))),
@@ -58,10 +58,7 @@ function setup(initial, fetchOverride, dynamic = false) {
   assert.equal(race.node('tariff-description').hidden, false);
   assert.equal(race.node('access').hidden, true);
   assert.equal(race.node('reopen-payment').hidden, true);
-  race.node('terms-link').onclick({preventDefault() {}});
-  assert.equal(race.node('agreement').open, true);
-  race.node('close-agreement').onclick();
-  assert.equal(race.node('agreement').open, false);
+  assert.equal(race.node('privacy').hidden, false);
   assert.equal(race.node('checkout').hidden, true);
   await race.node('pay-lifetime').onclick();
   assert.deepEqual(race.opened, ['https://example.com/week']);
@@ -71,6 +68,7 @@ function setup(initial, fetchOverride, dynamic = false) {
   assert.equal(race.node('phone').hidden, true);
   await race.node('access').onclick();
   assert.equal(race.node('phone').hidden, false);
+  assert.equal(race.node('privacy').hidden, true);
   resolvePoll(response({status: 'approved', phone: '+996555000000', apartment: {}}));
   await inFlight;
   assert.equal(race.node('phone').hidden, false);

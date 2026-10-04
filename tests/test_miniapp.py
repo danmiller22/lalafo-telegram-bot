@@ -63,12 +63,12 @@ def test_telegram_init_data_rejects_tampering_and_stale_payload():
     ) is None
 
 
-def test_mini_app_page_has_one_weekly_tariff_and_linked_agreement():
+def test_mini_app_page_has_only_weekly_tariff_and_privacy_link():
     html = mini_app_html()
 
     assert "/miniapp/api/session" in html
     assert "/miniapp/api/start" in html
-    assert "Доступ к контактам на 7 дней — 500 сом." in html
+    assert "Недельный тариф — 500 сом" in html
     assert ">Оплатить 500 сом</button>" in html
     assert "499" not in html and "699" not in html and "999" not in html
     assert "Месячный тариф" not in html
@@ -91,9 +91,9 @@ def test_mini_app_page_has_one_weekly_tariff_and_linked_agreement():
     assert "/miniapp/api/access" in html
     assert "/miniapp/api/consent" not in html
     assert 'type="checkbox"' not in html
-    assert '<dialog id="agreement"' in html
-    assert "искусственного интеллекта" in html
-    assert "Риелторы и другие лица могут выдавать себя за хозяев" in html
+    assert '<dialog id="agreement"' not in html
+    assert "искусственного интеллекта" not in html
+    assert "Риелторы и другие лица могут выдавать себя за хозяев" not in html
     first_screen = html.split('id="tariff-description"', 1)[1].split('id="checkout"', 1)[0]
     assert first_screen.count("<button") == 1
     assert 'const canPay = !approved && !waiting' in html

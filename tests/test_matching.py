@@ -34,6 +34,28 @@ async def test_hot_feed_returns_two_fresh_different_districts(repositories):
 
 
 @pytest.mark.asyncio
+async def test_hot_feed_prefers_lalafo_for_conversion_entry(repositories):
+    apartments, _, sessions = repositories
+    matching = MatchingRepository(sessions)
+    lalafo = await apartments.upsert_discovered(
+        make_ad(lalafo_id=7011, district="Асанбай")
+    )
+    telegram = await apartments.upsert_discovered(
+        make_ad(
+            lalafo_id=-7012,
+            district="Центр",
+            source_url="https://t.me/s/rental_property_bishkek/7012",
+        )
+    )
+    await apartments.mark_published(lalafo.id, chat_id=-100, message_id=1)
+    await apartments.mark_published(telegram.id, chat_id=-100, message_id=2)
+
+    hot = await matching.hot_apartments(limit=1, prefer_lalafo=True)
+
+    assert [item.id for item in hot] == [lalafo.id]
+
+
+@pytest.mark.asyncio
 async def test_new_customer_sees_two_hot_cards_before_filter_setup(repositories):
     apartments, _, sessions = repositories
     matching = MatchingRepository(sessions)
@@ -66,7 +88,7 @@ async def test_new_customer_sees_two_hot_cards_before_filter_setup(repositories)
     )
 
     assert message.answer.await_args_list[0].args[0] == (
-        "🔥 Вот 2 свежие квартиры. Под подходящим вариантом нажмите "
+        "🔥 Вот свежие квартиры с Lalafo. Под подходящим вариантом нажмите "
         "«Получить номер»."
     )
     assert bot.send_photo.await_count == 2

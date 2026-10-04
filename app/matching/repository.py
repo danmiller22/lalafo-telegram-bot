@@ -169,8 +169,17 @@ class MatchingRepository:
                 ).all()
             )
 
-    async def hot_apartments(self, limit: int = 2) -> list[Apartment]:
+    async def hot_apartments(
+        self, limit: int = 2, *, prefer_lalafo: bool = False
+    ) -> list[Apartment]:
         rows = [item for item in await self._fresh_apartments() if item.photo_urls]
+        if prefer_lalafo:
+            # Lalafo visitors arrive with the intent to ask about an apartment.
+            # Keep that intent by putting fresh Lalafo cards first, while still
+            # falling back to the full inventory when Lalafo has fewer cards.
+            rows.sort(
+                key=lambda item: "lalafo.kg" not in (item.source_url or "").casefold()
+            )
         selected: list[Apartment] = []
         seen_districts: set[str] = set()
         for item in rows:

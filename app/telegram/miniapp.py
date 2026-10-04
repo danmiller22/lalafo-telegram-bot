@@ -9,7 +9,6 @@ from html import escape
 from urllib.parse import parse_qsl
 
 from app.payment_plans import WEEK_PRICE
-from app.terms import TERMS_TEXT
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,7 +56,6 @@ def verify_telegram_init_data(
 
 def mini_app_html(*, title: str = "Доступ к квартире", payment_urls: dict[str, str] | None = None) -> str:
     safe_title = escape(title)
-    safe_terms = escape(TERMS_TEXT).replace("\n", "<br>")
     # Script-safe JSON: configured public checkout URLs are not credentials.
     checkout_json = json.dumps(payment_urls or {}, ensure_ascii=True).replace("<", "\\u003c")
     return f"""<!doctype html>
@@ -81,7 +79,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     .primary {{ background: var(--accent); color: #fff; }}
     .secondary {{ background: transparent; color: var(--tg-theme-link-color, #087f68); border: 1px solid #879b9260; }}
     button:disabled {{ cursor: default; background: #879b9230; color: var(--muted); }}
-    button:focus-visible, a:focus-visible, summary:focus-visible {{ outline: 3px solid #38a88b; outline-offset: 3px; }}
+    button:focus-visible, a:focus-visible {{ outline: 3px solid #38a88b; outline-offset: 3px; }}
     .step {{ display: flex; align-items: center; gap: 9px; font-size: 17px; font-weight: 750; margin-bottom: 12px; }}
     .step span {{ display: grid; place-items: center; width: 25px; height: 25px; border-radius: 50%; background: #087f6818; color: var(--tg-theme-link-color, #087f68); font-size: 13px; }}
     .receipt-step {{ margin-top: 22px; }}
@@ -92,16 +90,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     .photos img {{ width: 100%; height: 140px; object-fit: cover; border-radius: 12px; }}
     .details {{ white-space: pre-line; font-size: 16px; line-height: 1.6; }}
     .tariff-button {{ margin-bottom: 12px; }}
-    #tariff-description {{ color: var(--tg-theme-text-color, #172b24); font-size: 16px; line-height: 1.6; }}
-    #tariff-description p {{ margin: 0 0 14px; }}
-    .access-offer {{ font-size: 26px; font-weight: 800; line-height: 1.3; }}
-    #tariff-description .agreement-caption {{ font-size: 12px; line-height: 1.5; color: var(--muted); }}
-    .terms-link {{ color: var(--tg-theme-link-color, #087f68); text-underline-offset: 3px; }}
-    .agreement-dialog {{ width: calc(100% - 32px); max-width: 480px; max-height: 85vh; overflow-y: auto; border: 1px solid #879b9260; border-radius: 18px; padding: 20px; background: var(--surface); color: var(--tg-theme-text-color, #172b24); }}
-    .agreement-dialog::backdrop {{ background: #0008; }}
-    .agreement-dialog h2 {{ font-size: 21px; margin-top: 0; }}
-    #close-agreement {{ position: sticky; top: 0; background: var(--surface); margin-bottom: 16px; }}
-    .agreement-text {{ font-size: 15px; line-height: 1.6; }}
+    #tariff-description {{ color: var(--tg-theme-text-color, #172b24); font-size: 26px; font-weight: 800; line-height: 1.3; }}
     .hidden {{ display: none !important; }}
   </style>
 </head>
@@ -112,10 +101,10 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
   <p id="intro" class="intro"></p>
   <div id="status" class="status hidden" role="status" aria-live="polite"></div>
   <div id="tariff-description" class="intro hidden">
-    <p class="access-offer">Доступ к контактам на 7 дней — {WEEK_PRICE} сом.</p>
-    <p class="agreement-caption">Оплачивая доступ, вы подтверждаете, что ознакомились с <a href="#agreement" class="terms-link">пользовательским соглашением</a> и согласны с его условиями.</p>
+    Недельный тариф — {WEEK_PRICE} сом
   </div>
   <button id="pay-lifetime" class="primary tariff-button hidden">Оплатить {WEEK_PRICE} сом</button>
+  <a id="privacy" class="privacy hidden">Политика конфиденциальности</a>
   <section id="checkout" class="checkout hidden">
     <div id="payment-step" class="step"><span>1</span>Оплата через Finik</div>
     <button id="reopen-payment" class="secondary hidden">Открыть Finik</button>
@@ -127,12 +116,6 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     <div id="details" class="details"></div>
   </div>
   <a id="phone" class="phone hidden"></a>
-  <dialog id="agreement" class="agreement-dialog" aria-labelledby="agreement-title">
-    <h2 id="agreement-title">Пользовательское соглашение</h2>
-    <button id="close-agreement" class="secondary">Закрыть</button>
-    <div class="agreement-text">{safe_terms}</div>
-    <a id="privacy" class="privacy">Политика конфиденциальности</a>
-  </dialog>
 </main>
 <script>
 (() => {{
@@ -224,6 +207,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     const canPay = !approved && !waiting;
     show("tariff-description", canPay);
     show("checkout", waiting);
+    show("privacy", !approved);
     show("payment-step", data.status === "awaiting_receipt");
     show("pay-lifetime", canPay);
     show("access", waiting);
@@ -336,17 +320,6 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
       startPaymentPolling();
     }}
   }});
-  for (const link of document.querySelectorAll(".terms-link")) {{
-    link.onclick = event => {{
-      event.preventDefault();
-      const agreement = el("agreement");
-      if (agreement.showModal) agreement.showModal(); else agreement.setAttribute("open", "");
-    }};
-  }}
-  el("close-agreement").onclick = () => {{
-    const agreement = el("agreement");
-    if (agreement.close) agreement.close(); else agreement.removeAttribute("open");
-  }};
   el("pay-lifetime").onclick = () => startPayment("week", "pay-lifetime");
   el("reopen-payment").onclick = () => {{
     if (accessApproved) return;
