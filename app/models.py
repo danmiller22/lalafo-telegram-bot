@@ -246,6 +246,7 @@ class PaymentRequest(Base):
         UniqueConstraint("telegram_user_id", "apartment_id", name="uq_payment_access"),
         Index("ix_payment_status_created", "status", "created_at"),
         Index("ix_payment_provider_id", "provider_payment_id", unique=True),
+        Index("ix_payment_claim_due", "status", "payment_claimed_at"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -271,6 +272,7 @@ class PaymentRequest(Base):
     provider_payment_id: Mapped[str | None] = mapped_column(String(64))
     provider_payment_url: Mapped[str | None] = mapped_column(Text)
     provider_status: Mapped[str | None] = mapped_column(String(32))
+    payment_claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     apartment: Mapped[Apartment] = relationship(back_populates="payments")
 

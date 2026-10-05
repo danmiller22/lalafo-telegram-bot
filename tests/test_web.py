@@ -96,6 +96,7 @@ def configure(monkeypatch: pytest.MonkeyPatch) -> None:
     web._apartment_scheduler_task = None
     web._service_keepalive_task = None
     web._background_watchdog_task = None
+    web._payment_claim_worker_task = None
     web._shutting_down = False
     web._bot_setup_state.update(
         state="pending",
@@ -140,7 +141,8 @@ async def test_health_and_authentication() -> None:
             "status": "ok",
             "bot": "disabled",
             "finik_auto_payment": "disabled",
-        "payment_access_mode": "manual",
+        "payment_access_mode": "claim_delay",
+        "payment_claim_worker": "disabled",
         "listing_validity_days": 2,
         "payment_receipt_required": False,
         "contact_tariff": {"plan": "week", "price": 500, "expires": True, "storage": "persistent_ledger"},
@@ -597,7 +599,7 @@ async def test_miniapp_page_is_public_but_session_requires_telegram_auth(
     service.contact_status.assert_awaited_once_with(778899, 42)
 
 
-def test_automatic_checkout_is_enabled_when_finik_api_is_configured(
+def test_shared_weekly_checkout_is_preserved_when_finik_api_is_configured(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("WEEKLY_FINIK_PAYMENT_URL", "https://qr.finik.kg/weekly")
@@ -610,7 +612,7 @@ def test_automatic_checkout_is_enabled_when_finik_api_is_configured(
     settings = get_settings()
 
     assert settings.finik_auto_enabled
-    assert web._uses_dynamic_finik(settings, WEEK_PLAN)
+    assert not web._uses_dynamic_finik(settings, WEEK_PLAN)
     assert web._uses_dynamic_finik(settings, MONTH_PLAN)
     assert web._finik_payment_url(settings, WEEK_PLAN).endswith("/weekly")
     assert web._finik_payment_url(settings, MONTH_PLAN).endswith("/monthly")
@@ -721,13 +723,13 @@ async def test_miniapp_uses_configured_payment_url_without_waiting_for_finik(
 
     assert response.status_code == 200
     assert response.json()["payment_url"] == "https://qr.finik.kg/weekly"
-    assert response.json()["automatic_payment"] is True
+    assert response.json()["automatic_payment"] is False
     service.begin_payment.assert_awaited_once()
     checkout.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_miniapp_access_sends_customer_claim_to_admin(
+async def test_miniapp_access_queues_delayed_claim_without_admin_notification(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     bot_token = "123456:telegram-test-token"
@@ -802,9 +804,9 @@ async def test_miniapp_access_sends_customer_claim_to_admin(
     assert response.status_code == 200
     assert response.json()["status"] == "pending"
     payments.mark_payment_claimed.assert_awaited_once_with(user_id=778899, apartment_id=42)
-    payments.claim_admin_notification.assert_awaited_once_with(73)
-    payments.finish_admin_notification.assert_awaited_once_with(73, 515)
-    bot.send_message.assert_awaited_once()
+    payments.claim_admin_notification.assert_not_awaited()
+    payments.finish_admin_notification.assert_not_awaited()
+    bot.send_message.assert_not_awaited()
 
 
 @pytest.mark.asyncio

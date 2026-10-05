@@ -791,6 +791,7 @@ class PaymentRepository:
                 request.provider_payment_id = None
                 request.provider_payment_url = None
                 request.provider_status = None
+                request.payment_claimed_at = None
                 outcome = "created"
             await session.flush()
             await session.refresh(request)
@@ -826,7 +827,7 @@ class PaymentRepository:
     async def mark_payment_claimed(
         self, *, user_id: int, apartment_id: int
     ) -> PaymentRequest | None:
-        """Queue the customer claim for the administrator; never grant access."""
+        """Persist the first customer click; a durable worker grants access after 60 seconds."""
         async with self.sessions.begin() as session:
             request = await session.scalar(
                 select(PaymentRequest)
@@ -845,6 +846,8 @@ class PaymentRepository:
             if request.status not in {"awaiting_receipt", "pending"}:
                 return request
             request.status = "pending"
+            if request.payment_claimed_at is None:
+                request.payment_claimed_at = datetime.now(timezone.utc)
             request_id = request.id
         return await self.get_request(request_id)
 
@@ -925,34 +928,57 @@ class PaymentRepository:
             if current.status != "pending":
                 return f"already_{current.status}"
             if approve:
-                current.status = "approved"
-                current.approved_at = now
-                current.approved_by = admin_id
-                current.access_expires_at = expires_at_for(current.plan, now)
-                if current.access_expires_at is not None or current.plan == LIFETIME_PLAN:
-                    session.add(
-                        PaymentHistory(
-                            payment_request_id=current.id,
-                            telegram_user_id=current.telegram_user_id,
-                            username=current.username,
-                            first_name=current.first_name,
-                            apartment_id=current.apartment_id,
-                            plan=current.plan,
-                            amount=plan_price(current.plan),
-                            provider_payment_id=(
-                                current.provider_payment_id
-                                or f"manual-{current.id}-{int(now.timestamp())}"
-                            ),
-                            paid_at=now,
-                            access_expires_at=current.access_expires_at,
-                        )
-                    )
+                self._approve_request(session, current, now=now, admin_id=admin_id)
                 return "approved"
             current.status = "rejected"
             current.rejected_at = now
             current.rejected_by = admin_id
             current.access_expires_at = None
             return "rejected"
+
+    @staticmethod
+    def _approve_request(session, current: PaymentRequest, *, now: datetime, admin_id: int) -> None:
+        current.status = "approved"
+        current.approved_at = now
+        current.approved_by = admin_id
+        current.access_expires_at = expires_at_for(current.plan, now)
+        if current.access_expires_at is not None or current.plan == LIFETIME_PLAN:
+            session.add(
+                PaymentHistory(
+                    payment_request_id=current.id,
+                    telegram_user_id=current.telegram_user_id,
+                    username=current.username,
+                    first_name=current.first_name,
+                    apartment_id=current.apartment_id,
+                    plan=current.plan,
+                    amount=plan_price(current.plan),
+                    provider_payment_id=(
+                        current.provider_payment_id
+                        or f"{'claim' if admin_id == 0 else 'manual'}-{current.id}-{int(now.timestamp())}"
+                    ),
+                    paid_at=now,
+                    access_expires_at=current.access_expires_at,
+                )
+            )
+
+    async def approve_claims_due(self, *, now: datetime | None = None, limit: int = 50) -> list[PaymentRequest]:
+        """Issue access from customer claims once their one-minute hold has elapsed."""
+        now = now or datetime.now(timezone.utc)
+        async with self.sessions.begin() as session:
+            rows = list((await session.scalars(
+                select(PaymentRequest)
+                .options(selectinload(PaymentRequest.apartment))
+                .where(
+                    PaymentRequest.status == "pending",
+                    PaymentRequest.payment_claimed_at <= now - timedelta(seconds=60),
+                )
+                .order_by(PaymentRequest.payment_claimed_at.asc())
+                .limit(limit)
+                .with_for_update(skip_locked=True)
+            )).all())
+            for current in rows:
+                self._approve_request(session, current, now=now, admin_id=0)
+            return rows
 
     async def prepare_provider_payment(
         self,

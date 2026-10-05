@@ -64,6 +64,7 @@ _apartment_scheduler_task: asyncio.Task[None] | None = None
 _service_keepalive_task: asyncio.Task[None] | None = None
 _background_watchdog_task: asyncio.Task[None] | None = None
 _matching_worker_task: asyncio.Task[None] | None = None
+_payment_claim_worker_task: asyncio.Task[None] | None = None
 _shutting_down = False
 _lalafo_mcp_context: Any | None = None
 _bot_setup_state: dict[str, Any] = {
@@ -132,6 +133,8 @@ def _finik_payment_url(settings: Any, plan: str) -> str:
 
 
 def _uses_dynamic_finik(settings: Any, plan: str) -> bool:
+    if plan == WEEK_PLAN and settings.weekly_finik_payment_url:
+        return False
     if plan == LIFETIME_PLAN and settings.lifetime_finik_payment_url:
         return False
     return plan in {LIFETIME_PLAN, WEEK_PLAN, MONTH_PLAN} and settings.finik_auto_enabled
@@ -733,6 +736,7 @@ async def _repair_background_tasks_once() -> int:
     """Restart only stopped workers; never replace the payment runtime."""
     global _bot_setup_task, _lalafo_bot_setup_task, _lalafo_watchdog_task
     global _apartment_scheduler_task, _service_keepalive_task, _matching_worker_task
+    global _payment_claim_worker_task
     settings = get_settings()
     if _shutting_down:
         return 0
@@ -760,6 +764,14 @@ async def _repair_background_tasks_once() -> int:
         )
         _lalafo_bot_setup_task = asyncio.create_task(
             _configure_lalafo_bot(), name="lalafo-telegram-setup-maintainer"
+        )
+        restarted += 1
+
+    if settings.run_bot and _bot_runtime is not None and _task_stopped(_payment_claim_worker_task):
+        from app.payments.worker import run_payment_claim_worker
+
+        _payment_claim_worker_task = asyncio.create_task(
+            run_payment_claim_worker(_bot_runtime), name="payment-claim-worker"
         )
         restarted += 1
 
@@ -854,7 +866,7 @@ async def startup() -> None:
     global _legacy_featured_cleanup_task
     global _keyboard_sync_task, _lalafo_auto_responder
     global _lalafo_watchdog_task, _apartment_scheduler_task
-    global _service_keepalive_task, _background_watchdog_task, _matching_worker_task
+    global _service_keepalive_task, _background_watchdog_task, _matching_worker_task, _payment_claim_worker_task
     global _shutting_down
     global _lalafo_mcp_context
     settings = get_settings()
@@ -894,6 +906,11 @@ async def startup() -> None:
             run_matching_worker(_bot_runtime), name="personal-matching-worker"
         )
         logger.info("Personal apartment matching worker enabled")
+        from app.payments.worker import run_payment_claim_worker
+
+        _payment_claim_worker_task = asyncio.create_task(
+            run_payment_claim_worker(_bot_runtime), name="payment-claim-worker"
+        )
         from app.telegram.keyboard_sync import sync_published_keyboards
 
         _keyboard_sync_task = asyncio.create_task(
@@ -941,7 +958,7 @@ async def shutdown() -> None:
     global _legacy_featured_cleanup_task
     global _keyboard_sync_task, _lalafo_auto_responder
     global _lalafo_watchdog_task, _apartment_scheduler_task
-    global _service_keepalive_task, _background_watchdog_task, _matching_worker_task
+    global _service_keepalive_task, _background_watchdog_task, _matching_worker_task, _payment_claim_worker_task
     global _shutting_down
     global _lalafo_mcp_context
     _shutting_down = True
@@ -953,6 +970,11 @@ async def shutdown() -> None:
         with suppress(asyncio.CancelledError):
             await _background_watchdog_task
     _background_watchdog_task = None
+    if _payment_claim_worker_task is not None and not _payment_claim_worker_task.done():
+        _payment_claim_worker_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await _payment_claim_worker_task
+    _payment_claim_worker_task = None
     if _matching_worker_task is not None and not _matching_worker_task.done():
         _matching_worker_task.cancel()
         with suppress(asyncio.CancelledError):
@@ -1151,7 +1173,11 @@ async def health() -> JSONResponse:
             "status": "ok",
             "bot": "running" if settings.run_bot else "disabled",
             "finik_auto_payment": "ready" if settings.finik_auto_enabled else "disabled",
-            "payment_access_mode": "manual",
+            "payment_access_mode": "claim_delay",
+            "payment_claim_worker": (
+                "running" if settings.run_bot and not _task_stopped(_payment_claim_worker_task)
+                else "stopped" if settings.run_bot else "disabled"
+            ),
             "listing_validity_days": MAX_LISTING_AGE_DAYS,
             "payment_receipt_required": False,
             "contact_tariff": {"plan": WEEK_PLAN, "price": WEEK_PRICE, "expires": True, "storage": "persistent_ledger"},
@@ -1443,32 +1469,24 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
 
 @app.post("/miniapp/api/access", include_in_schema=False)
 async def miniapp_issue_access(payload: MiniAppRequest) -> dict[str, Any]:
-    settings, runtime, user, apartment_id = _miniapp_context(payload)
+    _, runtime, user, apartment_id = _miniapp_context(payload)
     service = runtime.workflow_data["service"]
     current = await service.contact_status(user.id, apartment_id)
     if current.status == "approved":
         return _miniapp_result_payload(current)
-    if not settings.admin_user_id:
-        raise HTTPException(status_code=503, detail="Проверка оплаты временно недоступна. Обратитесь в поддержку.")
     if current.status not in {"awaiting_receipt", "pending"}:
         raise HTTPException(status_code=409, detail="Сначала откройте оплату.")
-    payments = runtime.workflow_data["payments"]
-    request = await payments.mark_payment_claimed(user_id=user.id, apartment_id=apartment_id)
+    request = await runtime.workflow_data["payments"].mark_payment_claimed(
+        user_id=user.id, apartment_id=apartment_id,
+    )
     if request is None:
         raise HTTPException(status_code=409, detail="Сначала откройте оплату.")
-    from app.payments.review import notify_payment_admin
-    try:
-        await notify_payment_admin(runtime.bot, payments, settings,
-            TokenSigner(settings.require_callback_secret()), request)
-    except Exception as exc:
-        logger.exception("Could not notify payment administrator")
-        raise HTTPException(status_code=503, detail="Не удалось отправить заявку. Нажмите «Я оплатил(а)» ещё раз.") from exc
     return _miniapp_result_payload(await service.contact_status(user.id, apartment_id))
 
 
 @app.post("/finik/webhook", include_in_schema=False)
 async def finik_webhook(request: Request) -> dict[str, str]:
-    """Verify a Finik callback; access remains subject to administrator approval."""
+    """Record a verified provider callback independently of customer-claim grants."""
     settings = get_settings()
     runtime = _bot_runtime
     if not settings.run_bot or runtime is None or not settings.finik_auto_enabled:

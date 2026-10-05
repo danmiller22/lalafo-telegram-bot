@@ -147,7 +147,7 @@ async def test_failed_customer_delivery_does_not_undo_admin_grant(repositories, 
 
 
 @pytest.mark.asyncio
-async def test_miniapp_claim_retry_after_telegram_error_never_exposes_phone(repositories, service, monkeypatch, review_context):
+async def test_miniapp_claim_does_not_depend_on_admin_telegram_delivery(repositories, service, monkeypatch, review_context):
     import httpx
     from app import web
     from app.config import get_settings
@@ -167,7 +167,8 @@ async def test_miniapp_claim_retry_after_telegram_error_never_exposes_phone(repo
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=web.app), base_url="http://test") as client:
             bot.send_message.side_effect = RuntimeError("Telegram unavailable")
             failed = await client.post("/miniapp/api/access", json=payload)
-            assert failed.status_code == 503
+            assert failed.status_code == 200
+            assert failed.json()["status"] == "pending"
             assert "phone" not in failed.json()
             assert (await service.contact_status(101, apartment.id)).status == "pending"
             bot.send_message.side_effect = None
@@ -177,7 +178,7 @@ async def test_miniapp_claim_retry_after_telegram_error_never_exposes_phone(repo
             assert "phone" not in retried.json()
             again = await client.post("/miniapp/api/access", json=payload)
             assert again.json()["status"] == "pending"
-            assert bot.send_message.await_count == 2  # One failed attempt, one delivered notification.
+            bot.send_message.assert_not_awaited()
             assert await service.decide(request.id, approve=True, actor_id=999) == "approved"
             granted = await client.post("/miniapp/api/session", json=payload)
             assert granted.json()["status"] == "approved"
