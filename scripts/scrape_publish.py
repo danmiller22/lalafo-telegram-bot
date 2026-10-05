@@ -229,6 +229,7 @@ def apartment_to_ad(apartment) -> LalafoAd:
         lalafo_id=apartment.lalafo_id,
         source_url=apartment.source_url,
         phone=apartment.phone,
+        phone_source_version=getattr(apartment, "phone_source_version", 0),
         price=apartment.price,
         currency="KGS",
         rooms=apartment.rooms,

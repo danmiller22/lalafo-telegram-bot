@@ -96,6 +96,7 @@ def test_parse_detail_page_uses_structured_fields_and_description_deposit():
     assert ad.district == "7 мкр"
     assert ad.deposit == 15000
     assert ad.phone == "+996555123456"
+    assert ad.phone_source_version == 2
     assert ad.no_subletting
     assert ad.owner_listing
     assert ad.seller_type == "owner"

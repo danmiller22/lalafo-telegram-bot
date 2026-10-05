@@ -128,7 +128,7 @@ async def test_manual_card_album_confirmation_and_publish(
     assert ad.phone == "+996700123456"
     from app.telegram.formatting import author_label
 
-    assert author_label(ad) is None
+    assert author_label(ad) == "Собственник"
     publish.assert_awaited_once_with(42, ad)
     apartments.mark_published.assert_awaited_once_with(
         42, chat_id=settings.telegram_group_id, message_id=987

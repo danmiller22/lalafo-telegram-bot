@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from html import escape
 
-from app.lalafo.models import LalafoAd
+from app.lalafo.models import PHONE_SOURCE_VERSION, LalafoAd
 from app.models import Apartment
 
 
@@ -42,9 +42,17 @@ def is_supported_source(ad: LalafoAd | Apartment) -> bool:
 
 
 def author_label(ad: LalafoAd | Apartment) -> str | None:
-    """Public cards intentionally omit author labels for every seller type."""
-    del ad
-    return None
+    """Label known owners; the check refers to a phone matched to its source."""
+    if not is_confirmed_owner(ad):
+        return None
+    source_url = str(getattr(ad, "source_url", "") or "").casefold()
+    if (
+        source_url.startswith(("https://lalafo.kg/", "https://www.lalafo.kg/"))
+        and getattr(ad, "phone_source_version", 0) == PHONE_SOURCE_VERSION
+        and str(getattr(ad, "phone", "") or "").strip()
+    ):
+        return "Собственник. Контакты проверены ✅"
+    return "Собственник"
 
 
 def seller_status(ad: LalafoAd | Apartment) -> str:
@@ -62,6 +70,9 @@ def format_apartment(ad: LalafoAd | Apartment) -> str:
     lines.append(f"💰 {format_money(ad.price)} сом")
     if ad.deposit is not None:
         lines.append(f"🔐 Депозит: {format_money(ad.deposit)} сом")
+    label = author_label(ad)
+    if label:
+        lines.append(label)
     return "\n".join(lines)
 
 

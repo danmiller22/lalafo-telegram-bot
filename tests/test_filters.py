@@ -87,7 +87,7 @@ def test_allowed_and_format_has_no_source_or_description():
     text = format_apartment(ad)
     assert text == (
         "🏠 1-комнатная квартира\n📍 7 мкр\n🏙 Бишкек\n"
-        "💰 35 000 сом\n🔐 Депозит: 20 000 сом"
+        "💰 35 000 сом\n🔐 Депозит: 20 000 сом\nСобственник"
     )
     assert "lalafo" not in text.lower()
     assert ad.phone not in text
@@ -121,7 +121,7 @@ def test_missing_district_uses_labeled_demo_location_and_omits_deposit():
     text = format_apartment(make_ad(district=None, deposit=None, rooms="studio"))
     assert text == (
         "🏠 Студия\n📍 Центр\n"
-        "🏙 Бишкек\n💰 35 000 сом"
+        "🏙 Бишкек\n💰 35 000 сом\nСобственник"
     )
 
 
@@ -717,3 +717,21 @@ def test_publish_batch_caps_reposts_per_run():
 
     assert len(selected) == 28
     assert len({ad.lalafo_id for ad in selected} & set(repost_times)) == 18
+
+
+@pytest.mark.parametrize(
+    "overrides, expected",
+    [
+        ({"phone_source_version": 2}, "Собственник. Контакты проверены ✅"),
+        ({"phone_source_version": 0}, "Собственник"),
+        ({"phone_source_version": 2, "phone": ""}, "Собственник"),
+        ({"phone_source_version": 2, "source_url": "manual://telegram/123"}, "Собственник"),
+        ({"phone_source_version": 2, "owner_listing": False}, None),
+        ({"phone_source_version": 2, "seller_type": "unknown"}, None),
+    ],
+)
+def test_owner_contact_label_requires_matching_source_phone(overrides, expected):
+    ad = make_ad(**overrides)
+    assert author_label(ad) == expected
+    text = format_public_apartment(ad, bot_username="rentttkg")
+    assert ("Контакты проверены ✅" in text) == (expected == "Собственник. Контакты проверены ✅")

@@ -8,7 +8,7 @@ from typing import Any
 from bs4 import BeautifulSoup
 
 from app.lalafo.deposit import parse_deposit
-from app.lalafo.models import LalafoAd, SearchAd, SearchPage
+from app.lalafo.models import PHONE_SOURCE_VERSION, LalafoAd, SearchAd, SearchPage
 from app.lalafo.phone import normalize_kg_phone
 from app.telegram.source_filter import is_lodging_offer
 
@@ -286,6 +286,7 @@ def parse_detail_data(raw: dict[str, Any], *, source_url: str) -> LalafoAd:
         lalafo_id=int(raw["id"]),
         source_url=source_url,
         phone=normalize_kg_phone(raw.get("mobile")),
+        phone_source_version=PHONE_SOURCE_VERSION,
         price=price,
         currency=str(raw.get("currency") or ""),
         rooms=rooms,

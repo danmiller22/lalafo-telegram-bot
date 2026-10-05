@@ -30,6 +30,7 @@ class LalafoAd(BaseModel):
     lalafo_id: int
     source_url: str
     phone: str
+    phone_source_version: int = 0
     price: int
     currency: str
     rooms: str

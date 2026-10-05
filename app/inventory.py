@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import math
+from fractions import Fraction
 import random
 from zoneinfo import ZoneInfo
 
@@ -23,14 +24,13 @@ from app.telegram.formatting import is_supported_source
 BISHKEK = ZoneInfo("Asia/Bishkek")
 ALLOWED_ROOMS = frozenset({"studio", "1"})
 CENTRAL_DAILY_SHARE = 0.50
-REALTOR_DAILY_SHARE = 0.65
+REALTOR_DAILY_SHARE = 0.50
 MIN_PUBLICATIONS_PER_DAY = 96
 MAX_PUBLICATIONS_PER_DAY = 96
 # The daily target is chosen once per Bishkek date, then split across the two
 # discovery periods so retries cannot increase the day's publication volume.
-# Aim for 65% confirmed realtors and 35% confirmed owners whenever
-# both pools have enough live cards. Either pool may fill a shortage so the
-# channel keeps publishing instead of stopping on a strict category quota.
+# Reserve equal shares for known owners and realtors. Unknown authors cannot
+# fill either share; shortages reduce volume rather than distort the balance.
 MIN_NON_OWNERS_PER_DAY = round(MAX_PUBLICATIONS_PER_DAY * REALTOR_DAILY_SHARE)
 MAX_NON_OWNERS_PER_DAY = MIN_NON_OWNERS_PER_DAY
 TARGET_NON_OWNERS_PER_PERIOD = (MAX_NON_OWNERS_PER_DAY + 1) // 2
@@ -74,7 +74,7 @@ def daily_publication_target(period_start: datetime) -> int:
 
 
 def daily_realtor_target(period_start: datetime) -> int:
-    """Return the 65% daily realtor target."""
+    """Return the 50% daily realtor target."""
     del period_start
     return MAX_NON_OWNERS_PER_DAY
 
@@ -90,7 +90,7 @@ def period_publication_targets(period_start: datetime) -> tuple[int, int]:
 
 
 def period_realtor_target(period_start: datetime) -> int:
-    """Split the daily 65% realtor target across the two periods."""
+    """Split the daily 50% realtor target across the two periods."""
     daily_target = daily_realtor_target(period_start)
     first_target = (daily_target + 1) // 2
     if period_start.astimezone(BISHKEK).hour == 0:
@@ -179,18 +179,6 @@ def _supported_source_filter():
     )
 
 
-def _limit_non_owners(
-    planned: list[PlannedApartment],
-    apartments: list[Apartment],
-    *,
-    target: int,
-    maximum: int,
-) -> list[PlannedApartment]:
-    """Keep every eligible card regardless of its declared author type."""
-    del apartments, target, maximum
-    return planned
-
-
 def _pick_for_window(
     pool: list[Apartment],
     count: int,
@@ -199,10 +187,11 @@ def _pick_for_window(
     price_counts: dict[int, int],
     *,
     central: bool,
+    seller_remaining: dict[str, int],
 ) -> list[Apartment]:
     picked: list[Apartment] = []
     while len(picked) < count:
-        eligible = list(pool)
+        eligible = [item for item in pool if seller_remaining.get(_seller_type(item), 0) > 0]
         if not eligible:
             break
         def selection_key(item: Apartment) -> tuple[object, ...]:
@@ -222,6 +211,7 @@ def _pick_for_window(
         item = eligible[0]
         pool.remove(item)
         picked.append(item)
+        seller_remaining[_seller_type(item)] -= 1
         room_counts[item.rooms] = room_counts.get(item.rooms, 0) + 1
         district = normalized_district(item.district) or "unknown"
         district_counts[district] = district_counts.get(district, 0) + 1
@@ -251,6 +241,8 @@ def plan_period(
         if item.rooms in ALLOWED_ROOMS
         and is_supported_source(item)
         and 25_000 <= item.price <= 40_000
+        and _seller_type(item) in {"owner", "realtor"}
+        and (_seller_type(item) != "owner" or bool(item.owner_listing))
     ]
     repeat_ids = set(repeat_apartment_ids or ()) if MAX_REPOSTS_PER_PERIOD else set()
     central_pool = sorted(
@@ -277,6 +269,23 @@ def plan_period(
         target_count = max(0, target_count_override)
     if central_target_override is not None:
         central_target = max(0, min(target_count, central_target_override))
+    realtor_count = min(target_count, max(0, non_owner_target), max(0, non_owner_limit))
+    owner_count = target_count - realtor_count
+    available = {
+        kind: sum(_seller_type(item) == kind for item in apartments)
+        for kind in ("owner", "realtor")
+    }
+    scale = min(
+        [Fraction(1)] + [Fraction(available[kind], count)
+                        for kind, count in (("owner", owner_count), ("realtor", realtor_count))
+                        if count]
+    )
+    seller_remaining = {
+        "owner": math.floor(owner_count * scale),
+        "realtor": math.floor(realtor_count * scale),
+    }
+    target_count = sum(seller_remaining.values())
+    central_target = min(central_target, round(target_count * CENTRAL_DAILY_SHARE))
     room_counts: dict[str, int] = {}
     district_counts: dict[str, int] = {}
     price_counts: dict[int, int] = {}
@@ -287,6 +296,7 @@ def plan_period(
         district_counts,
         price_counts,
         central=True,
+        seller_remaining=seller_remaining,
     )
     selected.extend(
         _pick_for_window(
@@ -296,6 +306,7 @@ def plan_period(
             district_counts,
             price_counts,
             central=False,
+            seller_remaining=seller_remaining,
         )
     )
     if len(selected) < target_count:
@@ -307,11 +318,16 @@ def plan_period(
                 district_counts,
                 price_counts,
                 central=True,
+                seller_remaining=seller_remaining,
             )
         )
     if len(selected) < target_count and repeat_pool:
         rng.shuffle(repeat_pool)
-        selected.extend(repeat_pool[: target_count - len(selected)])
+        selected.extend(_pick_for_window(
+            repeat_pool, target_count - len(selected), room_counts,
+            district_counts, price_counts, central=False,
+            seller_remaining=seller_remaining,
+        ))
     rng.shuffle(selected)
     schedule = randomized_period_times(
         period_start,
@@ -330,12 +346,20 @@ def plan_period(
             zip(selected, schedule), start=1
         )
     ]
-    return _limit_non_owners(
-        planned,
-        apartments,
-        target=non_owner_target,
-        maximum=non_owner_limit,
-    )
+    return planned
+
+
+async def _balanced_stock(session: AsyncSession, statement) -> list[Apartment]:
+    """Reserve database load capacity for each known seller category."""
+    stock: list[Apartment] = []
+    for kind in ("owner", "realtor"):
+        query = statement.where(Apartment.seller_type == kind)
+        if kind == "owner":
+            query = query.where(Apartment.owner_listing.is_(True))
+        stock.extend((await session.scalars(
+            query.limit(MAX_FRESH_STOCK_LOAD // 2)
+        )).all())
+    return stock
 
 
 class InventoryRepository:
@@ -344,9 +368,7 @@ class InventoryRepository:
 
     async def reset_publication_history_for_code(self, code_version: str) -> bool:
         """Rebuild the queue once per deployment without erasing repost history."""
-        version = code_version.strip()
-        if not version:
-            return False
+        version = code_version.strip() or "seller-50-50-v1"
         key = "apartment_publication_code_version"
         async with self.sessions.begin() as session:
             marker = await session.get(LalafoAutoReplyMeta, key)
@@ -609,19 +631,6 @@ class InventoryRepository:
             remaining_non_owners = max(
                 0, realtor_daily_target - already_non_owners
             )
-            if period.astimezone(BISHKEK).hour == 0:
-                non_owner_target = min(
-                    realtor_period_target, remaining_non_owners
-                )
-            else:
-                non_owner_target = min(
-                    remaining_non_owners,
-                    max(
-                        TARGET_NON_OWNERS_PER_PERIOD,
-                        realtor_period_target,
-                        realtor_daily_target - already_non_owners,
-                    ),
-                )
             active_queue_ids = select(ApartmentInventoryQueue.apartment_id).where(
                 ApartmentInventoryQueue.status.in_(("queued", "publishing"))
             )
@@ -629,47 +638,39 @@ class InventoryRepository:
                 ApartmentInventoryQueue,
                 ApartmentInventoryQueue.apartment_id == Apartment.id,
             ).where(ApartmentInventoryQueue.status.in_(("queued", "publishing")))
-            fresh_stock = list(
-                (
-                    await session.scalars(
-                        select(Apartment).where(
-                            Apartment.active.is_(True),
-                            Apartment.publication_status == "discovered",
-                            _supported_source_filter(),
-                            Apartment.id.not_in(active_queue_ids),
-                            Apartment.fingerprint.not_in(queued_fingerprints),
-                            Apartment.price.between(25_000, 40_000),
-                            Apartment.rooms.in_(ALLOWED_ROOMS),
-                            Apartment.last_seen_at >= now - timedelta(days=2),
-                        )
-                        .order_by(
-                            Apartment.discovery_priority.desc(),
-                            Apartment.last_seen_at.desc(),
-                            Apartment.price.asc(),
-                        )
-                        .limit(MAX_FRESH_STOCK_LOAD)
-                    )
-                ).all()
+            fresh_stock = await _balanced_stock(
+                session,
+                select(Apartment).where(
+                    Apartment.active.is_(True),
+                    Apartment.publication_status == "discovered",
+                    _supported_source_filter(),
+                    Apartment.id.not_in(active_queue_ids),
+                    Apartment.fingerprint.not_in(queued_fingerprints),
+                    Apartment.price.between(25_000, 40_000),
+                    Apartment.rooms.in_(ALLOWED_ROOMS),
+                    Apartment.last_seen_at >= now - timedelta(days=2),
+                )
+                .order_by(
+                    Apartment.discovery_priority.desc(),
+                    Apartment.last_seen_at.desc(),
+                    Apartment.price.asc(),
+                )
             )
-            repeat_stock = list(
-                (
-                    await session.scalars(
-                        select(Apartment).where(
-                            Apartment.active.is_(True),
-                            Apartment.publication_status == "published",
-                            Apartment.published_at.is_not(None),
-                            Apartment.published_at <= now - timedelta(hours=REPOST_AFTER_HOURS),
-                            _supported_source_filter(),
-                            Apartment.id.not_in(active_queue_ids),
-                            Apartment.fingerprint.not_in(queued_fingerprints),
-                            Apartment.price.between(25_000, 40_000),
-                            Apartment.rooms.in_(ALLOWED_ROOMS),
-                            Apartment.last_seen_at >= now - timedelta(days=2),
-                        )
-                        .order_by(Apartment.published_at.asc())
-                        .limit(MAX_FRESH_STOCK_LOAD)
-                    )
-                ).all()
+            repeat_stock = await _balanced_stock(
+                session,
+                select(Apartment).where(
+                    Apartment.active.is_(True),
+                    Apartment.publication_status == "published",
+                    Apartment.published_at.is_not(None),
+                    Apartment.published_at <= now - timedelta(hours=REPOST_AFTER_HOURS),
+                    _supported_source_filter(),
+                    Apartment.id.not_in(active_queue_ids),
+                    Apartment.fingerprint.not_in(queued_fingerprints),
+                    Apartment.price.between(25_000, 40_000),
+                    Apartment.rooms.in_(ALLOWED_ROOMS),
+                    Apartment.last_seen_at >= now - timedelta(days=2),
+                )
+                .order_by(Apartment.published_at.asc())
             )
             chooser = rng or random.SystemRandom()
             period_target, period_central_target = period_publication_targets(period)
@@ -683,6 +684,20 @@ class InventoryRepository:
                 - reserved_central
                 - published_outside_queue_central,
             )
+            period_realtors = int(await session.scalar(
+                select(func.count()).select_from(Apartment).where(
+                    Apartment.seller_type == "realtor",
+                    ((Apartment.publication_status == "published")
+                     & (Apartment.published_at >= period_start)
+                     & (Apartment.published_at < period_end))
+                    | Apartment.id.in_(select(ApartmentInventoryQueue.apartment_id).where(
+                        ApartmentInventoryQueue.window_key == period_window_key,
+                        ApartmentInventoryQueue.status.in_(("queued", "publishing")),
+                    )),
+                )
+            ) or 0)
+            non_owner_target = min(remaining_non_owners, target_override,
+                                   max(0, realtor_period_target - period_realtors))
             planned = plan_period(
                 fresh_stock + repeat_stock,
                 period_start=period,
@@ -868,6 +883,8 @@ class InventoryRepository:
                         ApartmentInventoryQueue.scheduled_at <= eligible_until,
                         Apartment.rooms.in_(ALLOWED_ROOMS),
                         Apartment.price.between(25_000, 40_000),
+                        ((Apartment.seller_type == "realtor")
+                         | ((Apartment.seller_type == "owner") & Apartment.owner_listing.is_(True))),
                         _supported_source_filter(),
                     )
                     .order_by(
@@ -882,6 +899,27 @@ class InventoryRepository:
             central_needed = published_central < math.ceil(
                 (published_today + 1) * CENTRAL_DAILY_SHARE
             )
+            realtor_needed = published_non_owners < math.ceil(
+                (published_today + 1) * REALTOR_DAILY_SHARE
+            )
+            desired_seller = "realtor" if realtor_needed else "owner"
+            published_owners = int(await session.scalar(
+                select(func.count()).select_from(Apartment).where(
+                    Apartment.publication_status == "published",
+                    Apartment.published_at >= day_start,
+                    Apartment.published_at < day_end,
+                    Apartment.seller_type == "owner",
+                )
+            ) or 0)
+            known_rows = [
+                row for row in due_rows
+                if (row[2] == "realtor" and published_non_owners < MAX_NON_OWNERS_PER_DAY)
+                or (row[2] == "owner" and published_owners < MAX_NON_OWNERS_PER_DAY)
+            ]
+            if not known_rows:
+                return None
+            balanced_rows = [row for row in known_rows if row[2] == desired_seller]
+            due_rows = balanced_rows or known_rows
             selected_id = next(
                 (
                     queue_id for queue_id, district, _seller_type in due_rows
