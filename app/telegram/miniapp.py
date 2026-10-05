@@ -253,7 +253,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
       el("phone").textContent = "📞 " + data.phone;
       el("phone").href = "tel:" + String(data.phone || "").replace(/\\s+/g, "");
     }} else if (waiting && data.status === "pending") {{
-      message("Запрос принят.");
+      message("Оплата отправлена на проверку. Ожидайте подтверждения.");
       startPaymentPolling();
     }} else if (waiting) {{
       message("");

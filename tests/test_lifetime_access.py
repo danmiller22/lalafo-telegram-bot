@@ -67,7 +67,7 @@ async def test_old_pending_checkout_can_switch_to_lifetime(repositories, service
 
 
 @pytest.mark.asyncio
-async def test_weekly_miniapp_checkout_and_delayed_access_end_to_end(repositories, service, monkeypatch):
+async def test_weekly_miniapp_checkout_and_manual_access_end_to_end(repositories, service, monkeypatch):
     import json
     from datetime import timedelta
     from unittest.mock import AsyncMock
@@ -133,11 +133,10 @@ async def test_weekly_miniapp_checkout_and_delayed_access_end_to_end(repositorie
             assert "phone" not in granted.json()
             pending_again = await client.post("/miniapp/api/access", json=payload)
             assert pending_again.json()["status"] == "pending"
-            web._bot_runtime.bot.send_message.assert_not_awaited()
+            web._bot_runtime.bot.send_message.assert_awaited_once()
             checkout = await payments.get_access(880, first.id)
-            claimed = checkout.payment_claimed_at.replace(tzinfo=timezone.utc)
-            assert not await payments.approve_claims_due(now=claimed + timedelta(seconds=59))
-            assert len(await payments.approve_claims_due(now=claimed + timedelta(seconds=60))) == 1
+            assert checkout.payment_claimed_at is None
+            assert await service.decide(checkout.id, approve=True, actor_id=999) == "approved"
             repeated = await client.post("/miniapp/api/access", json=payload)
             assert repeated.json()["status"] == "approved"
             already_ready = await client.post("/miniapp/api/prepare", json=payload)

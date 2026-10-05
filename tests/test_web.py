@@ -96,7 +96,7 @@ def configure(monkeypatch: pytest.MonkeyPatch) -> None:
     web._apartment_scheduler_task = None
     web._service_keepalive_task = None
     web._background_watchdog_task = None
-    web._payment_claim_worker_task = None
+    web._payment_review_worker_task = None
     web._shutting_down = False
     web._bot_setup_state.update(
         state="pending",
@@ -141,8 +141,8 @@ async def test_health_and_authentication() -> None:
             "status": "ok",
             "bot": "disabled",
             "finik_auto_payment": "disabled",
-        "payment_access_mode": "claim_delay",
-        "payment_claim_worker": "disabled",
+        "payment_access_mode": "manual",
+        "payment_review_worker": "disabled",
         "listing_validity_days": 2,
         "payment_receipt_required": False,
         "contact_tariff": {"plan": "week", "price": 499, "expires": True, "storage": "persistent_ledger"},
@@ -729,7 +729,7 @@ async def test_miniapp_uses_configured_payment_url_without_waiting_for_finik(
 
 
 @pytest.mark.asyncio
-async def test_miniapp_access_queues_delayed_claim_without_admin_notification(
+async def test_miniapp_access_sends_pending_claim_to_admin(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     bot_token = "123456:telegram-test-token"
@@ -804,9 +804,9 @@ async def test_miniapp_access_queues_delayed_claim_without_admin_notification(
     assert response.status_code == 200
     assert response.json()["status"] == "pending"
     payments.mark_payment_claimed.assert_awaited_once_with(user_id=778899, apartment_id=42)
-    payments.claim_admin_notification.assert_not_awaited()
-    payments.finish_admin_notification.assert_not_awaited()
-    bot.send_message.assert_not_awaited()
+    payments.claim_admin_notification.assert_awaited_once_with(73)
+    payments.finish_admin_notification.assert_awaited_once_with(73, 515)
+    bot.send_message.assert_awaited_once()
 
 
 @pytest.mark.asyncio

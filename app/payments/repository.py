@@ -801,7 +801,7 @@ class PaymentRepository:
     async def mark_payment_claimed(
         self, *, user_id: int, apartment_id: int
     ) -> PaymentRequest | None:
-        """Persist the first customer click; a durable worker grants access after 60 seconds."""
+        """Queue a customer payment claim for manual administrator review."""
         async with self.sessions.begin() as session:
             request = await session.scalar(
                 select(PaymentRequest)
@@ -820,8 +820,7 @@ class PaymentRepository:
             if request.status not in {"awaiting_receipt", "pending"}:
                 return request
             request.status = "pending"
-            if request.payment_claimed_at is None:
-                request.payment_claimed_at = datetime.now(timezone.utc)
+            request.payment_claimed_at = None
             request_id = request.id
         return await self.get_request(request_id)
 
@@ -895,6 +894,8 @@ class PaymentRepository:
 
     @staticmethod
     def _approve_request(session, current: PaymentRequest, *, now: datetime, admin_id: int) -> None:
+        if admin_id <= 0:
+            raise ValueError("Administrator approval is required")
         current.status = "approved"
         current.approved_at = now
         current.approved_by = admin_id
@@ -911,31 +912,21 @@ class PaymentRepository:
                     amount=plan_price(current.plan),
                     provider_payment_id=(
                         current.provider_payment_id
-                        or f"{'claim' if admin_id == 0 else 'manual'}-{current.id}-{int(now.timestamp())}"
+                        or f"manual-{current.id}-{int(now.timestamp())}"
                     ),
                     paid_at=now,
                     access_expires_at=current.access_expires_at,
                 )
             )
 
-    async def approve_claims_due(self, *, now: datetime | None = None, limit: int = 50) -> list[PaymentRequest]:
-        """Issue access from customer claims once their one-minute hold has elapsed."""
-        now = now or datetime.now(timezone.utc)
-        async with self.sessions.begin() as session:
-            rows = list((await session.scalars(
+    async def pending_notifications(self, limit: int = 50) -> list[PaymentRequest]:
+        async with self.sessions() as session:
+            return list((await session.scalars(
                 select(PaymentRequest)
-                .options(selectinload(PaymentRequest.apartment))
-                .where(
-                    PaymentRequest.status == "pending",
-                    PaymentRequest.payment_claimed_at <= now - timedelta(seconds=60),
-                )
-                .order_by(PaymentRequest.payment_claimed_at.asc())
+                .where(PaymentRequest.status == "pending", PaymentRequest.admin_message_id.is_(None))
+                .order_by(PaymentRequest.created_at.asc())
                 .limit(limit)
-                .with_for_update(skip_locked=True)
             )).all())
-            for current in rows:
-                self._approve_request(session, current, now=now, admin_id=0)
-            return rows
 
     async def prepare_provider_payment(
         self,

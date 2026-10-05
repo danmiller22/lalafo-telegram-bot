@@ -527,7 +527,14 @@ async def paid_handler(
         if request is None:
             await callback.answer("Сначала откройте оплату.", show_alert=True)
             return
-        await callback.answer("Запрос принят.", show_alert=True)
+        from app.payments.review import notify_payment_admin
+        try:
+            await notify_payment_admin(bot, payments, settings, signer, request)
+        except Exception:
+            logger.exception("Could not send payment claim to admin")
+            await callback.answer("Не удалось отправить заявку. Попробуйте ещё раз.", show_alert=True)
+            return
+        await callback.answer("Оплата отправлена на проверку. Ожидайте подтверждения.", show_alert=True)
         return
     if result.status == "unavailable":
         await callback.answer("Квартира больше недоступна.", show_alert=True)

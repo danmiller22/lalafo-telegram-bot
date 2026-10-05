@@ -73,7 +73,7 @@ function setup(initial, fetchOverride, dynamic = false) {
   assert.equal(race.node('phone').hidden, true);
   await race.node('access').onclick();
   assert.equal(race.node('phone').hidden, true);
-  assert.equal(race.node('status').textContent, 'Запрос принят.');
+  assert.equal(race.node('status').textContent, 'Оплата отправлена на проверку. Ожидайте подтверждения.');
   resolvePoll(response({status: 'approved', phone: '+996555000000', apartment: {}}));
   await inFlight;
   assert.equal(race.node('phone').hidden, false);
@@ -86,7 +86,7 @@ function setup(initial, fetchOverride, dynamic = false) {
   assert.equal(pending.node('phone').hidden, true);
   assert.equal(pending.node('access').hidden, false);
   assert.equal(pending.node('reopen-payment').hidden, true);
-  assert.equal(pending.node('status').textContent, 'Запрос принят.');
+  assert.equal(pending.node('status').textContent, 'Оплата отправлена на проверку. Ожидайте подтверждения.');
   assert.equal(pending.timers.size, 1);
   let finishStart;
   const warm = setup(null, path => {
