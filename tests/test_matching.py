@@ -156,7 +156,7 @@ async def test_new_customer_sees_two_hot_cards_before_filter_setup(repositories)
     assert "Проверено:" in first_card.kwargs["caption"]
     card_keyboard = first_card.kwargs["reply_markup"]
     assert card_keyboard.inline_keyboard[0][0].text == (
-        "📞 Получить номер — 500 сом / 7 дней"
+        "📞 Получить номер — 499 сом / 7 дней"
     )
     assert card_keyboard.inline_keyboard[1][0].text == "🏠 Смотреть все"
     footer = message.answer.await_args_list[-1].kwargs["reply_markup"]

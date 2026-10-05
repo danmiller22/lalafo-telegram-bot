@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.payment_plans import WEEK_PRICE
+
 import asyncio
 import json
 import time
@@ -17,7 +19,7 @@ AUTO_REPLY_TEXT = (
     "Здравствуйте! 👋 Свежие квартиры уже в Telegram: "
     "https://t.me/arenda312bot?start=lalafo "
     "Бот сразу покажет 2 новых варианта с фото и ценой. Под подходящей "
-    "квартирой нажмите «Получить номер». Доступ ко всем контактам на 7 дней — 500 сом."
+    f"квартирой нажмите «Получить номер». Доступ ко всем контактам на 7 дней — {WEEK_PRICE} сом."
 )
 
 LALAFO_HTTP_ORIGIN = "https://lalafo.kg"

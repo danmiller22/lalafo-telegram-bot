@@ -36,10 +36,8 @@ async def test_payment_state_machine(repositories, service):
     )
     assert duplicate.outcome == "awaiting_receipt"
     assert (await service.contact_status(100, apartment.id)).status == "awaiting_receipt"
-    receipt = await service.submit_receipt(
-        user_id=100, file_id="receipt-photo", file_type="photo"
-    )
-    assert receipt is not None
+    claim = await payments.mark_payment_claimed(user_id=100, apartment_id=apartment.id)
+    assert claim is not None
     assert (await service.contact_status(100, apartment.id)).status == "pending"
 
     assert await service.decide(first.request.id, approve=True, actor_id=111) == "forbidden"
@@ -52,7 +50,7 @@ async def test_payment_state_machine(repositories, service):
 
 
 @pytest.mark.asyncio
-async def test_verified_finik_payment_still_requires_admin(
+async def test_verified_finik_payment_alone_does_not_grant_access(
     repositories, service
 ):
     apartments, payments, _ = repositories
@@ -74,10 +72,10 @@ async def test_verified_finik_payment_still_requires_admin(
     assert (await service.contact_status(9191, apartment.id)).status == "awaiting_receipt"
 
     approved_outcome, _ = await payments.apply_provider_result(
-        "payment-9191", succeeded=True, amount=500
+        "payment-9191", succeeded=True, amount=499
     )
     assert approved_outcome == "awaiting_confirmation"
-    await payments.submit_receipt(user_id=9191, file_id="receipt", file_type="photo")
+    await payments.mark_payment_claimed(user_id=9191, apartment_id=apartment.id)
     assert (await service.contact_status(9191, apartment.id)).status == "pending"
     assert await service.decide(submission.request.id, approve=True, actor_id=999) == "approved"
     approved = await service.contact_status(9191, apartment.id)
@@ -85,7 +83,7 @@ async def test_verified_finik_payment_still_requires_admin(
     expiry = approved.access_expires_at
     assert expiry is not None
     repeated, _ = await payments.apply_provider_result(
-        "payment-9191", succeeded=True, amount=500
+        "payment-9191", succeeded=True, amount=499
     )
     assert repeated == "already_approved"
     async with repositories[2]() as session:
@@ -169,7 +167,7 @@ async def test_finik_link_is_rotated_after_merchant_change(repositories, service
 
 @pytest.mark.asyncio
 async def test_submitted_request_can_be_rejected_by_admin(repositories, service):
-    apartments, _, _ = repositories
+    apartments, payments, _ = repositories
     apartment = await apartments.upsert_discovered(make_ad(lalafo_id=222))
     submission = await service.begin_payment(
         user_id=200,
@@ -178,7 +176,7 @@ async def test_submitted_request_can_be_rejected_by_admin(repositories, service)
         first_name="No username",
         plan=WEEK_PLAN,
     )
-    await service.submit_receipt(user_id=200, file_id="receipt", file_type="document")
+    await payments.mark_payment_claimed(user_id=200, apartment_id=apartment.id)
     assert await service.decide(
         submission.request.id, approve=False, actor_id=999
     ) == "rejected"
@@ -189,7 +187,7 @@ async def test_submitted_request_can_be_rejected_by_admin(repositories, service)
 async def test_missing_apartment_is_denied_but_inactive_card_remains_payable(
     repositories, service
 ):
-    apartments, _, _ = repositories
+    apartments, payments, _ = repositories
     assert (await service.contact_status(1, 999999)).status == "unavailable"
     apartment = await apartments.upsert_discovered(make_ad(lalafo_id=333))
     await apartments.mark_inactive(apartment.id)
@@ -215,7 +213,7 @@ async def test_pending_submission_admin_notification_is_reserved_once(repositori
         first_name="Buyer",
         plan=WEEK_PLAN,
     )
-    await service.submit_receipt(user_id=300, file_id="receipt", file_type="photo")
+    await payments.mark_payment_claimed(user_id=300, apartment_id=apartment.id)
 
     assert await payments.claim_admin_notification(submission.request.id) is True
     assert await payments.claim_admin_notification(submission.request.id) is False
@@ -228,7 +226,7 @@ async def test_pending_submission_admin_notification_is_reserved_once(repositori
 
 
 @pytest.mark.asyncio
-async def test_payment_claim_waits_for_admin_without_receipt(repositories, service):
+async def test_payment_claim_is_pending_before_delay(repositories, service):
     apartments, payments, _ = repositories
     apartment = await apartments.upsert_discovered(make_ad(lalafo_id=446))
     submission = await service.begin_payment(
@@ -260,7 +258,7 @@ async def test_payment_claim_waits_for_admin_without_receipt(repositories, servi
 
 @pytest.mark.asyncio
 async def test_single_number_plan_is_not_available(repositories, service):
-    apartments, _, _ = repositories
+    apartments, payments, _ = repositories
     apartment = await apartments.upsert_discovered(make_ad(lalafo_id=445))
 
     with pytest.raises(ValueError, match="Unsupported access plan"):
@@ -287,7 +285,7 @@ async def test_monthly_access_unlocks_all_apartments(repositories, service):
         first_name="Monthly",
         plan=MONTH_PLAN,
     )
-    await payments.submit_receipt(user_id=451, apartment_id=first.id, file_id="receipt", file_type="photo")
+    await payments.mark_payment_claimed(user_id=451, apartment_id=first.id)
     assert await service.decide(
         submission.request.id, approve=True, actor_id=999
     ) == "approved"
@@ -299,7 +297,7 @@ async def test_monthly_access_unlocks_all_apartments(repositories, service):
 
 @pytest.mark.asyncio
 async def test_weekly_access_unlocks_every_apartment_and_expires(repositories, service):
-    apartments, _, sessions = repositories
+    apartments, payments, sessions = repositories
     first = await apartments.upsert_discovered(make_ad(lalafo_id=601))
     second = await apartments.upsert_discovered(make_ad(lalafo_id=602, phone="+996555000002"))
     submission = await service.begin_payment(
@@ -309,7 +307,7 @@ async def test_weekly_access_unlocks_every_apartment_and_expires(repositories, s
         first_name="Weekly",
         plan=WEEK_PLAN,
     )
-    await service.submit_receipt(user_id=700, file_id="weekly-check", file_type="photo")
+    await payments.mark_payment_claimed(user_id=700, apartment_id=first.id)
     assert await service.decide(
         submission.request.id, approve=True, actor_id=999
     ) == "approved"
@@ -330,7 +328,7 @@ async def test_weekly_access_unlocks_every_apartment_and_expires(repositories, s
 
 @pytest.mark.asyncio
 async def test_published_apartment_blocks_id_and_fingerprint_duplicates(repositories):
-    apartments, _, _ = repositories
+    apartments, payments, _ = repositories
     original = make_ad(lalafo_id=555)
     apartment = await apartments.upsert_discovered(original)
 
@@ -360,7 +358,7 @@ async def test_published_apartment_blocks_id_and_fingerprint_duplicates(reposito
 
 @pytest.mark.asyncio
 async def test_forwarded_card_resolves_after_new_code_cycle_reset(repositories):
-    apartments, _, sessions = repositories
+    apartments, payments, sessions = repositories
     apartment = await apartments.upsert_discovered(
         make_ad(lalafo_id=558, rooms="1", district="Восток-5", price=30_000)
     )
@@ -387,7 +385,7 @@ async def test_forwarded_card_resolves_after_new_code_cycle_reset(repositories):
 
 @pytest.mark.asyncio
 async def test_published_apartment_blocks_district_alias_and_reused_photo_duplicates(repositories):
-    apartments, _, _ = repositories
+    apartments, payments, _ = repositories
     original = make_ad(
         lalafo_id=8001,
         rooms="studio",

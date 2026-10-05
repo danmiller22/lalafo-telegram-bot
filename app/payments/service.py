@@ -77,12 +77,6 @@ class PaymentService:
             first_name=first_name,
         )
 
-    async def submit_receipt(
-        self, *, user_id: int, file_id: str, file_type: str
-    ) -> PaymentRequest | None:
-        return await self.payments.submit_receipt(
-            user_id=user_id, file_id=file_id, file_type=file_type
-        )
 
     async def decide(self, request_id: int, *, approve: bool, actor_id: int, expected_admin_message_id: int | None = None) -> str:
         if not self.admin_user_id or actor_id != self.admin_user_id:

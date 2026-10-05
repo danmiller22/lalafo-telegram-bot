@@ -797,32 +797,6 @@ class PaymentRepository:
             await session.refresh(request)
             return PaymentSubmission(request=request, outcome=outcome)
 
-    async def submit_receipt(
-        self, *, user_id: int, file_id: str, file_type: str, apartment_id: int | None = None
-    ) -> PaymentRequest | None:
-        if not file_id or file_type not in {"photo", "document"}:
-            raise ValueError("A receipt photo or document is required")
-        async with self.sessions.begin() as session:
-            query = select(PaymentRequest).where(
-                PaymentRequest.telegram_user_id == user_id,
-                PaymentRequest.status.in_(["awaiting_receipt", "pending"]),
-            )
-            if apartment_id is not None:
-                query = query.where(PaymentRequest.apartment_id == apartment_id)
-            result = await session.execute(
-                query.order_by(PaymentRequest.created_at.desc()).limit(1).with_for_update()
-            )
-            request = result.scalar_one_or_none()
-            if request is None:
-                return None
-            request.receipt_file_id = file_id
-            request.receipt_file_type = file_type
-            if request.status != "pending":
-                request.admin_message_id = None
-            request.status = "pending"
-            await session.flush()
-            request_id = request.id
-        return await self.get_request(request_id)
 
     async def mark_payment_claimed(
         self, *, user_id: int, apartment_id: int
@@ -897,23 +871,6 @@ class PaymentRepository:
                 .values(admin_message_id=None)
             )
 
-    async def restore_receipt_upload(self, request_id: int) -> None:
-        """Make a failed Mini App upload safely retryable by the customer."""
-        async with self.sessions.begin() as session:
-            await session.execute(
-                update(PaymentRequest)
-                .where(
-                    PaymentRequest.id == request_id,
-                    PaymentRequest.status == "pending",
-                    PaymentRequest.admin_message_id == -1,
-                )
-                .values(
-                    status="awaiting_receipt",
-                    receipt_file_id=None,
-                    receipt_file_type=None,
-                    admin_message_id=None,
-                )
-            )
 
     async def decide(self, request_id: int, *, approve: bool, admin_id: int, expected_admin_message_id: int | None = None) -> str:
         if admin_id <= 0:

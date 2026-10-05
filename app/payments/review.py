@@ -40,14 +40,7 @@ async def notify_payment_admin(
                 f"Тариф: {plan_label(request.plan)} — {plan_price(request.plan)} сом\n"
                 "Клиент нажал «Я оплатил(а)». Проверьте поступление оплаты.")
         markup = payment_review_keyboard(request.id, signer)
-        file_id = getattr(request, "receipt_file_id", None)
-        file_type = getattr(request, "receipt_file_type", None)
-        if file_id and file_type == "photo":
-            sent = await bot.send_photo(settings.admin_user_id, file_id, caption=text, reply_markup=markup)
-        elif file_id and file_type == "document":
-            sent = await bot.send_document(settings.admin_user_id, file_id, caption=text, reply_markup=markup)
-        else:
-            sent = await bot.send_message(settings.admin_user_id, text, reply_markup=markup)
+        sent = await bot.send_message(settings.admin_user_id, text, reply_markup=markup)
         await payments.finish_admin_notification(request.id, sent.message_id)
         return True
     except Exception:

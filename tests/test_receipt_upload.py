@@ -1,106 +1,77 @@
+"""Regression: ordinary private media must never enter a payment receipt flow."""
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from sqlalchemy import func, select, update
+from aiogram.dispatcher.event.bases import UNHANDLED
+from aiogram.types import Chat, Document, Message, PhotoSize, User
 
-from app.bot.handlers import ReceiptUpload, receipt_handler, start_handler
+from app.bot import handlers
 from app.config import Settings
-from app.models import PaymentHistory, PaymentRequest
-from app.payment_plans import LIFETIME_PLAN
+from app.payment_plans import WEEK_PLAN
 from app.security import TokenSigner
 from tests.helpers import make_ad
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("kind", ["photo", "document"])
-async def test_uploaded_receipt_waits_for_admin_and_is_saved_once(repositories, service, monkeypatch, kind):
-    apartments, payments, sessions = repositories
+@pytest.mark.parametrize("has_checkout", [False, True])
+async def test_private_media_is_not_treated_as_payment_receipt(repositories, service, kind, has_checkout):
+    apartments, payments, _ = repositories
     apartment = await apartments.upsert_discovered(make_ad(lalafo_id=9911))
-    other = await apartments.upsert_discovered(make_ad(lalafo_id=9912))
-    checkout = await service.begin_payment(user_id=901, apartment_id=apartment.id,
-        username=None, first_name="Test", plan=LIFETIME_PLAN)
-    await service.begin_payment(user_id=901, apartment_id=other.id,
-        username=None, first_name="Test", plan=LIFETIME_PLAN)
-    delivery = AsyncMock()
-    monkeypatch.setattr("app.bot.handlers.send_private_contact", delivery)
-    state = SimpleNamespace(get_data=AsyncMock(side_effect=[{"receipt_apartment_id": apartment.id}, {}]), clear=AsyncMock())
-    message = SimpleNamespace(from_user=SimpleNamespace(id=901), answer=AsyncMock(),
-        photo=[SimpleNamespace(file_id="telegram-receipt-photo")] if kind == "photo" else [],
-        document=SimpleNamespace(file_id="telegram-receipt-pdf", mime_type="application/pdf") if kind == "document" else None)
-    await receipt_handler(message, payments, service, Settings(admin_user_id=999, callback_secret="test-secret-long-enough"), SimpleNamespace(send_photo=AsyncMock(return_value=SimpleNamespace(message_id=515)), send_document=AsyncMock(return_value=SimpleNamespace(message_id=515))), state)
-    stored = await payments.get_request(checkout.request.id)
-    assert stored.status == "pending"
-    assert stored.receipt_file_id == f"telegram-receipt-{'photo' if kind == 'photo' else 'pdf'}"
-    assert stored.receipt_file_type == kind
-    assert (await service.contact_status(901, other.id)).status != "approved"
-    delivery.assert_not_awaited()
-    # Approval is a separate administrator action.
-    assert await service.decide(checkout.request.id, approve=True, actor_id=999) == "approved"
-    assert (await service.contact_status(901, other.id)).status == "approved"
-    await receipt_handler(message, payments, service, Settings(), object(), state)
-    delivery.assert_not_awaited()
-    async with sessions() as session:
-        assert await session.scalar(select(func.count(PaymentHistory.id))) == 1
-        assert (await session.scalar(select(PaymentRequest).where(PaymentRequest.apartment_id == other.id))).receipt_file_id is None
-
-
-@pytest.mark.asyncio
-async def test_invalid_document_cannot_unlock_access(repositories, service):
-    apartments, payments, _ = repositories
-    apartment = await apartments.upsert_discovered(make_ad(lalafo_id=9913))
-    await service.begin_payment(user_id=902, apartment_id=apartment.id,
-        username=None, first_name="Test", plan=LIFETIME_PLAN)
-    state = SimpleNamespace(get_data=AsyncMock(), clear=AsyncMock())
-    message = SimpleNamespace(from_user=SimpleNamespace(id=902), answer=AsyncMock(), photo=[],
-        document=SimpleNamespace(file_id="bad-file", mime_type="application/zip"))
-    await receipt_handler(message, payments, service, Settings(), object(), state)
-    assert (await service.contact_status(902, apartment.id)).status == "awaiting_receipt"
-    state.get_data.assert_not_awaited()
-    state.clear.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_receipt_requires_checkout_and_cannot_target_another_user(repositories, service):
-    apartments, payments, _ = repositories
-    apartment = await apartments.upsert_discovered(make_ad(lalafo_id=9914))
-    assert await payments.submit_receipt(user_id=903, file_id="receipt", file_type="photo", apartment_id=apartment.id) is None
-    await service.begin_payment(user_id=904, apartment_id=apartment.id,
-        username=None, first_name="Test", plan=LIFETIME_PLAN)
-    assert await payments.submit_receipt(user_id=903, file_id="receipt", file_type="photo", apartment_id=apartment.id) is None
-    assert (await service.contact_status(904, apartment.id)).status == "awaiting_receipt"
-    with pytest.raises(ValueError):
-        await payments.submit_receipt(user_id=904, file_id="", file_type="photo")
-
-
-@pytest.mark.asyncio
-async def test_pending_claim_cannot_unlock_access_without_admin(repositories, service):
-    apartments, payments, sessions = repositories
-    apartment = await apartments.upsert_discovered(make_ad(lalafo_id=9915))
-    checkout = await service.begin_payment(user_id=905, apartment_id=apartment.id,
-        username=None, first_name="Test", plan=LIFETIME_PLAN)
-    async with sessions.begin() as session:
-        await session.execute(update(PaymentRequest).where(PaymentRequest.id == checkout.request.id).values(status="pending"))
-    assert (await payments.mark_payment_claimed(user_id=905, apartment_id=apartment.id)).status == "pending"
-    assert (await service.contact_status(905, apartment.id)).status == "pending"
+    if has_checkout:
+        await service.begin_payment(user_id=901, apartment_id=apartment.id,
+            username=None, first_name="Test", plan=WEEK_PLAN)
+    message = Message(message_id=1, date=datetime.now(timezone.utc),
+        chat=Chat(id=901, type="private"), from_user=User(id=901, is_bot=False, first_name="Test"),
+        photo=[PhotoSize(file_id="photo", file_unique_id="photo-unique", width=10, height=10)] if kind == "photo" else None,
+        document=Document(file_id="pdf", file_unique_id="pdf-unique", mime_type="application/pdf") if kind == "document" else None)
+    state = SimpleNamespace(clear=AsyncMock(), set_state=AsyncMock(), update_data=AsyncMock())
+    bot = SimpleNamespace(send_message=AsyncMock())
+    result = await handlers.router.propagate_event("message", message,
+        payments=payments, service=service, state=state, bot=bot,
+        settings=Settings(), signer=TokenSigner("receipt-disabled-secret-long"))
+    assert result is UNHANDLED
+    bot.send_message.assert_not_awaited()
+    state.set_state.assert_not_awaited()
+    if has_checkout:
+        stored = await payments.get_access(901, apartment.id)
+        assert stored.receipt_file_id is None
+        assert stored.payment_claimed_at is None
+        assert stored.status == "awaiting_receipt"
+    else:
+        assert await payments.get_access(901, apartment.id) is None
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("valid", [True, False])
-async def test_receipt_start_link_selects_exact_checkout(repositories, service, valid):
-    apartments, _, _ = repositories
-    apartment = await apartments.upsert_discovered(make_ad(lalafo_id=9916))
-    await service.begin_payment(user_id=906, apartment_id=apartment.id,
-        username=None, first_name="Test", plan=LIFETIME_PLAN)
-    signer = TokenSigner("receipt-test-secret-long")
+async def test_old_receipt_link_returns_to_menu_without_upload_prompt(repositories, service, valid):
+    apartments, payments, _ = repositories
+    apartment = await apartments.upsert_discovered(make_ad(lalafo_id=9912))
+    await service.begin_payment(user_id=902, apartment_id=apartment.id,
+        username=None, first_name="Test", plan=WEEK_PLAN)
+    signer = TokenSigner("receipt-disabled-secret-long")
     token = signer.sign_start_id("receipt", apartment.id) if valid else "invalid"
-    message = SimpleNamespace(text=f"/start receipt_{token}", from_user=SimpleNamespace(id=906), answer=AsyncMock())
+    message = SimpleNamespace(text=f"/start receipt_{token}",
+        from_user=SimpleNamespace(id=902), answer=AsyncMock())
     state = SimpleNamespace(clear=AsyncMock(), set_state=AsyncMock(), update_data=AsyncMock())
-    await start_handler(message, service, signer, Settings(), object(), state)
-    if valid:
-        state.set_state.assert_awaited_once_with(ReceiptUpload.waiting)
-        state.update_data.assert_awaited_once_with(receipt_apartment_id=apartment.id)
-        assert "PDF" in message.answer.await_args.args[0]
-    else:
-        state.set_state.assert_not_awaited()
-    assert (await service.contact_status(906, apartment.id)).status == "awaiting_receipt"
+    await handlers.start_handler(message, service, signer, Settings(), object(), state)
+    state.clear.assert_awaited_once()
+    state.set_state.assert_not_awaited()
+    state.update_data.assert_not_awaited()
+    assert "чек" not in message.answer.await_args.args[0].lower()
+    assert (await payments.get_access(902, apartment.id)).status == "awaiting_receipt"
+
+
+def test_old_deployment_qr_is_replaced_with_requested_shared_link(monkeypatch):
+    legacy = (
+        "https://qr.finik.kg/#00020101021232810011qr.finik.kg0114averspay-items"
+        "1032bbfd79c838a6483eb57bc42ea362fa811202121302125204482953034175405"
+        "500005908Finik-QR6304a55c"
+    )
+    monkeypatch.setenv("WEEKLY_FINIK_PAYMENT_URL", legacy)
+    settings = Settings()
+    assert settings.weekly_finik_payment_url == "https://qr.finik.kg/bbfd79c8-38a6-483e-b57b-c42ea362fa81?type=t"
+    # Future explicit configuration must keep working.
+    assert Settings(weekly_finik_payment_url="https://qr.finik.kg/custom").weekly_finik_payment_url.endswith("/custom")

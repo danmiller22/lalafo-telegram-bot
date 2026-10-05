@@ -145,7 +145,7 @@ async def test_health_and_authentication() -> None:
         "payment_claim_worker": "disabled",
         "listing_validity_days": 2,
         "payment_receipt_required": False,
-        "contact_tariff": {"plan": "week", "price": 500, "expires": True, "storage": "persistent_ledger"},
+        "contact_tariff": {"plan": "week", "price": 499, "expires": True, "storage": "persistent_ledger"},
         "payment_review": "admin_missing",
             "telegram_setup": "disabled",
             "lalafo_link_bot": "disabled",
@@ -590,7 +590,7 @@ async def test_miniapp_page_is_public_but_session_requires_telegram_auth(
     assert accepted.status_code == 200
     payload = accepted.json()
     assert payload["status"] == "unpaid"
-    assert payload["price"] == 500
+    assert payload["price"] == 499
     assert payload["monthly_available"] is False
     assert "terms_accepted" not in payload
     assert "terms_text" not in payload

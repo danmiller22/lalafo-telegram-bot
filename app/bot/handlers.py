@@ -3,9 +3,8 @@ from __future__ import annotations
 import logging
 
 from aiogram import Bot, F, Router
-from aiogram.filters import CommandStart, StateFilter
+from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 
 from app.bot.callbacks import (
@@ -21,6 +20,7 @@ from app.availability import AvailabilityService
 from app.payments.repository import PaymentRepository
 from app.payment_plans import (
     WEEK_PLAN,
+    WEEK_PRICE,
     plan_label,
     plan_price,
 )
@@ -41,10 +41,6 @@ from app.terms import PRIVACY_TEXT, TermsConsentRepository
 
 logger = logging.getLogger(__name__)
 router = Router(name="user")
-
-
-class ReceiptUpload(StatesGroup):
-    waiting = State()
 
 
 def _payment_details(plan: str | None, settings: Settings, *, signer: TokenSigner | None = None, apartment_id: int | None = None) -> tuple[str, int]:
@@ -122,24 +118,6 @@ async def start_handler(
         )
         return
     await state.clear()
-    if payload.startswith("receipt_"):
-        apartment_id = signer.verify_start_id("receipt", payload[8:])
-        if apartment_id is None:
-            await message.answer("Откройте загрузку чека из окна оплаты.")
-            return
-        result = await service.contact_status(message.from_user.id, apartment_id)
-        if result.status == "approved" and result.apartment:
-            await send_private_contact(bot, user_id=message.from_user.id,
-                apartment=result.apartment, support_url=settings.support_bot_url,
-                max_photos=settings.max_photos_per_apartment)
-            return
-        if result.status not in {"awaiting_receipt", "pending"}:
-            await message.answer("Сначала откройте оплату кнопкой «Получить номер».")
-            return
-        await state.set_state(ReceiptUpload.waiting)
-        await state.update_data(receipt_apartment_id=apartment_id)
-        await message.answer("Отправьте чек об оплате: фото или PDF-файл.")
-        return
     if payload.startswith("pay_"):
         payment_token = payload[4:]
         apartment_id = signer.verify_start_id("payment-link", payment_token)
@@ -178,10 +156,10 @@ async def start_handler(
             text = (
                 "💳 Откройте оплату повторно.\n\n"
                 f"{apartment_text}\n\n"
-                "Доступ к контактам на 7 дней — 500 сом."
+                f"Доступ к контактам на 7 дней — {WEEK_PRICE} сом."
             )
         else:
-            text = "Доступ к контактам на 7 дней — 500 сом."
+            text = f"Доступ к контактам на 7 дней — {WEEK_PRICE} сом."
         reply_markup = private_payment_keyboard(
             apartment_id, signer=signer,
             payment_url=settings.weekly_finik_payment_url,
@@ -293,7 +271,7 @@ async def terms_accept_handler(
     await callback.answer("Условия приняты.")
     if callback.message:
         await callback.message.edit_text(
-            "Доступ к контактам на 7 дней — 500 сом.",
+            f"Доступ к контактам на 7 дней — {WEEK_PRICE} сом.",
             reply_markup=private_payment_keyboard(
                 apartment_id,
                 signer=signer,
@@ -571,48 +549,3 @@ async def paid_handler(
             )
         except Exception:
             logger.exception("Could not replace legacy payment keyboard")
-
-
-@router.message(StateFilter(None, ReceiptUpload.waiting), F.chat.type == "private", F.photo | F.document)
-async def receipt_handler(message: Message, payments: PaymentRepository,
-                          service: PaymentService, settings: Settings,
-                          bot: Bot, state: FSMContext) -> None:
-    document = message.document
-    if document and document.mime_type not in {"application/pdf", "image/jpeg", "image/png", "image/webp"}:
-        await message.answer("Отправьте чек фотографией или PDF-файлом.")
-        return
-    data = await state.get_data()
-    if await payments.active_weekly_access(message.from_user.id) is not None:
-        await state.clear()
-        apartment_id = data.get("receipt_apartment_id")
-        if apartment_id is not None:
-            result = await service.contact_status(message.from_user.id, apartment_id)
-            if result.status == "approved" and result.apartment:
-                await send_private_contact(bot, user_id=message.from_user.id,
-                    apartment=result.apartment, support_url=settings.support_bot_url,
-                    max_photos=settings.max_photos_per_apartment)
-                return
-        await message.answer("Доступ к контактам уже активен. Нажмите «Получить номер» под квартирой.")
-        return
-    file_id = message.photo[-1].file_id if message.photo else document.file_id
-    request = await payments.submit_receipt(
-        user_id=message.from_user.id, file_id=file_id,
-        file_type="photo" if message.photo else "document",
-        apartment_id=data.get("receipt_apartment_id"))
-    if request is None:
-        await message.answer("Откройте оплату кнопкой «Получить номер».")
-        return
-    await state.clear()
-    from app.payments.review import notify_payment_admin
-    try:
-        await notify_payment_admin(bot, payments, settings, TokenSigner(settings.require_callback_secret()), request)
-    except Exception:
-        logger.exception("Could not send receipt to administrator")
-        await message.answer("Не удалось отправить заявку. Нажмите «Я оплатил(а)» ещё раз.")
-        return
-    await message.answer("Чек принят. Ожидайте подтверждения оплаты.")
-
-
-@router.message(StateFilter(ReceiptUpload.waiting), F.chat.type == "private")
-async def receipt_file_prompt(message: Message) -> None:
-    await message.answer("Отправьте чек фотографией или PDF-файлом.")

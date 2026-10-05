@@ -43,23 +43,22 @@ async def test_claim_opens_access_at_sixty_seconds_and_never_earlier(repositorie
     async with repositories[2]() as session:
         assert await session.scalar(select(func.count(PaymentHistory.id))) == 1
         history = await session.scalar(select(PaymentHistory))
-        assert history.amount == 500
+        assert history.amount == 499
         assert history.provider_payment_id.startswith("claim-")
         expiry = history.access_expires_at.replace(tzinfo=timezone.utc)
         assert expiry == claimed + timedelta(seconds=60, days=7)
 
 
 @pytest.mark.asyncio
-async def test_only_customer_click_starts_hold_receipt_and_webhook_do_not(repositories, service):
+async def test_only_customer_click_starts_hold_webhook_does_not(repositories, service):
     apartment, request = await checkout(repositories, service)
     payments = repositories[1]
     await payments.prepare_provider_payment(request.id, "signed-provider")
-    await payments.apply_provider_result("signed-provider", succeeded=True, amount=500)
-    await payments.submit_receipt(user_id=121, apartment_id=apartment.id, file_id="photo", file_type="photo")
+    await payments.apply_provider_result("signed-provider", succeeded=True, amount=499)
     stored = await payments.get_request(request.id)
     assert stored.payment_claimed_at is None
     assert not await payments.approve_claims_due(now=stored.created_at.replace(tzinfo=timezone.utc) + timedelta(days=1))
-    assert (await service.contact_status(121, apartment.id)).status == "pending"
+    assert (await service.contact_status(121, apartment.id)).status == "awaiting_receipt"
 
 
 @pytest.mark.asyncio

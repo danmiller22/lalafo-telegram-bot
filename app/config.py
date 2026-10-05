@@ -149,11 +149,7 @@ class Settings(BaseSettings):
     # specific, so keeping a historical QR here could send money to the wrong
     # account after a configuration change.
     finik_payment_url: str = ""
-    weekly_finik_payment_url: str = (
-        "https://qr.finik.kg/#00020101021232810011qr.finik.kg0114averspay-items"
-        "1032bbfd79c838a6483eb57bc42ea362fa811202121302125204482953034175405"
-        "500005908Finik-QR6304a55c"
-    )
+    weekly_finik_payment_url: str = "https://qr.finik.kg/bbfd79c8-38a6-483e-b57b-c42ea362fa81?type=t"
     monthly_finik_payment_url: str = ""
     lifetime_finik_payment_url: str = "https://qr.finik.kg/e0c9972e-0f05-4dc3-99fd-96ec1debea1f?type=t"
     wanted_finik_payment_url: str = ""
@@ -223,6 +219,13 @@ class Settings(BaseSettings):
     telegram_webhook_secret: str = ""
 
     log_level: str = "INFO"
+
+    @field_validator("weekly_finik_payment_url", mode="before")
+    @classmethod
+    def replace_legacy_weekly_qr(cls, value: object) -> object:
+        if value == 'https://qr.finik.kg/#00020101021232810011qr.finik.kg0114averspay-items1032bbfd79c838a6483eb57bc42ea362fa811202121302125204482953034175405500005908Finik-QR6304a55c':
+            return "https://qr.finik.kg/bbfd79c8-38a6-483e-b57b-c42ea362fa81?type=t"
+        return value
 
     @field_validator("admin_user_id", mode="before")
     @classmethod

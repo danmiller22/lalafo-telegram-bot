@@ -22,12 +22,12 @@ async def test_lifetime_grant_covers_other_and_future_apartments(repositories, s
         outcome, _ = await payments.apply_provider_result("lifetime-test", succeeded=True, amount=LIFETIME_PRICE)
         assert outcome == "awaiting_confirmation"
         assert (await service.contact_status(880, first.id)).status == "awaiting_receipt"
-        await payments.submit_receipt(user_id=880, apartment_id=first.id, file_id="receipt", file_type="photo")
+        await payments.mark_payment_claimed(user_id=880, apartment_id=first.id)
         outcome, _ = await payments.apply_provider_result("lifetime-test", succeeded=True, amount=LIFETIME_PRICE)
         assert outcome == "pending"
     else:
-        await payments.submit_receipt(user_id=880, apartment_id=first.id, file_id="receipt", file_type="photo")
-        await payments.submit_receipt(user_id=880, apartment_id=first.id, file_id="receipt", file_type="photo")
+        await payments.mark_payment_claimed(user_id=880, apartment_id=first.id)
+        await payments.mark_payment_claimed(user_id=880, apartment_id=first.id)
     assert await service.decide(submission.request.id, approve=True, actor_id=999) == "approved"
     async with sessions() as session:
         history = (await session.scalars(select(PaymentHistory))).all()
@@ -108,7 +108,7 @@ async def test_weekly_miniapp_checkout_and_delayed_access_end_to_end(repositorie
             payload = {"init_data": miniapp_init_data(bot_token="123456:test-token", user_id=880), "start_param": TokenSigner("c" * 32).sign_start_id("miniapp-apartment", first.id), "plan": "month"}
             initial = await client.post("/miniapp/api/session", json=payload)
             assert initial.json()["status"] == "unpaid"
-            assert initial.json()["price"] == 500
+            assert initial.json()["price"] == 499
             prepared = await client.post("/miniapp/api/prepare", json=payload)
             assert prepared.status_code == 200
             assert prepared.json()["payment_url"] == "https://qr.finik.kg/weekly-500"
@@ -123,7 +123,7 @@ async def test_weekly_miniapp_checkout_and_delayed_access_end_to_end(repositorie
             assert started.json()["payment_url"] == "https://qr.finik.kg/weekly-500"
             assert await consents.accepted(880)
             assert len(captured) == 1
-            assert captured[0]["Amount"] == 500
+            assert captured[0]["Amount"] == 499
             assert captured[0]["Data"]["description"] == "Недельный тариф"
             again = await client.post("/miniapp/api/start", json=payload)
             assert again.json()["payment_url"] == started.json()["payment_url"]
@@ -174,7 +174,7 @@ async def test_lifetime_access_survives_original_checkout_cleanup(repositories, 
     first = await apartments.upsert_discovered(make_ad(lalafo_id=88301))
     second = await apartments.upsert_discovered(make_ad(lalafo_id=88302))
     submission = await service.begin_payment(user_id=883, apartment_id=first.id, username=None, first_name="Test", plan=LIFETIME_PLAN)
-    await payments.submit_receipt(user_id=883, apartment_id=first.id, file_id="receipt", file_type="document")
+    await payments.mark_payment_claimed(user_id=883, apartment_id=first.id)
     assert await service.decide(submission.request.id, approve=True, actor_id=999) == "approved"
     # Match the checkout deletion caused by the apartment FK cascade.
     async with sessions.begin() as session:

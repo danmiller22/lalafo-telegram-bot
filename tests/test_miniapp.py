@@ -68,9 +68,9 @@ def test_mini_app_page_has_only_weekly_tariff_and_privacy_link():
 
     assert "/miniapp/api/session" in html
     assert "/miniapp/api/start" in html
-    assert "Недельный доступ к контактам собственников — 500 сом" in html
-    assert ">Оплатить 500 сом</button>" in html
-    assert "499" not in html and "699" not in html and "999" not in html
+    assert "Недельный доступ к контактам собственников — 499 сом" in html
+    assert ">Оплатить 499 сом</button>" in html
+    assert "500 сом" not in html and "699" not in html and "999" not in html
     assert "Месячный тариф" not in html
     assert 'id="hero"' not in html
     assert 'id="apartment"' in html

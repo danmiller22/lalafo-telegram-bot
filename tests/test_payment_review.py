@@ -49,7 +49,7 @@ async def test_only_admin_decision_unlocks_contacts(repositories, service, revie
     bot.send_message.assert_awaited_once()
     sent = bot.send_message.await_args
     assert sent.args[0] == 999
-    assert "500" in sent.args[1] and "@buyer" in sent.args[1]
+    assert "499" in sent.args[1] and "@buyer" in sent.args[1]
     assert [b.text for b in sent.kwargs["reply_markup"].inline_keyboard[0]] == ["Дать доступ", "Отказать"]
     assert (await service.contact_status(101, apartment.id)).status == "pending"
     delivery = AsyncMock()
@@ -114,15 +114,14 @@ async def test_telegram_failure_releases_notification_for_retry(repositories, se
 
 
 @pytest.mark.asyncio
-async def test_rejected_payment_cannot_be_revived_by_receipt_claim_or_finik(repositories, service, review_context):
+async def test_rejected_payment_cannot_be_revived_by_claim_or_finik(repositories, service, review_context):
     settings, signer, bot = review_context
     apartment, request = await pending_checkout(repositories, service)
     payments = repositories[1]
     await payments.prepare_provider_payment(request.id, "manual-test")
     await notify_payment_admin(bot, payments, settings, signer, request)
     assert await service.decide(request.id, approve=False, actor_id=999) == "rejected"
-    await payments.apply_provider_result("manual-test", succeeded=True, amount=500)
-    assert await payments.submit_receipt(user_id=101, apartment_id=apartment.id, file_id="receipt", file_type="photo") is None
+    await payments.apply_provider_result("manual-test", succeeded=True, amount=499)
     assert (await payments.mark_payment_claimed(user_id=101, apartment_id=apartment.id)).status == "rejected"
     assert (await service.contact_status(101, apartment.id)).status == "rejected"
     # The reused checkout must reject the previous admin message's buttons.
