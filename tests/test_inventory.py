@@ -186,7 +186,7 @@ def test_each_standalone_period_has_equal_author_shares():
     assert {item.apartment.seller_type for item in first + second} == {"owner", "realtor"}
 
 
-def test_unknown_authors_do_not_fill_owner_or_realtor_shares():
+def test_unknown_authors_fill_remaining_publication_slots():
     stock = _apartments(100, central=True, start_id=1)
     for item in stock:
         item.owner_listing = False
@@ -195,7 +195,8 @@ def test_unknown_authors_do_not_fill_owner_or_realtor_shares():
 
     planned = plan_period(stock, period_start=period_start, rng=random.Random(13))
 
-    assert planned == []
+    assert len(planned) == 48
+    assert all(item.apartment.seller_type == "unknown" for item in planned)
 
 
 def test_daily_realtor_target_is_50_percent_of_ninety_six():
@@ -777,7 +778,8 @@ async def test_saved_contact_verification_reaches_public_card(repositories):
     apartment = await apartments.upsert_discovered(make_ad(phone_source_version=2))
     ad = apartment_to_ad(apartment)
     assert ad.phone_source_version == 2
-    assert "Собственник. Контакты проверены ✅" in format_public_apartment(ad, bot_username="rentttkg")
+    assert "Собственник" not in format_public_apartment(ad, bot_username="rentttkg")
+    assert "Контакты проверены" not in format_public_apartment(ad, bot_username="rentttkg")
 
 
 def test_owner_only_stock_fills_realtor_shortage():
@@ -819,3 +821,19 @@ async def test_claim_can_exceed_category_share_to_fill_shortage(repositories, ow
         ))
     claimed = await InventoryRepository(sessions).claim_due(now=now)
     assert claimed is not None and claimed.apartment_id == waiting.id
+
+
+@pytest.mark.asyncio
+async def test_unknown_author_can_be_scheduled_and_published(repositories, monkeypatch):
+    monkeypatch.setattr("app.inventory.MAX_FRESH_STOCK_LOAD", 4)
+    apartments, _, sessions = repositories
+    for index in range(6):
+        await apartments.upsert_discovered(make_ad(
+            lalafo_id=99800 + index, seller_type="unknown", owner_listing=False,
+        ))
+    now = datetime.now(timezone.utc)
+    inventory = InventoryRepository(sessions)
+    assert await inventory.schedule_period(now=now) == 4
+    claimed = await inventory.claim_due(now=now)
+    assert claimed is not None
+    assert claimed.apartment.seller_type == "unknown"

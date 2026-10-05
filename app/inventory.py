@@ -29,7 +29,7 @@ MAX_PUBLICATIONS_PER_DAY = 96
 # The daily target is chosen once per Bishkek date, then split across the two
 # discovery periods so retries cannot increase the day's publication volume.
 # Aim for equal shares of known owners and realtors. Either category fills
-# shortages in the other; unknown authors never count as owners.
+# shortages in the other. Unknown authors can fill remaining slots.
 MIN_NON_OWNERS_PER_DAY = round(MAX_PUBLICATIONS_PER_DAY * REALTOR_DAILY_SHARE)
 MAX_NON_OWNERS_PER_DAY = MIN_NON_OWNERS_PER_DAY
 TARGET_NON_OWNERS_PER_PERIOD = (MAX_NON_OWNERS_PER_DAY + 1) // 2
@@ -240,8 +240,6 @@ def plan_period(
         if item.rooms in ALLOWED_ROOMS
         and is_supported_source(item)
         and 25_000 <= item.price <= 40_000
-        and _seller_type(item) in {"owner", "realtor"}
-        and (_seller_type(item) != "owner" or bool(item.owner_listing))
     ]
     repeat_ids = set(repeat_apartment_ids or ()) if MAX_REPOSTS_PER_PERIOD else set()
     central_pool = sorted(
@@ -272,14 +270,15 @@ def plan_period(
     owner_count = target_count - realtor_count
     available = {
         kind: sum(_seller_type(item) == kind for item in apartments)
-        for kind in ("owner", "realtor")
+        for kind in ("owner", "realtor", "unknown")
     }
     seller_remaining = {
         "owner": min(owner_count, available["owner"]),
         "realtor": min(realtor_count, available["realtor"]),
+        "unknown": 0,
     }
     missing = target_count - sum(seller_remaining.values())
-    for kind in ("owner", "realtor"):
+    for kind in ("owner", "realtor", "unknown"):
         extra = min(missing, available[kind] - seller_remaining[kind])
         seller_remaining[kind] += extra
         missing -= extra
@@ -353,8 +352,6 @@ async def _balanced_stock(session: AsyncSession, statement) -> list[Apartment]:
     stock: list[Apartment] = []
     for kind in ("owner", "realtor"):
         query = statement.where(Apartment.seller_type == kind)
-        if kind == "owner":
-            query = query.where(Apartment.owner_listing.is_(True))
         stock.extend((await session.scalars(
             query.limit(MAX_FRESH_STOCK_LOAD // 2)
         )).all())
@@ -363,13 +360,16 @@ async def _balanced_stock(session: AsyncSession, statement) -> list[Apartment]:
             if sum(item.seller_type == kind for item in stock) < MAX_FRESH_STOCK_LOAD // 2:
                 continue
             query = statement.where(Apartment.seller_type == kind)
-            if kind == "owner":
-                query = query.where(Apartment.owner_listing.is_(True))
             stock.extend((await session.scalars(
                 query.offset(MAX_FRESH_STOCK_LOAD // 2).limit(MAX_FRESH_STOCK_LOAD - len(stock))
             )).all())
             if len(stock) >= MAX_FRESH_STOCK_LOAD:
                 break
+    if len(stock) < MAX_FRESH_STOCK_LOAD:
+        stock.extend((await session.scalars(
+            statement.where(func.coalesce(Apartment.seller_type, "unknown").not_in(("owner", "realtor")))
+            .limit(MAX_FRESH_STOCK_LOAD - len(stock))
+        )).all())
     return stock
 
 
@@ -379,7 +379,7 @@ class InventoryRepository:
 
     async def reset_publication_history_for_code(self, code_version: str) -> bool:
         """Rebuild the queue once per deployment without erasing repost history."""
-        version = code_version.strip() or "seller-50-50-refill-v2"
+        version = code_version.strip() or "unlabeled-all-sellers-refill-v3"
         key = "apartment_publication_code_version"
         async with self.sessions.begin() as session:
             marker = await session.get(LalafoAutoReplyMeta, key)
@@ -894,8 +894,6 @@ class InventoryRepository:
                         ApartmentInventoryQueue.scheduled_at <= eligible_until,
                         Apartment.rooms.in_(ALLOWED_ROOMS),
                         Apartment.price.between(25_000, 40_000),
-                        ((Apartment.seller_type == "realtor")
-                         | ((Apartment.seller_type == "owner") & Apartment.owner_listing.is_(True))),
                         _supported_source_filter(),
                     )
                     .order_by(
@@ -914,11 +912,8 @@ class InventoryRepository:
                 (published_today + 1) * REALTOR_DAILY_SHARE
             )
             desired_seller = "realtor" if realtor_needed else "owner"
-            known_rows = [row for row in due_rows if row[2] in {"owner", "realtor"}]
-            if not known_rows:
-                return None
-            balanced_rows = [row for row in known_rows if row[2] == desired_seller]
-            due_rows = balanced_rows or known_rows
+            balanced_rows = [row for row in due_rows if row[2] == desired_seller]
+            due_rows = balanced_rows or due_rows
             selected_id = next(
                 (
                     queue_id for queue_id, district, _seller_type in due_rows
