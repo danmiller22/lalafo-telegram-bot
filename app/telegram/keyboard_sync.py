@@ -17,18 +17,18 @@ async def sync_published_keyboards(runtime) -> None:
     sessions = runtime.workflow_data["apartments"].sessions
     settings = runtime.workflow_data["settings"]
     signer = runtime.workflow_data["signer"]
-    last_id = 0
+    last_id = None
     updated = 0
     while True:
         async with sessions() as session:
             rows = (await session.execute(select(
                 Apartment.id, Apartment.telegram_chat_id, Apartment.telegram_message_id
             ).where(
-                Apartment.id > last_id,
+                Apartment.id < last_id if last_id is not None else True,
                 Apartment.keyboard_version < APARTMENT_KEYBOARD_VERSION,
                 Apartment.telegram_chat_id.is_not(None),
                 Apartment.telegram_message_id.is_not(None),
-            ).order_by(Apartment.id).limit(50))).all()
+            ).order_by(Apartment.id.desc()).limit(50))).all()
         if not rows:
             break
         for apartment_id, chat_id, message_id in rows:
