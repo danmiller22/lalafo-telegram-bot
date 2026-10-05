@@ -140,7 +140,7 @@ async def test_health_and_authentication() -> None:
             "status": "ok",
             "bot": "disabled",
             "finik_auto_payment": "disabled",
-        "payment_access_mode": "automatic",
+        "payment_access_mode": "manual",
         "listing_validity_days": 2,
         "payment_receipt_required": False,
         "contact_tariff": {"plan": "week", "price": 500, "expires": True, "storage": "persistent_ledger"},
@@ -727,7 +727,7 @@ async def test_miniapp_uses_configured_payment_url_without_waiting_for_finik(
 
 
 @pytest.mark.asyncio
-async def test_miniapp_access_is_granted_after_customer_confirms_payment(
+async def test_miniapp_access_sends_customer_claim_to_admin(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     bot_token = "123456:telegram-test-token"
@@ -755,7 +755,7 @@ async def test_miniapp_access_is_granted_after_customer_confirms_payment(
         status="awaiting_receipt", apartment=apartment, access_expires_at=None
     )
     approved = SimpleNamespace(
-        status="approved", apartment=apartment, access_expires_at=None
+        status="pending", apartment=apartment, access_expires_at=None
     )
     request = SimpleNamespace(
         id=73,
@@ -763,7 +763,7 @@ async def test_miniapp_access_is_granted_after_customer_confirms_payment(
         username="mini_user",
         first_name="Test",
         plan="week",
-        status="approved",
+        status="pending",
         apartment=apartment,
         receipt_file_id=None,
     )
@@ -800,15 +800,15 @@ async def test_miniapp_access_is_granted_after_customer_confirms_payment(
         )
 
     assert response.status_code == 200
-    assert response.json()["status"] == "approved"
+    assert response.json()["status"] == "pending"
     payments.mark_payment_claimed.assert_awaited_once_with(user_id=778899, apartment_id=42)
-    payments.claim_admin_notification.assert_not_awaited()
-    payments.finish_admin_notification.assert_not_awaited()
-    bot.send_message.assert_not_awaited()
+    payments.claim_admin_notification.assert_awaited_once_with(73)
+    payments.finish_admin_notification.assert_awaited_once_with(73, 515)
+    bot.send_message.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_successful_finik_webhook_activates_and_delivers_contact(
+async def test_successful_finik_webhook_does_not_deliver_contact(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("RUN_BOT", "true")
@@ -824,7 +824,7 @@ async def test_successful_finik_webhook_activates_and_delivers_contact(
         apartment=apartment,
     )
     payments = SimpleNamespace(
-        apply_provider_result=AsyncMock(return_value=("approved", payment_request))
+        apply_provider_result=AsyncMock(return_value=("awaiting_confirmation", payment_request))
     )
     bot = object()
     monkeypatch.setattr(
@@ -851,13 +851,11 @@ async def test_successful_finik_webhook_activates_and_delivers_contact(
         )
 
     assert response.status_code == 200
-    assert response.json() == {"status": "approved"}
+    assert response.json() == {"status": "awaiting_confirmation"}
     payments.apply_provider_result.assert_awaited_once_with(
         "arenda-73", succeeded=True, amount=499
     )
-    delivery.assert_awaited_once()
-    assert delivery.await_args.kwargs["user_id"] == 778899
-    assert delivery.await_args.kwargs["apartment"] is apartment
+    delivery.assert_not_awaited()
 
 
 @pytest.mark.asyncio

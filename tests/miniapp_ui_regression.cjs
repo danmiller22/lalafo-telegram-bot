@@ -51,7 +51,7 @@ function setup(initial, fetchOverride, dynamic = false) {
     }
     if (path.endsWith('/consent')) return Promise.resolve(response({terms_accepted: true}));
     if (path.endsWith('/start')) return Promise.resolve(response({status: 'awaiting_receipt', plan: 'week'}));
-    return Promise.resolve(response({status: 'approved', phone: '+996555000000', apartment: {}}));
+    return Promise.resolve(response({status: 'pending', plan: 'week'}));
   });
   await new Promise(setImmediate);
   assert.equal(race.node('pay-lifetime').hidden, false);
@@ -72,9 +72,8 @@ function setup(initial, fetchOverride, dynamic = false) {
   const inFlight = callback();
   assert.equal(race.node('phone').hidden, true);
   await race.node('access').onclick();
-  assert.equal(race.node('phone').hidden, false);
-  assert.equal(race.node('privacy').hidden, true);
-  assert.equal(race.node('agreement-caption').hidden, true);
+  assert.equal(race.node('phone').hidden, true);
+  assert.equal(race.node('status').textContent, 'Оплата отправлена на проверку. Ожидайте подтверждения.');
   resolvePoll(response({status: 'approved', phone: '+996555000000', apartment: {}}));
   await inFlight;
   assert.equal(race.node('phone').hidden, false);
@@ -87,7 +86,7 @@ function setup(initial, fetchOverride, dynamic = false) {
   assert.equal(pending.node('phone').hidden, true);
   assert.equal(pending.node('access').hidden, false);
   assert.equal(pending.node('reopen-payment').hidden, true);
-  assert.equal(pending.node('status').textContent, 'После оплаты нажмите «Я оплатил(а) — открыть номер».');
+  assert.equal(pending.node('status').textContent, 'Оплата отправлена на проверку. Ожидайте подтверждения.');
   assert.equal(pending.timers.size, 1);
   let finishStart;
   const warm = setup(null, path => {

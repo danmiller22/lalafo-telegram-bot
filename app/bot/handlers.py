@@ -546,19 +546,18 @@ async def paid_handler(
             user_id=callback.from_user.id,
             apartment_id=apartment_id,
         )
-        if request is not None:
-            result = await service.contact_status(callback.from_user.id, apartment_id)
-        if result.status == "approved" and result.apartment:
-            await send_private_contact(
-                bot,
-                user_id=callback.from_user.id,
-                apartment=result.apartment,
-                support_url=settings.support_bot_url,
-                max_photos=settings.max_photos_per_apartment,
-            )
-            await callback.answer("✅ Карточка с номером отправлена вам.")
+        if request is None:
+            await callback.answer("Сначала откройте оплату.", show_alert=True)
             return
-        await callback.answer("Не удалось выдать доступ. Попробуйте ещё раз.", show_alert=True)
+        if request is not None:
+            from app.payments.review import notify_payment_admin
+            try:
+                await notify_payment_admin(bot, payments, settings, signer, request)
+            except Exception:
+                logger.exception("Could not send payment claim to admin")
+                await callback.answer("Не удалось отправить заявку. Попробуйте ещё раз.", show_alert=True)
+                return
+        await callback.answer("Оплата отправлена на проверку. Ожидайте подтверждения.", show_alert=True)
         return
     if result.status == "unavailable":
         await callback.answer("Квартира больше недоступна.", show_alert=True)
@@ -612,12 +611,14 @@ async def receipt_handler(message: Message, payments: PaymentRepository,
         await message.answer("Откройте оплату кнопкой «Получить номер».")
         return
     await state.clear()
-    await message.answer("Чек принят.")
-    result = await service.contact_status(message.from_user.id, request.apartment_id)
-    if result.status == "approved" and result.apartment:
-        await send_private_contact(bot, user_id=message.from_user.id,
-            apartment=result.apartment, support_url=settings.support_bot_url,
-            max_photos=settings.max_photos_per_apartment)
+    from app.payments.review import notify_payment_admin
+    try:
+        await notify_payment_admin(bot, payments, settings, TokenSigner(settings.require_callback_secret()), request)
+    except Exception:
+        logger.exception("Could not send receipt to administrator")
+        await message.answer("Не удалось отправить заявку. Нажмите «Я оплатил(а)» ещё раз.")
+        return
+    await message.answer("Чек принят. Ожидайте подтверждения оплаты.")
 
 
 @router.message(StateFilter(ReceiptUpload.waiting), F.chat.type == "private")

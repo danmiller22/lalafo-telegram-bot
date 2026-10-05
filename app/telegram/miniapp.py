@@ -113,10 +113,10 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
   <button id="pay-lifetime" class="primary tariff-button hidden">Оплатить {WEEK_PRICE} сом</button>
   <a id="privacy" class="privacy hidden">Политика конфиденциальности</a>
   <section id="checkout" class="checkout hidden">
-    <div id="payment-step" class="step"><span>1</span>Оплата через Finik</div>
+    <div id="payment-step" class="step"><span>1</span>Оплата</div>
     <button id="reopen-payment" class="secondary hidden">Открыть Finik</button>
     <div class="step receipt-step"><span>2</span>Получение номера</div>
-    <button id="access" class="primary hidden">Я оплатил(а) — открыть номер</button>
+    <button id="access" class="primary hidden">Я оплатил(а)</button>
   </section>
   <div id="apartment" class="hidden">
     <div id="photos" class="photos"></div>
@@ -253,12 +253,12 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
       el("phone").textContent = "📞 " + data.phone;
       el("phone").href = "tel:" + String(data.phone || "").replace(/\\s+/g, "");
     }} else if (waiting && data.status === "pending") {{
-      message("После оплаты нажмите «Я оплатил(а) — открыть номер».");
+      message("Оплата отправлена на проверку. Ожидайте подтверждения.");
       startPaymentPolling();
     }} else if (waiting) {{
       message("");
     }} else if (data.status === "rejected") {{
-      message("Откройте оплату повторно.");
+      message("Оплата не подтверждена. Проверьте перевод или обратитесь в поддержку.");
     }} else {{
       message("");
       show("status", false);

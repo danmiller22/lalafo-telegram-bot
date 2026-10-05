@@ -20,14 +20,15 @@ async def test_lifetime_grant_covers_other_and_future_apartments(repositories, s
         assert outcome == "amount_mismatch"
         assert (await service.contact_status(880, first.id)).status != "approved"
         outcome, _ = await payments.apply_provider_result("lifetime-test", succeeded=True, amount=LIFETIME_PRICE)
-        assert outcome == "awaiting_receipt"
+        assert outcome == "awaiting_confirmation"
         assert (await service.contact_status(880, first.id)).status == "awaiting_receipt"
         await payments.submit_receipt(user_id=880, apartment_id=first.id, file_id="receipt", file_type="photo")
         outcome, _ = await payments.apply_provider_result("lifetime-test", succeeded=True, amount=LIFETIME_PRICE)
-        assert outcome == "already_approved"
+        assert outcome == "pending"
     else:
         await payments.submit_receipt(user_id=880, apartment_id=first.id, file_id="receipt", file_type="photo")
         await payments.submit_receipt(user_id=880, apartment_id=first.id, file_id="receipt", file_type="photo")
+    assert await service.decide(submission.request.id, approve=True, actor_id=999) == "approved"
     async with sessions() as session:
         history = (await session.scalars(select(PaymentHistory))).all()
     assert len(history) == 1
@@ -66,8 +67,9 @@ async def test_old_pending_checkout_can_switch_to_lifetime(repositories, service
 
 
 @pytest.mark.asyncio
-async def test_weekly_miniapp_checkout_and_auto_access_end_to_end(repositories, service, monkeypatch):
+async def test_weekly_miniapp_checkout_and_admin_access_end_to_end(repositories, service, monkeypatch):
     import json
+    from unittest.mock import AsyncMock
     from types import SimpleNamespace
     import httpx
     from app import web
@@ -83,7 +85,7 @@ async def test_weekly_miniapp_checkout_and_auto_access_end_to_end(repositories, 
     second = await apartments.upsert_discovered(make_ad(lalafo_id=88102))
     private_pem, _ = _keys()
     for key, value in {
-        "RUN_BOT": "true", "TELEGRAM_BOT_TOKEN": "123456:test-token",
+        "ADMIN_USER_ID": "999", "RUN_BOT": "true", "TELEGRAM_BOT_TOKEN": "123456:test-token",
         "CALLBACK_SECRET": "c" * 32, "FINIK_API_KEY": "test",
         "FINIK_ACCOUNT_ID": "test-merchant", "FINIK_PRIVATE_KEY_PEM": private_pem,
         "FINIK_PRIVATE_KEY_B64": "", "WEEKLY_FINIK_PAYMENT_URL": "",
@@ -93,7 +95,7 @@ async def test_weekly_miniapp_checkout_and_auto_access_end_to_end(repositories, 
         monkeypatch.setenv(key, value)
     get_settings.cache_clear()
     consents = TermsConsentRepository(sessions)
-    monkeypatch.setattr(web, "_bot_runtime", SimpleNamespace(workflow_data={"service": service, "payments": payments, "terms_consents": consents}))
+    monkeypatch.setattr(web, "_bot_runtime", SimpleNamespace(bot=SimpleNamespace(send_message=AsyncMock(return_value=SimpleNamespace(message_id=515))), workflow_data={"service": service, "payments": payments, "terms_consents": consents}))
     captured = []
     async def provider(request):
         captured.append(json.loads(request.content))
@@ -126,7 +128,13 @@ async def test_weekly_miniapp_checkout_and_auto_access_end_to_end(repositories, 
             assert again.json()["payment_url"] == started.json()["payment_url"]
             assert len(captured) == 1
             granted = await client.post("/miniapp/api/access", json=payload)
-            assert granted.json()["status"] == "approved"
+            assert granted.json()["status"] == "pending"
+            assert "phone" not in granted.json()
+            pending_again = await client.post("/miniapp/api/access", json=payload)
+            assert pending_again.json()["status"] == "pending"
+            web._bot_runtime.bot.send_message.assert_awaited_once()
+            checkout = await payments.get_access(880, first.id)
+            assert await service.decide(checkout.id, approve=True, actor_id=999) == "approved"
             repeated = await client.post("/miniapp/api/access", json=payload)
             assert repeated.json()["status"] == "approved"
             already_ready = await client.post("/miniapp/api/prepare", json=payload)
@@ -164,6 +172,7 @@ async def test_lifetime_access_survives_original_checkout_cleanup(repositories, 
     second = await apartments.upsert_discovered(make_ad(lalafo_id=88302))
     submission = await service.begin_payment(user_id=883, apartment_id=first.id, username=None, first_name="Test", plan=LIFETIME_PLAN)
     await payments.submit_receipt(user_id=883, apartment_id=first.id, file_id="receipt", file_type="document")
+    assert await service.decide(submission.request.id, approve=True, actor_id=999) == "approved"
     # Match the checkout deletion caused by the apartment FK cascade.
     async with sessions.begin() as session:
         await session.execute(delete(PaymentRequest).where(PaymentRequest.id == submission.request.id))

@@ -816,17 +816,17 @@ class PaymentRepository:
                 return None
             request.receipt_file_id = file_id
             request.receipt_file_type = file_type
+            if request.status != "pending":
+                request.admin_message_id = None
             request.status = "pending"
-            request.admin_message_id = None
             await session.flush()
             request_id = request.id
-        await self.decide(request_id, approve=True, admin_id=0)
         return await self.get_request(request_id)
 
     async def mark_payment_claimed(
         self, *, user_id: int, apartment_id: int
     ) -> PaymentRequest | None:
-        """Grant the selected access immediately after the customer confirms payment."""
+        """Queue the customer claim for the administrator; never grant access."""
         async with self.sessions.begin() as session:
             request = await session.scalar(
                 select(PaymentRequest)
@@ -842,11 +842,10 @@ class PaymentRepository:
                 return None
             if request.status == "approved":
                 return request
-            if request.status not in {"prepared", "awaiting_receipt", "pending"}:
+            if request.status not in {"awaiting_receipt", "pending"}:
                 return request
             request.status = "pending"
             request_id = request.id
-        await self.decide(request_id, approve=True, admin_id=0)
         return await self.get_request(request_id)
 
     async def set_admin_message(self, request_id: int, message_id: int) -> None:
@@ -913,12 +912,16 @@ class PaymentRepository:
                 )
             )
 
-    async def decide(self, request_id: int, *, approve: bool, admin_id: int) -> str:
+    async def decide(self, request_id: int, *, approve: bool, admin_id: int, expected_admin_message_id: int | None = None) -> str:
+        if admin_id <= 0:
+            return "forbidden"
         now = datetime.now(timezone.utc)
         async with self.sessions.begin() as session:
             current = await session.scalar(select(PaymentRequest).where(PaymentRequest.id == request_id).with_for_update())
             if current is None:
                 return "missing"
+            if expected_admin_message_id is not None and current.admin_message_id != expected_admin_message_id:
+                return "stale"
             if current.status != "pending":
                 return f"already_{current.status}"
             if approve:
@@ -1026,7 +1029,7 @@ class PaymentRepository:
     async def apply_provider_result(
         self, payment_id: str, *, succeeded: bool, amount: int | float | None
     ) -> tuple[str, PaymentRequest | None]:
-        """Record a verified payment; access also requires an uploaded receipt."""
+        """Record the provider result without bypassing administrator approval."""
         async with self.sessions.begin() as session:
             result = await session.execute(
                 select(PaymentRequest)
@@ -1046,19 +1049,7 @@ class PaymentRepository:
                 current.provider_status = "failed"
                 return "failed", current
             current.provider_status = "succeeded"
-            if not current.receipt_file_id:
-                current.status = "awaiting_receipt"
-                return "awaiting_receipt", current
-            current.status = "pending"
-            current.approved_at = None
-            current.approved_by = None
-            current.access_expires_at = None
-            current.rejected_at = None
-            current.rejected_by = None
-            request_id = current.id
-            await session.flush()
-        await self.decide(request_id, approve=True, admin_id=0)
-        return "approved", await self.get_request(request_id)
+            return ("pending" if current.status == "pending" else "awaiting_confirmation"), current
 
     async def pending(self, limit: int = 20) -> list[PaymentRequest]:
         async with self.sessions() as session:

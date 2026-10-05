@@ -9,8 +9,9 @@ from aiogram.types import CallbackQuery, Message
 from app.bot.callbacks import DUPLICATE_PREFIX
 from app.config import Settings
 from app.payments.repository import ApartmentRepository
+from app.payments.service import PaymentService
 from app.security import TokenSigner
-from app.telegram.private_delivery import send_private_public_card
+from app.telegram.private_delivery import send_private_contact, send_private_public_card
 from app.wanted.repository import WantedAdRepository
 from app.matching.repository import MatchingRepository
 
@@ -124,3 +125,66 @@ async def stats_handler(
             ]
         )
     )
+
+
+@router.callback_query(F.data.startswith("payment:"))
+async def payment_review_callback(
+    callback: CallbackQuery,
+    settings: Settings,
+    service: PaymentService,
+    signer: TokenSigner,
+    bot: Bot,
+    matching: MatchingRepository | None = None,
+) -> None:
+    if not _is_admin(callback.from_user.id, settings):
+        await callback.answer("Недостаточно прав.", show_alert=True)
+        return
+    parts = (callback.data or "").split(":", 2)
+    if len(parts) != 3 or parts[1] not in {"a", "r"} or callback.message is None:
+        await callback.answer("Недействительная кнопка.", show_alert=True)
+        return
+    approve = parts[1] == "a"
+    request_id = signer.verify_id("payment-approve" if approve else "payment-reject", parts[2])
+    if request_id is None:
+        await callback.answer("Недействительная подпись.", show_alert=True)
+        return
+    outcome = await service.decide(
+        request_id,
+        approve=approve,
+        actor_id=callback.from_user.id,
+        expected_admin_message_id=callback.message.message_id,
+    )
+    if outcome not in {"approved", "rejected"}:
+        await callback.answer("Эта заявка уже обработана или кнопка устарела.", show_alert=True)
+        return
+    await callback.answer("Доступ выдан." if approve else "В доступе отказано.")
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+        await callback.message.answer(f"Заявка #{request_id}: {'доступ выдан' if approve else 'отказано'}.")
+    except Exception:
+        logger.exception("Could not update payment review message")
+    request = await service.get_request(request_id)
+    if request is None:
+        return
+    if approve and matching is not None:
+        try:
+            profile = await matching.profile(request.telegram_user_id)
+            await matching.event(
+                request.telegram_user_id, "access_granted",
+                source=profile.source if profile is not None else "telegram",
+                apartment_id=request.apartment_id,
+            )
+        except Exception:
+            logger.exception("Could not record approved payment in funnel")
+    try:
+        if approve:
+            await bot.send_message(request.telegram_user_id, "Оплата подтверждена. Доступ к контактам открыт.")
+            if request.apartment:
+                await send_private_contact(bot, user_id=request.telegram_user_id,
+                    apartment=request.apartment, support_url=settings.support_bot_url,
+                    max_photos=settings.max_photos_per_apartment)
+        else:
+            await bot.send_message(request.telegram_user_id,
+                "Оплата не подтверждена. Проверьте перевод или обратитесь в поддержку.")
+    except Exception:
+        logger.exception("Could not deliver payment decision to customer %s", request.telegram_user_id)

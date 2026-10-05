@@ -14,7 +14,7 @@ from tests.helpers import make_ad
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("kind", ["photo", "document"])
-async def test_uploaded_receipt_unlocks_contacts_and_is_saved_once(repositories, service, monkeypatch, kind):
+async def test_uploaded_receipt_waits_for_admin_and_is_saved_once(repositories, service, monkeypatch, kind):
     apartments, payments, sessions = repositories
     apartment = await apartments.upsert_discovered(make_ad(lalafo_id=9911))
     other = await apartments.upsert_discovered(make_ad(lalafo_id=9912))
@@ -28,18 +28,18 @@ async def test_uploaded_receipt_unlocks_contacts_and_is_saved_once(repositories,
     message = SimpleNamespace(from_user=SimpleNamespace(id=901), answer=AsyncMock(),
         photo=[SimpleNamespace(file_id="telegram-receipt-photo")] if kind == "photo" else [],
         document=SimpleNamespace(file_id="telegram-receipt-pdf", mime_type="application/pdf") if kind == "document" else None)
-    await receipt_handler(message, payments, service, Settings(), object(), state)
+    await receipt_handler(message, payments, service, Settings(admin_user_id=999, callback_secret="test-secret-long-enough"), SimpleNamespace(send_photo=AsyncMock(return_value=SimpleNamespace(message_id=515)), send_document=AsyncMock(return_value=SimpleNamespace(message_id=515))), state)
     stored = await payments.get_request(checkout.request.id)
-    assert stored.status == "approved"
+    assert stored.status == "pending"
     assert stored.receipt_file_id == f"telegram-receipt-{'photo' if kind == 'photo' else 'pdf'}"
     assert stored.receipt_file_type == kind
+    assert (await service.contact_status(901, other.id)).status != "approved"
+    delivery.assert_not_awaited()
+    # Approval is a separate administrator action.
+    assert await service.decide(checkout.request.id, approve=True, actor_id=999) == "approved"
     assert (await service.contact_status(901, other.id)).status == "approved"
-    delivery.assert_awaited_once()
-    assert delivery.await_args.kwargs["user_id"] == 901
-    assert delivery.await_args.kwargs["apartment"].id == apartment.id
-    # Repeated uploads do not create additional access grants or paid history.
     await receipt_handler(message, payments, service, Settings(), object(), state)
-    delivery.assert_awaited_once()
+    delivery.assert_not_awaited()
     async with sessions() as session:
         assert await session.scalar(select(func.count(PaymentHistory.id))) == 1
         assert (await session.scalar(select(PaymentRequest).where(PaymentRequest.apartment_id == other.id))).receipt_file_id is None
@@ -74,15 +74,15 @@ async def test_receipt_requires_checkout_and_cannot_target_another_user(reposito
 
 
 @pytest.mark.asyncio
-async def test_pending_claim_unlocks_access_without_receipt(repositories, service):
+async def test_pending_claim_cannot_unlock_access_without_admin(repositories, service):
     apartments, payments, sessions = repositories
     apartment = await apartments.upsert_discovered(make_ad(lalafo_id=9915))
     checkout = await service.begin_payment(user_id=905, apartment_id=apartment.id,
         username=None, first_name="Test", plan=LIFETIME_PLAN)
     async with sessions.begin() as session:
         await session.execute(update(PaymentRequest).where(PaymentRequest.id == checkout.request.id).values(status="pending"))
-    assert (await payments.mark_payment_claimed(user_id=905, apartment_id=apartment.id)).status == "approved"
-    assert (await service.contact_status(905, apartment.id)).status == "approved"
+    assert (await payments.mark_payment_claimed(user_id=905, apartment_id=apartment.id)).status == "pending"
+    assert (await service.contact_status(905, apartment.id)).status == "pending"
 
 
 @pytest.mark.asyncio

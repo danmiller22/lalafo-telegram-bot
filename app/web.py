@@ -1151,7 +1151,7 @@ async def health() -> JSONResponse:
             "status": "ok",
             "bot": "running" if settings.run_bot else "disabled",
             "finik_auto_payment": "ready" if settings.finik_auto_enabled else "disabled",
-            "payment_access_mode": "automatic",
+            "payment_access_mode": "manual",
             "listing_validity_days": MAX_LISTING_AGE_DAYS,
             "payment_receipt_required": False,
             "contact_tariff": {"plan": WEEK_PLAN, "price": WEEK_PRICE, "expires": True, "storage": "persistent_ledger"},
@@ -1443,29 +1443,32 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
 
 @app.post("/miniapp/api/access", include_in_schema=False)
 async def miniapp_issue_access(payload: MiniAppRequest) -> dict[str, Any]:
-    _, runtime, user, apartment_id = _miniapp_context(payload)
+    settings, runtime, user, apartment_id = _miniapp_context(payload)
     service = runtime.workflow_data["service"]
     current = await service.contact_status(user.id, apartment_id)
     if current.status == "approved":
         return _miniapp_result_payload(current)
-    if current.status in {"awaiting_receipt", "pending"}:
-        request = await runtime.workflow_data["payments"].mark_payment_claimed(
-            user_id=user.id,
-            apartment_id=apartment_id,
-        )
-        if request is not None:
-            current = await service.contact_status(user.id, apartment_id)
-            if current.status == "approved":
-                await _record_funnel(
-                    runtime, user.id, "access_granted", apartment_id=apartment_id
-                )
-                return _miniapp_result_payload(current)
-    raise HTTPException(status_code=409, detail="Сначала откройте оплату.")
+    if not settings.admin_user_id:
+        raise HTTPException(status_code=503, detail="Проверка оплаты временно недоступна. Обратитесь в поддержку.")
+    if current.status not in {"awaiting_receipt", "pending"}:
+        raise HTTPException(status_code=409, detail="Сначала откройте оплату.")
+    payments = runtime.workflow_data["payments"]
+    request = await payments.mark_payment_claimed(user_id=user.id, apartment_id=apartment_id)
+    if request is None:
+        raise HTTPException(status_code=409, detail="Сначала откройте оплату.")
+    from app.payments.review import notify_payment_admin
+    try:
+        await notify_payment_admin(runtime.bot, payments, settings,
+            TokenSigner(settings.require_callback_secret()), request)
+    except Exception as exc:
+        logger.exception("Could not notify payment administrator")
+        raise HTTPException(status_code=503, detail="Не удалось отправить заявку. Нажмите «Я оплатил(а)» ещё раз.") from exc
+    return _miniapp_result_payload(await service.contact_status(user.id, apartment_id))
 
 
 @app.post("/finik/webhook", include_in_schema=False)
 async def finik_webhook(request: Request) -> dict[str, str]:
-    """Verify a Finik callback and activate paid access automatically."""
+    """Verify a Finik callback; access remains subject to administrator approval."""
     settings = get_settings()
     runtime = _bot_runtime
     if not settings.run_bot or runtime is None or not settings.finik_auto_enabled:
@@ -1517,22 +1520,6 @@ async def finik_webhook(request: Request) -> dict[str, str]:
     if outcome == "amount_mismatch":
         logger.error("Finik amount mismatch for payment request %s", payment_request.id)
         raise HTTPException(status_code=status.HTTP_409_CONFLICT)
-    if outcome == "approved" and payment_request is not None and payment_request.apartment:
-        from app.telegram.private_delivery import send_private_contact
-
-        try:
-            await send_private_contact(
-                runtime.bot,
-                user_id=payment_request.telegram_user_id,
-                apartment=payment_request.apartment,
-                support_url=settings.support_bot_url,
-                max_photos=settings.max_photos_per_apartment,
-            )
-        except Exception:
-            logger.exception(
-                "Payment was approved but private apartment delivery failed for request %s",
-                payment_request.id,
-            )
     return {"status": outcome}
 
 

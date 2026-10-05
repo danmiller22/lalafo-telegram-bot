@@ -43,7 +43,7 @@ def test_faq_answers_only_confident_common_questions():
 
 def test_payment_faq_gives_only_customer_facing_instructions():
     assert "Получить номер" in FAQ_BY_KEY["payment"].answer
-    assert "автоматически" in FAQ_BY_KEY["review"].answer
+    assert "подтверждения" in FAQ_BY_KEY["review"].answer
     assert "проверяется вручную" not in FAQ_BY_KEY["review"].answer
     assert "Finik" not in FAQ_BY_KEY["review"].answer
 
@@ -112,7 +112,7 @@ async def test_common_question_is_answered_directly():
     )
     await support_question(message)
 
-    assert "Я оплатил(а) — открыть номер" in message.answer.await_args.args[0]
+    assert "Я оплатил(а)" in message.answer.await_args.args[0]
     keyboard = message.answer.await_args.kwargs["reply_markup"]
     assert keyboard.inline_keyboard[0][0].callback_data == "support:back"
 
