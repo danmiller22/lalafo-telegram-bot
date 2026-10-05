@@ -107,7 +107,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
   <p id="intro" class="intro"></p>
   <div id="status" class="status hidden" role="status" aria-live="polite"></div>
   <div id="tariff-description" class="intro hidden">
-    Недельный тариф — {WEEK_PRICE} сом
+    Недельный доступ к контактам собственников — {WEEK_PRICE} сом
   </div>
   <p id="agreement-caption" class="agreement-caption hidden">Оплачивая доступ, вы подтверждаете, что ознакомились с <a id="terms-link" class="terms-link" href="#agreement">пользовательским договором</a> и соглашаетесь с его условиями.</p>
   <button id="pay-lifetime" class="primary tariff-button hidden">Оплатить {WEEK_PRICE} сом</button>
