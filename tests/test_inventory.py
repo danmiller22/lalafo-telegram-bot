@@ -129,16 +129,17 @@ def test_period_balances_low_middle_and_high_price_buckets():
     assert buckets == {0, 1, 2}
 
 
-def test_agent_only_stock_waits_for_owners():
+def test_agent_only_stock_fills_owner_shortage():
     stock = _apartments(100, central=False, start_id=1, owner=False)
     period_start = datetime(2026, 9, 13, 0, tzinfo=timezone(timedelta(hours=6)))
 
     planned = plan_period(stock, period_start=period_start, rng=random.Random(9))
 
-    assert planned == []
+    assert len(planned) == 48
+    assert all(item.apartment.seller_type == "realtor" for item in planned)
 
 
-def test_period_preserves_equal_shares_with_owner_shortage():
+def test_period_fills_owner_shortage_with_realtors():
     stock = _apartments(1, central=True, start_id=1) + _apartments(
         100, central=False, start_id=100, owner=False
     )
@@ -146,9 +147,9 @@ def test_period_preserves_equal_shares_with_owner_shortage():
 
     planned = plan_period(stock, period_start=period_start, rng=random.Random(10))
 
-    assert len(planned) == 2
+    assert len(planned) == 48
     assert sum("золотой" in item.apartment.district.casefold() for item in planned) == 1
-    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 1
+    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 47
 
 
 def test_central_realtors_can_fill_central_share():
@@ -777,3 +778,44 @@ async def test_saved_contact_verification_reaches_public_card(repositories):
     ad = apartment_to_ad(apartment)
     assert ad.phone_source_version == 2
     assert "Собственник. Контакты проверены ✅" in format_public_apartment(ad, bot_username="rentttkg")
+
+
+def test_owner_only_stock_fills_realtor_shortage():
+    stock = _apartments(100, central=True, start_id=1)
+    start = datetime(2026, 10, 5, tzinfo=timezone.utc)
+    planned = plan_period(stock, period_start=start)
+    assert len(planned) == 48
+    assert all(item.apartment.seller_type == "owner" for item in planned)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("owner", [True, False])
+async def test_stock_load_uses_spare_category_capacity(repositories, monkeypatch, owner):
+    monkeypatch.setattr("app.inventory.MAX_FRESH_STOCK_LOAD", 4)
+    apartments, _, sessions = repositories
+    for index in range(6):
+        await apartments.upsert_discovered(make_ad(lalafo_id=99500 + index, owner_listing=owner))
+    assert await InventoryRepository(sessions).schedule_period(now=datetime.now(timezone.utc)) == 4
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("owner", [True, False])
+async def test_claim_can_exceed_category_share_to_fill_shortage(repositories, owner):
+    apartments, _, sessions = repositories
+    now = datetime.now(timezone.utc)
+    past = []
+    for index in range(48):
+        past.append(await apartments.upsert_discovered(make_ad(
+            lalafo_id=99600 + index, owner_listing=owner,
+        )))
+    waiting = await apartments.upsert_discovered(make_ad(lalafo_id=99700, owner_listing=owner))
+    async with sessions.begin() as session:
+        await session.execute(update(Apartment).where(
+            Apartment.id.in_([item.id for item in past])
+        ).values(publication_status="published", published_at=now - timedelta(minutes=16)))
+        session.add(ApartmentInventoryQueue(
+            apartment_id=waiting.id, scheduled_at=now - timedelta(minutes=1),
+            window_key="category-refill", sequence=1,
+        ))
+    claimed = await InventoryRepository(sessions).claim_due(now=now)
+    assert claimed is not None and claimed.apartment_id == waiting.id

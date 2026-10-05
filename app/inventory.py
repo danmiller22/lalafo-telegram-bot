@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import math
-from fractions import Fraction
 import random
 from zoneinfo import ZoneInfo
 
@@ -29,8 +28,8 @@ MIN_PUBLICATIONS_PER_DAY = 96
 MAX_PUBLICATIONS_PER_DAY = 96
 # The daily target is chosen once per Bishkek date, then split across the two
 # discovery periods so retries cannot increase the day's publication volume.
-# Reserve equal shares for known owners and realtors. Unknown authors cannot
-# fill either share; shortages reduce volume rather than distort the balance.
+# Aim for equal shares of known owners and realtors. Either category fills
+# shortages in the other; unknown authors never count as owners.
 MIN_NON_OWNERS_PER_DAY = round(MAX_PUBLICATIONS_PER_DAY * REALTOR_DAILY_SHARE)
 MAX_NON_OWNERS_PER_DAY = MIN_NON_OWNERS_PER_DAY
 TARGET_NON_OWNERS_PER_PERIOD = (MAX_NON_OWNERS_PER_DAY + 1) // 2
@@ -275,15 +274,15 @@ def plan_period(
         kind: sum(_seller_type(item) == kind for item in apartments)
         for kind in ("owner", "realtor")
     }
-    scale = min(
-        [Fraction(1)] + [Fraction(available[kind], count)
-                        for kind, count in (("owner", owner_count), ("realtor", realtor_count))
-                        if count]
-    )
     seller_remaining = {
-        "owner": math.floor(owner_count * scale),
-        "realtor": math.floor(realtor_count * scale),
+        "owner": min(owner_count, available["owner"]),
+        "realtor": min(realtor_count, available["realtor"]),
     }
+    missing = target_count - sum(seller_remaining.values())
+    for kind in ("owner", "realtor"):
+        extra = min(missing, available[kind] - seller_remaining[kind])
+        seller_remaining[kind] += extra
+        missing -= extra
     target_count = sum(seller_remaining.values())
     central_target = min(central_target, round(target_count * CENTRAL_DAILY_SHARE))
     room_counts: dict[str, int] = {}
@@ -359,6 +358,18 @@ async def _balanced_stock(session: AsyncSession, statement) -> list[Apartment]:
         stock.extend((await session.scalars(
             query.limit(MAX_FRESH_STOCK_LOAD // 2)
         )).all())
+    if len(stock) < MAX_FRESH_STOCK_LOAD:
+        for kind in ("owner", "realtor"):
+            if sum(item.seller_type == kind for item in stock) < MAX_FRESH_STOCK_LOAD // 2:
+                continue
+            query = statement.where(Apartment.seller_type == kind)
+            if kind == "owner":
+                query = query.where(Apartment.owner_listing.is_(True))
+            stock.extend((await session.scalars(
+                query.offset(MAX_FRESH_STOCK_LOAD // 2).limit(MAX_FRESH_STOCK_LOAD - len(stock))
+            )).all())
+            if len(stock) >= MAX_FRESH_STOCK_LOAD:
+                break
     return stock
 
 
@@ -368,7 +379,7 @@ class InventoryRepository:
 
     async def reset_publication_history_for_code(self, code_version: str) -> bool:
         """Rebuild the queue once per deployment without erasing repost history."""
-        version = code_version.strip() or "seller-50-50-v1"
+        version = code_version.strip() or "seller-50-50-refill-v2"
         key = "apartment_publication_code_version"
         async with self.sessions.begin() as session:
             marker = await session.get(LalafoAutoReplyMeta, key)
@@ -903,19 +914,7 @@ class InventoryRepository:
                 (published_today + 1) * REALTOR_DAILY_SHARE
             )
             desired_seller = "realtor" if realtor_needed else "owner"
-            published_owners = int(await session.scalar(
-                select(func.count()).select_from(Apartment).where(
-                    Apartment.publication_status == "published",
-                    Apartment.published_at >= day_start,
-                    Apartment.published_at < day_end,
-                    Apartment.seller_type == "owner",
-                )
-            ) or 0)
-            known_rows = [
-                row for row in due_rows
-                if (row[2] == "realtor" and published_non_owners < MAX_NON_OWNERS_PER_DAY)
-                or (row[2] == "owner" and published_owners < MAX_NON_OWNERS_PER_DAY)
-            ]
+            known_rows = [row for row in due_rows if row[2] in {"owner", "realtor"}]
             if not known_rows:
                 return None
             balanced_rows = [row for row in known_rows if row[2] == desired_seller]
