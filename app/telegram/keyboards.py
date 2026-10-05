@@ -6,7 +6,7 @@ from app.security import TokenSigner
 from app.payment_plans import WEEK_PRICE
 
 
-APARTMENT_KEYBOARD_VERSION = 15
+APARTMENT_KEYBOARD_VERSION = 16
 MINI_APP_SHORT_NAME = "access"
 
 
@@ -43,12 +43,6 @@ def apartment_keyboard(
                 text="🔄 Проверить актуальность",
                 callback_data=f"availability:{signer.sign_id('availability', apartment_id)}",
             )],
-            [
-                InlineKeyboardButton(
-                    text="Подать заявку на поиск квартиры",
-                    url=f"{bot_url}?start=want",
-                )
-            ],
         ]
     if include_duplicate:
         rows.append(

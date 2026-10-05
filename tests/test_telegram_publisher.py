@@ -61,7 +61,6 @@ async def test_public_album_uses_fast_direct_telegram_urls() -> None:
     assert [button.text for row in keyboard.inline_keyboard for button in row] == [
         "Получить номер",
         "🔄 Проверить актуальность",
-        "Подать заявку на поиск квартиры",
         "🛟 Техподдержка",
     ]
     media = bot.send_media_group.await_args.kwargs["media"]

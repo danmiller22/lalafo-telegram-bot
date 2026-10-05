@@ -894,6 +894,11 @@ async def startup() -> None:
             run_matching_worker(_bot_runtime), name="personal-matching-worker"
         )
         logger.info("Personal apartment matching worker enabled")
+        from app.telegram.keyboard_sync import sync_published_keyboards
+
+        _keyboard_sync_task = asyncio.create_task(
+            sync_published_keyboards(_bot_runtime), name="published-keyboard-sync"
+        )
         if (
             IN_PROCESS_QUEUE_DISPATCHER_ENABLED
             and settings.hosted_apartment_scheduler_enabled

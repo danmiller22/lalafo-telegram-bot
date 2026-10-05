@@ -59,6 +59,11 @@ function setup(initial, fetchOverride, dynamic = false) {
   assert.equal(race.node('access').hidden, true);
   assert.equal(race.node('reopen-payment').hidden, true);
   assert.equal(race.node('privacy').hidden, false);
+  assert.equal(race.node('agreement-caption').hidden, false);
+  race.node('terms-link').onclick({preventDefault() {}});
+  assert.equal(race.node('agreement').open, true);
+  race.node('close-agreement').onclick();
+  assert.equal(race.node('agreement').open, false);
   assert.equal(race.node('checkout').hidden, true);
   await race.node('pay-lifetime').onclick();
   assert.deepEqual(race.opened, ['https://example.com/week']);
@@ -69,6 +74,7 @@ function setup(initial, fetchOverride, dynamic = false) {
   await race.node('access').onclick();
   assert.equal(race.node('phone').hidden, false);
   assert.equal(race.node('privacy').hidden, true);
+  assert.equal(race.node('agreement-caption').hidden, true);
   resolvePoll(response({status: 'approved', phone: '+996555000000', apartment: {}}));
   await inFlight;
   assert.equal(race.node('phone').hidden, false);
