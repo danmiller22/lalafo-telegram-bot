@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import ssl
 import sys
 import uuid
 from typing import Any
@@ -42,6 +43,10 @@ HEADERS = {
 # then rate-limit that IP on the real multi-page search; LalafoClient rotates
 # this comma-separated pool on 403/429 and transport failures.
 TARGET_PROXY_COUNT = 3
+MAX_CONCURRENT_PROBES = 24
+# Reuse the trust store instead of loading hundreds of certificate bundles
+# simultaneously on the small always-on bot instance.
+TLS_CONTEXT = ssl.create_default_context()
 
 
 async def _works(proxy_url: str) -> str | None:
@@ -51,6 +56,7 @@ async def _works(proxy_url: str) -> str | None:
     try:
         async with httpx.AsyncClient(
             proxy=proxy_url,
+            verify=TLS_CONTEXT,
             headers=headers,
             timeout=httpx.Timeout(4.0),
             follow_redirects=True,
@@ -102,10 +108,16 @@ async def find_working_proxies() -> list[str]:
         return []
 
     selected: list[str] = []
-    tasks = [asyncio.create_task(_works(proxy)) for proxy in proxies]
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_PROBES)
+
+    async def probe(proxy: str) -> str | None:
+        async with semaphore:
+            return await _works(proxy)
+
+    tasks = [asyncio.create_task(probe(proxy)) for proxy in proxies]
     try:
-        # A route must complete both search and detail probes (up to 4s each).
-        for task in asyncio.as_completed(tasks, timeout=10.0):
+        # Allow multiple bounded batches and both search/detail probes.
+        for task in asyncio.as_completed(tasks, timeout=20.0):
             result = await task
             if result:
                 selected.append(result)

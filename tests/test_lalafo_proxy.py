@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+import asyncio
 from unittest.mock import AsyncMock
 
 import httpx
@@ -37,3 +38,25 @@ async def test_proxy_probe_requires_matching_detail_identity(monkeypatch, receiv
     ])
     monkeypatch.setattr(selector.httpx, "AsyncClient", lambda **kwargs: client)
     assert await selector._works("http://route") == expected
+
+
+@pytest.mark.asyncio
+async def test_proxy_scan_bounds_parallel_connections(monkeypatch):
+    client = HTTPClientStub([SimpleNamespace(text="\n".join(f"http://route-{n}" for n in range(80)), raise_for_status=lambda: None)])
+    monkeypatch.setattr(selector.httpx, "AsyncClient", lambda **kwargs: client)
+    active = peak = 0
+
+    async def unavailable(proxy):
+        nonlocal active, peak
+        active += 1
+        peak = max(peak, active)
+        try:
+            await asyncio.sleep(0.001)
+            return None
+        finally:
+            active -= 1
+
+    monkeypatch.setattr(selector, "_works", unavailable)
+    assert await selector.find_working_proxies() == []
+    assert 1 < peak <= selector.MAX_CONCURRENT_PROBES
+    assert active == 0
