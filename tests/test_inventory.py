@@ -652,12 +652,14 @@ async def test_discovery_refills_a_twelve_card_queue_until_full_period(repositor
 async def test_full_period_does_not_refill_cards_already_published(repositories):
     apartments, _, sessions = repositories
     inventory = InventoryRepository(sessions)
-    now = datetime.now(timezone.utc)
+    now = discovery_period_start().astimezone(timezone.utc) + timedelta(minutes=1)
     key = await inventory.claim_discovery(now=now)
     for index in range(35):
         apartment = await apartments.upsert_discovered(make_ad(lalafo_id=120000 + index, phone=f"+996555{200000 + index}"))
         if index < 25:
             await apartments.mark_published(apartment.id, chat_id=-1001, message_id=1000 + index)
+    async with sessions.begin() as session:
+        await session.execute(update(Apartment).where(Apartment.publication_status == "published").values(published_at=now))
     assert await inventory.schedule_period(now=now) == 10
     assert await inventory.period_published_count(now=now) == 25
     await inventory.finish_discovery(key, success=True, discovered=35, queued=10)
@@ -970,3 +972,20 @@ async def test_late_day_catchup_can_use_future_reserved_stock(repositories):
         await session.execute(update(Apartment).where(Apartment.id==old.id).values(publication_status="published",published_at=now-timedelta(minutes=6)))
         session.add(ApartmentInventoryQueue(apartment_id=waiting.id,scheduled_at=now+timedelta(minutes=18),window_key="today",sequence=1))
     assert await InventoryRepository(sessions).claim_due(now=now) is not None
+
+
+@pytest.mark.asyncio
+async def test_claim_mixes_price_ranges_after_a_low_price_publication(repositories):
+    apartments, _, sessions = repositories
+    now = datetime.now(timezone.utc)
+    previous = await apartments.upsert_discovered(make_ad(lalafo_id=280000, price=25_000, district="ЦУМ", phone="+996555280000"))
+    await apartments.mark_published(previous.id, chat_id=-1001, message_id=1)
+    async with sessions.begin() as session:
+        await session.execute(update(Apartment).where(Apartment.id==previous.id).values(published_at=now-timedelta(minutes=20)))
+    for index,price in enumerate((25_000,33_000,39_000)):
+        card=await apartments.upsert_discovered(make_ad(lalafo_id=280001+index,price=price,district="ЦУМ",phone=f"+99655528000{index+1}"))
+        async with sessions.begin() as session:
+            session.add(ApartmentInventoryQueue(apartment_id=card.id,scheduled_at=now-timedelta(minutes=3-index),window_key="mixed-prices",sequence=index))
+    claimed=await InventoryRepository(sessions).claim_due(now=now)
+    assert claimed is not None
+    assert claimed.apartment.price in {33_000,39_000}

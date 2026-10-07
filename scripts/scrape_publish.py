@@ -25,6 +25,7 @@ from app.lalafo.parser import LalafoParseError, is_allowed
 from app.lalafo.phone import mask_phone
 from app.models import Apartment
 from app.state import PostedState, ad_fingerprint, normalized_district
+from app.listing_quality import district_priority, mix_prices
 from app.telegram.formatting import format_apartment
 from app.telegram.source_filter import is_lodging_offer
 from app.telegram.sources import (
@@ -297,25 +298,15 @@ def is_central_district(district: str | None) -> bool:
     return any(term in normalized for term in CENTRAL_DISTRICT_TERMS)
 
 
-def candidate_quality(ad: LalafoAd) -> tuple[int, bool, bool, bool, int, int, bool, float]:
-    """Put cheap central apartments first, then other requested-area bargains."""
+def candidate_quality(ad: LalafoAd) -> tuple:
+    """Prioritize requested areas and useful photos, without favoring the price floor."""
     updated_at = ad.source_updated_at.timestamp() if ad.source_updated_at else 0
-    central = is_central_district(ad.district)
-    preferred = is_preferred_district(ad.district)
-    affordable = ad.price <= 32_000
-    very_affordable = ad.price <= 27_000
-    priority_score = (
-        (5 if central else 0)
-        + (3 if preferred else 0)
-        + (3 if affordable else 0)
-        + (1 if very_affordable else 0)
-    )
     return (
-        priority_score,
-        central,
-        affordable,
-        len(ad.photo_urls) >= 5,
-        -ad.price,
+        district_priority(ad.district),
+        is_central_district(ad.district),
+        is_preferred_district(ad.district),
+        min(5, len(ad.photo_urls)),
+        abs(ad.price - 32_500) * -1,
         len(ad.photo_urls),
         bool(ad.district),
         updated_at,
@@ -613,7 +604,7 @@ def select_publish_batch_with_reposts(
         selected.extend(
             select_publish_batch(repeats, repeat_limit, rank_key=oldest_first)
         )
-    return sorted(selected, key=candidate_quality, reverse=True)
+    return mix_prices(selected)
 
 
 def select_owners_then_realtors(

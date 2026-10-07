@@ -17,6 +17,7 @@ from app.models import (
     LalafoAutoReplyMeta,
 )
 from app.state import normalized_district
+from app.listing_quality import district_priority, price_bucket, mix_prices
 from app.telegram.formatting import is_supported_source
 
 
@@ -148,15 +149,15 @@ class PlannedApartment:
 
 
 def _candidate_key(item: Apartment, *, central: bool) -> tuple[object, ...]:
-    favorable = central and item.price <= 32_000
+    del central
     last_seen = as_utc(item.last_seen_at or item.updated_at)
     hot = last_seen >= datetime.now(timezone.utc) - timedelta(hours=24)
     return (
-        0,
-        not favorable,
-        not hot,
-        item.price,
+        -district_priority(item.district),
         not item.discovery_priority,
+        not hot,
+        -min(5, len(getattr(item, "photo_urls", []) or [])),
+        abs(item.price - 32_500),
         -last_seen.timestamp(),
         item.id,
     )
@@ -195,9 +196,10 @@ def _pick_for_window(
             base = _candidate_key(item, central=central)
             room_rank = {"1": 0, "studio": 1}.get(item.rooms, 2)
             district = normalized_district(item.district) or "unknown"
-            price_bucket = min(2, max(0, (item.price - 25_000) // 5_000))
+            bucket = price_bucket(item.price)
             return (
-                price_counts.get(price_bucket, 0),
+                -district_priority(item.district),
+                price_counts.get(bucket, 0),
                 district_counts.get(district, 0),
                 room_counts.get(item.rooms, 0),
                 room_rank,
@@ -212,8 +214,8 @@ def _pick_for_window(
         room_counts[item.rooms] = room_counts.get(item.rooms, 0) + 1
         district = normalized_district(item.district) or "unknown"
         district_counts[district] = district_counts.get(district, 0) + 1
-        price_bucket = min(2, max(0, (item.price - 25_000) // 5_000))
-        price_counts[price_bucket] = price_counts.get(price_bucket, 0) + 1
+        bucket = price_bucket(item.price)
+        price_counts[bucket] = price_counts.get(bucket, 0) + 1
     return picked
 
 
@@ -324,7 +326,7 @@ def plan_period(
             district_counts, price_counts, central=False,
             seller_remaining=seller_remaining,
         ))
-    rng.shuffle(selected)
+    selected = mix_prices(selected, rng=rng)
     schedule = randomized_period_times(
         period_start,
         count=len(selected),
@@ -828,6 +830,7 @@ class InventoryRepository:
             ineligible_apartment_ids = select(Apartment.id).where(
                 (Apartment.price < 25_000)
                 | (Apartment.price > 40_000)
+                | Apartment.rooms.not_in(ALLOWED_ROOMS)
             )
             await session.execute(
                 update(ApartmentInventoryQueue)
@@ -924,6 +927,7 @@ class InventoryRepository:
                         ApartmentInventoryQueue.id,
                         Apartment.district,
                         Apartment.seller_type,
+                        Apartment.price,
                     )
                     .join(Apartment)
                     .where(
@@ -954,13 +958,22 @@ class InventoryRepository:
             desired_seller = "realtor" if realtor_needed else "owner"
             balanced_rows = [row for row in due_rows if row[2] == desired_seller]
             due_rows = balanced_rows or due_rows
-            selected_id = next(
-                (
-                    queue_id for queue_id, district, _seller_type in due_rows
-                    if is_central(district) == central_needed
-                ),
-                due_rows[0][0],
-            )
+            area_rows = [row for row in due_rows if is_central(row[1]) == central_needed]
+            due_rows = area_rows or due_rows
+            recent_prices = list((await session.scalars(
+                select(Apartment.price).where(
+                    Apartment.publication_status == "published",
+                    Apartment.published_at >= day_start,
+                    Apartment.published_at <= now,
+                ).order_by(Apartment.published_at.desc(), Apartment.id.desc()).limit(6)
+            )).all())
+            recent_buckets = [price_bucket(price) for price in recent_prices]
+            selected_id = min(due_rows, key=lambda row: (
+                -district_priority(row[1]),
+                bool(recent_buckets) and price_bucket(row[3]) == recent_buckets[0],
+                recent_buckets.count(price_bucket(row[3])),
+                due_rows.index(row),
+            ))[0]
             row = (
                 await session.scalars(
                     update(ApartmentInventoryQueue)

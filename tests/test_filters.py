@@ -456,7 +456,7 @@ def test_other_numbered_microdistrict_is_not_mistaken_for_fifth():
     assert not is_preferred_district("15 мкр")
 
 
-def test_quality_prefers_requested_area_then_photo_rich_bargains():
+def test_quality_prefers_requested_area_and_photos_over_low_price():
     preferred = make_ad(district="Филармония", photo_urls=["1"], price=30_000)
     elsewhere = make_ad(district="Асанбай", photo_urls=["1", "2"], price=20_000)
     assert candidate_quality(preferred) > candidate_quality(elsewhere)
@@ -464,17 +464,17 @@ def test_quality_prefers_requested_area_then_photo_rich_bargains():
     bargain = make_ad(district="5 мкр", photo_urls=["1"] * 5, price=20_000)
     expensive = make_ad(district="5 мкр", photo_urls=["1"] * 10, price=35_000)
     sparse = make_ad(district="5 мкр", photo_urls=["1"] * 4, price=10_000)
-    assert candidate_quality(bargain) > candidate_quality(expensive)
+    assert candidate_quality(expensive) > candidate_quality(bargain)
     assert candidate_quality(bargain) > candidate_quality(sparse)
 
 
-def test_quality_puts_cheap_central_apartment_first():
+def test_quality_does_not_put_the_cheapest_central_apartment_first():
     central_bargain = make_ad(district="Центр", photo_urls=["1"] * 5, price=25_000)
     central_expensive = make_ad(district="ЦУМ", photo_urls=["1"] * 10, price=39_000)
     cheap_outskirts = make_ad(district="Асанбай", photo_urls=["1"] * 10, price=20_000)
 
     assert is_central_district(central_bargain.district)
-    assert candidate_quality(central_bargain) > candidate_quality(central_expensive)
+    assert candidate_quality(central_expensive) > candidate_quality(central_bargain)
     assert candidate_quality(central_bargain) > candidate_quality(cheap_outskirts)
 
 
@@ -572,7 +572,7 @@ def test_publish_batch_never_contains_the_same_lalafo_ad_twice():
     assert len(next(ad for ad in selected if ad.lalafo_id == 777).photo_urls) == 2
 
 
-def test_publish_batch_uses_eligible_repeat_after_fresh_card():
+def test_publish_batch_uses_eligible_repeat_to_fill_fresh_shortage():
     duplicate = make_ad(lalafo_id=900, district="Тунгуч", phone="+996700000900")
     selected = select_publish_batch_with_reposts(
         [duplicate, duplicate, make_ad(lalafo_id=901, phone="+996700000901")],
@@ -580,7 +580,8 @@ def test_publish_batch_uses_eligible_repeat_after_fresh_card():
         3,
     )
 
-    assert [ad.lalafo_id for ad in selected] == [901, 900]
+    assert len(selected) == 2
+    assert {ad.lalafo_id for ad in selected} == {901, 900}
 
 
 def test_candidate_deduplication_keeps_the_higher_quality_copy():
