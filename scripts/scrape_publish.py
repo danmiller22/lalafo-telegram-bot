@@ -88,7 +88,7 @@ CENTRAL_DISTRICT_TERMS = (
 # checks still remove shared housing and all public cards omit offerer type.
 SOURCE_MIN_PRICE = 25_000
 SOURCE_MAX_PRICE = 40_000
-SOURCE_ALLOWED_ROOMS = ("studio", "1")
+SOURCE_ALLOWED_ROOMS = ("studio", "1", "2")
 SOURCE_MIN_PHOTOS = 1
 SOURCE_MAX_POSTS_PER_RUN = 18
 SOURCE_PUBLISH_SPACING_SECONDS = 150
@@ -362,8 +362,6 @@ def is_substandard_structure(ad: LalafoAd) -> bool:
         "батир керек",
         "үй керек",
         "уй керек",
-        "арендага квартира",
-        "арендага батир",
         "квартира издейм",
         "батир издейм",
         "контейнер",
@@ -380,7 +378,7 @@ def is_substandard_structure(ad: LalafoAd) -> bool:
         "полуподвал",
         "коридорного типа",
     )
-    if any(term in text for term in blocked_terms) or is_lodging_offer(text):
+    if re.search(r"(?:арендага|ижарага).{0,30}\bкерек\b", text) or any(term in text for term in blocked_terms) or is_lodging_offer(text):
         return True
 
     params = {

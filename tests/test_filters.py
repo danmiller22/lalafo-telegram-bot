@@ -128,7 +128,7 @@ def test_missing_district_uses_labeled_demo_location_and_omits_deposit():
 def test_expanded_source_keeps_reposts_strictly_limited():
     settings = Settings(_env_file=None)
 
-    assert SOURCE_ALLOWED_ROOMS == ("studio", "1")
+    assert SOURCE_ALLOWED_ROOMS == ("studio", "1", "2")
     assert SOURCE_MAX_POSTS_PER_RUN == 18
     assert SOURCE_PUBLISH_SPACING_SECONDS == 150
     assert SOURCE_MAX_SEARCH_PAGES == 12
@@ -737,3 +737,12 @@ def test_public_cards_omit_seller_and_verification_labels(overrides, expected):
     assert "Контакты проверены" not in text
     assert "Собственник" not in text
     assert "Риелтор" not in text
+
+
+@pytest.mark.parametrize("description", ["Арендага квартира берилет", "Арендага батир берилет, 2 комнаталуу", "Квартира арендага берилет"])
+def test_kyrgyz_rental_offers_are_not_wanted_ads(description):
+    assert not is_substandard_structure(make_ad(source_description=description))
+
+
+def test_kyrgyz_wanted_ad_still_rejected():
+    assert is_substandard_structure(make_ad(source_description="Квартира арендага керек"))

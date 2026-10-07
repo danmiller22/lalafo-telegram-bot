@@ -21,7 +21,7 @@ from app.telegram.formatting import is_supported_source
 
 
 BISHKEK = ZoneInfo("Asia/Bishkek")
-ALLOWED_ROOMS = frozenset({"studio", "1"})
+ALLOWED_ROOMS = frozenset({"studio", "1", "2"})
 CENTRAL_DAILY_SHARE = 0.50
 REALTOR_DAILY_SHARE = 0.70
 MIN_PUBLICATIONS_PER_DAY = 70
@@ -866,8 +866,15 @@ class InventoryRepository:
                 )
                 if value is not None
             ]
+            overdue_count = int(await session.scalar(
+                select(func.count()).select_from(ApartmentInventoryQueue).where(
+                    ApartmentInventoryQueue.status == "queued",
+                    ApartmentInventoryQueue.scheduled_at <= now - timedelta(minutes=PUBLICATION_SPACING_MINUTES),
+                )
+            ) or 0)
+            gap_minutes = 5 if overdue_count >= 3 else MIN_PUBLICATION_GAP_MINUTES
             if publication_times and max(publication_times) > now - timedelta(
-                minutes=MIN_PUBLICATION_GAP_MINUTES
+                minutes=gap_minutes
             ):
                 return None
             published_today = int(
@@ -917,7 +924,10 @@ class InventoryRepository:
                     .join(Apartment)
                     .where(
                         ApartmentInventoryQueue.status == "queued",
-                        ApartmentInventoryQueue.scheduled_at <= eligible_until,
+                        or_(
+                            (ApartmentInventoryQueue.last_error.is_(None)) & (ApartmentInventoryQueue.scheduled_at <= eligible_until),
+                            (ApartmentInventoryQueue.last_error.is_not(None)) & (ApartmentInventoryQueue.scheduled_at <= now),
+                        ),
                         Apartment.rooms.in_(ALLOWED_ROOMS),
                         Apartment.price.between(25_000, 40_000),
                         _supported_source_filter(),

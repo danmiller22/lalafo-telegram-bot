@@ -26,12 +26,12 @@ async def test_telegram_inventory_is_stored_and_due_without_lalafo(repositories,
 
 
 @pytest.mark.asyncio
-async def test_telegram_collector_skips_published_cards_and_keeps_room_filter(repositories, monkeypatch):
+async def test_telegram_collector_adds_two_rooms_and_skips_published_cards(repositories, monkeypatch):
     apartments, _, sessions = repositories
     old = make_ad(lalafo_id=-100, source_url="https://t.me/bishkekarendakv/100")
     stored = await apartments.upsert_discovered(old)
     await apartments.mark_published(stored.id, chat_id=-1001, message_id=100)
     two_rooms = make_ad(lalafo_id=-101, source_url="https://t.me/bishkekarendakv/101", rooms="2")
-    monkeypatch.setattr("scripts.collect_telegram_inventory.fetch_telegram_apartments", AsyncMock(return_value=[old, two_rooms]))
+    monkeypatch.setattr("scripts.collect_telegram_inventory.fetch_telegram_apartments", AsyncMock(return_value=[old, two_rooms, make_ad(lalafo_id=-102, rooms="3", source_url="https://t.me/bishkekarendakv/102")]))
     result = await collect(Settings(), apartments, InventoryRepository(sessions))
-    assert result == {"fetched": 2, "stored": 0, "queued": 0}
+    assert result == {"fetched": 3, "stored": 1, "queued": 1}

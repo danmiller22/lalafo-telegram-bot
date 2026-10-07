@@ -69,27 +69,24 @@ def test_translucent_watermark_uses_overlapping_line_inspection(monkeypatch, tmp
 
 
 
-def test_first_async_photo_check_initializes_native_ocr_on_main_thread():
-    import subprocess
-    import sys
-    code = """
-import asyncio
-import threading
-import httpx
-from app.telegram import photo_quality
-OriginalClient = httpx.AsyncClient
 
-def client(**kwargs):
-    return OriginalClient(transport=httpx.MockTransport(lambda request: httpx.Response(200, content=b'photo')), **kwargs)
+@pytest.mark.asyncio
+async def test_ocr_worker_results_are_cached_and_parent_does_not_run_native_ocr(monkeypatch, tmp_path):
+    monkeypatch.setattr(photo_quality.tempfile, "gettempdir", lambda: str(tmp_path))
+    process = type("Process", (), {"returncode": 0, "communicate": AsyncMock(return_value=(b"clean\n", b""))})()
+    spawn = AsyncMock(return_value=process)
+    monkeypatch.setattr(photo_quality.asyncio, "create_subprocess_exec", spawn)
+    assert not await photo_quality.inspect_photo(b"unique photo")
+    assert not await photo_quality.inspect_photo(b"unique photo")
+    spawn.assert_awaited_once()
+    assert spawn.call_args.kwargs["env"]["OMP_THREAD_LIMIT"] == "1"
 
-def inspect(data):
-    assert threading.current_thread() is not threading.main_thread()
-    import tesserocr
-    return False
 
-photo_quality.httpx.AsyncClient = client
-photo_quality.has_watermark = inspect
-asyncio.run(photo_quality.check_photo_watermarks(['https://photos.example/apartment.jpg']))
-"""
-    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=15)
-    assert result.returncode == 0, result.stderr
+@pytest.mark.asyncio
+async def test_failed_ocr_worker_does_not_cache_clean_result(monkeypatch, tmp_path):
+    monkeypatch.setattr(photo_quality.tempfile, "gettempdir", lambda: str(tmp_path))
+    process = type("Process", (), {"returncode": 1, "communicate": AsyncMock(return_value=(b"", b"failure"))})()
+    monkeypatch.setattr(photo_quality.asyncio, "create_subprocess_exec", AsyncMock(return_value=process))
+    with pytest.raises(photo_quality.PhotoInspectionError):
+        await photo_quality.inspect_photo(b"bad photo")
+    assert not list(tmp_path.rglob("*.result"))

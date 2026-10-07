@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import os
+import sys
+from contextlib import suppress
 from pathlib import Path
 import tempfile
 from io import BytesIO
@@ -68,25 +71,67 @@ def has_watermark(data: bytes) -> bool:
     return False
 
 
+class PhotoInspectionError(RuntimeError):
+    pass
+
+
+async def inspect_photo(data: bytes) -> bool:
+    from app.worker_resources import inventory_worker_lock
+    directory = Path(tempfile.gettempdir()) / "arenda-photo-results-v2"
+    directory.mkdir(exist_ok=True)
+    digest = hashlib.sha256(data).hexdigest()
+    result_path = directory / (digest + ".result")
+    if result_path.exists():
+        return result_path.read_text() == "watermarked"
+    async with inventory_worker_lock:
+        if result_path.exists():
+            return result_path.read_text() == "watermarked"
+        source = directory / (digest + ".image")
+        source.write_bytes(data)
+        process = None
+        try:
+            environment = dict(os.environ, OMP_THREAD_LIMIT="1", OMP_NUM_THREADS="1")
+            process = await asyncio.create_subprocess_exec(
+                sys.executable, "-m", "app.telegram.photo_quality", str(source),
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+                env=environment,
+            )
+            output, _ = await asyncio.wait_for(process.communicate(), timeout=60)
+            decision = output.decode().strip()
+            if process.returncode or decision not in {"clean", "watermarked"}:
+                raise PhotoInspectionError("Photo inspection worker failed")
+            result_path.write_text(decision)
+            return decision == "watermarked"
+        except asyncio.TimeoutError as error:
+            raise PhotoInspectionError("Photo inspection timed out") from error
+        finally:
+            if process is not None and process.returncode is None:
+                with suppress(ProcessLookupError):
+                    process.kill()
+                await process.wait()
+            source.unlink(missing_ok=True)
+
+
 async def check_photo_watermarks(urls: list[str]) -> None:
-    # Check the whole album before sending its first photo, so a rejected
-    # listing cannot leave half an album in the channel.
     if not any(url.startswith(("http://", "https://")) for url in urls):
         return
-    # tesserocr/cysignals installs signal handlers on first import and must
-    # initialize on the event-loop thread before OCR runs in a worker thread.
-    import tesserocr  # noqa: F401
-
     async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
         for url in urls:
             if not url.startswith(('http://', 'https://')):
                 continue
-            async with client.stream('GET', url) as response:
-                response.raise_for_status()
-                data = bytearray()
-                async for chunk in response.aiter_bytes():
-                    data.extend(chunk)
-                    if len(data) > 12 * 1024 * 1024:
-                        raise ValueError('Photo exceeds watermark inspection limit')
-            if await asyncio.to_thread(has_watermark, bytes(data)):
-                raise WatermarkedPhotos('Visible agency watermark')
+            try:
+                async with client.stream('GET', url) as response:
+                    response.raise_for_status()
+                    data = bytearray()
+                    async for chunk in response.aiter_bytes():
+                        data.extend(chunk)
+                        if len(data) > 12 * 1024 * 1024:
+                            raise PhotoInspectionError('Photo exceeds inspection limit')
+                if await inspect_photo(bytes(data)):
+                    raise WatermarkedPhotos('Visible agency watermark')
+            except httpx.HTTPError as error:
+                raise PhotoInspectionError("Photo could not be downloaded") from error
+
+
+if __name__ == "__main__":
+    print("watermarked" if has_watermark(Path(sys.argv[1]).read_bytes()) else "clean")

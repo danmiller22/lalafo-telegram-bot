@@ -286,7 +286,7 @@ async def test_concurrent_publishers_cannot_claim_the_same_card(repositories):
 
 
 @pytest.mark.asyncio
-async def test_schedule_period_deletes_old_two_room_queue_rows(repositories):
+async def test_schedule_period_keeps_affordable_two_room_queue_rows(repositories):
     apartments, _, sessions = repositories
     two_room = await apartments.upsert_discovered(
         make_ad(lalafo_id=920, rooms="2", district="ЦУМ")
@@ -326,7 +326,7 @@ async def test_schedule_period_deletes_old_two_room_queue_rows(repositories):
             .select_from(ApartmentInventoryQueue)
             .where(ApartmentInventoryQueue.apartment_id == one_room.id)
         )
-    assert deleted == 0
+    assert deleted == 1
     assert retained == 1
 
 
@@ -930,3 +930,31 @@ async def test_watermarked_listing_is_not_queued_again(repositories):
     async with sessions.begin() as session:
         session.add(ApartmentInventoryQueue(apartment_id=item.id, scheduled_at=now, window_key="rejected", sequence=1, status="skipped", last_error="watermarked_photos"))
     assert await InventoryRepository(sessions).schedule_period(now=now) == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("overdue_count,expected", [(1,False),(3,True)])
+async def test_backlog_catches_up_without_waiting_eighteen_minutes(repositories, overdue_count, expected):
+    apartments, _, sessions = repositories
+    now = datetime.now(timezone.utc)
+    previous = await apartments.upsert_discovered(make_ad(lalafo_id=220000, phone="+996555500000"))
+    async with sessions.begin() as session:
+        await session.execute(update(Apartment).where(Apartment.id==previous.id).values(publication_status="published", published_at=now-timedelta(minutes=6)))
+    for index in range(overdue_count):
+        item = await apartments.upsert_discovered(make_ad(lalafo_id=221000+index,phone=f"+996555{501000+index}"))
+        async with sessions.begin() as session:
+            session.add(ApartmentInventoryQueue(apartment_id=item.id,scheduled_at=now-timedelta(minutes=30),window_key="backlog",sequence=index))
+    claimed = await InventoryRepository(sessions).claim_due(now=now)
+    assert (claimed is not None) is expected
+
+
+@pytest.mark.asyncio
+async def test_failed_photo_respects_backoff_even_with_lookahead(repositories):
+    apartments, _, sessions = repositories
+    now = datetime.now(timezone.utc)
+    item = await apartments.upsert_discovered(make_ad(lalafo_id=222000))
+    async with sessions.begin() as session:
+        session.add(ApartmentInventoryQueue(apartment_id=item.id,scheduled_at=now+timedelta(minutes=3),window_key="retry",sequence=1,last_error="photo_inspection_failed"))
+    inventory = InventoryRepository(sessions)
+    assert await inventory.claim_due(now=now, eligible_until=now+timedelta(minutes=10)) is None
+    assert await inventory.claim_due(now=now+timedelta(minutes=4)) is not None

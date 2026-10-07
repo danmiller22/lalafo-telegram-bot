@@ -13,7 +13,7 @@ from app.lalafo.client import LalafoClient, LalafoError, LalafoNotFound
 from app.lalafo.parser import LalafoParseError, is_allowed
 from app.payments.repository import ApartmentRepository
 from app.security import TokenSigner
-from app.telegram.photo_quality import WatermarkedPhotos
+from app.telegram.photo_quality import WatermarkedPhotos, PhotoInspectionError
 from app.telegram.publisher import TelegramPublishError, TelegramPublisher
 from app.telegram.formatting import is_supported_source
 from scripts.scrape_publish import (
@@ -202,6 +202,15 @@ async def run(
             error="watermarked_photos", eligible_until=eligible_until,
             remaining_skips=_remaining_skips,
         )
+    except PhotoInspectionError:
+        if item.attempts >= 3:
+            return await _skip_and_continue(
+                inventory=inventory, item_id=item.id, engine=engine,
+                error="photo_inspection_failed", eligible_until=eligible_until,
+                remaining_skips=_remaining_skips,
+            )
+        await inventory.retry_item(item.id, error="photo_inspection_failed", delay_minutes=3)
+        return 0
     except TelegramPublishError as exc:
         logger.warning("Queued publication will retry: %s", type(exc).__name__)
         await inventory.retry_item(item.id, error=type(exc).__name__)

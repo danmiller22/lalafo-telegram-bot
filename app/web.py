@@ -51,7 +51,7 @@ IN_PROCESS_QUEUE_DISPATCHER_ENABLED = True
 app = FastAPI(title="Lalafo Telegram service", docs_url=None, redoc_url=None)
 
 _run_lock = asyncio.Lock()
-_inventory_worker_lock = asyncio.Lock()
+from app.worker_resources import inventory_worker_lock as _inventory_worker_lock
 _scraper_task: asyncio.Task[None] | None = None
 _bot_runtime: BotRuntime | None = None
 _lalafo_bot_runtime: BotRuntime | None = None
