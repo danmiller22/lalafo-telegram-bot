@@ -73,6 +73,10 @@ async def check_photo_watermarks(urls: list[str]) -> None:
     # listing cannot leave half an album in the channel.
     if not any(url.startswith(("http://", "https://")) for url in urls):
         return
+    # tesserocr/cysignals installs signal handlers on first import and must
+    # initialize on the event-loop thread before OCR runs in a worker thread.
+    import tesserocr  # noqa: F401
+
     async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
         for url in urls:
             if not url.startswith(('http://', 'https://')):

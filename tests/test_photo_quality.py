@@ -66,3 +66,30 @@ def test_translucent_watermark_uses_overlapping_line_inspection(monkeypatch, tmp
     data = BytesIO()
     image.save(data, format="JPEG")
     assert photo_quality.has_watermark(data.getvalue())
+
+
+
+def test_first_async_photo_check_initializes_native_ocr_on_main_thread():
+    import subprocess
+    import sys
+    code = """
+import asyncio
+import threading
+import httpx
+from app.telegram import photo_quality
+OriginalClient = httpx.AsyncClient
+
+def client(**kwargs):
+    return OriginalClient(transport=httpx.MockTransport(lambda request: httpx.Response(200, content=b'photo')), **kwargs)
+
+def inspect(data):
+    assert threading.current_thread() is not threading.main_thread()
+    import tesserocr
+    return False
+
+photo_quality.httpx.AsyncClient = client
+photo_quality.has_watermark = inspect
+asyncio.run(photo_quality.check_photo_watermarks(['https://photos.example/apartment.jpg']))
+"""
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stderr
