@@ -109,7 +109,7 @@ ADDITIONAL_SEARCH_URLS: tuple[str, ...] = (
 
 _INVENTORY_BASE = (
     "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
-    "dolgosrochnaya-arenda-kvartir/studio/1-bedroom/2-bedroom/"
+    "dolgosrochnaya-arenda-kvartir/studio/1-bedroom/2-bedrooms/"
 )
 # Split owner results by price as well as location. This exposes older affordable
 # ads that can be buried behind the newest broad-search results.

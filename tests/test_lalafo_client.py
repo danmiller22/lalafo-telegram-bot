@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.config import ADDITIONAL_SEARCH_URLS, DEFAULT_SEARCH_URL
+from app.config import ADDITIONAL_SEARCH_URLS, DEFAULT_SEARCH_URL, INVENTORY_SEARCH_URLS
 from app.lalafo.client import LalafoAccessError, LalafoClient, LalafoError
 
 
@@ -207,3 +207,10 @@ async def test_detail_api_fallback_rejects_mismatched_id():
             )
     finally:
         await client.close()
+
+
+
+def test_inventory_search_includes_affordable_two_room_feed_filter():
+    for url in INVENTORY_SEARCH_URLS:
+        params = LalafoClient._search_params(url, 1)
+        assert {value for key,value in params if key.startswith("parameters[69]")} == {"15496", "2773", "2774"}
