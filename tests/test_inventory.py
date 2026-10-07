@@ -286,7 +286,7 @@ async def test_concurrent_publishers_cannot_claim_the_same_card(repositories):
 
 
 @pytest.mark.asyncio
-async def test_schedule_period_keeps_affordable_two_room_queue_rows(repositories):
+async def test_schedule_period_removes_two_room_queue_rows(repositories):
     apartments, _, sessions = repositories
     two_room = await apartments.upsert_discovered(
         make_ad(lalafo_id=920, rooms="2", district="ЦУМ")
@@ -326,7 +326,7 @@ async def test_schedule_period_keeps_affordable_two_room_queue_rows(repositories
             .select_from(ApartmentInventoryQueue)
             .where(ApartmentInventoryQueue.apartment_id == one_room.id)
         )
-    assert deleted == 1
+    assert deleted == 0
     assert retained == 1
 
 

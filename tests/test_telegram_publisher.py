@@ -222,3 +222,14 @@ def test_salut_source_parameters_are_excluded():
 
     ad = make_ad().model_copy(update={"source_params": [{"name": "Агентство", "value": "Салют"}]})
     assert is_excluded_agency(ad)
+
+
+@pytest.mark.asyncio
+async def test_two_room_apartment_is_never_sent_to_channel():
+    bot = SimpleNamespace(send_photo=AsyncMock(), send_media_group=AsyncMock(), send_message=AsyncMock())
+    publisher = TelegramPublisher(bot, chat_id=-1001, signer=TokenSigner("s" * 32), bot_username="testbot", support_url="https://t.me/support")
+    with pytest.raises(TelegramPublishError, match="Only studios"):
+        await publisher.publish(77, make_ad().model_copy(update={"rooms": "2"}))
+    bot.send_photo.assert_not_awaited()
+    bot.send_media_group.assert_not_awaited()
+    bot.send_message.assert_not_awaited()

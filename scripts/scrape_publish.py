@@ -88,7 +88,7 @@ CENTRAL_DISTRICT_TERMS = (
 # checks still remove shared housing and all public cards omit offerer type.
 SOURCE_MIN_PRICE = 25_000
 SOURCE_MAX_PRICE = 40_000
-SOURCE_ALLOWED_ROOMS = ("studio", "1", "2")
+SOURCE_ALLOWED_ROOMS = ("studio", "1")
 SOURCE_MIN_PHOTOS = 1
 SOURCE_MAX_POSTS_PER_RUN = 18
 SOURCE_PUBLISH_SPACING_SECONDS = 150

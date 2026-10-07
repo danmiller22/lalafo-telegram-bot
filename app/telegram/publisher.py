@@ -79,6 +79,8 @@ class TelegramPublisher:
             raise TelegramPublishError("Unsupported apartment source")
         if is_excluded_agency(ad):
             raise TelegramPublishError("Excluded agency source")
+        if ad.rooms not in ("studio", "1"):
+            raise TelegramPublishError("Only studios and one-room apartments are allowed")
         urls = list(dict.fromkeys(ad.photo_urls))
         if not urls:
             raise TelegramPublishError("Apartment has no photos")

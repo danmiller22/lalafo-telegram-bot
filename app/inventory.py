@@ -21,7 +21,7 @@ from app.telegram.formatting import is_supported_source
 
 
 BISHKEK = ZoneInfo("Asia/Bishkek")
-ALLOWED_ROOMS = frozenset({"studio", "1", "2"})
+ALLOWED_ROOMS = frozenset({"studio", "1"})
 CENTRAL_DAILY_SHARE = 0.50
 REALTOR_DAILY_SHARE = 0.70
 MIN_PUBLICATIONS_PER_DAY = 70

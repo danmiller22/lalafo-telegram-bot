@@ -210,7 +210,7 @@ async def test_detail_api_fallback_rejects_mismatched_id():
 
 
 
-def test_inventory_search_includes_affordable_two_room_feed_filter():
+def test_inventory_search_is_limited_to_studios_and_one_room():
     for url in INVENTORY_SEARCH_URLS:
         params = LalafoClient._search_params(url, 1)
-        assert {value for key,value in params if key.startswith("parameters[69]")} == {"15496", "2773", "2774"}
+        assert {value for key,value in params if key.startswith("parameters[69]")} == {"15496", "2773"}
