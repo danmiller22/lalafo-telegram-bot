@@ -162,7 +162,7 @@ async def test_health_and_authentication() -> None:
             },
             "personal_matching": "disabled",
             "lalafo_auto_reply": "disabled",
-            "publication_policy": {"daily_target": 70, "start": "05:00", "end": "02:00", "timezone": "Asia/Bishkek", "spacing_minutes": 18, "watermark_check": True},
+            "publication_policy": {"daily_target": 70, "start": "05:00", "end": "02:00", "timezone": "Asia/Bishkek", "spacing_minutes": 18, "watermark_check": False},
             "apartment_scheduler": "disabled",
         }
         assert (await client.post("/run")).status_code == 401

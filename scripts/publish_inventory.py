@@ -13,7 +13,7 @@ from app.lalafo.client import LalafoClient, LalafoError, LalafoNotFound
 from app.lalafo.parser import LalafoParseError, is_allowed
 from app.payments.repository import ApartmentRepository
 from app.security import TokenSigner
-from app.telegram.photo_quality import WatermarkedPhotos, PhotoInspectionError
+from app.lalafo.exclusions import is_excluded_agency
 from app.telegram.publisher import TelegramPublishError, TelegramPublisher
 from app.telegram.formatting import is_supported_source
 from scripts.scrape_publish import (
@@ -34,6 +34,8 @@ STORED_FALLBACK_MAX_AGE_HOURS = 48
 def _valid(ad, settings) -> tuple[bool, str]:
     if not is_supported_source(ad):
         return False, "unsupported_source"
+    if is_excluded_agency(ad):
+        return False, "excluded_agency"
     allowed, reason = is_allowed(
         ad,
         city=settings.city,
@@ -195,21 +197,6 @@ async def run(
             )
             return 1
         logger.info("Published queued apartment id=%s", apartment.lalafo_id)
-        return 0
-    except WatermarkedPhotos:
-        return await _skip_and_continue(
-            inventory=inventory, item_id=item.id, engine=engine,
-            error="watermarked_photos", eligible_until=eligible_until,
-            remaining_skips=_remaining_skips,
-        )
-    except PhotoInspectionError:
-        if item.attempts >= 3:
-            return await _skip_and_continue(
-                inventory=inventory, item_id=item.id, engine=engine,
-                error="photo_inspection_failed", eligible_until=eligible_until,
-                remaining_skips=_remaining_skips,
-            )
-        await inventory.retry_item(item.id, error="photo_inspection_failed", delay_minutes=3)
         return 0
     except TelegramPublishError as exc:
         logger.warning("Queued publication will retry: %s", type(exc).__name__)

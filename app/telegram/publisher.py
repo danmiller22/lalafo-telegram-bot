@@ -12,7 +12,7 @@ from app.security import TokenSigner
 from app.telegram.formatting import format_public_apartment, is_supported_source
 from app.telegram.keyboards import apartment_keyboard
 
-from app.telegram.photo_quality import check_photo_watermarks
+from app.lalafo.exclusions import is_excluded_agency
 
 logger = logging.getLogger(__name__)
 TELEGRAM_ALBUM_LIMIT = 10
@@ -77,10 +77,11 @@ class TelegramPublisher:
     async def publish(self, apartment_id: int, ad: LalafoAd) -> Message:
         if not is_supported_source(ad):
             raise TelegramPublishError("Unsupported apartment source")
+        if is_excluded_agency(ad):
+            raise TelegramPublishError("Excluded agency source")
         urls = list(dict.fromkeys(ad.photo_urls))
         if not urls:
             raise TelegramPublishError("Apartment has no photos")
-        await check_photo_watermarks(urls)
         album_messages: list[Message] = []
         for offset in range(0, len(urls), TELEGRAM_ALBUM_LIMIT):
             chunk = urls[offset : offset + TELEGRAM_ALBUM_LIMIT]

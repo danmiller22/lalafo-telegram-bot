@@ -19,7 +19,7 @@ from app.config import (
     get_settings,
 )
 from app.lalafo.client import LalafoClient, LalafoError, LalafoNotFound
-from app.lalafo.exclusions import is_permanently_excluded
+from app.lalafo.exclusions import is_permanently_excluded, is_excluded_agency
 from app.lalafo.models import LalafoAd, SearchAd
 from app.lalafo.parser import LalafoParseError, is_allowed
 from app.lalafo.phone import mask_phone
@@ -345,7 +345,9 @@ def minimum_price_for_rooms(rooms: str) -> int:
 
 
 def is_substandard_structure(ad: LalafoAd) -> bool:
-    """Reject containers, temporary housing and apartment-like barracks."""
+    """Reject excluded agencies, containers and temporary housing."""
+    if is_excluded_agency(ad):
+        return True
     text = re.sub(
         r"[^\w]+",
         " ",

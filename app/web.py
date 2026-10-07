@@ -1313,7 +1313,7 @@ async def health() -> JSONResponse:
                 else "recovering" if settings.run_bot else "disabled"
             ),
             "lalafo_auto_reply": auto_reply,
-            "publication_policy": {"daily_target": 70, "start": "05:00", "end": "02:00", "timezone": "Asia/Bishkek", "spacing_minutes": 18, "watermark_check": True},
+            "publication_policy": {"daily_target": 70, "start": "05:00", "end": "02:00", "timezone": "Asia/Bishkek", "spacing_minutes": 18, "watermark_check": False},
             "apartment_scheduler": (
                 {
                     "state": "running" if scheduler_running else "recovering",

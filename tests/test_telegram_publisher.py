@@ -10,11 +10,6 @@ from app.security import TokenSigner
 from app.telegram.publisher import TelegramPublishError, TelegramPublisher
 
 
-@pytest.fixture(autouse=True)
-def inspect_test_photos(monkeypatch):
-    monkeypatch.setattr("app.telegram.publisher.check_photo_watermarks", AsyncMock())
-
-
 def make_ad() -> LalafoAd:
     return LalafoAd(
         lalafo_id=123,
@@ -197,3 +192,33 @@ async def test_public_card_sends_every_photo_across_multiple_albums() -> None:
     ]
     assert sent_urls == ad.photo_urls
     bot.send_photo.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("marker", ["https://www.salut.kg", "Агентство Салют", "SALUT.KG"])
+async def test_salut_source_is_blocked_before_sending_photos(marker):
+    from scripts.scrape_publish import is_substandard_structure
+
+    bot = SimpleNamespace(send_photo=AsyncMock(), send_media_group=AsyncMock(), send_message=AsyncMock())
+    publisher = TelegramPublisher(bot, chat_id=-1001, signer=TokenSigner("s" * 32), bot_username="testbot", support_url="https://t.me/support")
+    ad = make_ad().model_copy(update={"source_description": marker})
+    assert is_substandard_structure(ad)
+    with pytest.raises(TelegramPublishError, match="Excluded agency"):
+        await publisher.publish(77, ad)
+    bot.send_media_group.assert_not_awaited()
+    bot.send_photo.assert_not_awaited()
+    bot.send_message.assert_not_awaited()
+
+
+def test_other_lalafo_realtors_remain_allowed():
+    from app.lalafo.exclusions import is_excluded_agency
+
+    ad = make_ad().model_copy(update={"seller_type": "realtor", "source_description": "Агентство недвижимости. Сдается квартира."})
+    assert not is_excluded_agency(ad)
+
+
+def test_salut_source_parameters_are_excluded():
+    from app.lalafo.exclusions import is_excluded_agency
+
+    ad = make_ad().model_copy(update={"source_params": [{"name": "Агентство", "value": "Салют"}]})
+    assert is_excluded_agency(ad)
