@@ -19,6 +19,7 @@ def is_watermark_text(text: str) -> bool:
     compact = re.sub(r'[^a-zа-я0-9.]', '', text.casefold())
     return bool(
         'salut' in compact or 'салют' in compact
+        or re.search(r's[ae][lr]{1,2}[uv][lt]{0,2}\.?k[gc]', compact)
         or re.search(r'(?:www\.|[a-z0-9-]+\.(?:kg|com|ru)\b)', compact)
     )
 
@@ -47,10 +48,21 @@ def has_watermark(data: bytes) -> bool:
     from tesserocr import PyTessBaseAPI, PSM
     with Image.open(BytesIO(data)) as original:
         image = ImageOps.exif_transpose(original).convert('L')
-        image.thumbnail((1400, 1400))
+        image.thumbnail((1600, 1600))
         with PyTessBaseAPI(path=str(_ocr_data_dir()), lang="eng", psm=PSM.SPARSE_TEXT) as api:
             for candidate in (ImageOps.autocontrast(image), image.point(lambda value: 255 if value >= 185 else 0)):
                 api.SetImage(candidate)
+                if is_watermark_text(api.GetUTF8Text()):
+                    return True
+            # Large translucent watermarks are easily lost among furniture
+            # textures. Inspect overlapping horizontal strips as single lines.
+            api.SetPageSegMode(PSM.SINGLE_LINE)
+            api.SetVariable("tessedit_char_whitelist", "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.")
+            band_height = max(50, round(image.width * 0.127))
+            step = max(3, round(image.width * 0.006))
+            for top in range(round(image.height * 0.25), round(image.height * 0.75), step):
+                band = image.crop((0, top, image.width, min(image.height, top + band_height)))
+                api.SetImage(ImageOps.autocontrast(band))
                 if is_watermark_text(api.GetUTF8Text()):
                     return True
     return False
