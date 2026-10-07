@@ -249,14 +249,16 @@ def apartment_to_ad(apartment) -> LalafoAd:
 async def fetch_detail_batch(
     search_ads: list[SearchAd],
     clients: list[LalafoClient],
+    *,
+    cache: dict[int, LalafoAd | None] | None = None,
 ) -> list[tuple[SearchAd, LalafoAd | None]]:
     """Fetch each unique detail once without sharing a rotating HTTP client."""
     unique_search_ads = list(
         {search_ad.lalafo_id: search_ad for search_ad in search_ads}.values()
     )
-    chunks = [
-        unique_search_ads[index :: len(clients)] for index in range(len(clients))
-    ]
+    cache = {} if cache is None else cache
+    pending = [ad for ad in unique_search_ads if ad.lalafo_id not in cache]
+    chunks = [pending[index :: len(clients)] for index in range(len(clients))]
 
     async def worker(client: LalafoClient, items):
         results = []
@@ -274,17 +276,13 @@ async def fetch_detail_batch(
                 )
                 ad = None
             results.append((search_ad, ad))
+            cache[search_ad.lalafo_id] = ad
         return results
 
-    batches = await asyncio.gather(
+    await asyncio.gather(
         *(worker(client, chunk) for client, chunk in zip(clients, chunks) if chunk)
     )
-    by_id = {
-        search_ad.lalafo_id: (search_ad, ad)
-        for batch in batches
-        for search_ad, ad in batch
-    }
-    return [by_id[search_ad.lalafo_id] for search_ad in unique_search_ads]
+    return [(ad, cache[ad.lalafo_id]) for ad in unique_search_ads]
 
 
 def is_preferred_district(district: str | None) -> bool:
@@ -630,6 +628,8 @@ async def run(
     *,
     discovery_only: bool = False,
     candidate_pool_limit_override: int | None = None,
+    include_telegram_sources: bool = True,
+    discovery_stats: dict[str, int] | None = None,
 ) -> int:
     settings = get_settings()
     logging.basicConfig(
@@ -660,6 +660,7 @@ async def run(
     repost_candidate_ids: set[int] = set()
     repost_last_published_at: dict[int, datetime] = {}
     direct_priority_count = 0
+    detail_cache: dict[int, LalafoAd | None] = {}
 
     engine = None
     apartments = None
@@ -923,7 +924,7 @@ async def run(
                 )
 
         telegram_ads = await fetch_telegram_apartments(
-            settings.telegram_source_channels,
+            settings.telegram_source_channels if include_telegram_sources else (),
             timeout=settings.http_timeout_seconds,
         )
         if telegram_ads:
@@ -973,7 +974,7 @@ async def run(
             )
 
         telegram_urls = await fetch_lalafo_urls(
-            settings.telegram_source_channels, timeout=settings.http_timeout_seconds
+            settings.telegram_source_channels if include_telegram_sources else (), timeout=settings.http_timeout_seconds
         )
         for telegram_url in telegram_urls:
             match = re.search(r"-id-(\d+)", telegram_url)
@@ -1062,6 +1063,9 @@ async def run(
                 return 2 if discovery_only else 0
             if page_number == 1:
                 logger.info("Lalafo source search found %d advertisements", page.total)
+            if discovery_stats is not None:
+                discovery_stats["search_pages"] = discovery_stats.get("search_pages", 0) + 1
+                discovery_stats["search_results"] = discovery_stats.get("search_results", 0) + len(page.items)
             if not page.items:
                 search_index += 1
                 if search_index >= len(search_urls):
@@ -1113,7 +1117,7 @@ async def run(
                     continue
                 detail_search_ads.append(search_ad)
 
-            details = await fetch_detail_batch(detail_search_ads, detail_clients)
+            details = await fetch_detail_batch(detail_search_ads, detail_clients, cache=detail_cache)
             parsed_ads = [ad for _, ad in details if ad is not None]
             duplicate_ids = (
                 await apartments.duplicate_candidate_ids(parsed_ads)
@@ -1211,6 +1215,8 @@ async def run(
         from app.inventory import InventoryRepository
 
         inventory_candidates = deduplicate_candidates(candidates)[:240]
+        if discovery_stats is not None:
+            discovery_stats["stored"] = len(inventory_candidates)
         if (
             settings.lalafo_relay_url.strip()
             and settings.lalafo_relay_secret.strip()

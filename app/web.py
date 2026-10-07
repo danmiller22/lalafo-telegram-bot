@@ -5,6 +5,7 @@ import logging
 import os
 import secrets
 import inspect
+import json
 import sys
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
@@ -62,6 +63,7 @@ _lalafo_watchdog_task: asyncio.Task[None] | None = None
 _lalafo_restart_lock = asyncio.Lock()
 _apartment_scheduler_task: asyncio.Task[None] | None = None
 _telegram_inventory_state: dict[str, Any] = {"state": "pending", "last_check_at": None, "last_exit_code": None, "last_error": None}
+_lalafo_inventory_state: dict[str, Any] = {"state": "pending", "last_check_at": None, "last_exit_code": None, "last_error": None, "last_result": None}
 _service_keepalive_task: asyncio.Task[None] | None = None
 _background_watchdog_task: asyncio.Task[None] | None = None
 _matching_worker_task: asyncio.Task[None] | None = None
@@ -458,13 +460,16 @@ async def _select_hosted_lalafo_proxies() -> None:
 
 
 async def _run_inventory_worker_process(
-    settings: Any, *, module: str = "scripts.publish_inventory_batch"
+    settings: Any, *, module: str = "scripts.publish_inventory_batch",
+    report_state: dict[str, Any] | None = None,
 ) -> int:
     env = os.environ.copy()
     env["LALAFO_PROXY_URL"] = settings.lalafo_proxy_url
     process_options: dict[str, Any] = {}
     if os.name != "nt":
         process_options["preexec_fn"] = lambda: os.nice(15)
+    if report_state is not None:
+        process_options["stdout"] = asyncio.subprocess.PIPE
     process = await asyncio.create_subprocess_exec(
         sys.executable,
         "-m",
@@ -473,6 +478,17 @@ async def _run_inventory_worker_process(
         **process_options,
     )
     try:
+        if report_state is not None:
+            assert process.stdout is not None
+            async for line in process.stdout:
+                message = line.decode("utf-8", errors="replace").strip()
+                if message.startswith("LALAFO_COLLECTION_RESULT "):
+                    try:
+                        result = json.loads(message.split(" ", 1)[1])
+                        if isinstance(result, dict):
+                            report_state["last_result"] = result
+                    except ValueError:
+                        logger.warning("Invalid inventory worker result")
         return await process.wait()
     except asyncio.CancelledError:
         if process.returncode is None:
@@ -721,6 +737,30 @@ async def _run_telegram_inventory_collector() -> None:
         _telegram_inventory_state["state"] = "stopped"
 
 
+async def _run_lalafo_inventory_collector() -> None:
+    """Maintain the primary source even when GitHub scheduled runs are late."""
+    try:
+        while True:
+            _lalafo_inventory_state.update(state="collecting", last_check_at=_now(), last_error=None)
+            try:
+                code = await _run_inventory_worker_process(
+                    get_settings(), module="scripts.collect_lalafo_inventory",
+                    report_state=_lalafo_inventory_state,
+                )
+                _lalafo_inventory_state.update(
+                    state="waiting", last_exit_code=code,
+                    last_error=None if code == 0 else "LalafoCollectionFailed",
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                _lalafo_inventory_state.update(state="retrying", last_error=type(exc).__name__)
+                logger.exception("Primary Lalafo collection failed; retrying")
+            await asyncio.sleep(300)
+    finally:
+        _lalafo_inventory_state["state"] = "stopped"
+
+
 async def _run_hosted_apartment_scheduler() -> None:
     from app.inventory import DISCOVERY_RETRY_MINUTES, MIN_HEALTHY_PERIOD_QUEUE
 
@@ -733,6 +773,9 @@ async def _run_hosted_apartment_scheduler() -> None:
     next_refill_at = datetime.now(UTC) + timedelta(minutes=DISCOVERY_RETRY_MINUTES)
     telegram_collector = asyncio.create_task(
         _run_telegram_inventory_collector(), name="telegram-inventory-collector"
+    )
+    lalafo_collector = asyncio.create_task(
+        _run_lalafo_inventory_collector(), name="lalafo-inventory-collector"
     )
     try:
         while True:
@@ -759,9 +802,9 @@ async def _run_hosted_apartment_scheduler() -> None:
                 logger.exception("Hosted queue dispatcher recovered from a crash")
             await asyncio.sleep(check_seconds)
     finally:
-        telegram_collector.cancel()
-        with suppress(asyncio.CancelledError):
-            await telegram_collector
+        for collector in (telegram_collector, lalafo_collector):
+            collector.cancel()
+        await asyncio.gather(telegram_collector, lalafo_collector, return_exceptions=True)
 
 
 def _task_stopped(task: asyncio.Task[None] | None) -> bool:
@@ -1225,6 +1268,8 @@ async def health() -> JSONResponse:
                 else "stopped" if settings.run_bot else "disabled"
             ),
             "telegram_inventory": (dict(_telegram_inventory_state)
+                if settings.run_bot and settings.hosted_apartment_scheduler_enabled else "disabled"),
+            "lalafo_inventory": (dict(_lalafo_inventory_state)
                 if settings.run_bot and settings.hosted_apartment_scheduler_enabled else "disabled"),
             "listing_validity_days": MAX_LISTING_AGE_DAYS,
             "payment_receipt_required": False,

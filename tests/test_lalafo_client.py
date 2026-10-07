@@ -175,6 +175,25 @@ async def test_detail_falls_back_to_api_when_browser_is_blocked():
 
 
 @pytest.mark.asyncio
+async def test_blocked_browser_is_not_retried_for_every_card():
+    client = LalafoClient()
+    client._get_text = AsyncMock(side_effect=LalafoAccessError("HTTP 403"))
+    client._get_json = AsyncMock(side_effect=[
+        detail_payload(77701377, "+996554252534"),
+        detail_payload(77701378, "+996555111222"),
+    ])
+    try:
+        first = await client.detail("https://lalafo.kg/bishkek/ads/example-id-77701377")
+        second = await client.detail("https://lalafo.kg/bishkek/ads/example-id-77701378")
+    finally:
+        await client.close()
+    client._get_text.assert_awaited_once()
+    assert first.lalafo_id == 77701377
+    assert second.lalafo_id == 77701378
+    assert second.phone == "+996555111222"
+
+
+@pytest.mark.asyncio
 async def test_detail_api_fallback_rejects_mismatched_id():
     client = LalafoClient()
     client._get_text = AsyncMock(side_effect=LalafoAccessError("HTTP 403"))

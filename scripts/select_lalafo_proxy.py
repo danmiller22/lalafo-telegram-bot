@@ -41,7 +41,7 @@ HEADERS = {
 # Keep several independently verified routes. Lalafo can accept the probe and
 # then rate-limit that IP on the real multi-page search; LalafoClient rotates
 # this comma-separated pool on 403/429 and transport failures.
-TARGET_PROXY_COUNT = 1
+TARGET_PROXY_COUNT = 3
 
 
 async def _works(proxy_url: str) -> str | None:
@@ -76,7 +76,7 @@ async def _works(proxy_url: str) -> str | None:
                 if detail.status_code != 200:
                     return None
                 detail_payload = detail.json()
-                if not isinstance(detail_payload, dict):
+                if not isinstance(detail_payload, dict) or str(detail_payload.get("id")) != match.group(1):
                     return None
             return proxy_url
     except (httpx.HTTPError, json.JSONDecodeError, ValueError):
@@ -104,7 +104,8 @@ async def find_working_proxies() -> list[str]:
     selected: list[str] = []
     tasks = [asyncio.create_task(_works(proxy)) for proxy in proxies]
     try:
-        for task in asyncio.as_completed(tasks, timeout=6.0):
+        # A route must complete both search and detail probes (up to 4s each).
+        for task in asyncio.as_completed(tasks, timeout=10.0):
             result = await task
             if result:
                 selected.append(result)

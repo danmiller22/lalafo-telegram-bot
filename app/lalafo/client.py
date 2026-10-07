@@ -49,6 +49,7 @@ class LalafoClient:
             if value.strip()
         ]
         self._proxy_index = 0
+        self._browser_blocked = False
         self._headers = {
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -320,8 +321,13 @@ class LalafoClient:
         # with HTTP 403, so retain the JSON detail endpoint as a strict-ID
         # fallback; _get_json can also use the HTTPS relay.
         try:
+            if self._browser_blocked:
+                raise LalafoAccessError("Browser route was blocked earlier in this cycle")
             html = await self._get_text(detail_url)
             ad = parse_detail_page(html, source_url=detail_url)
+        except LalafoAccessError as exc:
+            self._browser_blocked = True
+            logger.info("Lalafo browser route blocked; using public detail API: %s", exc)
         except (LalafoError, LalafoParseError) as exc:
             logger.info("Lalafo browser detail page unavailable; trying API: %s", exc)
         else:

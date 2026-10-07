@@ -27,3 +27,29 @@ async def test_detail_batch_fetches_duplicate_search_ids_once():
 
     assert client.calls == ["https://example.test/101", "https://example.test/102"]
     assert [search_ad.lalafo_id for search_ad, _ in details] == [101, 102]
+
+
+@pytest.mark.asyncio
+async def test_detail_cache_avoids_repeat_requests_across_sources_but_refreshes_next_cycle():
+    client = DetailClientStub()
+    ad = SearchAd(lalafo_id=101, detail_url="https://example.test/101")
+    cache = {}
+    first = await fetch_detail_batch([ad], [client], cache=cache)
+    second = await fetch_detail_batch([ad], [client], cache=cache)
+    assert first == second
+    assert len(client.calls) == 1
+    await fetch_detail_batch([ad], [client], cache={})
+    assert len(client.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_detail_cache_does_not_repeat_hidden_phone_requests():
+    from unittest.mock import AsyncMock
+    from app.lalafo.parser import LalafoParseError
+    client = DetailClientStub()
+    client.detail = AsyncMock(side_effect=LalafoParseError("Advertisement owner hides the phone number"))
+    ad = SearchAd(lalafo_id=101, detail_url="https://example.test/101")
+    cache = {}
+    assert (await fetch_detail_batch([ad], [client], cache=cache))[0][1] is None
+    assert (await fetch_detail_batch([ad], [client], cache=cache))[0][1] is None
+    client.detail.assert_awaited_once()

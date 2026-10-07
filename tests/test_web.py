@@ -94,6 +94,7 @@ def configure(monkeypatch: pytest.MonkeyPatch) -> None:
     web._lalafo_auto_responder = None
     web._lalafo_watchdog_task = None
     web._telegram_inventory_state.update(state="pending", last_check_at=None, last_exit_code=None, last_error=None)
+    web._lalafo_inventory_state.update(state="pending", last_check_at=None, last_exit_code=None, last_error=None, last_result=None)
     web._apartment_scheduler_task = None
     web._service_keepalive_task = None
     web._background_watchdog_task = None
@@ -149,6 +150,7 @@ async def test_health_and_authentication() -> None:
         "contact_tariff": {"plan": "week", "price": 499, "expires": True, "storage": "persistent_ledger"},
         "payment_review": "admin_missing",
             "telegram_inventory": "disabled",
+            "lalafo_inventory": "disabled",
             "telegram_setup": "disabled",
             "lalafo_link_bot": "disabled",
             "free_cloud_keepalive": "disabled",
@@ -906,3 +908,17 @@ async def test_independent_telegram_worker_uses_telegram_only_module(monkeypatch
     assert worker.await_args.kwargs["module"] == "scripts.collect_telegram_inventory"
     assert web._telegram_inventory_state["last_exit_code"] == 0
     assert web._telegram_inventory_state["state"] == "stopped"
+
+
+@pytest.mark.asyncio
+async def test_primary_lalafo_worker_retries_failure_and_reports_separately(monkeypatch):
+    worker = AsyncMock(return_value=2)
+    monkeypatch.setattr(web, "_run_inventory_worker_process", worker)
+    monkeypatch.setattr(web.asyncio, "sleep", AsyncMock(side_effect=asyncio.CancelledError))
+    with pytest.raises(asyncio.CancelledError):
+        await web._run_lalafo_inventory_collector()
+    assert worker.await_args.kwargs["module"] == "scripts.collect_lalafo_inventory"
+    assert worker.await_args.kwargs["report_state"] is web._lalafo_inventory_state
+    assert web._lalafo_inventory_state["last_exit_code"] == 2
+    assert web._lalafo_inventory_state["last_error"] == "LalafoCollectionFailed"
+    assert web._lalafo_inventory_state["state"] == "stopped"
