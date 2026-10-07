@@ -10,6 +10,11 @@ from app.security import TokenSigner
 from app.telegram.publisher import TelegramPublishError, TelegramPublisher
 
 
+@pytest.fixture(autouse=True)
+def inspect_test_photos(monkeypatch):
+    monkeypatch.setattr("app.telegram.publisher.check_photo_watermarks", AsyncMock())
+
+
 def make_ad() -> LalafoAd:
     return LalafoAd(
         lalafo_id=123,

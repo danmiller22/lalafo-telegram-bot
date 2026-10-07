@@ -6,7 +6,7 @@ import math
 import random
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import delete, func, select, text, update
+from sqlalchemy import delete, func, or_, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -24,8 +24,8 @@ BISHKEK = ZoneInfo("Asia/Bishkek")
 ALLOWED_ROOMS = frozenset({"studio", "1"})
 CENTRAL_DAILY_SHARE = 0.50
 REALTOR_DAILY_SHARE = 0.70
-MIN_PUBLICATIONS_PER_DAY = 96
-MAX_PUBLICATIONS_PER_DAY = 96
+MIN_PUBLICATIONS_PER_DAY = 70
+MAX_PUBLICATIONS_PER_DAY = 70
 # The daily target is chosen once per Bishkek date, then split across the two
 # discovery periods so retries cannot increase the day's publication volume.
 # Aim for 70% realtors and 30% owners. Either category fills
@@ -42,14 +42,14 @@ MAX_FRESH_STOCK_LOAD = 600
 # Telegram reserve sources recover the queue on the next cloud tick.
 DISCOVERY_RETRY_MINUTES = 3
 MIN_HEALTHY_PERIOD_QUEUE = 12
-# Scheduling a small stock densely is separate from filling the 48-card plan.
+# Scheduling a small stock densely is separate from filling the 35-card plan.
 DISCOVERY_PERIOD_TARGET = (MAX_PUBLICATIONS_PER_DAY + 1) // 2
-PUBLICATION_SPACING_MINUTES = 15
+PUBLICATION_SPACING_MINUTES = 18
+# Allow one minute of dispatcher jitter without losing the final daily slot.
+MIN_PUBLICATION_GAP_MINUTES = 17
 INVENTORY_CLAIM_LOCK_ID = 731_290_512
-# Eight launches in each 12-hour discovery period. Six cards per launch at
-# 15-minute spacing produce a steady average of four publications per hour.
-MORNING_BATCH_MINUTES = tuple(range(0, 12 * 60, 90))
-EVENING_BATCH_MINUTES = tuple(range(12 * 60, 24 * 60, 90))
+# Two equal 10.5-hour periods cover 05:00 through 02:00 the next day.
+PUBLICATION_PERIOD_MINUTES = 630
 
 
 def as_utc(value: datetime) -> datetime:
@@ -58,18 +58,35 @@ def as_utc(value: datetime) -> datetime:
     return value.astimezone(timezone.utc)
 
 
+def publication_day_start(now: datetime) -> datetime:
+    local = now.astimezone(BISHKEK)
+    start = local.replace(hour=5, minute=0, second=0, microsecond=0)
+    if local < start:
+        start -= timedelta(days=1)
+    return start
+
+
+def publication_window_open(now: datetime) -> bool:
+    local = now.astimezone(BISHKEK)
+    return local.hour < 2 or local.hour >= 5
+
+
 def discovery_period_start(now: datetime | None = None) -> datetime:
     local = (now or datetime.now(timezone.utc)).astimezone(BISHKEK)
-    hour = 0 if local.hour < 12 else 12
-    return local.replace(hour=hour, minute=0, second=0, microsecond=0)
+    if 2 <= local.hour < 5:
+        # Collect tomorrow's morning stock during the quiet hours.
+        return local.replace(hour=5, minute=0, second=0, microsecond=0)
+    start = publication_day_start(local)
+    second = start + timedelta(minutes=PUBLICATION_PERIOD_MINUTES)
+    return start if local < second else second
 
 
 def discovery_period_key(now: datetime | None = None) -> str:
-    return discovery_period_start(now).strftime("%Y-%m-%dT%H:00+06")
+    return discovery_period_start(now).strftime("%Y-%m-%dT%H:%M+06")
 
 
 def daily_publication_target(period_start: datetime) -> int:
-    """Return the fixed four-per-hour daily target for one Bishkek date."""
+    """Return the fixed daily publication target for one Bishkek date."""
     del period_start
     return MAX_PUBLICATIONS_PER_DAY
 
@@ -85,7 +102,7 @@ def period_publication_targets(period_start: datetime) -> tuple[int, int]:
     first_count = (daily_total + 1) // 2
     first_central = round(first_count * CENTRAL_DAILY_SHARE)
     daily_central = round(daily_total * CENTRAL_DAILY_SHARE)
-    if period_start.astimezone(BISHKEK).hour == 0:
+    if period_start.astimezone(BISHKEK).hour == 5:
         return first_count, first_central
     return daily_total - first_count, daily_central - first_central
 
@@ -94,7 +111,7 @@ def period_realtor_target(period_start: datetime) -> int:
     """Split the daily 70% realtor target across the two periods."""
     daily_target = daily_realtor_target(period_start)
     first_target = (daily_target + 1) // 2
-    if period_start.astimezone(BISHKEK).hour == 0:
+    if period_start.astimezone(BISHKEK).hour == 5:
         return first_target
     return daily_target - first_target
 
@@ -105,36 +122,12 @@ def randomized_period_times(
     count: int,
     rng: random.Random,
 ) -> list[datetime]:
-    """Use 15-minute spacing; spread healthy stock across 90-minute launches."""
-    if count <= 0:
-        return []
-    if count < MIN_HEALTHY_PERIOD_QUEUE:
-        return [(period_start + timedelta(minutes=PUBLICATION_SPACING_MINUTES * index)).astimezone(timezone.utc)
-                for index in range(count)]
-    local_day = period_start.astimezone(BISHKEK).replace(
-        hour=0, minute=0, second=0, microsecond=0
-    )
-    batch_minutes = (
-        MORNING_BATCH_MINUTES
-        if period_start.astimezone(BISHKEK).hour == 0
-        else EVENING_BATCH_MINUTES
-    )
-    batch_sizes = [count // len(batch_minutes)] * len(batch_minutes)
-    extra_batches = list(range(len(batch_minutes)))
-    rng.shuffle(extra_batches)
-    for index in extra_batches[: count % len(batch_minutes)]:
-        batch_sizes[index] += 1
-
-    result: list[datetime] = []
-    for minute, batch_size in zip(batch_minutes, batch_sizes):
-        batch_start = local_day + timedelta(minutes=minute)
-        result.extend(
-            (
-                batch_start + timedelta(minutes=PUBLICATION_SPACING_MINUTES * offset)
-            ).astimezone(timezone.utc)
-            for offset in range(batch_size)
-        )
-    return result
+    """Schedule steadily through one half of the publication window."""
+    del rng
+    return [
+        (period_start + timedelta(minutes=PUBLICATION_SPACING_MINUTES * index)).astimezone(timezone.utc)
+        for index in range(max(0, min(count, DISCOVERY_PERIOD_TARGET)))
+    ]
 
 
 def is_central(district: str | None) -> bool:
@@ -386,7 +379,7 @@ class InventoryRepository:
 
     async def reset_publication_history_for_code(self, code_version: str) -> bool:
         """Rebuild the queue once per deployment without erasing repost history."""
-        version = code_version.strip() or "realtor-70-dense-thin-stock-v4"
+        version = code_version.strip() or "publication-70-05-to-02-v5"
         key = "apartment_publication_code_version"
         async with self.sessions.begin() as session:
             marker = await session.get(LalafoAutoReplyMeta, key)
@@ -422,7 +415,7 @@ class InventoryRepository:
     async def claim_discovery(self, *, now: datetime, force: bool = False) -> str | None:
         key = discovery_period_key(now)
         period_start = discovery_period_start(now).astimezone(timezone.utc)
-        period_end = period_start + timedelta(hours=12)
+        period_end = period_start + timedelta(minutes=PUBLICATION_PERIOD_MINUTES)
         window_prefix = discovery_period_start(now).strftime("%Y%m%dT%H") + "-%"
         lease_until = as_utc(now) + timedelta(hours=2)
         try:
@@ -553,7 +546,7 @@ class InventoryRepository:
                 select(func.count()).select_from(Apartment).where(
                     Apartment.publication_status == "published",
                     Apartment.published_at >= start,
-                    Apartment.published_at < start + timedelta(hours=12),
+                    Apartment.published_at < start + timedelta(minutes=PUBLICATION_PERIOD_MINUTES),
                 )
             ) or 0)
 
@@ -561,9 +554,9 @@ class InventoryRepository:
         now = as_utc(now or datetime.now(timezone.utc))
         period = discovery_period_start(now)
         period_start = period.astimezone(timezone.utc)
-        period_end = period_start + timedelta(hours=12)
+        period_end = period_start + timedelta(minutes=PUBLICATION_PERIOD_MINUTES)
         period_window_key = f"{period.strftime('%Y%m%dT%H')}-two-hour-batches"
-        day_start_local = period.astimezone(BISHKEK).replace(hour=0)
+        day_start_local = publication_day_start(period)
         day_start = day_start_local.astimezone(timezone.utc)
         day_end = (day_start_local + timedelta(days=1)).astimezone(timezone.utc)
         async with self.sessions.begin() as session:
@@ -671,12 +664,12 @@ class InventoryRepository:
                 0, realtor_daily_target - already_non_owners
             )
             active_queue_ids = select(ApartmentInventoryQueue.apartment_id).where(
-                ApartmentInventoryQueue.status.in_(("queued", "publishing"))
+                or_(ApartmentInventoryQueue.status.in_(("queued", "publishing")), ApartmentInventoryQueue.last_error == "watermarked_photos")
             )
             queued_fingerprints = select(Apartment.fingerprint).join(
                 ApartmentInventoryQueue,
                 ApartmentInventoryQueue.apartment_id == Apartment.id,
-            ).where(ApartmentInventoryQueue.status.in_(("queued", "publishing")))
+            ).where(or_(ApartmentInventoryQueue.status.in_(("queued", "publishing")), ApartmentInventoryQueue.last_error == "watermarked_photos"))
             fresh_stock = await _balanced_stock(
                 session,
                 select(Apartment).where(
@@ -747,17 +740,19 @@ class InventoryRepository:
                 repeat_apartment_ids={item.id for item in repeat_stock},
                 rng=chooser,
             )
-            if planned and planned[0].scheduled_at < now + timedelta(minutes=2):
-                shift = now - timedelta(seconds=1) - planned[0].scheduled_at
-                planned = [
-                    PlannedApartment(
-                        apartment=item.apartment,
-                        scheduled_at=item.scheduled_at + shift,
-                        window_key=item.window_key,
-                        sequence=item.sequence,
-                    )
-                    for item in planned
-                ]
+            # A late refill uses only the remaining slots, never shifts cards
+            # into the quiet hours or the following discovery period.
+            first_slot = max(period_start, now - timedelta(seconds=1))
+            planned = [
+                PlannedApartment(
+                    apartment=item.apartment,
+                    scheduled_at=first_slot + timedelta(minutes=PUBLICATION_SPACING_MINUTES * index),
+                    window_key=item.window_key,
+                    sequence=item.sequence,
+                )
+                for index, item in enumerate(planned)
+                if first_slot + timedelta(minutes=PUBLICATION_SPACING_MINUTES * index) < period_end
+            ]
             planned_ids = [item.apartment.id for item in planned]
             existing_rows = {
                 row.apartment_id: row
@@ -802,8 +797,11 @@ class InventoryRepository:
         eligible_until = as_utc(eligible_until or now)
         stale = now - timedelta(minutes=20)
         local = now.astimezone(BISHKEK)
-        day_start = local.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
-        day_end = (local.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)).astimezone(timezone.utc)
+        if not publication_window_open(now):
+            return None
+        day_start_local = publication_day_start(now)
+        day_start = day_start_local.astimezone(timezone.utc)
+        day_end = (day_start_local + timedelta(days=1)).astimezone(timezone.utc)
         async with self.sessions.begin() as session:
             if session.bind is not None and session.bind.dialect.name == "postgresql":
                 await session.execute(
@@ -869,7 +867,7 @@ class InventoryRepository:
                 if value is not None
             ]
             if publication_times and max(publication_times) > now - timedelta(
-                minutes=PUBLICATION_SPACING_MINUTES
+                minutes=MIN_PUBLICATION_GAP_MINUTES
             ):
                 return None
             published_today = int(
