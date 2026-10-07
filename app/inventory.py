@@ -42,6 +42,8 @@ MAX_FRESH_STOCK_LOAD = 600
 # Telegram reserve sources recover the queue on the next cloud tick.
 DISCOVERY_RETRY_MINUTES = 3
 MIN_HEALTHY_PERIOD_QUEUE = 12
+# Scheduling a small stock densely is separate from filling the 48-card plan.
+DISCOVERY_PERIOD_TARGET = (MAX_PUBLICATIONS_PER_DAY + 1) // 2
 PUBLICATION_SPACING_MINUTES = 15
 INVENTORY_CLAIM_LOCK_ID = 731_290_512
 # Eight launches in each 12-hour discovery period. Six cards per launch at
@@ -419,6 +421,9 @@ class InventoryRepository:
 
     async def claim_discovery(self, *, now: datetime, force: bool = False) -> str | None:
         key = discovery_period_key(now)
+        period_start = discovery_period_start(now).astimezone(timezone.utc)
+        period_end = period_start + timedelta(hours=12)
+        window_prefix = discovery_period_start(now).strftime("%Y%m%dT%H") + "-%"
         lease_until = as_utc(now) + timedelta(hours=2)
         try:
             async with self.sessions.begin() as session:
@@ -470,16 +475,20 @@ class InventoryRepository:
                         .where(
                             ApartmentInventoryQueue.status.in_(
                                 ("queued", "publishing")
-                            )
+                            ),
+                            ApartmentInventoryQueue.window_key.like(window_prefix),
                         )
                     )
                     or 0
                 )
-                if (
-                    not force
-                    and row.status == "succeeded"
-                    and live_queue_count >= MIN_HEALTHY_PERIOD_QUEUE
-                ):
+                published_count = int(await session.scalar(
+                    select(func.count()).select_from(Apartment).where(
+                        Apartment.publication_status == "published",
+                        Apartment.published_at >= period_start,
+                        Apartment.published_at < period_end,
+                    )
+                ) or 0)
+                if (not force and live_queue_count + published_count >= DISCOVERY_PERIOD_TARGET):
                     return None
                 completed = as_utc(row.completed_at) if row.completed_at else None
                 if (
@@ -536,6 +545,17 @@ class InventoryRepository:
                 or 0
             )
             return discovered, queued
+
+    async def period_published_count(self, *, now: datetime | None = None) -> int:
+        start = discovery_period_start(now).astimezone(timezone.utc)
+        async with self.sessions() as session:
+            return int(await session.scalar(
+                select(func.count()).select_from(Apartment).where(
+                    Apartment.publication_status == "published",
+                    Apartment.published_at >= start,
+                    Apartment.published_at < start + timedelta(hours=12),
+                )
+            ) or 0)
 
     async def schedule_period(self, *, now: datetime | None = None, rng: random.Random | None = None) -> int:
         now = as_utc(now or datetime.now(timezone.utc))

@@ -37,10 +37,12 @@ async def collect(settings, inventory) -> dict:
             settings.lalafo_proxy_url = ",".join(selected)
             routes = len(selected)
         logger.info("Primary Lalafo collection starting verified_routes=%d", routes)
+        # Keep larger searches within the small cloud instance's memory.
+        settings.apartment_detail_concurrency = min(2, settings.apartment_detail_concurrency)
         async with asyncio.timeout(600):
             code = await discover(
                 discovery_only=True,
-                candidate_pool_limit_override=20,
+                candidate_pool_limit_override=96,
                 include_telegram_sources=False,
                 discovery_stats=stats,
             )
@@ -51,7 +53,8 @@ async def collect(settings, inventory) -> dict:
         logger.exception("Primary Lalafo collection failed; saved inventory retained")
     finally:
         discovered_count, queued_count = await inventory.period_counts(now=now)
-        success, outcome_error = discovery_outcome(exit_code=code, queued_count=queued_count)
+        published_count = await inventory.period_published_count(now=now)
+        success, outcome_error = discovery_outcome(exit_code=code, queued_count=queued_count, published_count=published_count)
         await inventory.finish_discovery(
             key, success=success and error is None,
             discovered=discovered_count, queued=queued_count,
@@ -62,6 +65,7 @@ async def collect(settings, inventory) -> dict:
         "exit_code": code, "error": error or outcome_error,
         "verified_routes": routes, "recent_inventory": discovered_count,
         "period_queue": queued_count,
+        "period_published": published_count,
         **stats,
     }
 

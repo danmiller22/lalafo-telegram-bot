@@ -647,7 +647,7 @@ async def run(
         max(1, candidate_pool_limit_override)
         if candidate_pool_limit_override is not None
         else (
-            80
+            120
             if discovery_only
             else max(limit, min(limit * 15, MAX_CANDIDATE_POOL))
         )

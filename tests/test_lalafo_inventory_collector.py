@@ -32,6 +32,8 @@ async def test_primary_collector_refills_without_publishing_or_waiting_for_githu
     async def discover(**kwargs):
         assert kwargs["discovery_only"]
         assert not kwargs["include_telegram_sources"]
+        assert kwargs["candidate_pool_limit_override"] == 96
+        assert settings.apartment_detail_concurrency <= 2
         assert settings.lalafo_proxy_url == "http://route-1,http://route-2"
         await apartments.upsert_discovered(make_ad())
         await inventory.schedule_period()

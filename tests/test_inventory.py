@@ -653,6 +653,37 @@ async def test_thin_successful_discovery_is_rebuilt(repositories):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("stock_count,should_refill", [(12, True), (48, False)])
+async def test_discovery_refills_a_twelve_card_queue_until_full_period(repositories, stock_count, should_refill):
+    apartments, _, sessions = repositories
+    inventory = InventoryRepository(sessions)
+    now = datetime.now(timezone.utc)
+    key = await inventory.claim_discovery(now=now)
+    for index in range(stock_count):
+        await apartments.upsert_discovered(make_ad(lalafo_id=110000 + index, phone=f"+996555{100000 + index}"))
+    assert await inventory.schedule_period(now=now) == stock_count
+    await inventory.finish_discovery(key, success=True, discovered=stock_count, queued=stock_count)
+    claimed = await inventory.claim_discovery(now=now)
+    assert (claimed is not None) == should_refill
+
+
+@pytest.mark.asyncio
+async def test_full_period_does_not_refill_cards_already_published(repositories):
+    apartments, _, sessions = repositories
+    inventory = InventoryRepository(sessions)
+    now = datetime.now(timezone.utc)
+    key = await inventory.claim_discovery(now=now)
+    for index in range(48):
+        apartment = await apartments.upsert_discovered(make_ad(lalafo_id=120000 + index, phone=f"+996555{200000 + index}"))
+        if index < 38:
+            await apartments.mark_published(apartment.id, chat_id=-1001, message_id=1000 + index)
+    assert await inventory.schedule_period(now=now) == 10
+    assert await inventory.period_published_count(now=now) == 38
+    await inventory.finish_discovery(key, success=True, discovered=48, queued=10)
+    assert await inventory.claim_discovery(now=now) is None
+
+
+@pytest.mark.asyncio
 async def test_code_change_rebuilds_queue_without_erasing_repost_history(repositories):
     apartments, _, sessions = repositories
     apartment = await apartments.upsert_discovered(make_ad(lalafo_id=88001))

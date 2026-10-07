@@ -8,7 +8,7 @@ import os
 from app.availability import AvailabilityService, MAX_LISTING_AGE_DAYS
 from app.config import get_settings
 from app.database import create_engine_and_session, init_db
-from app.inventory import InventoryRepository, MIN_HEALTHY_PERIOD_QUEUE
+from app.inventory import InventoryRepository, DISCOVERY_PERIOD_TARGET
 from app.payments.repository import ApartmentRepository
 from scripts.publish_inventory import run as publish_one_due
 from scripts.scrape_publish import run as discover
@@ -19,7 +19,7 @@ def _truthy(value: str | None) -> bool:
     return (value or "").strip().casefold() in {"1", "true", "yes", "on"}
 
 
-def discovery_outcome(*, exit_code: int, queued_count: int) -> tuple[bool, str | None]:
+def discovery_outcome(*, exit_code: int, queued_count: int, published_count: int = 0) -> tuple[bool, str | None]:
     """Only a populated period is a successful large discovery.
 
     A clean scraper exit with an empty queue used to suppress every retry for
@@ -27,11 +27,11 @@ def discovery_outcome(*, exit_code: int, queued_count: int) -> tuple[bool, str |
     """
     if exit_code != 0:
         return False, f"ExitCode{exit_code}"
+    if queued_count + published_count >= DISCOVERY_PERIOD_TARGET:
+        return True, None
     if queued_count <= 0:
         return False, "EmptyInventory"
-    if queued_count < MIN_HEALTHY_PERIOD_QUEUE:
-        return False, "ThinInventory"
-    return True, None
+    return False, "ThinInventory"
 
 
 async def run(*, force_discovery: bool | None = None) -> int:
@@ -111,13 +111,13 @@ async def run(*, force_discovery: bool | None = None) -> int:
         code = 1
         raised_error = None
         try:
+            if settings.run_bot:
+                settings.apartment_detail_concurrency = min(2, settings.apartment_detail_concurrency)
             code = await discover(
                 discovery_only=True,
-                # The always-on web instance has a small CPU allowance. Twenty
-                # candidates refill a healthy queue while keeping
-                # customer bot responses fast. GitHub collectors retain the
-                # wider 80-candidate crawl.
-                candidate_pool_limit_override=20 if settings.run_bot else None,
+                # Fill a complete day-sized reserve; limit concurrent detail
+                # parsing rather than limiting the inventory to twenty cards.
+                candidate_pool_limit_override=96 if settings.run_bot else None,
             )
         except Exception as exc:
             raised_error = type(exc).__name__
@@ -126,9 +126,11 @@ async def run(*, force_discovery: bool | None = None) -> int:
         try:
             repository = InventoryRepository(sessions)
             discovered_count, queued_count = await repository.period_counts(now=now)
+            published_count = await repository.period_published_count(now=now)
             success, error = discovery_outcome(
                 exit_code=code,
                 queued_count=queued_count,
+                published_count=published_count,
             )
             if raised_error is not None:
                 success, error = False, raised_error

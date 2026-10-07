@@ -44,4 +44,12 @@ def test_empty_inventory_discovery_stays_retryable() -> None:
         False,
         "ThinInventory",
     )
-    assert discovery_outcome(exit_code=0, queued_count=12) == (True, None)
+    assert discovery_outcome(exit_code=0, queued_count=12) == (False, "ThinInventory")
+    assert discovery_outcome(exit_code=0, queued_count=47) == (False, "ThinInventory")
+    assert discovery_outcome(exit_code=0, queued_count=48) == (True, None)
+
+
+def test_discovery_counts_already_published_cards_toward_period_plan():
+    assert discovery_outcome(exit_code=0, queued_count=10, published_count=38) == (True, None)
+    assert discovery_outcome(exit_code=0, queued_count=0, published_count=48) == (True, None)
+    assert discovery_outcome(exit_code=0, queued_count=10, published_count=37) == (False, "ThinInventory")
