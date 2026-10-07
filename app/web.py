@@ -61,6 +61,7 @@ _lalafo_auto_responder: LalafoAutoResponder | None = None
 _lalafo_watchdog_task: asyncio.Task[None] | None = None
 _lalafo_restart_lock = asyncio.Lock()
 _apartment_scheduler_task: asyncio.Task[None] | None = None
+_telegram_inventory_state: dict[str, Any] = {"state": "pending", "last_check_at": None, "last_exit_code": None, "last_error": None}
 _service_keepalive_task: asyncio.Task[None] | None = None
 _background_watchdog_task: asyncio.Task[None] | None = None
 _matching_worker_task: asyncio.Task[None] | None = None
@@ -456,7 +457,9 @@ async def _select_hosted_lalafo_proxies() -> None:
     logger.warning("Hosted publisher found no proxy; direct Lalafo route will be tried")
 
 
-async def _run_inventory_worker_process(settings: Any) -> int:
+async def _run_inventory_worker_process(
+    settings: Any, *, module: str = "scripts.publish_inventory_batch"
+) -> int:
     env = os.environ.copy()
     env["LALAFO_PROXY_URL"] = settings.lalafo_proxy_url
     process_options: dict[str, Any] = {}
@@ -465,11 +468,23 @@ async def _run_inventory_worker_process(settings: Any) -> int:
     process = await asyncio.create_subprocess_exec(
         sys.executable,
         "-m",
-        "scripts.publish_inventory_batch",
+        module,
         env=env,
         **process_options,
     )
-    return await process.wait()
+    try:
+        return await process.wait()
+    except asyncio.CancelledError:
+        if process.returncode is None:
+            with suppress(ProcessLookupError):
+                process.terminate()
+            try:
+                await asyncio.wait_for(process.wait(), timeout=5)
+            except asyncio.TimeoutError:
+                with suppress(ProcessLookupError):
+                    process.kill()
+                await process.wait()
+        raise
 
 
 async def _execute_due_apartment_cycle() -> int:
@@ -683,6 +698,29 @@ async def _refill_saved_inventory() -> int:
         await engine.dispose()
 
 
+async def _run_telegram_inventory_collector() -> None:
+    """Keep reserve sources fresh independently of Lalafo and GitHub cron."""
+    try:
+        while True:
+            _telegram_inventory_state.update(state="collecting", last_check_at=_now(), last_error=None)
+            try:
+                code = await _run_inventory_worker_process(
+                    get_settings(), module="scripts.collect_telegram_inventory"
+                )
+                _telegram_inventory_state.update(
+                    state="waiting", last_exit_code=code,
+                    last_error=None if code == 0 else "TelegramCollectionFailed",
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                _telegram_inventory_state.update(state="retrying", last_error=type(exc).__name__)
+                logger.exception("Independent Telegram collection failed; retrying")
+            await asyncio.sleep(300)
+    finally:
+        _telegram_inventory_state["state"] = "stopped"
+
+
 async def _run_hosted_apartment_scheduler() -> None:
     from app.inventory import DISCOVERY_RETRY_MINUTES, MIN_HEALTHY_PERIOD_QUEUE
 
@@ -693,29 +731,37 @@ async def _run_hosted_apartment_scheduler() -> None:
     # Otherwise an old healthy-sized queue can survive a code update forever.
     await _refill_saved_inventory()
     next_refill_at = datetime.now(UTC) + timedelta(minutes=DISCOVERY_RETRY_MINUTES)
-    while True:
-        try:
-            queued_count, _, _ = await _inventory_queue_status()
-            now = datetime.now(UTC)
-            if queued_count < MIN_HEALTHY_PERIOD_QUEUE and now >= next_refill_at:
-                next_refill_at = now + timedelta(minutes=DISCOVERY_RETRY_MINUTES)
-                logger.warning(
-                    "Apartment queue is thin (%d/%d); scheduling saved stock",
-                    queued_count,
-                    MIN_HEALTHY_PERIOD_QUEUE,
+    telegram_collector = asyncio.create_task(
+        _run_telegram_inventory_collector(), name="telegram-inventory-collector"
+    )
+    try:
+        while True:
+            try:
+                queued_count, _, _ = await _inventory_queue_status()
+                now = datetime.now(UTC)
+                if queued_count < MIN_HEALTHY_PERIOD_QUEUE and now >= next_refill_at:
+                    next_refill_at = now + timedelta(minutes=DISCOVERY_RETRY_MINUTES)
+                    logger.warning(
+                        "Apartment queue is thin (%d/%d); scheduling saved stock",
+                        queued_count,
+                        MIN_HEALTHY_PERIOD_QUEUE,
+                    )
+                    await _refill_saved_inventory()
+                await _execute_queue_dispatch()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                _apartment_scheduler_state.update(
+                    running_cycle=False,
+                    last_exit_code=1,
+                    last_error=type(exc).__name__,
                 )
-                await _refill_saved_inventory()
-            await _execute_queue_dispatch()
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            _apartment_scheduler_state.update(
-                running_cycle=False,
-                last_exit_code=1,
-                last_error=type(exc).__name__,
-            )
-            logger.exception("Hosted queue dispatcher recovered from a crash")
-        await asyncio.sleep(check_seconds)
+                logger.exception("Hosted queue dispatcher recovered from a crash")
+            await asyncio.sleep(check_seconds)
+    finally:
+        telegram_collector.cancel()
+        with suppress(asyncio.CancelledError):
+            await telegram_collector
 
 
 def _task_stopped(task: asyncio.Task[None] | None) -> bool:
@@ -1178,6 +1224,8 @@ async def health() -> JSONResponse:
                 "running" if settings.run_bot and not _task_stopped(_payment_review_worker_task)
                 else "stopped" if settings.run_bot else "disabled"
             ),
+            "telegram_inventory": (dict(_telegram_inventory_state)
+                if settings.run_bot and settings.hosted_apartment_scheduler_enabled else "disabled"),
             "listing_validity_days": MAX_LISTING_AGE_DAYS,
             "payment_receipt_required": False,
             "contact_tariff": {"plan": WEEK_PLAN, "price": WEEK_PRICE, "expires": True, "storage": "persistent_ledger"},

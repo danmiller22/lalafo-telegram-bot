@@ -168,3 +168,27 @@ def test_accepts_thousands_price_notation() -> None:
     assert len(ads) == 1
     assert ads[0].price == 32_000
     assert ads[0].rooms == "1"
+
+
+def test_accepts_sdam_short_room_and_without_shared_housing():
+    html = _post("Сдам 1к квартиру без подселения. Цена 30 000 сом. 0705 123 456")
+    ads = parse_telegram_apartments(html, now=datetime(2026, 9, 23, 7, tzinfo=timezone.utc))
+    assert len(ads) == 1
+    assert ads[0].rooms == "1"
+    assert ads[0].phone == "+996705123456"
+
+
+def test_reads_contact_from_whatsapp_link_without_visible_digits():
+    html = _post('Сдам 1-комнатную квартиру. Цена 30 000 сом. '
+                 '<a href="https://wa.me/996705123456">Написать WhatsApp</a>')
+    ads = parse_telegram_apartments(html, now=datetime(2026, 9, 23, 7, tzinfo=timezone.utc))
+    assert len(ads) == 1
+    assert ads[0].phone == "+996705123456"
+
+
+def test_source_diagnostics_explain_rejections_without_contacts():
+    from collections import Counter
+    stats = Counter()
+    html = _post("Сдам 1-комнатную квартиру. Цена 30 000 сом.")
+    assert parse_telegram_apartments(html, now=datetime(2026, 9, 23, 7, tzinfo=timezone.utc), diagnostics=stats) == []
+    assert stats == {"messages": 1, "missing_phone": 1}

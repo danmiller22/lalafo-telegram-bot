@@ -71,6 +71,9 @@ jobs:
             sleep $((attempt * 10))
           done
           exit 1
+      - name: Collect Telegram reserve independently
+        continue-on-error: true
+        run: python -m scripts.collect_telegram_inventory
       - name: Publish up to 50 apartments with full-cycle recovery
         run: python -m scripts.publish_if_due
       - name: Refresh buttons on published cards

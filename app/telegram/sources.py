@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 import hashlib
 import logging
@@ -96,6 +97,7 @@ SHARED_HOUSING_TERMS = (
 )
 REALTOR_TERMS = ("риелтор", "риэлтор", "агент", "агентство", "комиссия")
 OFFER_TERMS = (
+    "сдам",
     "сдаётся",
     "сдается",
     "сдаю",
@@ -192,6 +194,9 @@ def _telegram_rooms(text: str) -> str | None:
     match = ROOM_RE.search(text)
     if match is not None:
         return match.group(1)
+    short = re.search(r"\b([12])\s*[-‑–—]?\s*к(?:в)?\.?\b", text, re.I)
+    if short is not None:
+        return short.group(1)
     if re.search(r"\bевро[- ]?двушк", text, re.I):
         return "2"
     return None
@@ -232,25 +237,34 @@ def parse_telegram_apartments(
     *,
     now: datetime | None = None,
     max_age_hours: int = 96,
+    diagnostics: Counter[str] | None = None,
 ) -> list[LalafoAd]:
     """Parse fresh, photo-backed whole-apartment offers from a public channel."""
     current = now or datetime.now(timezone.utc)
     cutoff = current - timedelta(hours=max(1, max_age_hours))
     soup = BeautifulSoup(html, "html.parser")
     ads: list[LalafoAd] = []
+    def note(reason: str) -> None:
+        if diagnostics is not None:
+            diagnostics[reason] += 1
+
     for wrapper in soup.select(".tgme_widget_message_wrap"):
+        note("messages")
         message = wrapper.select_one(".tgme_widget_message[data-post]")
         text_element = wrapper.select_one(".tgme_widget_message_text")
         time_element = wrapper.select_one("time[datetime]")
         if message is None or text_element is None or time_element is None:
+            note("missing_text_or_timestamp")
             continue
         try:
             created_at = datetime.fromisoformat(str(time_element.get("datetime")))
         except ValueError:
+            note("invalid_timestamp")
             continue
         if created_at.tzinfo is None:
             created_at = created_at.replace(tzinfo=timezone.utc)
         if created_at.astimezone(timezone.utc) < cutoff:
+            note("older_than_window")
             continue
 
         lines = [
@@ -261,10 +275,14 @@ def parse_telegram_apartments(
         text = " ".join(lines)
         normalized = text.casefold().replace("ё", "е")
         if not any(term in normalized for term in OFFER_TERMS):
+            note("not_a_rental_offer")
             continue
         if any(term in normalized for term in SEARCH_TERMS):
+            note("wanted_ad")
             continue
-        if any(term in normalized for term in SHARED_HOUSING_TERMS):
+        shared_text = re.sub(r"\bбез\s+подселени[яй]\b", "", normalized)
+        if any(term in shared_text for term in SHARED_HOUSING_TERMS):
+            note("shared_housing")
             continue
         if is_lodging_offer(text):
             continue
@@ -278,7 +296,22 @@ def parse_telegram_apartments(
         price = _telegram_price(text)
         rooms = _telegram_rooms(text)
         phone = _telegram_phone(text)
-        if price is None or not 25_000 <= price <= 40_000 or rooms is None or phone is None:
+        if phone is None:
+            for link in text_element.select("a[href]"):
+                url = str(link.get("href") or "")
+                if urlparse(url).hostname not in {"wa.me", "api.whatsapp.com"}:
+                    continue
+                phone = _telegram_phone(url)
+                if phone:
+                    break
+        if price is None or not 25_000 <= price <= 40_000:
+            note("missing_or_out_of_range_price")
+            continue
+        if rooms is None:
+            note("missing_room_type")
+            continue
+        if phone is None:
+            note("missing_phone")
             continue
         photo_urls: list[str] = []
         for photo in wrapper.select(".tgme_widget_message_photo_wrap[style]"):
@@ -286,6 +319,7 @@ def parse_telegram_apartments(
             if match is not None and match.group(1) not in photo_urls:
                 photo_urls.append(match.group(1))
         if not photo_urls:
+            note("missing_photos")
             continue
 
         data_post = str(message.get("data-post"))
@@ -302,6 +336,7 @@ def parse_telegram_apartments(
             if price < 25_000:
                 continue
             district = "Центр"
+        note("eligible")
         ads.append(
             LalafoAd(
                 lalafo_id=_telegram_source_id(data_post),
@@ -348,6 +383,8 @@ async def fetch_telegram_apartments(
         before: int | None = None
         found: list[LalafoAd] = []
         seen_before: set[int] = set()
+        diagnostics: Counter[str] = Counter()
+        pages_read = 0
         for _ in range(max(1, pages_per_channel)):
             url = base if before is None else f"{base}?before={before}"
             response: httpx.Response | None = None
@@ -369,11 +406,13 @@ async def fetch_telegram_apartments(
                     )
             if response is None:
                 break
+            pages_read += 1
             try:
                 found.extend(
                     parse_telegram_apartments(
                         response.text,
                         max_age_hours=max_age_hours,
+                        diagnostics=diagnostics,
                     )
                 )
             except (TypeError, ValueError) as exc:
@@ -409,6 +448,7 @@ async def fetch_telegram_apartments(
                 for value in timestamps
             ):
                 break
+        logger.info("Telegram source read channel=%s pages=%d counts=%s", channel, pages_read, dict(diagnostics))
         return found
 
     headers = {"User-Agent": "Mozilla/5.0"}

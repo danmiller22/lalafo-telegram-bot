@@ -93,6 +93,7 @@ def configure(monkeypatch: pytest.MonkeyPatch) -> None:
     web._keyboard_sync_task = None
     web._lalafo_auto_responder = None
     web._lalafo_watchdog_task = None
+    web._telegram_inventory_state.update(state="pending", last_check_at=None, last_exit_code=None, last_error=None)
     web._apartment_scheduler_task = None
     web._service_keepalive_task = None
     web._background_watchdog_task = None
@@ -147,6 +148,7 @@ async def test_health_and_authentication() -> None:
         "payment_receipt_required": False,
         "contact_tariff": {"plan": "week", "price": 499, "expires": True, "storage": "persistent_ledger"},
         "payment_review": "admin_missing",
+            "telegram_inventory": "disabled",
             "telegram_setup": "disabled",
             "lalafo_link_bot": "disabled",
             "free_cloud_keepalive": "disabled",
@@ -891,3 +893,16 @@ async def test_default_lifetime_checkout_uses_ready_link_even_with_api_credentia
     settings = Settings(_env_file=None, lifetime_finik_payment_url="https://qr.finik.kg/e0c9972e-0f05-4dc3-99fd-96ec1debea1f?type=t", finik_api_key="configured", finik_account_id="configured", finik_private_key_pem="configured")
     assert not web._uses_dynamic_finik(settings, LIFETIME_PLAN)
     assert await web._finik_checkout_url(settings, object(), object(), apartment_id=42, plan=LIFETIME_PLAN) == settings.lifetime_finik_payment_url
+
+
+@pytest.mark.asyncio
+async def test_independent_telegram_worker_uses_telegram_only_module(monkeypatch):
+    worker = AsyncMock(return_value=0)
+    monkeypatch.setattr(web, "_run_inventory_worker_process", worker)
+    monkeypatch.setattr(web.asyncio, "sleep", AsyncMock(side_effect=asyncio.CancelledError))
+    with pytest.raises(asyncio.CancelledError):
+        await web._run_telegram_inventory_collector()
+    worker.assert_awaited_once()
+    assert worker.await_args.kwargs["module"] == "scripts.collect_telegram_inventory"
+    assert web._telegram_inventory_state["last_exit_code"] == 0
+    assert web._telegram_inventory_state["state"] == "stopped"
