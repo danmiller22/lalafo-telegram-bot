@@ -51,6 +51,7 @@ IN_PROCESS_QUEUE_DISPATCHER_ENABLED = True
 app = FastAPI(title="Lalafo Telegram service", docs_url=None, redoc_url=None)
 
 _run_lock = asyncio.Lock()
+_inventory_worker_lock = asyncio.Lock()
 _scraper_task: asyncio.Task[None] | None = None
 _bot_runtime: BotRuntime | None = None
 _lalafo_bot_runtime: BotRuntime | None = None
@@ -462,6 +463,17 @@ async def _select_hosted_lalafo_proxies() -> None:
 async def _run_inventory_worker_process(
     settings: Any, *, module: str = "scripts.publish_inventory_batch",
     report_state: dict[str, Any] | None = None,
+) -> int:
+    # Two scraper interpreters plus the bot exceed the small instance's RAM.
+    # Serialize collection only; payment handlers and queue dispatch stay live.
+    async with _inventory_worker_lock:
+        return await _run_inventory_worker_process_unlocked(
+            settings, module=module, report_state=report_state,
+        )
+
+
+async def _run_inventory_worker_process_unlocked(
+    settings: Any, *, module: str, report_state: dict[str, Any] | None,
 ) -> int:
     env = os.environ.copy()
     env["LALAFO_PROXY_URL"] = settings.lalafo_proxy_url

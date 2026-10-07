@@ -922,3 +922,36 @@ async def test_primary_lalafo_worker_retries_failure_and_reports_separately(monk
     assert web._lalafo_inventory_state["last_exit_code"] == 2
     assert web._lalafo_inventory_state["last_error"] == "LalafoCollectionFailed"
     assert web._lalafo_inventory_state["state"] == "stopped"
+
+
+@pytest.mark.asyncio
+async def test_inventory_collectors_share_one_process_slot_without_blocking_web(monkeypatch):
+    active = peak = 0
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def worker(settings, **kwargs):
+        nonlocal active, peak
+        active += 1
+        peak = max(peak, active)
+        entered.set()
+        try:
+            await release.wait()
+            return 0
+        finally:
+            active -= 1
+
+    monkeypatch.setattr(web, "_run_inventory_worker_process_unlocked", worker)
+    first = asyncio.create_task(web._run_inventory_worker_process(get_settings(), module="scripts.collect_telegram_inventory"))
+    await entered.wait()
+    second = asyncio.create_task(web._run_inventory_worker_process(get_settings(), module="scripts.collect_lalafo_inventory"))
+    await asyncio.sleep(0)
+    assert active == 1
+    # The web loop can still answer while collection holds the process slot.
+    transport = httpx.ASGITransport(app=web.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/health")
+    assert response.status_code == 200
+    release.set()
+    assert await asyncio.gather(first, second) == [0, 0]
+    assert peak == 1
