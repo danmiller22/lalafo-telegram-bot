@@ -422,7 +422,9 @@ class InventoryRepository:
         lease_until = as_utc(now) + timedelta(hours=2)
         try:
             async with self.sessions.begin() as session:
-                row = await session.get(ApartmentDiscoveryRun, key)
+                # Koyeb and GitHub share this lease; serialize existing-run
+                # claims so two collectors cannot both revive a failed run.
+                row = await session.get(ApartmentDiscoveryRun, key, with_for_update=True)
                 if row is None:
                     # A failed slot must be retried even when the wall clock
                     # has crossed into the next discovery period.
@@ -435,6 +437,7 @@ class InventoryRepository:
                         )
                         .order_by(ApartmentDiscoveryRun.completed_at.asc())
                         .limit(1)
+                        .with_for_update(skip_locked=True)
                     )
                     if failed is not None:
                         failed.status = "running"
