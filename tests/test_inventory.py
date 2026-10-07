@@ -936,7 +936,7 @@ async def test_watermarked_listing_is_not_queued_again(repositories):
 @pytest.mark.parametrize("overdue_count,expected", [(1,False),(3,True)])
 async def test_backlog_catches_up_without_waiting_eighteen_minutes(repositories, overdue_count, expected):
     apartments, _, sessions = repositories
-    now = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc).astimezone(BISHKEK).replace(hour=5,minute=30).astimezone(timezone.utc)
     previous = await apartments.upsert_discovered(make_ad(lalafo_id=220000, phone="+996555500000"))
     async with sessions.begin() as session:
         await session.execute(update(Apartment).where(Apartment.id==previous.id).values(publication_status="published", published_at=now-timedelta(minutes=6)))
@@ -958,3 +958,15 @@ async def test_failed_photo_respects_backoff_even_with_lookahead(repositories):
     inventory = InventoryRepository(sessions)
     assert await inventory.claim_due(now=now, eligible_until=now+timedelta(minutes=10)) is None
     assert await inventory.claim_due(now=now+timedelta(minutes=4)) is not None
+
+
+@pytest.mark.asyncio
+async def test_late_day_catchup_can_use_future_reserved_stock(repositories):
+    apartments, _, sessions = repositories
+    now = datetime.now(timezone.utc).astimezone(BISHKEK).replace(hour=22,minute=0).astimezone(timezone.utc)
+    old=await apartments.upsert_discovered(make_ad(lalafo_id=223000,phone="+996555601000"))
+    waiting=await apartments.upsert_discovered(make_ad(lalafo_id=223001,phone="+996555601001"))
+    async with sessions.begin() as session:
+        await session.execute(update(Apartment).where(Apartment.id==old.id).values(publication_status="published",published_at=now-timedelta(minutes=6)))
+        session.add(ApartmentInventoryQueue(apartment_id=waiting.id,scheduled_at=now+timedelta(minutes=18),window_key="today",sequence=1))
+    assert await InventoryRepository(sessions).claim_due(now=now) is not None

@@ -866,17 +866,6 @@ class InventoryRepository:
                 )
                 if value is not None
             ]
-            overdue_count = int(await session.scalar(
-                select(func.count()).select_from(ApartmentInventoryQueue).where(
-                    ApartmentInventoryQueue.status == "queued",
-                    ApartmentInventoryQueue.scheduled_at <= now - timedelta(minutes=PUBLICATION_SPACING_MINUTES),
-                )
-            ) or 0)
-            gap_minutes = 5 if overdue_count >= 3 else MIN_PUBLICATION_GAP_MINUTES
-            if publication_times and max(publication_times) > now - timedelta(
-                minutes=gap_minutes
-            ):
-                return None
             published_today = int(
                 await session.scalar(
                     select(func.count())
@@ -889,6 +878,21 @@ class InventoryRepository:
                 )
                 or 0
             )
+            overdue_count = int(await session.scalar(
+                select(func.count()).select_from(ApartmentInventoryQueue).where(
+                    ApartmentInventoryQueue.status == "queued",
+                    ApartmentInventoryQueue.scheduled_at <= now - timedelta(minutes=PUBLICATION_SPACING_MINUTES),
+                )
+            ) or 0)
+            expected_by_now = min(MAX_PUBLICATIONS_PER_DAY, int((now-day_start).total_seconds() // (PUBLICATION_SPACING_MINUTES*60)) + 1)
+            catch_up = overdue_count >= 3 or expected_by_now - published_today >= 3
+            gap_minutes = 5 if catch_up else MIN_PUBLICATION_GAP_MINUTES
+            if catch_up:
+                eligible_until = max(eligible_until, (day_start_local + timedelta(hours=21)).astimezone(timezone.utc))
+            if publication_times and max(publication_times) > now - timedelta(
+                minutes=gap_minutes
+            ):
+                return None
             if published_today >= MAX_PUBLICATIONS_PER_DAY:
                 return None
             published_non_owners = int(
