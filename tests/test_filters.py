@@ -163,15 +163,15 @@ def test_source_urls_follow_the_operator_filters():
     assert all("price[from]=23000&price[to]=40000" in url for url in ADDITIONAL_SEARCH_URLS)
 
 
-def test_discovery_pool_is_split_equally_by_author_type():
+def test_discovery_pool_reserves_seventy_percent_for_realtors():
     targets = source_candidate_targets(300, source_count=3, batch_limit=18)
 
-    assert REALTOR_CANDIDATE_RESERVE_SHARE == 0.50
-    assert targets == [75, 150, 300]
-    assert targets[-1] - targets[-2] == 150
+    assert REALTOR_CANDIDATE_RESERVE_SHARE == 0.70
+    assert targets == [45, 90, 300]
+    assert targets[-1] - targets[-2] == 210
 
 
-def test_inventory_sources_reserve_half_for_realtors():
+def test_inventory_sources_reserve_seventy_percent_for_realtors():
     targets = source_candidate_targets(
         240,
         source_count=4,
@@ -179,7 +179,7 @@ def test_inventory_sources_reserve_half_for_realtors():
         owner_source_count=2,
     )
 
-    assert targets == [60, 120, 180, 240]
+    assert targets == [36, 72, 156, 240]
 
 
 def test_supported_room_types_have_twenty_five_thousand_price_floor():

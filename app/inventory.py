@@ -23,12 +23,12 @@ from app.telegram.formatting import is_supported_source
 BISHKEK = ZoneInfo("Asia/Bishkek")
 ALLOWED_ROOMS = frozenset({"studio", "1"})
 CENTRAL_DAILY_SHARE = 0.50
-REALTOR_DAILY_SHARE = 0.50
+REALTOR_DAILY_SHARE = 0.70
 MIN_PUBLICATIONS_PER_DAY = 96
 MAX_PUBLICATIONS_PER_DAY = 96
 # The daily target is chosen once per Bishkek date, then split across the two
 # discovery periods so retries cannot increase the day's publication volume.
-# Aim for equal shares of known owners and realtors. Either category fills
+# Aim for 70% realtors and 30% owners. Either category fills
 # shortages in the other. Unknown authors can fill remaining slots.
 MIN_NON_OWNERS_PER_DAY = round(MAX_PUBLICATIONS_PER_DAY * REALTOR_DAILY_SHARE)
 MAX_NON_OWNERS_PER_DAY = MIN_NON_OWNERS_PER_DAY
@@ -73,7 +73,7 @@ def daily_publication_target(period_start: datetime) -> int:
 
 
 def daily_realtor_target(period_start: datetime) -> int:
-    """Return the 50% daily realtor target."""
+    """Return the 70% daily realtor target."""
     del period_start
     return MAX_NON_OWNERS_PER_DAY
 
@@ -89,7 +89,7 @@ def period_publication_targets(period_start: datetime) -> tuple[int, int]:
 
 
 def period_realtor_target(period_start: datetime) -> int:
-    """Split the daily 50% realtor target across the two periods."""
+    """Split the daily 70% realtor target across the two periods."""
     daily_target = daily_realtor_target(period_start)
     first_target = (daily_target + 1) // 2
     if period_start.astimezone(BISHKEK).hour == 0:
@@ -103,9 +103,12 @@ def randomized_period_times(
     count: int,
     rng: random.Random,
 ) -> list[datetime]:
-    """Build 90-minute launches with five minutes between cards in each launch."""
+    """Use 15-minute spacing; spread healthy stock across 90-minute launches."""
     if count <= 0:
         return []
+    if count < MIN_HEALTHY_PERIOD_QUEUE:
+        return [(period_start + timedelta(minutes=PUBLICATION_SPACING_MINUTES * index)).astimezone(timezone.utc)
+                for index in range(count)]
     local_day = period_start.astimezone(BISHKEK).replace(
         hour=0, minute=0, second=0, microsecond=0
     )
@@ -350,18 +353,20 @@ def plan_period(
 async def _balanced_stock(session: AsyncSession, statement) -> list[Apartment]:
     """Reserve database load capacity for each known seller category."""
     stock: list[Apartment] = []
+    realtor_limit = round(MAX_FRESH_STOCK_LOAD * REALTOR_DAILY_SHARE)
+    limits = {"owner": MAX_FRESH_STOCK_LOAD - realtor_limit, "realtor": realtor_limit}
     for kind in ("owner", "realtor"):
         query = statement.where(Apartment.seller_type == kind)
         stock.extend((await session.scalars(
-            query.limit(MAX_FRESH_STOCK_LOAD // 2)
+            query.limit(limits[kind])
         )).all())
     if len(stock) < MAX_FRESH_STOCK_LOAD:
         for kind in ("owner", "realtor"):
-            if sum(item.seller_type == kind for item in stock) < MAX_FRESH_STOCK_LOAD // 2:
+            if sum(item.seller_type == kind for item in stock) < limits[kind]:
                 continue
             query = statement.where(Apartment.seller_type == kind)
             stock.extend((await session.scalars(
-                query.offset(MAX_FRESH_STOCK_LOAD // 2).limit(MAX_FRESH_STOCK_LOAD - len(stock))
+                query.offset(limits[kind]).limit(MAX_FRESH_STOCK_LOAD - len(stock))
             )).all())
             if len(stock) >= MAX_FRESH_STOCK_LOAD:
                 break
@@ -379,7 +384,7 @@ class InventoryRepository:
 
     async def reset_publication_history_for_code(self, code_version: str) -> bool:
         """Rebuild the queue once per deployment without erasing repost history."""
-        version = code_version.strip() or "unlabeled-all-sellers-refill-v3"
+        version = code_version.strip() or "realtor-70-dense-thin-stock-v4"
         key = "apartment_publication_code_version"
         async with self.sessions.begin() as session:
             marker = await session.get(LalafoAutoReplyMeta, key)

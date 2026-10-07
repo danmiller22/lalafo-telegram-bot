@@ -66,7 +66,7 @@ def test_two_periods_plan_96_card_day_at_four_per_hour():
     daily_target = daily_publication_target(first_start)
     assert daily_target == 96
     assert len(all_items) == daily_target
-    assert sum(item.apartment.seller_type == "realtor" for item in all_items) == 48
+    assert sum(item.apartment.seller_type == "realtor" for item in all_items) == 67
     assert sum(
         "золотой" in item.apartment.district.casefold() for item in all_items
     ) == round(daily_target * 0.50)
@@ -162,10 +162,11 @@ def test_central_realtors_can_fill_central_share():
     period_count, central_count = period_publication_targets(period_start)
     assert len(planned) == period_count
     assert any(item.apartment.seller_type == "owner" for item in planned)
-    assert sum(is_central(item.apartment.district) for item in planned) == central_count
+    assert sum(is_central(item.apartment.district) for item in planned) == 34
+    assert central_count == 24
 
 
-def test_each_standalone_period_has_equal_author_shares():
+def test_each_standalone_period_targets_seventy_percent_realtors():
     owners = _apartments(160, central=True, start_id=1)
     realtors = _apartments(80, central=False, start_id=500, owner=False)
     first_start = datetime(2026, 9, 13, 0, tzinfo=timezone(timedelta(hours=6)))
@@ -181,8 +182,8 @@ def test_each_standalone_period_has_equal_author_shares():
 
     assert len(first) == 48
     assert len(second) == 48
-    for period in (first, second):
-        assert sum(item.apartment.seller_type == "owner" for item in period) == 24
+    assert sum(item.apartment.seller_type == "realtor" for item in first) == 34
+    assert sum(item.apartment.seller_type == "realtor" for item in second) == 33
     assert {item.apartment.seller_type for item in first + second} == {"owner", "realtor"}
 
 
@@ -199,11 +200,11 @@ def test_unknown_authors_fill_remaining_publication_slots():
     assert all(item.apartment.seller_type == "unknown" for item in planned)
 
 
-def test_daily_realtor_target_is_50_percent_of_ninety_six():
+def test_daily_realtor_target_is_70_percent_of_ninety_six():
     start = datetime(2026, 9, 13, 0, tzinfo=timezone(timedelta(hours=6)))
     assert {
         daily_realtor_target(start + timedelta(days=offset)) for offset in range(4)
-    } == {48}
+    } == {67}
 
 
 def test_period_honors_remaining_daily_realtor_quota():
@@ -759,7 +760,7 @@ async def test_stock_load_reserves_room_for_both_seller_categories(repositories,
     apartments, _, sessions = repositories
     for index in range(10):
         await apartments.upsert_discovered(make_ad(
-            lalafo_id=99300 + index, owner_listing=index < 8,
+            lalafo_id=99300 + index, owner_listing=index < 6,
         ))
     inventory = InventoryRepository(sessions)
     assert await inventory.schedule_period(now=datetime.now(timezone.utc)) == 4
@@ -767,7 +768,8 @@ async def test_stock_load_reserves_room_for_both_seller_categories(repositories,
         kinds = (await session.scalars(
             select(Apartment.seller_type).join(ApartmentInventoryQueue)
         )).all()
-    assert kinds.count("owner") == kinds.count("realtor") == 2
+    assert kinds.count("owner") == 1
+    assert kinds.count("realtor") == 3
 
 
 @pytest.mark.asyncio
@@ -837,3 +839,18 @@ async def test_unknown_author_can_be_scheduled_and_published(repositories, monke
     claimed = await inventory.claim_due(now=now)
     assert claimed is not None
     assert claimed.apartment.seller_type == "unknown"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stock_size", [1, 2, 6, 11])
+async def test_thin_stock_is_due_now_then_every_fifteen_minutes(repositories, stock_size):
+    apartments, _, sessions = repositories
+    now = datetime(2026, 10, 7, 2, 0, tzinfo=timezone.utc)
+    for index in range(stock_size):
+        await apartments.upsert_discovered(make_ad(lalafo_id=99900 + index))
+    assert await InventoryRepository(sessions).schedule_period(now=now, rng=random.Random(5)) == stock_size
+    async with sessions() as session:
+        times = list((await session.scalars(select(ApartmentInventoryQueue.scheduled_at)
+            .order_by(ApartmentInventoryQueue.scheduled_at))).all())
+    assert times[0].replace(tzinfo=timezone.utc) <= now
+    assert all((after - before).total_seconds() == 900 for before, after in zip(times, times[1:]))
