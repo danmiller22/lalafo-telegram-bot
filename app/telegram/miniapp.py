@@ -66,7 +66,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>{safe_title}</title>
-  <script async src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script id="telegram-sdk" async src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     :root {{ color-scheme: light dark; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; --accent: #087f68; --muted: var(--tg-theme-hint-color, #64746e); --surface: var(--tg-theme-secondary-bg-color, #fff); }}
     * {{ box-sizing: border-box; }}
@@ -140,6 +140,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
   let paymentStart = null;
   let accessApproved = false;
   let sessionReady = false;
+  let sessionLoading = false;
   let selectedPlan = "week";
   const paymentUrls = {checkout_json};
   let preparedUntil = Infinity;
@@ -172,11 +173,14 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
 
   function telegramContext() {{
     const current = window.Telegram && window.Telegram.WebApp;
-    if (!current) return null;
-    if (current.initData) initData = current.initData;
-    if (current.initDataUnsafe && current.initDataUnsafe.start_param) {{
+    if (current && current.initData) initData = current.initData;
+    if (current && current.initDataUnsafe && current.initDataUnsafe.start_param) {{
       startParam = current.initDataUnsafe.start_param;
     }}
+    if (!startParam && initData) {{
+      startParam = new URLSearchParams(initData).get("start_param") || "";
+    }}
+    if (!current) return null;
     current.ready();
     current.expand();
     return current;
@@ -266,12 +270,15 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     }}
   }}
   async function load() {{
-    await prepareTelegramContext();
-    if (!initData || !startParam) {{
-      message("Откройте это окно кнопкой под карточкой квартиры в Telegram.");
-      return;
-    }}
+    if (sessionLoading || sessionReady || accessApproved) return;
+    sessionLoading = true;
     try {{
+      await prepareTelegramContext();
+      if (!initData || !startParam) {{
+        message("Откройте это окно кнопкой под карточкой квартиры в Telegram.");
+        return;
+      }}
+      message("");
       const preparation = prepareCheckout();
       render(await api("/miniapp/api/session", {{}}));
       sessionReady = true;
@@ -279,6 +286,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
       el("pay-lifetime").disabled = false;
     }}
     catch (error) {{ message(error.message); }}
+    finally {{ sessionLoading = false; }}
   }}
   async function startPayment(plan, buttonId) {{
     if (paymentOpening || accessApproved || !sessionReady) return;
@@ -331,9 +339,14 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
   }}
   document.addEventListener("visibilitychange", () => {{
     if (!document.hidden && !accessApproved) {{
+      if (!sessionReady) {{ load(); return; }}
       prepareCheckout();
       startPaymentPolling();
     }}
+  }});
+  el("telegram-sdk").addEventListener("load", () => {{
+    telegramContext();
+    load();
   }});
   el("terms-link").onclick = event => {{
     event.preventDefault();
