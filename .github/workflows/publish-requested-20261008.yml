@@ -12,8 +12,8 @@ jobs:
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      PAYMENT_ADMIN_USER_ID: ${{ secrets.PAYMENT_ADMIN_USER_ID }}
-      PAYMENT_CALLBACK_SECRET: ${{ secrets.PAYMENT_CALLBACK_SECRET }}
+      ADMIN_USER_ID: ${{ secrets.ADMIN_USER_ID }}
+      CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
       TELEGRAM_GROUP_ID: '-1004389602150'
       TELEGRAM_BOT_USERNAME: arenda312bot
       DRY_RUN: 'false'
