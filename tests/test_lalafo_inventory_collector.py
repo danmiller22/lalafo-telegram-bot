@@ -8,6 +8,8 @@ from app.inventory import InventoryRepository
 from scripts import collect_lalafo_inventory as collector
 from tests.helpers import make_ad
 
+pytestmark = pytest.mark.usefixtures("publication_clock")
+
 
 @pytest.mark.asyncio
 async def test_primary_collector_respects_running_github_lease(repositories, monkeypatch):

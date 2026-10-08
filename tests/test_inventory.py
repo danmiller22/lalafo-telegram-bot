@@ -256,6 +256,7 @@ def test_daily_target_is_fixed_at_seventy_cards():
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("publication_clock")
 async def test_queue_claims_each_due_apartment_only_once(repositories):
     apartments, _, sessions = repositories
     first = await apartments.upsert_discovered(
@@ -300,6 +301,7 @@ async def test_queue_claims_each_due_apartment_only_once(repositories):
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("publication_clock")
 async def test_concurrent_publishers_cannot_claim_the_same_card(repositories):
     apartments, _, sessions = repositories
     apartment = await apartments.upsert_discovered(
@@ -446,6 +448,7 @@ async def test_late_period_schedule_keeps_three_to_five_per_hour_cadence(reposit
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("publication_clock")
 async def test_claim_due_prioritizes_central_card_for_daily_share(repositories):
     apartments, _, sessions = repositories
     outskirts = await apartments.upsert_discovered(
@@ -479,6 +482,7 @@ async def test_claim_due_prioritizes_central_card_for_daily_share(repositories):
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("publication_clock")
 async def test_claim_due_accepts_queued_agents(repositories):
     apartments, _, sessions = repositories
     now = datetime.now(timezone.utc)
@@ -604,6 +608,7 @@ async def test_schedule_repeats_only_after_forty_eight_hours(repositories):
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("publication_clock")
 async def test_claim_due_skips_old_unsupported_source_even_if_owner(repositories):
     apartments, _, sessions = repositories
     now = datetime.now(timezone.utc)
@@ -732,6 +737,7 @@ async def test_code_change_rebuilds_queue_without_erasing_repost_history(reposit
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("publication_clock")
 async def test_code_change_keeps_five_minute_publication_cooldown(repositories):
     apartments, _, sessions = repositories
     published = await apartments.upsert_discovered(make_ad(lalafo_id=88011))
@@ -777,6 +783,7 @@ async def test_availability_sweep_is_claimed_twice_daily(repositories):
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("publication_clock")
 async def test_claim_prioritizes_underrepresented_seller(repositories):
     apartments, _, sessions = repositories
     now = datetime.now(timezone.utc)
@@ -857,6 +864,7 @@ async def test_stock_load_uses_spare_category_capacity(repositories, monkeypatch
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("owner", [True, False])
+@pytest.mark.usefixtures("publication_clock")
 async def test_claim_can_exceed_category_share_to_fill_shortage(repositories, owner):
     apartments, _, sessions = repositories
     now = datetime.now(timezone.utc)
@@ -990,6 +998,7 @@ async def test_backlog_catches_up_without_waiting_eighteen_minutes(repositories,
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("publication_clock")
 async def test_failed_photo_respects_backoff_even_with_lookahead(repositories):
     apartments, _, sessions = repositories
     now = datetime.now(timezone.utc)
@@ -1014,6 +1023,7 @@ async def test_late_day_catchup_can_use_future_reserved_stock(repositories):
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("publication_clock")
 async def test_claim_mixes_price_ranges_after_a_low_price_publication(repositories):
     apartments, _, sessions = repositories
     now = datetime.now(timezone.utc)
