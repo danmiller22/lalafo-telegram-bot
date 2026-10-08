@@ -8,8 +8,10 @@ const response = data => ({ok: true, json: async () => data});
 function setup(initial, fetchOverride, dynamic = false) {
   const nodes = {}, timers = new Map(), opened = [];
   let nextTimer = 1;
+  const markup = id => html.match(new RegExp('<[^>]+id="' + id + '"[^>]*>'))?.[0] || '';
   const node = id => nodes[id] ||= {
-    hidden: true,
+    hidden: /class="[^"]*\bhidden\b/.test(markup(id)),
+    disabled: /\sdisabled(?:\s|>)/.test(markup(id)),
     classList: {
       toggle(_, hidden) { nodes[id].hidden = hidden; },
       contains() { return nodes[id].hidden; },
@@ -33,6 +35,31 @@ function setup(initial, fetchOverride, dynamic = false) {
 }
 
 (async () => {
+  // Paint the tariff before either Telegram initialization or a slow DB response.
+  let finishSession;
+  const slow = setup(null, () => new Promise(resolve => { finishSession = resolve; }));
+  assert.equal(slow.node('tariff-description').hidden, false);
+  assert.equal(slow.node('agreement-caption').hidden, false);
+  assert.equal(slow.node('pay-lifetime').hidden, false);
+  assert.equal(slow.node('pay-lifetime').disabled, true);
+  assert.equal(slow.node('phone').hidden, true);
+  await slow.node('pay-lifetime').onclick();
+  assert.deepEqual(slow.opened, []);
+  await new Promise(setImmediate);
+  finishSession(response({status: 'approved', phone: '+996555000000', apartment: {}}));
+  await new Promise(setImmediate);
+  assert.equal(slow.node('tariff-description').hidden, true);
+  assert.equal(slow.node('pay-lifetime').hidden, true);
+  assert.equal(slow.node('phone').hidden, false);
+
+  const failed = setup(null, () => Promise.reject(new Error('Service unavailable')));
+  await new Promise(setImmediate);
+  assert.equal(failed.node('pay-lifetime').disabled, true);
+  assert.equal(failed.node('phone').hidden, true);
+  assert.equal(failed.node('status').textContent, 'Service unavailable');
+  await failed.node('pay-lifetime').onclick();
+  assert.deepEqual(failed.opened, []);
+
   // A restored weekly checkout must reopen its URL without a new request.
   const restored = setup({status: 'awaiting_receipt', plan: 'week'});
   await new Promise(setImmediate);

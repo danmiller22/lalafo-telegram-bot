@@ -814,7 +814,8 @@ async def test_stock_load_reserves_room_for_both_seller_categories(repositories,
             lalafo_id=99300 + index, owner_listing=index < 6,
         ))
     inventory = InventoryRepository(sessions)
-    assert await inventory.schedule_period(now=datetime.now(timezone.utc)) == 4
+    now = discovery_period_start(datetime.now(timezone.utc)).astimezone(timezone.utc)
+    assert await inventory.schedule_period(now=now) == 4
     async with sessions() as session:
         kinds = (await session.scalars(
             select(Apartment.seller_type).join(ApartmentInventoryQueue)
@@ -850,7 +851,8 @@ async def test_stock_load_uses_spare_category_capacity(repositories, monkeypatch
     apartments, _, sessions = repositories
     for index in range(6):
         await apartments.upsert_discovered(make_ad(lalafo_id=99500 + index, owner_listing=owner))
-    assert await InventoryRepository(sessions).schedule_period(now=datetime.now(timezone.utc)) == 4
+    now = discovery_period_start(datetime.now(timezone.utc)).astimezone(timezone.utc)
+    assert await InventoryRepository(sessions).schedule_period(now=now) == 4
 
 
 @pytest.mark.asyncio
@@ -884,7 +886,7 @@ async def test_unknown_author_can_be_scheduled_and_published(repositories, monke
         await apartments.upsert_discovered(make_ad(
             lalafo_id=99800 + index, seller_type="unknown", owner_listing=False,
         ))
-    now = datetime.now(timezone.utc)
+    now = discovery_period_start(datetime.now(timezone.utc)).astimezone(timezone.utc)
     inventory = InventoryRepository(sessions)
     assert await inventory.schedule_period(now=now) == 4
     claimed = await inventory.claim_due(now=now)

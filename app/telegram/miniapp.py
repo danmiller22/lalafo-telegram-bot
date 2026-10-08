@@ -106,11 +106,11 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
   <h1 id="title" class="hidden"></h1>
   <p id="intro" class="intro"></p>
   <div id="status" class="status hidden" role="status" aria-live="polite"></div>
-  <div id="tariff-description" class="intro hidden">
+  <div id="tariff-description" class="intro">
     Недельный доступ к контактам собственников — {WEEK_PRICE} сом
   </div>
-  <p id="agreement-caption" class="agreement-caption hidden">Оплачивая доступ, вы подтверждаете, что ознакомились с <a id="terms-link" class="terms-link" href="#agreement">пользовательским договором</a> и соглашаетесь с его условиями.</p>
-  <button id="pay-lifetime" class="primary tariff-button hidden">Оплатить {WEEK_PRICE} сом</button>
+  <p id="agreement-caption" class="agreement-caption">Оплачивая доступ, вы подтверждаете, что ознакомились с <a id="terms-link" class="terms-link" href="#agreement">пользовательским договором</a> и соглашаетесь с его условиями.</p>
+  <button id="pay-lifetime" class="primary tariff-button" disabled>Оплатить {WEEK_PRICE} сом</button>
   <a id="privacy" class="privacy hidden">Политика конфиденциальности</a>
   <section id="checkout" class="checkout hidden">
     <div id="payment-step" class="step"><span>1</span>Оплата</div>
@@ -139,6 +139,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
   let paymentPoll = null;
   let paymentStart = null;
   let accessApproved = false;
+  let sessionReady = false;
   let selectedPlan = "week";
   const paymentUrls = {checkout_json};
   let preparedUntil = Infinity;
@@ -154,7 +155,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
       if (data.status === "approved") {{ render(data); return; }}
       paymentUrls.week = data.payment_url;
       preparedUntil = data.expires_at_ms;
-      el("pay-lifetime").disabled = false;
+      el("pay-lifetime").disabled = !sessionReady;
       el("reopen-payment").disabled = false;
       if (refreshCheckoutTimer) clearTimeout(refreshCheckoutTimer);
       refreshCheckoutTimer = setTimeout(() => {{
@@ -163,7 +164,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
       }}, Math.max(1000, preparedUntil - Date.now()));
     }}).catch(error => {{
       message(error.message);
-      el("pay-lifetime").disabled = false;
+      el("pay-lifetime").disabled = !sessionReady;
       el("reopen-payment").disabled = false;
     }}).finally(() => {{ checkoutPreparation = null; }});
     return checkoutPreparation;
@@ -273,12 +274,14 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     try {{
       const preparation = prepareCheckout();
       render(await api("/miniapp/api/session", {{}}));
+      sessionReady = true;
       await preparation;
+      el("pay-lifetime").disabled = false;
     }}
     catch (error) {{ message(error.message); }}
   }}
   async function startPayment(plan, buttonId) {{
-    if (paymentOpening || accessApproved) return;
+    if (paymentOpening || accessApproved || !sessionReady) return;
     selectedPlan = plan;
     paymentOpening = true;
     const button = el(buttonId);

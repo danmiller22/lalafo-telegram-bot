@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 import httpx
 from aiogram import Bot
 from aiogram.types import Update
-from fastapi import FastAPI, Header, HTTPException, Request, Response, status
+from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 
@@ -1456,9 +1456,8 @@ async def telegram_mini_app() -> HTMLResponse:
 
 
 @app.post("/miniapp/api/session", include_in_schema=False)
-async def miniapp_session(payload: MiniAppRequest) -> dict[str, Any]:
+async def miniapp_session(payload: MiniAppRequest, background_tasks: BackgroundTasks) -> dict[str, Any]:
     settings, runtime, user, apartment_id = _miniapp_context(payload)
-    await _record_funnel(runtime, user.id, "card_opened", apartment_id=apartment_id)
     result = await runtime.workflow_data["service"].contact_status(user.id, apartment_id)
     if result.status == "unavailable":
         raise HTTPException(
@@ -1469,7 +1468,15 @@ async def miniapp_session(payload: MiniAppRequest) -> dict[str, Any]:
     response["monthly_available"] = False
     bot_url = f"https://t.me/{settings.telegram_bot_username.lstrip('@')}"
     response["privacy_url"] = f"{bot_url}?start=privacy"
+    background_tasks.add_task(_record_miniapp_open, runtime, user.id, apartment_id)
     return response
+
+
+async def _record_miniapp_open(runtime: Any, user_id: int, apartment_id: int) -> None:
+    try:
+        await _record_funnel(runtime, user_id, "card_opened", apartment_id=apartment_id)
+    except Exception:
+        logger.exception("Could not record Mini App open")
 
 
 @app.post("/miniapp/api/consent", include_in_schema=False)
