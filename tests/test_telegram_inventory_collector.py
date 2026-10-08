@@ -7,6 +7,8 @@ from app.inventory import InventoryRepository
 from scripts.collect_telegram_inventory import collect
 from tests.helpers import make_ad
 
+pytestmark = pytest.mark.usefixtures("publication_clock")
+
 
 @pytest.mark.asyncio
 async def test_telegram_inventory_is_stored_and_due_without_lalafo(repositories, monkeypatch):
