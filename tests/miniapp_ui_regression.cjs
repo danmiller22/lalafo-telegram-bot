@@ -49,7 +49,7 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
     await new Promise(setImmediate);
   }
   assert.equal(lateCalls, 0);
-  assert.equal(late.node('pay-lifetime').disabled, true);
+  assert.equal(late.node('pay-lifetime').disabled, false);
   late.context.window.Telegram = {WebApp: {
     initData: 'start_param=late-token', initDataUnsafe: {start_param: 'late-token'},
     ready() {}, expand() {}, openLink(url) { late.opened.push(url); },
@@ -72,14 +72,14 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
 
   // Paint the tariff before either Telegram initialization or a slow DB response.
   let finishSession;
-  const slow = setup(null, () => new Promise(resolve => { finishSession = resolve; }));
+  const slow = setup(null, path => path.endsWith('/session') ? new Promise(resolve => { finishSession = resolve; }) : Promise.resolve(response({status: 'awaiting_receipt', plan: 'week'})));
   assert.equal(slow.node('tariff-description').hidden, false);
   assert.equal(slow.node('agreement-caption').hidden, false);
   assert.equal(slow.node('pay-lifetime').hidden, false);
-  assert.equal(slow.node('pay-lifetime').disabled, true);
+  assert.equal(slow.node('pay-lifetime').disabled, false);
   assert.equal(slow.node('phone').hidden, true);
   await slow.node('pay-lifetime').onclick();
-  assert.deepEqual(slow.opened, []);
+  assert.deepEqual(slow.opened, ['https://example.com/week']);
   await new Promise(setImmediate);
   finishSession(response({status: 'approved', phone: '+996555000000', apartment: {}}));
   await new Promise(setImmediate);
@@ -89,11 +89,11 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
 
   const failed = setup(null, () => Promise.reject(new Error('Service unavailable')));
   await new Promise(setImmediate);
-  assert.equal(failed.node('pay-lifetime').disabled, true);
+  assert.equal(failed.node('pay-lifetime').disabled, false);
   assert.equal(failed.node('phone').hidden, true);
   assert.equal(failed.node('status').textContent, 'Service unavailable');
   await failed.node('pay-lifetime').onclick();
-  assert.deepEqual(failed.opened, []);
+  assert.deepEqual(failed.opened, ['https://example.com/week']);
 
   // A restored weekly checkout must reopen its URL without a new request.
   const restored = setup({status: 'awaiting_receipt', plan: 'week'});

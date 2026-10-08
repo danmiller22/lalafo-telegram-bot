@@ -110,7 +110,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     Недельный доступ к контактам собственников — {WEEK_PRICE} сом
   </div>
   <p id="agreement-caption" class="agreement-caption">Оплачивая доступ, вы подтверждаете, что ознакомились с <a id="terms-link" class="terms-link" href="#agreement">пользовательским договором</a> и соглашаетесь с его условиями.</p>
-  <button id="pay-lifetime" class="primary tariff-button" disabled>Оплатить {WEEK_PRICE} сом</button>
+  <button id="pay-lifetime" class="primary tariff-button"{'' if payment_urls else ' disabled'}>Оплатить {WEEK_PRICE} сом</button>
   <a id="privacy" class="privacy hidden">Политика конфиденциальности</a>
   <section id="checkout" class="checkout hidden">
     <div id="payment-step" class="step"><span>1</span>Оплата</div>
@@ -156,7 +156,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
       if (data.status === "approved") {{ render(data); return; }}
       paymentUrls.week = data.payment_url;
       preparedUntil = data.expires_at_ms;
-      el("pay-lifetime").disabled = !sessionReady;
+      el("pay-lifetime").disabled = !paymentUrls.week;
       el("reopen-payment").disabled = false;
       if (refreshCheckoutTimer) clearTimeout(refreshCheckoutTimer);
       refreshCheckoutTimer = setTimeout(() => {{
@@ -165,7 +165,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
       }}, Math.max(1000, preparedUntil - Date.now()));
     }}).catch(error => {{
       message(error.message);
-      el("pay-lifetime").disabled = !sessionReady;
+      el("pay-lifetime").disabled = !paymentUrls.week;
       el("reopen-payment").disabled = false;
     }}).finally(() => {{ checkoutPreparation = null; }});
     return checkoutPreparation;
@@ -289,7 +289,8 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     finally {{ sessionLoading = false; }}
   }}
   async function startPayment(plan, buttonId) {{
-    if (paymentOpening || accessApproved || !sessionReady) return;
+    if (paymentOpening || accessApproved || (!sessionReady && !paymentUrls[plan])) return;
+    telegramContext();
     selectedPlan = plan;
     paymentOpening = true;
     const button = el(buttonId);
