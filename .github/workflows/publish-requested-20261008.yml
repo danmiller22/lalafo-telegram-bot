@@ -1,4 +1,4 @@
-name: Publish eight requested cards with verified database fallback
+name: Publish remaining four requested cards
 on:
   push:
     branches: [codex/publish-requested-20261008]
@@ -23,10 +23,6 @@ jobs:
       HTTP_TIMEOUT_SECONDS: '15'
       HTTP_MAX_RETRIES: '1'
       SELECTED_LALAFO_URLS: |
-        https://lalafo.kg/bishkek/ads/sdaetsa-svetlaa-studia-s-otdelnoj-id-117132106
-        https://lalafo.kg/bishkek/ads/1-komnata-cum-rieltor-semejnym-ot-3-mesacev-s-mebelu-polnostu-id-117127799
-        https://lalafo.kg/bishkek/ads/vostok-5-mkr-id-116922177
-        https://lalafo.kg/bishkek/ads/1-komnata-biskek-park-trc-agentstvo-nedvizimosti-bez-zivotnyh-ot-1-mesaca-ot-3-mesacev-ot-6-mesacev-s-mebelu-casticno-id-117038600
         https://lalafo.kg/bishkek/ads/1-komnata-knu-agentstvo-nedvizimosti-mozno-s-zivotnymi-s-mebelu-casticno-id-116992102
         https://lalafo.kg/bishkek/ads/1-komnata-vostok-5-mkr-agentstvo-nedvizimosti-bez-zivotnyh-ot-1-mesaca-ot-3-mesacev-ot-6-mesacev-s-mebelu-polnostu-id-116966410
         https://lalafo.kg/bishkek/ads/1-komnata-biskek-park-trc-agentstvo-nedvizimosti-bez-zivotnyh-ot-1-mesaca-ot-3-mesacev-ot-6-mesacev-s-mebelu-casticno-id-116953396
@@ -37,5 +33,11 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install -q -r requirements.txt
-      - name: Publish exactly the eight requested cards
+      - name: Select a working Lalafo route
+        shell: bash
+        run: |
+          if timeout 60 python -m scripts.select_lalafo_proxy > lalafo-proxy.env; then
+            cat lalafo-proxy.env >> "$GITHUB_ENV"
+          fi
+      - name: Publish remaining four requested cards
         run: python -m tools.publish_selected_apartments
