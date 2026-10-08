@@ -1,4 +1,4 @@
-name: Publish eight user-requested apartments
+name: Publish eight requested cards with verified database fallback
 on:
   push:
     branches: [codex/publish-requested-20261008]

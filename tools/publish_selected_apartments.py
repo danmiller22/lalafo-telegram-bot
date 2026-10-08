@@ -604,7 +604,11 @@ async def run() -> int:
                 )
 
             assert apartment is not None
-            card_source = ad if ad is not None else apartment
+            if ad is None:
+                from scripts.scrape_publish import apartment_to_ad
+
+                ad = apartment_to_ad(apartment)
+            card_source = ad
             if (
                 not force_repost
                 and managed is None
