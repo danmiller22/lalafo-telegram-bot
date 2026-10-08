@@ -1,0 +1,50 @@
+name: Publish three requested apartments 2026-10-08
+
+on:
+  push:
+    branches: [codex/publish-requested-20261008]
+    paths: [.github/workflows/publish-requested-20261008.yml]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-apartments
+  cancel-in-progress: false
+
+jobs:
+  publish-selected:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_GROUP_ID: "-1004389602150"
+      CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SELECTED_LALAFO_URLS: >-
+        https://lalafo.kg/bishkek/ads/vostok-5-mkr-id-116922177
+        https://lalafo.kg/bishkek/ads/1-komnata-vostok-5-mkr-rieltor-bez-zivotnyh-ot-1-mesaca-s-mebelu-polnostu-id-117081716
+        https://lalafo.kg/bishkek/ads/1-komnata-biskek-park-trc-agentstvo-nedvizimosti-bez-zivotnyh-ot-1-mesaca-ot-3-mesacev-ot-6-mesacev-s-mebelu-polnostu-id-117030136
+      CONFIRM_SELECTED_PUBLIC_SEND: "true"
+      FORCE_SELECTED_REPOST: "true"
+      DRY_RUN: "false"
+      MAX_PHOTOS_PER_APARTMENT: "5"
+      LOG_LEVEL: INFO
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - name: Select a working Lalafo route
+        shell: bash
+        run: |
+          if python -m scripts.select_lalafo_proxy > lalafo-proxy.env; then
+            cat lalafo-proxy.env >> "$GITHUB_ENV"
+          else
+            echo "::warning::No verified proxy was available; trying the direct route"
+            echo "LALAFO_PROXY_URL=" >> "$GITHUB_ENV"
+          fi
+      - name: Publish only the three requested cards
+        run: python -m tools.publish_selected_apartments
