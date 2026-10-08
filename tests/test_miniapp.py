@@ -77,7 +77,7 @@ def test_mini_app_page_has_only_weekly_tariff_and_privacy_link():
     assert 'id="photos"' in html
     assert 'id="details"' in html
     assert "current.openLink(data.payment_url)" in html
-    assert '<script async src="https://telegram.org/js/telegram-web-app.js"></script>' in html
+    assert '<script id="telegram-sdk" async src="https://telegram.org/js/telegram-web-app.js"></script>' in html
     assert 'query.get("tgWebAppData")' in html
     assert "prepareTelegramContext" in html
     assert "Выберите банк" not in html

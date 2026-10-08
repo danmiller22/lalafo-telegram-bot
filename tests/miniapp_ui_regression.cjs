@@ -5,16 +5,19 @@ const html = JSON.parse(fs.readFileSync(0, 'utf8'));
 const script = html.split('<script>')[1].split('</script>')[0];
 const response = data => ({ok: true, json: async () => data});
 
-function setup(initial, fetchOverride, dynamic = false) {
+function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
   const nodes = {}, timers = new Map(), opened = [];
   let nextTimer = 1;
+  const markup = id => html.match(new RegExp('<[^>]+id="' + id + '"[^>]*>'))?.[0] || '';
   const node = id => nodes[id] ||= {
-    hidden: true,
+    hidden: /class="[^"]*\bhidden\b/.test(markup(id)),
+    disabled: /\sdisabled(?:\s|>)/.test(markup(id)),
     classList: {
       toggle(_, hidden) { nodes[id].hidden = hidden; },
       contains() { return nodes[id].hidden; },
     },
     checked: false, click() {}, open: false,
+    listeners: {}, addEventListener(event, fn) { this.listeners[event] = fn; },
     showModal() { this.open = true; }, close() { this.open = false; },
     textContent: '', replaceChildren() {}, appendChild() {},
   };
@@ -27,12 +30,71 @@ function setup(initial, fetchOverride, dynamic = false) {
     setTimeout(fn) { const id = nextTimer++; timers.set(id, fn); return id; },
     clearTimeout(id) { timers.delete(id); },
     fetch: fetchOverride || (() => Promise.resolve(response(initial))),
+    ...overrides,
   };
   vm.runInNewContext(dynamic ? script.replace(/const paymentUrls = .*;/, "const paymentUrls = {};") : script, context);
-  return {node, timers, opened};
+  return {node, timers, opened, context};
 }
 
 (async () => {
+  let lateCalls = 0;
+  const late = setup({status: 'unpaid'}, () => {
+    lateCalls++;
+    return Promise.resolve(response({status: 'unpaid'}));
+  }, false, {location: {search: '', hash: ''}, window: {}});
+  for (let i = 0; i < 20; i++) {
+    const [id, callback] = [...late.timers.entries()][0];
+    late.timers.delete(id);
+    callback();
+    await new Promise(setImmediate);
+  }
+  assert.equal(lateCalls, 0);
+  assert.equal(late.node('pay-lifetime').disabled, true);
+  late.context.window.Telegram = {WebApp: {
+    initData: 'start_param=late-token', initDataUnsafe: {start_param: 'late-token'},
+    ready() {}, expand() {}, openLink(url) { late.opened.push(url); },
+  }};
+  assert.equal(typeof late.node('telegram-sdk').listeners.load, 'function');
+  late.node('telegram-sdk').listeners.load();
+  await new Promise(setImmediate);
+  assert.equal(lateCalls, 1);
+  assert.equal(late.node('pay-lifetime').disabled, false);
+  assert.equal(late.node('status').hidden, true);
+
+  let embeddedBody;
+  const embedded = setup({status: 'unpaid'}, (_, options) => {
+    embeddedBody = JSON.parse(options.body);
+    return Promise.resolve(response({status: 'unpaid'}));
+  }, false, {location: {search: '?tgWebAppData=' + encodeURIComponent('start_param=embedded-token&auth_date=1700000000'), hash: ''}});
+  await new Promise(setImmediate);
+  assert.equal(embeddedBody.start_param, 'embedded-token');
+  assert.equal(embedded.node('pay-lifetime').disabled, false);
+
+  // Paint the tariff before either Telegram initialization or a slow DB response.
+  let finishSession;
+  const slow = setup(null, () => new Promise(resolve => { finishSession = resolve; }));
+  assert.equal(slow.node('tariff-description').hidden, false);
+  assert.equal(slow.node('agreement-caption').hidden, false);
+  assert.equal(slow.node('pay-lifetime').hidden, false);
+  assert.equal(slow.node('pay-lifetime').disabled, true);
+  assert.equal(slow.node('phone').hidden, true);
+  await slow.node('pay-lifetime').onclick();
+  assert.deepEqual(slow.opened, []);
+  await new Promise(setImmediate);
+  finishSession(response({status: 'approved', phone: '+996555000000', apartment: {}}));
+  await new Promise(setImmediate);
+  assert.equal(slow.node('tariff-description').hidden, true);
+  assert.equal(slow.node('pay-lifetime').hidden, true);
+  assert.equal(slow.node('phone').hidden, false);
+
+  const failed = setup(null, () => Promise.reject(new Error('Service unavailable')));
+  await new Promise(setImmediate);
+  assert.equal(failed.node('pay-lifetime').disabled, true);
+  assert.equal(failed.node('phone').hidden, true);
+  assert.equal(failed.node('status').textContent, 'Service unavailable');
+  await failed.node('pay-lifetime').onclick();
+  assert.deepEqual(failed.opened, []);
+
   // A restored weekly checkout must reopen its URL without a new request.
   const restored = setup({status: 'awaiting_receipt', plan: 'week'});
   await new Promise(setImmediate);

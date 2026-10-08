@@ -1,4 +1,4 @@
-name: Notify three approved clients of weekly access
+name: Publish requested Asia Mall apartment
 on:
   push:
     branches: [codex/publish-requested-20261008]
@@ -6,16 +6,24 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: notify-three-approved-clients-20261008
+  group: publish-apartments
   cancel-in-progress: false
 jobs:
-  notify:
+  publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 15
     env:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_GROUP_ID: "-1004389602150"
+      CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SELECTED_LALAFO_URLS: "https://lalafo.kg/bishkek/ads/1-komnata-azia-moll-rieltor-bez-zivotnyh-ot-1-mesaca-s-mebelu-polnostu-id-117112502"
+      CONFIRM_SELECTED_PUBLIC_SEND: "true"
+      FORCE_SELECTED_REPOST: "true"
+      DRY_RUN: "false"
       RUN_BOT: "false"
+      MAX_PHOTOS_PER_APARTMENT: "5"
+      LOG_LEVEL: INFO
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -23,45 +31,15 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: python -m pip install -r requirements.txt
-      - name: Verify identities and notify exactly three clients
+      - name: Select working Lalafo route
+        timeout-minutes: 3
+        shell: bash
         run: |
-          python - <<'PY'
-          import asyncio
-          from datetime import datetime, timezone
-          from zoneinfo import ZoneInfo
-          from aiogram import Bot
-          from app.config import get_settings
-          from app.database import create_engine_and_session
-          from app.payments.repository import PaymentRepository
-          
-          async def main():
-              settings=get_settings()
-              engine,sessions=create_engine_and_session(settings.database_url)
-              repo=PaymentRepository(sessions)
-              expected={1437:1465072578,1438:7863718792,1439:8898912697}
-              targets=[]
-              try:
-                  for rid,uid in expected.items():
-                      request=await repo.get_request(rid)
-                      assert request and request.telegram_user_id==uid and request.plan=="week" and request.status=="approved", f"Identity or access mismatch: {rid}"
-                      assert request.access_expires_at and request.access_expires_at>datetime.now(timezone.utc), f"Access expired: {rid}"
-                      expires=request.access_expires_at.astimezone(ZoneInfo("Asia/Bishkek"))
-                      message="Вам открыт доступ к контактам на неделю.\nДоступ действует до "+expires.strftime("%d")+" октября, "+expires.strftime("%H:%M")+" по Бишкеку.\nНажмите «Получить номер» под выбранной квартирой, чтобы увидеть контакты."
-                      targets.append((rid,uid,message))
-                  bot=Bot(settings.telegram_bot_token)
-                  failures=0
-                  try:
-                      for rid,uid,message in targets:
-                          try:
-                              sent=await bot.send_message(uid,message)
-                              print(f"NOTICE_SENT request={rid} user={uid} message_id={sent.message_id}",flush=True)
-                          except Exception as exc:
-                              failures+=1
-                              print(f"NOTICE_FAILED request={rid} error={type(exc).__name__}",flush=True)
-                  finally:
-                      await bot.session.close()
-                  assert failures==0, "Some notifications failed"
-              finally:
-                  await engine.dispose()
-          asyncio.run(main())
-          PY
+          if python -m scripts.select_lalafo_proxy > lalafo-proxy.env; then
+            cat lalafo-proxy.env >> "$GITHUB_ENV"
+          else
+            echo "::warning::Route selection unavailable; trying configured direct route"
+            echo "LALAFO_PROXY_URL=" >> "$GITHUB_ENV"
+          fi
+      - name: Publish only requested apartment
+        run: python -m tools.publish_selected_apartments

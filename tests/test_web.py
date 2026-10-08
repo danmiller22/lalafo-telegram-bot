@@ -543,6 +543,25 @@ async def test_retired_featured_webhook_is_gone() -> None:
 
 
 @pytest.mark.asyncio
+async def test_miniapp_status_does_not_wait_for_or_fail_on_open_analytics(monkeypatch):
+    from fastapi import BackgroundTasks
+
+    service = SimpleNamespace(contact_status=AsyncMock(return_value=SimpleNamespace(status="unpaid", apartment=SimpleNamespace(), plan=None)))
+    runtime = SimpleNamespace(workflow_data={"service": service})
+    monkeypatch.setattr(web, "_miniapp_context", lambda _: (SimpleNamespace(telegram_bot_username="arenda312bot"), runtime, SimpleNamespace(id=778899), 42))
+    analytics = AsyncMock(side_effect=RuntimeError("Analytics database unavailable"))
+    monkeypatch.setattr(web, "_record_funnel", analytics)
+    tasks = BackgroundTasks()
+
+    result = await web.miniapp_session(web.MiniAppRequest(init_data="test", start_param="test"), tasks)
+    assert result["status"] == "unpaid"
+    analytics.assert_not_awaited()
+    assert len(tasks.tasks) == 1
+    await tasks()
+    analytics.assert_awaited_once_with(runtime, 778899, "card_opened", apartment_id=42)
+
+
+@pytest.mark.asyncio
 async def test_miniapp_page_is_public_but_session_requires_telegram_auth(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
