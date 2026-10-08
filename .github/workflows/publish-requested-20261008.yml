@@ -1,45 +1,52 @@
-name: Publish requested Asia Mall apartment
+name: Read-only production debug
 on:
   push:
     branches: [codex/publish-requested-20261008]
     paths: [.github/workflows/publish-requested-20261008.yml]
 permissions:
   contents: read
-concurrency:
-  group: publish-apartments
-  cancel-in-progress: false
 jobs:
-  publish:
+  audit:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 8
     env:
-      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      TELEGRAM_GROUP_ID: "-1004389602150"
-      CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      SELECTED_LALAFO_URLS: "https://lalafo.kg/bishkek/ads/1-komnata-azia-moll-rieltor-bez-zivotnyh-ot-1-mesaca-s-mebelu-polnostu-id-117112502"
-      CONFIRM_SELECTED_PUBLIC_SEND: "true"
-      FORCE_SELECTED_REPOST: "true"
-      DRY_RUN: "false"
-      RUN_BOT: "false"
-      MAX_PHOTOS_PER_APARTMENT: "5"
-      LOG_LEVEL: INFO
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      PAYMENT_ADMIN_USER_ID: ${{ secrets.PAYMENT_ADMIN_USER_ID }}
+      PAYMENT_CALLBACK_SECRET: ${{ secrets.PAYMENT_CALLBACK_SECRET }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
-          cache: pip
-      - run: python -m pip install -r requirements.txt
-      - name: Select working Lalafo route
-        timeout-minutes: 3
+          python-version: '3.12'
+      - run: pip install -q -r requirements.txt
+      - name: Read-only database audit
         shell: bash
         run: |
-          if python -m scripts.select_lalafo_proxy > lalafo-proxy.env; then
-            cat lalafo-proxy.env >> "$GITHUB_ENV"
-          else
-            echo "::warning::Route selection unavailable; trying configured direct route"
-            echo "LALAFO_PROXY_URL=" >> "$GITHUB_ENV"
-          fi
-      - name: Publish only requested apartment
-        run: python -m tools.publish_selected_apartments
+          python - <<'PY'
+          import asyncio,json
+          from sqlalchemy import text
+          from app.config import get_settings
+          from app.database import create_engine_and_session
+          async def main():
+              engine,sessions=create_engine_and_session(get_settings().database_url)
+              queries={
+                "payments_24h":"SELECT status,count(*) AS count FROM payment_requests WHERE created_at > now()-interval '24 hours' GROUP BY status",
+                "pending_review":"SELECT count(*) AS count,min(payment_claimed_at) AS oldest FROM payment_requests WHERE status='pending' AND payment_claimed_at IS NOT NULL",
+                "active_access":"SELECT count(*) AS count FROM payment_requests WHERE status='approved' AND access_expires_at > now()",
+                "queue":"SELECT status,count(*) AS count,min(scheduled_at) AS earliest FROM apartment_inventory_queue GROUP BY status",
+                "publication_24h":"SELECT count(*) AS count,max(published_at) AS latest FROM apartments WHERE published_at > now()-interval '24 hours'",
+                "discovery":"SELECT status,discovered_count,queued_count,last_error,started_at,completed_at FROM apartment_discovery_runs ORDER BY started_at DESC LIMIT 4"
+              }
+              try:
+                async with sessions() as session:
+                  await session.execute(text("SET TRANSACTION READ ONLY"))
+                  for name,sql in queries.items():
+                    try:
+                      async with session.begin_nested():
+                        rows=(await session.execute(text(sql))).mappings().all()
+                        print("AUDIT "+name+" "+json.dumps([dict(r) for r in rows],default=str))
+                    except Exception as e: print("AUDIT "+name+" ERROR "+type(e).__name__)
+              finally: await engine.dispose()
+          asyncio.run(main())
+          PY
