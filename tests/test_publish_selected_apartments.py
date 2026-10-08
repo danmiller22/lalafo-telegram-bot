@@ -2,6 +2,47 @@ from __future__ import annotations
 
 import pytest
 
+
+@pytest.mark.asyncio
+async def test_selected_publication_uses_typed_verified_copy_when_source_blocked(repositories, monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from app.config import Settings
+    from app.lalafo.client import LalafoAccessError
+    from app.lalafo.models import LalafoAd
+    from tests.helpers import make_ad
+    from tools import publish_selected_apartments as selected
+
+    apartments, _, sessions = repositories
+    saved = await apartments.upsert_discovered(make_ad())
+    monkeypatch.setenv("CONFIRM_SELECTED_PUBLIC_SEND", "true")
+    monkeypatch.setenv("FORCE_SELECTED_REPOST", "true")
+    monkeypatch.setenv("SELECTED_LALAFO_URLS", saved.source_url)
+    monkeypatch.setattr(selected, "get_settings", lambda: Settings(
+        telegram_bot_token="123456:local-test-token", callback_secret="a" * 40,
+        telegram_group_id=-1001,
+    ))
+    engine = SimpleNamespace(dispose=AsyncMock())
+    monkeypatch.setattr(selected, "create_engine_and_session", lambda _: (engine, sessions))
+    monkeypatch.setattr(selected, "init_db", AsyncMock())
+    client = SimpleNamespace(detail=AsyncMock(side_effect=LalafoAccessError("blocked")), close=AsyncMock())
+    monkeypatch.setattr(selected, "LalafoClient", lambda **_: client)
+    monkeypatch.setattr(selected, "Bot", lambda **_: SimpleNamespace(session=SimpleNamespace(close=AsyncMock())))
+
+    async def publish(apartment_id, ad):
+        assert apartment_id == saved.id
+        assert isinstance(ad, LalafoAd)
+        assert ad.source_title == ""
+        assert ad.phone == saved.phone
+        assert ad.photo_urls == saved.photo_urls
+        return SimpleNamespace(message_id=123)
+
+    publisher = SimpleNamespace(publish=AsyncMock(side_effect=publish))
+    monkeypatch.setattr(selected, "TelegramPublisher", lambda *_, **__: publisher)
+    assert await selected.run() == 0
+    publisher.publish.assert_awaited_once()
+    assert (await apartments.get(saved.id)).telegram_message_id == 123
+
 from tools.publish_selected_apartments import (
     SELECTED_REPOST_AFTER_HOURS,
     _force_repost,
