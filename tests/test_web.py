@@ -926,6 +926,18 @@ async def test_primary_lalafo_worker_retries_failure_and_reports_separately(monk
 
 
 @pytest.mark.asyncio
+async def test_inventory_worker_timeout_terminates_child_and_reports_retry(monkeypatch):
+    from unittest.mock import Mock
+
+    child = SimpleNamespace(returncode=None, wait=AsyncMock(side_effect=[TimeoutError(), 0]), terminate=Mock(), kill=Mock())
+    monkeypatch.setattr(web.asyncio, "create_subprocess_exec", AsyncMock(return_value=child))
+    assert await web._run_inventory_worker_process_unlocked(get_settings(), module="scripts.collect_telegram_inventory", report_state=None) == 124
+    child.terminate.assert_called_once()
+    child.kill.assert_not_called()
+    assert child.wait.await_count == 2
+
+
+@pytest.mark.asyncio
 async def test_inventory_collectors_share_one_process_slot_without_blocking_web(monkeypatch):
     active = peak = 0
     entered = asyncio.Event()

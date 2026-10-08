@@ -19,7 +19,7 @@ REPORT_PREFIX = "LALAFO_COLLECTION_RESULT "
 async def collect(settings, inventory) -> dict:
     """Refill the primary source using the same lease as GitHub collectors."""
     now = datetime.now(timezone.utc)
-    key = await inventory.claim_discovery(now=now)
+    key = await inventory.claim_discovery(now=now, lease_minutes=15)
     if key is None:
         return {"status": "not_due", "exit_code": 0}
     code = 1
@@ -29,7 +29,8 @@ async def collect(settings, inventory) -> dict:
     stats: dict[str, int] = {"stored": 0, "search_pages": 0, "search_results": 0}
     try:
         try:
-            selected = await find_working_proxies()
+            async with asyncio.timeout(45):
+                selected = await find_working_proxies()
         except Exception:
             selected = []
             logger.exception("Lalafo route selection failed; keeping configured route")

@@ -490,19 +490,20 @@ async def _run_inventory_worker_process_unlocked(
         **process_options,
     )
     try:
-        if report_state is not None:
-            assert process.stdout is not None
-            async for line in process.stdout:
-                message = line.decode("utf-8", errors="replace").strip()
-                if message.startswith("LALAFO_COLLECTION_RESULT "):
-                    try:
-                        result = json.loads(message.split(" ", 1)[1])
-                        if isinstance(result, dict):
-                            report_state["last_result"] = result
-                    except ValueError:
-                        logger.warning("Invalid inventory worker result")
-        return await process.wait()
-    except asyncio.CancelledError:
+        async with asyncio.timeout(720 if module == "scripts.collect_lalafo_inventory" else 300):
+            if report_state is not None:
+                assert process.stdout is not None
+                async for line in process.stdout:
+                    message = line.decode("utf-8", errors="replace").strip()
+                    if message.startswith("LALAFO_COLLECTION_RESULT "):
+                        try:
+                            result = json.loads(message.split(" ", 1)[1])
+                            if isinstance(result, dict):
+                                report_state["last_result"] = result
+                        except ValueError:
+                            logger.warning("Invalid inventory worker result")
+            return await process.wait()
+    except (asyncio.CancelledError, TimeoutError) as exc:
         if process.returncode is None:
             with suppress(ProcessLookupError):
                 process.terminate()
@@ -512,6 +513,11 @@ async def _run_inventory_worker_process_unlocked(
                 with suppress(ProcessLookupError):
                     process.kill()
                 await process.wait()
+        if isinstance(exc, TimeoutError):
+            logger.error("Inventory worker exceeded deadline: %s", module)
+            if report_state is not None:
+                report_state["last_result"] = {"status": "retryable", "error": "WorkerTimeout", "exit_code": 124}
+            return 124
         raise
 
 
