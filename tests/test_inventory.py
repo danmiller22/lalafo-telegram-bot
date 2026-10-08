@@ -29,6 +29,43 @@ def test_publication_schedule_uses_eighteen_minute_slots() -> None:
     assert PUBLICATION_SPACING_MINUTES == 18
 
 
+@pytest.mark.asyncio
+async def test_photo_delivery_failures_cool_down_without_refill_reset(repositories):
+    apartments, _, sessions = repositories
+    inventory = InventoryRepository(sessions)
+    now = datetime.now(timezone.utc)
+    apartment = await apartments.upsert_discovered(make_ad(lalafo_id=205001))
+    async with sessions.begin() as session:
+        row = ApartmentInventoryQueue(apartment_id=apartment.id, scheduled_at=now, window_key="photo-retry", sequence=1, status="publishing", attempts=2)
+        session.add(row)
+        await session.flush()
+        queue_id = row.id
+    await inventory.retry_item(queue_id, error="TelegramPublishError")
+    async with sessions.begin() as session:
+        row = await session.get(ApartmentInventoryQueue, queue_id)
+        assert row.status == "queued"
+        row.attempts = 3
+    await inventory.retry_item(queue_id, error="TelegramPublishError")
+    assert await inventory.schedule_period(now=now) == 0
+    async with sessions() as session:
+        row = await session.get(ApartmentInventoryQueue, queue_id)
+        assert row.status == "skipped"
+        assert row.attempts == 3
+    # A refreshed listing can return after the cooldown; no permanent ban.
+    assert await inventory.schedule_period(now=now + timedelta(hours=7)) == 1
+
+
+@pytest.mark.asyncio
+async def test_hosted_discovery_lease_recovers_after_worker_deadline(repositories):
+    _, _, sessions = repositories
+    inventory = InventoryRepository(sessions)
+    now = discovery_period_start(datetime.now(timezone.utc)).astimezone(timezone.utc)
+    key = await inventory.claim_discovery(now=now, lease_minutes=15)
+    assert key is not None
+    assert await inventory.claim_discovery(now=now + timedelta(minutes=14)) is None
+    assert await inventory.claim_discovery(now=now + timedelta(minutes=16)) == key
+
+
 def _apartments(count: int, *, central: bool, start_id: int, owner: bool = True):
     from types import SimpleNamespace
 

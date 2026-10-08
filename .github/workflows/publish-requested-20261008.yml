@@ -1,4 +1,4 @@
-name: Grant three explicitly approved weekly accesses
+name: Release proven stale discovery lease and cool down failed photos
 on:
   push:
     branches: [codex/publish-requested-20261008]
@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: grant-three-weekly-accesses-20261008
+  group: repair-stale-publication-state-20261008
   cancel-in-progress: false
 jobs:
   grant:
@@ -27,53 +27,43 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: python -m pip install -r requirements.txt
-      - name: Approve exact requests and verify weekly access
+      - name: Repair only known stale worker and repeatedly failed photo rows
         run: |
           python - <<'PY'
           import asyncio
           from datetime import datetime, timezone, timedelta
-          from aiogram import Bot
+          from sqlalchemy import select
           from app.config import get_settings
           from app.database import create_engine_and_session
-          from app.payments.repository import ApartmentRepository, PaymentRepository
-          from app.payments.service import PaymentService
-          from app.telegram.private_delivery import send_private_contact
+          from app.inventory import InventoryRepository
+          from app.models import ApartmentDiscoveryRun, ApartmentInventoryQueue
           
           async def main():
-              settings=get_settings()
-              assert settings.admin_user_id > 0, "Configured administrator is required"
-              engine,sessions=create_engine_and_session(settings.database_url)
-              repo=PaymentRepository(sessions)
-              service=PaymentService(ApartmentRepository(sessions),repo,admin_user_id=settings.admin_user_id)
-              expected={1437:1465072578,1438:7863718792,1439:8898912697}
-              for rid,uid in expected.items():
-                  request=await repo.get_request(rid)
-                  assert request and request.telegram_user_id == uid and request.plan == "week", f"Identity or plan mismatch: {rid}"
-                  assert request.status in {"pending","approved"}, f"Unexpected status for {rid}: {request.status}"
-              bot=Bot(settings.telegram_bot_token)
+              engine,sessions=create_engine_and_session(get_settings().database_url)
+              inventory=InventoryRepository(sessions)
               try:
-                  for rid,uid in expected.items():
-                      outcome=await service.decide(rid,approve=True,actor_id=settings.admin_user_id)
-                      assert outcome in {"approved","already_approved"}, f"Approval failed: {rid} {outcome}"
-                      request=await repo.get_request(rid)
-                      active=await repo.active_weekly_access(uid)
-                      assert request.status == "approved" and active, f"Access verification failed: {rid}"
-                      expires=request.access_expires_at
-                      assert expires and expires > datetime.now(timezone.utc), f"Expired access: {rid}"
-                      assert timedelta(days=6,hours=23) <= expires-request.approved_at <= timedelta(days=7,minutes=1), f"Unexpected duration: {rid}"
-                      print(f"ACCESS_VERIFIED request={rid} user={uid} outcome={outcome} expires={expires.isoformat()}",flush=True)
-                      if outcome == "approved":
-                          try:
-                              await bot.send_message(uid,"Оплата подтверждена. Доступ к контактам открыт.")
-                              if request.apartment:
-                                  await send_private_contact(bot,user_id=uid,apartment=request.apartment,support_url=settings.support_bot_url,max_photos=settings.max_photos_per_apartment)
-                              if request.admin_message_id:
-                                  await bot.edit_message_reply_markup(chat_id=settings.admin_user_id,message_id=request.admin_message_id,reply_markup=None)
-                              print(f"NOTIFIED request={rid}",flush=True)
-                          except Exception as exc:
-                              print(f"NOTIFICATION_FAILED request={rid} error={type(exc).__name__}",flush=True)
+                  async with sessions.begin() as session:
+                      row=await session.get(ApartmentDiscoveryRun,"2026-10-08T05:00+06",with_for_update=True)
+                      expected=datetime.fromisoformat("2026-10-08T05:39:15.761921+00:00")
+                      if row and row.status=="running" and row.started_at==expected:
+                          row.status="failed"
+                          row.lease_until=None
+                          row.completed_at=datetime.now(timezone.utc)-timedelta(minutes=6)
+                          row.last_error="RecoveredAfterDeploymentRestart"
+                          print("STALE_LEASE_RELEASED",flush=True)
+                      else:
+                          print("STALE_LEASE_UNCHANGED newer_or_finished_run",flush=True)
+                  for qid in (6719,6706):
+                      async with sessions() as session:
+                          row=await session.get(ApartmentInventoryQueue,qid)
+                          eligible=bool(row and row.status=="queued" and row.attempts>=3 and row.last_error=="TelegramPublishError")
+                      if eligible:
+                          await inventory.retry_item(qid,error="TelegramPublishError")
+                          print(f"PHOTO_COOLDOWN queue={qid}",flush=True)
+                  async with sessions() as session:
+                      row=await session.get(ApartmentDiscoveryRun,"2026-10-08T05:00+06")
+                      print(f"DISCOVERY_VERIFIED status={row.status} started={row.started_at} lease={row.lease_until}",flush=True)
               finally:
-                  await bot.session.close()
                   await engine.dispose()
           asyncio.run(main())
           PY

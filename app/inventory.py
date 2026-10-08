@@ -6,7 +6,7 @@ import math
 import random
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import delete, func, or_, select, text, update
+from sqlalchemy import and_, delete, func, or_, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -414,12 +414,12 @@ class InventoryRepository:
                 session.add(LalafoAutoReplyMeta(key=key, value=current.isoformat()))
         return True
 
-    async def claim_discovery(self, *, now: datetime, force: bool = False) -> str | None:
+    async def claim_discovery(self, *, now: datetime, force: bool = False, lease_minutes: int = 120) -> str | None:
         key = discovery_period_key(now)
         period_start = discovery_period_start(now).astimezone(timezone.utc)
         period_end = period_start + timedelta(minutes=PUBLICATION_PERIOD_MINUTES)
         window_prefix = discovery_period_start(now).strftime("%Y%m%dT%H") + "-%"
-        lease_until = as_utc(now) + timedelta(hours=2)
+        lease_until = as_utc(now) + timedelta(minutes=lease_minutes)
         try:
             async with self.sessions.begin() as session:
                 # Koyeb and GitHub share this lease; serialize existing-run
@@ -665,13 +665,20 @@ class InventoryRepository:
             remaining_non_owners = max(
                 0, realtor_daily_target - already_non_owners
             )
-            active_queue_ids = select(ApartmentInventoryQueue.apartment_id).where(
-                or_(ApartmentInventoryQueue.status.in_(("queued", "publishing")), ApartmentInventoryQueue.last_error == "watermarked_photos")
+            excluded_queue = or_(
+                ApartmentInventoryQueue.status.in_(("queued", "publishing")),
+                ApartmentInventoryQueue.last_error == "watermarked_photos",
+                and_(
+                    ApartmentInventoryQueue.last_error == "TelegramPublishError",
+                    ApartmentInventoryQueue.attempts >= 3,
+                    ApartmentInventoryQueue.scheduled_at > now,
+                ),
             )
+            active_queue_ids = select(ApartmentInventoryQueue.apartment_id).where(excluded_queue)
             queued_fingerprints = select(Apartment.fingerprint).join(
                 ApartmentInventoryQueue,
                 ApartmentInventoryQueue.apartment_id == Apartment.id,
-            ).where(or_(ApartmentInventoryQueue.status.in_(("queued", "publishing")), ApartmentInventoryQueue.last_error == "watermarked_photos"))
+            ).where(excluded_queue)
             fresh_stock = await _balanced_stock(
                 session,
                 select(Apartment).where(
@@ -1006,13 +1013,17 @@ class InventoryRepository:
 
     async def retry_item(self, queue_id: int, *, error: str, delay_minutes: int = 10) -> None:
         async with self.sessions.begin() as session:
+            row = await session.get(ApartmentInventoryQueue, queue_id, with_for_update=True)
+            if row is None:
+                return
+            quarantined = error == "TelegramPublishError" and row.attempts >= 3
             await session.execute(
                 update(ApartmentInventoryQueue)
                 .where(ApartmentInventoryQueue.id == queue_id)
                 .values(
-                    status="queued",
+                    status="skipped" if quarantined else "queued",
                     claimed_at=None,
-                    scheduled_at=datetime.now(timezone.utc) + timedelta(minutes=delay_minutes),
+                    scheduled_at=datetime.now(timezone.utc) + timedelta(minutes=360 if quarantined else delay_minutes),
                     last_error=error,
                 )
             )
