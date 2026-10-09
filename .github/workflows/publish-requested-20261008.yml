@@ -1,65 +1,38 @@
-name: Grant requested weekly access for request 1460
+name: Publish three requested apartment cards October 10
 on:
   push:
     branches: [codex/publish-requested-20261008]
     paths: [.github/workflows/publish-requested-20261008.yml]
 permissions:
   contents: read
+concurrency:
+  group: requested-apartment-cards
+  cancel-in-progress: false
 jobs:
-  grant:
+  publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 12
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      ADMIN_USER_ID: ${{ secrets.ADMIN_USER_ID }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_GROUP_ID: ${{ secrets.TELEGRAM_GROUP_ID }}
+      CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
+      TELEGRAM_BOT_USERNAME: arenda312bot
+      SUPPORT_URL: https://t.me/rentttkg
+      CONFIRM_SELECTED_PUBLIC_SEND: 'true'
+      FORCE_SELECTED_REPOST: 'true'
+      SELECTED_LALAFO_URLS: |
+        https://lalafo.kg/bishkek/ads/1-komnata-rieltor-bez-zivotnyh-ot-1-mesaca-s-mebelu-polnostu-id-117145272
+        https://lalafo.kg/bishkek/ads/vostok-5-mkr-id-116922177
+        https://lalafo.kg/bishkek/ads/1-komnata-biskek-park-trc-agentstvo-nedvizimosti-bez-zivotnyh-ot-1-mesaca-ot-3-mesacev-ot-6-mesacev-s-mebelu-polnostu-id-117030136
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: 626ebaa1553dc88d281ee645b033c754c3b5444b
+          ref: 97ad356f88832b28a24c12c2b0a08533a9cfb282
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
           cache: pip
       - run: pip install -q -r requirements.txt
-      - name: Approve and verify the specified weekly access
-        shell: bash
-        run: |
-          python - <<'PY'
-          import asyncio
-          import json
-          from datetime import datetime, timezone
-          from app.config import get_settings
-          from app.database import create_engine_and_session
-          from app.payments.repository import ApartmentRepository, PaymentRepository
-          from app.payments.service import PaymentService
-          
-          async def main():
-              settings = get_settings()
-              assert settings.admin_user_id, "Administrator is not configured"
-              engine, sessions = create_engine_and_session(settings.database_url)
-              try:
-                  payments = PaymentRepository(sessions)
-                  apartments = ApartmentRepository(sessions)
-                  service = PaymentService(apartments, payments, admin_user_id=settings.admin_user_id)
-                  request = await payments.get_request(1460)
-                  assert request is not None, "Request 1460 not found"
-                  assert request.telegram_user_id == 8990159695, "Recipient mismatch"
-                  assert request.plan == "week", "Request is not a weekly plan"
-                  assert request.status in {"pending", "approved"}, "Request cannot be approved in its current state"
-                  outcome = await service.decide(1460, approve=True, actor_id=settings.admin_user_id)
-                  assert outcome in {"approved", "already_approved"}, outcome
-                  refreshed = await payments.get_request(1460)
-                  access = await payments.active_weekly_access(8990159695)
-                  assert refreshed.status == "approved"
-                  assert access is not None and access.plan == "week", "Weekly access is not active"
-                  expiry = refreshed.access_expires_at
-                  if expiry.tzinfo is None:
-                      expiry = expiry.replace(tzinfo=timezone.utc)
-                  assert expiry > datetime.now(timezone.utc), "Access has expired"
-                  print("WEEKLY_ACCESS_VERIFIED " + json.dumps({"request_id":1460, "status":refreshed.status, "expires_at":expiry.isoformat(), "outcome":outcome}))
-              finally:
-                  await engine.dispose()
-          
-          asyncio.run(main())
-          
-          PY
+      - name: Publish requested photo albums with contact buttons
+        run: python -m tools.publish_selected_apartments
