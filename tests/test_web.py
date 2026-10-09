@@ -1047,3 +1047,43 @@ async def test_web_dispatcher_keeps_collectors_outside_customer_process_by_defau
         await web._run_hosted_apartment_scheduler()
     dispatch.assert_awaited_once()
     assert sorted(started) == (['lalafo', 'telegram'] if local_collection else [])
+
+
+@pytest.mark.asyncio
+async def test_queue_status_reuses_bot_pool_and_counts_only_queued(repositories, monkeypatch):
+    from app.models import ApartmentInventoryQueue
+    from tests.helpers import make_ad
+    from datetime import datetime, timedelta, timezone
+    apartments, _, sessions = repositories
+    now = datetime.now(timezone.utc)
+    async with sessions.begin() as session:
+        for index, (state, delta) in enumerate([('queued', -5), ('queued', 5), ('published', -10)]):
+            apartment = await apartments.upsert_discovered(make_ad(lalafo_id=990001+index))
+            session.add(ApartmentInventoryQueue(apartment_id=apartment.id, scheduled_at=now+timedelta(minutes=delta), window_key='pool-test', sequence=index+1, status=state))
+    web._bot_runtime = SimpleNamespace(workflow_data={'apartments': apartments})
+    import app.database
+    def new_pool(*args, **kwargs):
+        raise AssertionError('Scheduler must reuse the bot connection pool')
+    monkeypatch.setattr(app.database, 'create_engine_and_session', new_pool)
+    queued, due, earliest = await web._inventory_queue_status()
+    assert (queued, due) == (2, 1)
+    assert earliest.replace(tzinfo=timezone.utc) == now-timedelta(minutes=5)
+    async with sessions.begin() as session:
+        from sqlalchemy import update
+        await session.execute(update(ApartmentInventoryQueue).values(status='published'))
+    assert await web._inventory_queue_status() == (0, 0, None)
+
+
+@pytest.mark.asyncio
+async def test_saved_refill_reuses_initialized_runtime_database(repositories, monkeypatch):
+    apartments, _, _ = repositories
+    web._bot_runtime = SimpleNamespace(workflow_data={'apartments': apartments})
+    import app.database
+    from app.inventory import InventoryRepository
+    monkeypatch.setattr(app.database, 'init_db', AsyncMock(side_effect=AssertionError('No schema check per refill')))
+    monkeypatch.setattr(app.database, 'create_engine_and_session', lambda *_: (_ for _ in ()).throw(AssertionError('No new pool')))
+    monkeypatch.setattr(InventoryRepository, 'reset_publication_history_for_code', AsyncMock(return_value=False))
+    schedule = AsyncMock(return_value=3)
+    monkeypatch.setattr(InventoryRepository, 'schedule_period', schedule)
+    assert await web._refill_saved_inventory() == 3
+    schedule.assert_awaited_once()

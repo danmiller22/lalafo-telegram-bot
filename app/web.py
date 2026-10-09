@@ -678,42 +678,33 @@ async def _execute_queue_dispatch() -> int:
 
 
 async def _inventory_queue_status() -> tuple[int, int, datetime | None]:
-    from sqlalchemy import func, select
+    from sqlalchemy import case, func, select
 
     from app.database import create_engine_and_session
     from app.models import ApartmentInventoryQueue
 
-    engine, sessions = create_engine_and_session(get_settings().database_url)
+    engine = None
+    apartments = _bot_runtime.workflow_data.get("apartments") if _bot_runtime is not None else None
+    if apartments is not None:
+        sessions = apartments.sessions
+    else:
+        engine, sessions = create_engine_and_session(get_settings().database_url)
     now = datetime.now(UTC)
     try:
         async with sessions() as session:
-            queued = int(
-                await session.scalar(
-                    select(func.count())
-                    .select_from(ApartmentInventoryQueue)
-                    .where(ApartmentInventoryQueue.status == "queued")
-                )
-                or 0
-            )
-            due = int(
-                await session.scalar(
-                    select(func.count())
-                    .select_from(ApartmentInventoryQueue)
-                    .where(
-                        ApartmentInventoryQueue.status == "queued",
-                        ApartmentInventoryQueue.scheduled_at <= now,
-                    )
-                )
-                or 0
-            )
-            next_scheduled = await session.scalar(
-                select(func.min(ApartmentInventoryQueue.scheduled_at)).where(
+            row = (await session.execute(
+                select(
+                    func.count(),
+                    func.coalesce(func.sum(case((ApartmentInventoryQueue.scheduled_at <= now, 1), else_=0)), 0),
+                    func.min(ApartmentInventoryQueue.scheduled_at),
+                ).where(
                     ApartmentInventoryQueue.status == "queued"
                 )
-            )
-            return queued, due, next_scheduled
+            )).one()
+            return int(row[0]), int(row[1]), row[2]
     finally:
-        await engine.dispose()
+        if engine is not None:
+            await engine.dispose()
 
 
 async def _refill_saved_inventory() -> int:
@@ -721,9 +712,15 @@ async def _refill_saved_inventory() -> int:
     from app.inventory import InventoryRepository
 
     settings = get_settings()
-    engine, sessions = create_engine_and_session(settings.database_url)
+    engine = None
+    apartments = _bot_runtime.workflow_data.get("apartments") if _bot_runtime is not None else None
+    if apartments is not None:
+        sessions = apartments.sessions
+    else:
+        engine, sessions = create_engine_and_session(settings.database_url)
     try:
-        await init_db(engine)
+        if engine is not None:
+            await init_db(engine)
         inventory = InventoryRepository(sessions)
         code_version = (
             os.getenv("GITHUB_SHA") or os.getenv("KOYEB_GIT_SHA") or ""
@@ -731,7 +728,8 @@ async def _refill_saved_inventory() -> int:
         await inventory.reset_publication_history_for_code(code_version)
         return await inventory.schedule_period(now=datetime.now(UTC))
     finally:
-        await engine.dispose()
+        if engine is not None:
+            await engine.dispose()
 
 
 async def _run_telegram_inventory_collector() -> None:
