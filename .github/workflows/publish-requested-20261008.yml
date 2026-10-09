@@ -15,10 +15,9 @@ jobs:
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      TELEGRAM_GROUP_ID: ${{ secrets.TELEGRAM_GROUP_ID }}
+      TELEGRAM_GROUP_ID: "-1004389602150"
       CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
       TELEGRAM_BOT_USERNAME: arenda312bot
-      SUPPORT_URL: https://t.me/rentttkg
       CONFIRM_SELECTED_PUBLIC_SEND: 'true'
       FORCE_SELECTED_REPOST: 'true'
       SELECTED_LALAFO_URLS: |
