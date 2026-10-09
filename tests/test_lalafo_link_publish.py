@@ -82,11 +82,14 @@ def test_forwarded_card_fields_are_parsed_from_public_text() -> None:
 
 
 @pytest.mark.asyncio
-async def test_forwarded_album_is_rebuilt_with_normal_publisher(monkeypatch) -> None:
-    apartment = SimpleNamespace(
-        id=42,
+async def test_forwarded_album_is_rebuilt_with_normal_publisher(monkeypatch, repositories) -> None:
+    from app.lalafo.models import LalafoAd
+    from app.lalafo.exclusions import is_excluded_agency
+
+    repository, _, _ = repositories
+    apartment = await repository.upsert_discovered(make_ad(
         photo_urls=["file-1", "file-2", "file-3"],
-    )
+    ))
     answer = AsyncMock()
     messages = [
         SimpleNamespace(answer=AsyncMock()),
@@ -118,9 +121,15 @@ async def test_forwarded_album_is_rebuilt_with_normal_publisher(monkeypatch) -> 
         bot=SimpleNamespace(),
     )
 
-    publish.assert_awaited_once_with(42, apartment)
+    publish.assert_awaited_once()
+    apartment_id, listing = publish.await_args.args
+    assert apartment_id == apartment.id
+    assert isinstance(listing, LalafoAd)
+    assert not is_excluded_agency(listing)
+    assert listing.phone == apartment.phone
+    assert listing.photo_urls == apartment.photo_urls
     apartments.mark_published.assert_awaited_once_with(
-        42,
+        apartment.id,
         chat_id=settings.telegram_group_id,
         message_id=987,
     )

@@ -323,7 +323,9 @@ async def _publish_forwarded_batch(
         max_photos=settings.max_photos_per_apartment,
     )
     try:
-        published = await publisher.publish(apartment.id, apartment)
+        from scripts.scrape_publish import apartment_to_ad
+
+        published = await publisher.publish(apartment.id, apartment_to_ad(apartment))
         await apartments.mark_published(
             apartment.id,
             chat_id=settings.telegram_group_id,
