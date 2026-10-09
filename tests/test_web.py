@@ -1087,3 +1087,11 @@ async def test_saved_refill_reuses_initialized_runtime_database(repositories, mo
     monkeypatch.setattr(InventoryRepository, 'schedule_period', schedule)
     assert await web._refill_saved_inventory() == 3
     schedule.assert_awaited_once()
+
+
+def test_paid_host_keeps_inventory_collection_enabled_without_github_cron(monkeypatch):
+    from app.config import Settings
+    monkeypatch.delenv('HOSTED_INVENTORY_COLLECTION_ENABLED', raising=False)
+    settings = Settings(_env_file=None)
+    assert settings.hosted_inventory_collection_enabled is True
+    assert settings.hosted_apartment_scheduler_enabled is True
