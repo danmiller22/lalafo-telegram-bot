@@ -33,6 +33,8 @@ class AvailabilityResult:
         stamp = self.checked_at.astimezone(_BISHKEK).strftime("%d.%m.%Y %H:%M")
         if self.status == "active":
             return f"Объявление актуально.\nПоследняя проверка: {stamp}."
+        if self.status == "unknown":
+            return "Пока не удалось проверить объявление. Попробуйте ещё раз позже."
         return f"Объявление не актуально.\nПоследняя проверка: {stamp}."
 
 
@@ -40,8 +42,15 @@ class AvailabilityService:
     def __init__(self, apartments: ApartmentRepository, settings: Settings) -> None:
         self.apartments = apartments
         self.settings = settings
+        self._cache: dict[int, tuple[datetime, AvailabilityResult]] = {}
 
     async def check(self, apartment_id: int, *, force: bool = False) -> AvailabilityResult:
+        now = datetime.now(timezone.utc)
+        cached = self._cache.get(apartment_id)
+        if not force and cached and now < cached[0]:
+            result = cached[1]
+            return AvailabilityResult(result.status, result.reason, result.checked_at, True)
+        self._cache.pop(apartment_id, None)
         apartment = await self.apartments.get(apartment_id)
         if apartment is None:
             return AvailabilityResult("unavailable", "missing", datetime.now(timezone.utc))
@@ -49,30 +58,30 @@ class AvailabilityService:
         published_at = apartment.published_at
         if published_at is not None and published_at.tzinfo is None:
             published_at = published_at.replace(tzinfo=timezone.utc)
-        if published_at and now - published_at >= timedelta(days=MAX_LISTING_AGE_DAYS):
-            await self.apartments.set_availability(
-                apartment_id,
-                status="unavailable",
-                checked_at=now,
-                reason="listing_age_limit",
-            )
-            return AvailabilityResult("unavailable", "listing_age_limit", now)
         if published_at:
             # A newly published card receives one complete 48-hour window.
             # Reposts must not inherit an old removal check from an earlier card.
-            await self.apartments.set_availability(
-                apartment_id,
-                status="active",
-                checked_at=now,
-                reason="publication_age_window",
-            )
-            return AvailabilityResult("active", "publication_age_window", now)
+            deadline = published_at + timedelta(days=MAX_LISTING_AGE_DAYS)
+            status = "active" if now < deadline else "unavailable"
+            reason = "publication_age_window" if status == "active" else "listing_age_limit"
+            if force or apartment.availability_status != status or apartment.active != (status == "active"):
+                await self.apartments.set_availability(
+                    apartment_id, status=status, checked_at=now, reason=reason,
+                )
+            result = AvailabilityResult(status, reason, now)
+            expires = now + timedelta(seconds=30)
+            if status == "active":
+                expires = min(expires, deadline)
+            if len(self._cache) >= 512:
+                self._cache.pop(next(iter(self._cache)))
+            self._cache[apartment_id] = (expires, result)
+            return result
         checked = apartment.availability_checked_at
         if checked is not None and checked.tzinfo is None:
             checked = checked.replace(tzinfo=timezone.utc)
-        if not force and checked and now - checked < timedelta(
-            hours=AVAILABILITY_CACHE_HOURS
-        ):
+        cache_age = (timedelta(minutes=1) if apartment.availability_status == "unknown"
+                     else timedelta(hours=AVAILABILITY_CACHE_HOURS))
+        if not force and checked and now - checked < cache_age:
             return AvailabilityResult(
                 apartment.availability_status, apartment.availability_reason or "cached", checked, True
             )

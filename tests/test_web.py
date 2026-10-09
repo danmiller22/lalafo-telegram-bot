@@ -987,3 +987,37 @@ async def test_inventory_collectors_share_one_process_slot_without_blocking_web(
     release.set()
     assert await asyncio.gather(first, second) == [0, 0]
     assert peak == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('expired', [True, False])
+async def test_webhook_only_suppresses_expired_callback_answers(monkeypatch, expired):
+    from aiogram.exceptions import TelegramBadRequest
+    from aiogram.methods import AnswerCallbackQuery
+    monkeypatch.setenv('RUN_BOT', 'true')
+    monkeypatch.setenv('TELEGRAM_WEBHOOK_SECRET', 'w' * 32)
+    get_settings.cache_clear()
+    error = TelegramBadRequest(method=AnswerCallbackQuery(callback_query_id='test'),
+        message='query is too old' if expired else 'unexpected failure')
+    web._bot_runtime = SimpleNamespace(bot=object(), dispatcher=SimpleNamespace(feed_update=AsyncMock(side_effect=error)), workflow_data={})
+    transport = httpx.ASGITransport(app=web.app, raise_app_exceptions=False)
+    async with httpx.AsyncClient(transport=transport, base_url='http://test') as client:
+        result = await client.post('/telegram/webhook', json={'update_id': 3},
+            headers={'X-Telegram-Bot-Api-Secret-Token': 'w' * 32})
+    assert result.status_code == (200 if expired else 500)
+
+
+@pytest.mark.asyncio
+async def test_webhook_does_not_retry_user_who_blocked_bot(monkeypatch):
+    from aiogram.exceptions import TelegramForbiddenError
+    from aiogram.methods import SendMessage
+    monkeypatch.setenv('RUN_BOT', 'true')
+    monkeypatch.setenv('TELEGRAM_WEBHOOK_SECRET', 'w' * 32)
+    get_settings.cache_clear()
+    error = TelegramForbiddenError(method=SendMessage(chat_id=1, text='test'), message='bot was blocked by the user')
+    web._bot_runtime = SimpleNamespace(bot=object(), dispatcher=SimpleNamespace(feed_update=AsyncMock(side_effect=error)), workflow_data={})
+    transport = httpx.ASGITransport(app=web.app)
+    async with httpx.AsyncClient(transport=transport, base_url='http://test') as client:
+        result = await client.post('/telegram/webhook', json={'update_id': 4},
+            headers={'X-Telegram-Bot-Api-Secret-Token': 'w' * 32})
+    assert result.status_code == 200

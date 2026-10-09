@@ -152,3 +152,71 @@ async def test_public_availability_button_works_across_cloud_secrets() -> None:
 
     availability.check.assert_awaited_once_with(70003)
     callback.answer.assert_awaited_once_with(result.message, show_alert=True)
+
+
+@pytest.mark.asyncio
+async def test_published_availability_avoids_writes_and_repeat_reads(repositories):
+    apartments, _, _ = repositories
+    apartment = await apartments.upsert_discovered(make_ad(lalafo_id=70006))
+    await apartments.mark_published(apartment.id, chat_id=-1001, message_id=506)
+    proxy = SimpleNamespace(get=AsyncMock(wraps=apartments.get), set_availability=AsyncMock())
+    service = AvailabilityService(proxy, Settings(_env_file=None))
+    first = await service.check(apartment.id)
+    second = await service.check(apartment.id)
+    assert first.status == second.status == 'active'
+    assert second.cached
+    proxy.get.assert_awaited_once_with(apartment.id)
+    proxy.set_availability.assert_not_awaited()
+    await service.check(apartment.id, force=True)
+    assert proxy.get.await_count == 2
+    proxy.set_availability.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_published_cache_expires_at_listing_deadline(repositories):
+    apartments, _, sessions = repositories
+    apartment = await apartments.upsert_discovered(make_ad(lalafo_id=70007))
+    published = datetime.now(timezone.utc) - timedelta(days=2) + timedelta(seconds=10)
+    async with sessions.begin() as session:
+        await session.execute(update(type(apartment)).where(type(apartment).id == apartment.id)
+                              .values(published_at=published))
+    service = AvailabilityService(apartments, Settings(_env_file=None))
+    assert (await service.check(apartment.id)).status == 'active'
+    assert service._cache[apartment.id][0] == published + timedelta(days=2)
+    service._cache[apartment.id] = (datetime.now(timezone.utc) - timedelta(seconds=1), service._cache[apartment.id][1])
+    async with sessions.begin() as session:
+        await session.execute(update(type(apartment)).where(type(apartment).id == apartment.id)
+                              .values(published_at=datetime.now(timezone.utc) - timedelta(days=2)))
+    assert (await service.check(apartment.id)).status == 'unavailable'
+
+
+def test_unknown_availability_does_not_report_removed():
+    from app.availability import AvailabilityResult
+    result = AvailabilityResult('unknown', 'source_temporarily_unavailable', datetime.now(timezone.utc))
+    assert 'не актуально' not in result.message
+    assert 'Попробуйте' in result.message
+
+
+@pytest.mark.asyncio
+async def test_unknown_availability_is_retried_after_one_minute(repositories):
+    apartments, _, _ = repositories
+    apartment = await apartments.upsert_discovered(make_ad(lalafo_id=70008))
+    await apartments.set_availability(apartment.id, status='unknown',
+        checked_at=datetime.now(timezone.utc) - timedelta(minutes=2), reason='source_temporarily_unavailable')
+    service = AvailabilityService(apartments, Settings(_env_file=None))
+    service._check_lalafo = AsyncMock(return_value=('active', 'source_available'))
+    assert (await service.check(apartment.id)).status == 'active'
+    service._check_lalafo.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_expired_availability_callback_does_not_fail_webhook():
+    from aiogram.exceptions import TelegramBadRequest
+    from aiogram.methods import AnswerCallbackQuery
+    signer = TokenSigner('callback-secret-long-enough')
+    callback = SimpleNamespace(data=f"availability:{signer.sign_id('availability', 70003)}",
+        answer=AsyncMock(side_effect=TelegramBadRequest(method=AnswerCallbackQuery(callback_query_id='expired'),
+            message='query is too old and response timeout expired or query ID is invalid')))
+    service = SimpleNamespace(check=AsyncMock(return_value=SimpleNamespace(message='Актуально')))
+    await availability_handler(callback, signer, service)
+    service.check.assert_awaited_once_with(70003)

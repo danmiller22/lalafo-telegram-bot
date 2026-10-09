@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from aiogram import Bot, F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
@@ -296,12 +298,19 @@ async def availability_handler(
         await callback.answer("Недействительная кнопка.", show_alert=True)
         return
     try:
-        result = await availability.check(apartment_id)
+        async with asyncio.timeout(5):
+            result = await availability.check(apartment_id)
     except Exception:
         logger.exception("Availability callback failed")
-        await callback.answer("Не удалось проверить, попробуйте позже.", show_alert=True)
-        return
-    await callback.answer(result.message, show_alert=True)
+        message = "Не удалось проверить, попробуйте позже."
+    else:
+        message = result.message
+    try:
+        await callback.answer(message, show_alert=True)
+    except TelegramBadRequest as exc:
+        if "query is too old" not in str(exc).lower() and "query_id_invalid" not in str(exc).lower():
+            raise
+        logger.info("Availability callback expired before Telegram accepted the answer")
 
 
 @router.callback_query(F.data.startswith(CONTACT_PREFIX))

@@ -14,6 +14,8 @@ from zoneinfo import ZoneInfo
 
 import httpx
 from aiogram import Bot
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
+from aiogram.methods import AnswerCallbackQuery
 from aiogram.types import Update
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -1349,11 +1351,20 @@ async def telegram_webhook(
     ):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
     update = Update.model_validate(await request.json(), context={"bot": runtime.bot})
-    await runtime.dispatcher.feed_update(
-        runtime.bot,
-        update,
-        **runtime.workflow_data,
-    )
+    try:
+        await runtime.dispatcher.feed_update(
+            runtime.bot,
+            update,
+            **runtime.workflow_data,
+        )
+    except TelegramForbiddenError:
+        # Retrying an update cannot restore a user's permission to message them.
+        logger.info("Telegram update could not be delivered: bot access denied")
+    except TelegramBadRequest as exc:
+        expired = "query is too old" in str(exc).lower() or "query_id_invalid" in str(exc).lower()
+        if not isinstance(exc.method, AnswerCallbackQuery) or not expired:
+            raise
+        logger.info("Telegram callback expired; acknowledging update without retry")
     return Response(status_code=status.HTTP_200_OK)
 
 
