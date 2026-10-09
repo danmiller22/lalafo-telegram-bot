@@ -1021,3 +1021,29 @@ async def test_webhook_does_not_retry_user_who_blocked_bot(monkeypatch):
         result = await client.post('/telegram/webhook', json={'update_id': 4},
             headers={'X-Telegram-Bot-Api-Secret-Token': 'w' * 32})
     assert result.status_code == 200
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('local_collection', [False, True])
+async def test_web_dispatcher_keeps_collectors_outside_customer_process_by_default(monkeypatch, local_collection):
+    monkeypatch.setenv('HOSTED_INVENTORY_COLLECTION_ENABLED', str(local_collection).lower())
+    get_settings.cache_clear()
+    started = []
+    async def collector(name):
+        started.append(name)
+        await asyncio.Event().wait()
+    original_sleep = asyncio.sleep
+    async def stop(_):
+        await original_sleep(0)
+        raise asyncio.CancelledError
+    monkeypatch.setattr(web, '_refill_saved_inventory', AsyncMock(return_value=0))
+    monkeypatch.setattr(web, '_inventory_queue_status', AsyncMock(return_value=(12, 1, None)))
+    dispatch = AsyncMock(return_value=0)
+    monkeypatch.setattr(web, '_execute_queue_dispatch', dispatch)
+    monkeypatch.setattr(web, '_run_telegram_inventory_collector', lambda: collector('telegram'))
+    monkeypatch.setattr(web, '_run_lalafo_inventory_collector', lambda: collector('lalafo'))
+    monkeypatch.setattr(web.asyncio, 'sleep', stop)
+    with pytest.raises(asyncio.CancelledError):
+        await web._run_hosted_apartment_scheduler()
+    dispatch.assert_awaited_once()
+    assert sorted(started) == (['lalafo', 'telegram'] if local_collection else [])

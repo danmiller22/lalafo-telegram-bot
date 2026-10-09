@@ -791,12 +791,12 @@ async def _run_hosted_apartment_scheduler() -> None:
     # Otherwise an old healthy-sized queue can survive a code update forever.
     await _refill_saved_inventory()
     next_refill_at = datetime.now(UTC) + timedelta(minutes=DISCOVERY_RETRY_MINUTES)
-    telegram_collector = asyncio.create_task(
-        _run_telegram_inventory_collector(), name="telegram-inventory-collector"
-    )
-    lalafo_collector = asyncio.create_task(
-        _run_lalafo_inventory_collector(), name="lalafo-inventory-collector"
-    )
+    collectors: list[asyncio.Task[None]] = []
+    if settings.hosted_inventory_collection_enabled:
+        collectors = [
+            asyncio.create_task(_run_telegram_inventory_collector(), name="telegram-inventory-collector"),
+            asyncio.create_task(_run_lalafo_inventory_collector(), name="lalafo-inventory-collector"),
+        ]
     try:
         while True:
             try:
@@ -822,9 +822,9 @@ async def _run_hosted_apartment_scheduler() -> None:
                 logger.exception("Hosted queue dispatcher recovered from a crash")
             await asyncio.sleep(check_seconds)
     finally:
-        for collector in (telegram_collector, lalafo_collector):
+        for collector in collectors:
             collector.cancel()
-        await asyncio.gather(telegram_collector, lalafo_collector, return_exceptions=True)
+        await asyncio.gather(*collectors, return_exceptions=True)
 
 
 def _task_stopped(task: asyncio.Task[None] | None) -> bool:
@@ -1287,10 +1287,14 @@ async def health() -> JSONResponse:
                 "running" if settings.run_bot and not _task_stopped(_payment_review_worker_task)
                 else "stopped" if settings.run_bot else "disabled"
             ),
-            "telegram_inventory": (dict(_telegram_inventory_state)
-                if settings.run_bot and settings.hosted_apartment_scheduler_enabled else "disabled"),
-            "lalafo_inventory": (dict(_lalafo_inventory_state)
-                if settings.run_bot and settings.hosted_apartment_scheduler_enabled else "disabled"),
+            "telegram_inventory": (
+                dict(_telegram_inventory_state) if settings.hosted_inventory_collection_enabled
+                else {"state": "external", "runner": "github_actions"}
+            ) if settings.run_bot and settings.hosted_apartment_scheduler_enabled else "disabled",
+            "lalafo_inventory": (
+                dict(_lalafo_inventory_state) if settings.hosted_inventory_collection_enabled
+                else {"state": "external", "runner": "github_actions"}
+            ) if settings.run_bot and settings.hosted_apartment_scheduler_enabled else "disabled",
             "listing_validity_days": MAX_LISTING_AGE_DAYS,
             "payment_receipt_required": False,
             "contact_tariff": {"plan": WEEK_PLAN, "price": WEEK_PRICE, "expires": True, "storage": "persistent_ledger"},

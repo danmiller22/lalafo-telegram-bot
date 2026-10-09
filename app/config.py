@@ -173,6 +173,9 @@ class Settings(BaseSettings):
     lalafo_auto_reply_watchdog_seconds: float = 30.0
     lalafo_auto_reply_stale_seconds: float = 180.0
     hosted_apartment_scheduler_enabled: bool = True
+    # Collection runs in GitHub Actions; keep the small web instance available
+    # for customer requests and dispatching the durable publication queue.
+    hosted_inventory_collection_enabled: bool = False
     hosted_apartment_scheduler_check_seconds: float = 60.0
     # The free Koyeb web instance sleeps after one hour without inbound HTTP
     # traffic.  A small request through the public URL keeps the webhook and
