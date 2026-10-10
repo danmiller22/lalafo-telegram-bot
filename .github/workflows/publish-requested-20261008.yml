@@ -1,4 +1,4 @@
-name: Publish three requested apartment cards October 10
+name: Publish requested Philharmonia apartment 117176442
 on:
   push:
     branches: [codex/publish-requested-20261008]
@@ -21,9 +21,7 @@ jobs:
       CONFIRM_SELECTED_PUBLIC_SEND: 'true'
       FORCE_SELECTED_REPOST: 'true'
       SELECTED_LALAFO_URLS: |
-        https://lalafo.kg/bishkek/ads/1-komnata-rieltor-bez-zivotnyh-ot-1-mesaca-s-mebelu-polnostu-id-117145272
-        https://lalafo.kg/bishkek/ads/vostok-5-mkr-id-116922177
-        https://lalafo.kg/bishkek/ads/1-komnata-biskek-park-trc-agentstvo-nedvizimosti-bez-zivotnyh-ot-1-mesaca-ot-3-mesacev-ot-6-mesacev-s-mebelu-polnostu-id-117030136
+        https://lalafo.kg/bishkek/ads/1-komnata-filarmonia-rieltor-semejnym-ot-6-mesacev-s-mebelu-polnostu-id-117176442
     steps:
       - uses: actions/checkout@v7
         with:
