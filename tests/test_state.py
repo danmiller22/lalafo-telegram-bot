@@ -24,6 +24,18 @@ def test_state_roundtrip_has_no_phone(tmp_path: Path):
     assert PostedState.load(path).contains(12345)
 
 
+def test_different_apartments_of_one_agent_are_not_duplicates(tmp_path: Path):
+    first = make_ad(lalafo_id=1, owner_listing=False, district="ЦУМ", price=30_000,
+                    photo_urls=["https://img.example/apartment-first-123.jpeg"])
+    second = first.model_copy(update={"lalafo_id": 2,
+        "photo_urls": ["https://img.example/apartment-second-456.jpeg"]})
+    assert not same_listing(first, second)
+    assert ad_fingerprint(first) != ad_fingerprint(second)
+    state = PostedState(path=tmp_path / "state.json", items=[])
+    state.add(first, telegram_message_id=100)
+    assert not state.contains(second.lalafo_id, ad_fingerprint(second))
+
+
 def test_district_spelling_and_reused_photos_identify_same_apartment():
     original = make_ad(
         lalafo_id=1,

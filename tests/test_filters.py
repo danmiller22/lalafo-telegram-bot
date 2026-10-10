@@ -131,7 +131,7 @@ def test_expanded_source_keeps_reposts_strictly_limited():
     assert SOURCE_ALLOWED_ROOMS == ("studio", "1")
     assert SOURCE_MAX_POSTS_PER_RUN == 18
     assert SOURCE_PUBLISH_SPACING_SECONDS == 150
-    assert SOURCE_MAX_SEARCH_PAGES == 12
+    assert SOURCE_MAX_SEARCH_PAGES == 30
     assert SOURCE_MIN_PRICE == 25_000
     assert SOURCE_MAX_PRICE == 40_000
     assert SOURCE_MIN_PHOTOS == 1
@@ -156,11 +156,11 @@ def test_source_urls_follow_the_operator_filters():
     assert "/semeynym/param-bez-detey/studentam/" in DEFAULT_SEARCH_URL
     assert "/bez-podseleniya/mozhno-s-zhivotnymi" in DEFAULT_SEARCH_URL
     assert "bez-zhivotnyh" not in DEFAULT_SEARCH_URL
-    assert "price[from]=23000&price[to]=40000" in DEFAULT_SEARCH_URL
+    assert "price[from]=25000&price[to]=40000" in DEFAULT_SEARCH_URL
     assert len(ADDITIONAL_SEARCH_URLS) == 1
     assert "/studio/1-bedroom/real-estate-agency" in ADDITIONAL_SEARCH_URLS[0]
     assert all("bez-podseleniya" not in url for url in ADDITIONAL_SEARCH_URLS)
-    assert all("price[from]=23000&price[to]=40000" in url for url in ADDITIONAL_SEARCH_URLS)
+    assert all("price[from]=25000&price[to]=40000" in url for url in ADDITIONAL_SEARCH_URLS)
 
 
 def test_discovery_pool_reserves_seventy_percent_for_realtors():

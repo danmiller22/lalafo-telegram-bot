@@ -44,16 +44,23 @@ def same_listing(ad: LalafoAd, other: LalafoAd | object) -> bool:
         ad.phone == getattr(other, "phone", None)
         and ad.price == other_price
     )
-    if same_contact:
+    other_photos = getattr(other, "photo_urls", None) or []
+    if same_contact and (not ad.photo_urls or not other_photos
+                         or set(ad.photo_urls) == set(other_photos)):
         return True
     if abs(ad.price - other_price) > max(ad.price, other_price) * 0.2:
         return False
-    other_photos = getattr(other, "photo_urls", None) or []
     return len(_photo_keys(ad.photo_urls) & _photo_keys(other_photos)) >= 2
 
 
 def ad_fingerprint(ad: LalafoAd) -> str:
-    raw = "|".join((ad.phone, str(ad.price), normalized_district(ad.district)))
+    # Agents can offer several different apartments at the same price in one
+    # district. Their contact identifies the seller, not the apartment.
+    photos = sorted(_photo_keys(ad.photo_urls) or {
+        urlsplit(url).path for url in ad.photo_urls
+    })
+    raw = "|".join((ad.phone, str(ad.price), normalized_district(ad.district),
+                    ad.rooms, *photos))
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
