@@ -1,4 +1,4 @@
-name: Publish requested Philharmonia apartment 117176442
+name: Publish requested Vostok 5 apartment 114862425
 on:
   push:
     branches: [codex/publish-requested-20261008]
@@ -21,11 +21,11 @@ jobs:
       CONFIRM_SELECTED_PUBLIC_SEND: 'true'
       FORCE_SELECTED_REPOST: 'true'
       SELECTED_LALAFO_URLS: |
-        https://lalafo.kg/bishkek/ads/1-komnata-filarmonia-rieltor-semejnym-ot-6-mesacev-s-mebelu-polnostu-id-117176442
+        https://lalafo.kg/bishkek/ads/vostok-5-mkr-id-114862425
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: 97ad356f88832b28a24c12c2b0a08533a9cfb282
+          ref: c22bb57b368f2fbf7b8494d50b80d899f513735f
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
