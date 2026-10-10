@@ -390,7 +390,8 @@ async def test_afternoon_schedule_fills_only_remaining_period_target(repositorie
         now=now, rng=random.Random(19)
     )
 
-    assert queued == period_publication_targets(now)[0] - 6
+    # No morning cards were published: the evening carries the entire deficit.
+    assert queued == daily_publication_target(now) - 6
     async with sessions() as session:
         first = await session.scalar(
             select(ApartmentInventoryQueue)
@@ -402,7 +403,7 @@ async def test_afternoon_schedule_fills_only_remaining_period_target(repositorie
 
 
 @pytest.mark.asyncio
-async def test_late_period_schedule_keeps_three_to_five_per_hour_cadence(repositories):
+async def test_late_period_carries_morning_deficit_with_catch_up_cadence(repositories):
     apartments, _, sessions = repositories
     for index in range(40):
         await apartments.upsert_discovered(
@@ -414,7 +415,7 @@ async def test_late_period_schedule_keeps_three_to_five_per_hour_cadence(reposit
         now=now, rng=random.Random(23)
     )
 
-    assert queued == 34
+    assert queued == 40
     async with sessions() as session:
         scheduled = list(
             (
@@ -429,8 +430,8 @@ async def test_late_period_schedule_keeps_three_to_five_per_hour_cadence(reposit
         round((after - before).total_seconds() / 60)
         for before, after in zip(scheduled, scheduled[1:])
     ]
-    assert len(deltas) == 33
-    assert all(delta == 18 for delta in deltas)
+    assert len(deltas) == 39
+    assert all(delta == 5 for delta in deltas)
 
     assert (
         await InventoryRepository(sessions).schedule_period(
@@ -443,7 +444,7 @@ async def test_late_period_schedule_keeps_three_to_five_per_hour_cadence(reposit
             await session.scalar(
                 select(func.count()).select_from(ApartmentInventoryQueue)
             )
-            == 34
+            == 40
         )
 
 
@@ -676,11 +677,11 @@ async def test_thin_successful_discovery_is_rebuilt(repositories):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("stock_count,should_refill", [(12, True), (35, False)])
+@pytest.mark.parametrize("stock_count,should_refill", [(12, True), (35, True), (70, False)])
 async def test_discovery_refills_a_twelve_card_queue_until_full_period(repositories, stock_count, should_refill):
     apartments, _, sessions = repositories
     inventory = InventoryRepository(sessions)
-    now = discovery_period_start(datetime.now(timezone.utc)).astimezone(timezone.utc)
+    now = publication_day_start(datetime.now(timezone.utc)) + timedelta(minutes=630)
     key = await inventory.claim_discovery(now=now)
     for index in range(stock_count):
         await apartments.upsert_discovered(make_ad(lalafo_id=110000 + index, phone=f"+996555{100000 + index}"))
@@ -691,10 +692,11 @@ async def test_discovery_refills_a_twelve_card_queue_until_full_period(repositor
 
 
 @pytest.mark.asyncio
-async def test_full_period_does_not_refill_cards_already_published(repositories):
+async def test_partial_day_continues_collection_after_half_day_is_full(repositories):
     apartments, _, sessions = repositories
     inventory = InventoryRepository(sessions)
-    now = discovery_period_start().astimezone(timezone.utc) + timedelta(minutes=1)
+    now = (publication_day_start(datetime.now(timezone.utc))
+           + timedelta(minutes=631)).astimezone(timezone.utc)
     key = await inventory.claim_discovery(now=now)
     for index in range(35):
         apartment = await apartments.upsert_discovered(make_ad(lalafo_id=120000 + index, phone=f"+996555{200000 + index}"))
@@ -705,7 +707,8 @@ async def test_full_period_does_not_refill_cards_already_published(repositories)
     assert await inventory.schedule_period(now=now) == 10
     assert await inventory.period_published_count(now=now) == 25
     await inventory.finish_discovery(key, success=True, discovered=35, queued=10)
-    assert await inventory.claim_discovery(now=now) is None
+    # An empty morning must still be filled; 35 afternoon cards are not 70.
+    assert await inventory.claim_discovery(now=now) is not None
 
 
 @pytest.mark.asyncio
@@ -948,7 +951,7 @@ async def test_late_refill_never_schedules_into_quiet_hours(repositories):
     for index in range(8):
         await apartments.upsert_discovered(make_ad(lalafo_id=201000+index))
     now = datetime(2026,10,8,1,50,tzinfo=BISHKEK)
-    assert await InventoryRepository(sessions).schedule_period(now=now) == 1
+    assert await InventoryRepository(sessions).schedule_period(now=now) == 3
     async with sessions() as session:
         scheduled = await session.scalar(select(ApartmentInventoryQueue.scheduled_at))
     assert scheduled < now.replace(hour=2,minute=0).astimezone(timezone.utc).replace(tzinfo=None)

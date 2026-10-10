@@ -127,7 +127,7 @@ def randomized_period_times(
     del rng
     return [
         (period_start + timedelta(minutes=PUBLICATION_SPACING_MINUTES * index)).astimezone(timezone.utc)
-        for index in range(max(0, min(count, DISCOVERY_PERIOD_TARGET)))
+        for index in range(max(0, count))
     ]
 
 
@@ -379,6 +379,26 @@ class InventoryRepository:
     def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
         self.sessions = sessions
 
+    async def _period_stock_target(self, session: AsyncSession, now: datetime) -> int:
+        period = discovery_period_start(now).astimezone(timezone.utc)
+        if period.astimezone(BISHKEK).hour == 5:
+            return DISCOVERY_PERIOD_TARGET
+        start = publication_day_start(now).astimezone(timezone.utc)
+        published_before = int(await session.scalar(
+            select(func.count()).select_from(Apartment).where(
+                Apartment.publication_status == "published",
+                Apartment.published_at >= start, Apartment.published_at < period,
+            )
+        ) or 0)
+        reserved_before = int(await session.scalar(
+            select(func.count()).select_from(ApartmentInventoryQueue).where(
+                ApartmentInventoryQueue.status.in_(("queued", "publishing")),
+                ApartmentInventoryQueue.scheduled_at >= start,
+                ApartmentInventoryQueue.scheduled_at < period,
+            )
+        ) or 0)
+        return max(0, MAX_PUBLICATIONS_PER_DAY - published_before - reserved_before)
+
     async def reset_publication_history_for_code(self, code_version: str) -> bool:
         """Rebuild the queue once per deployment without erasing repost history."""
         version = code_version.strip() or "publication-70-05-to-02-v5"
@@ -483,7 +503,8 @@ class InventoryRepository:
                         Apartment.published_at < period_end,
                     )
                 ) or 0)
-                if (not force and live_queue_count + published_count >= DISCOVERY_PERIOD_TARGET):
+                stock_target = await self._period_stock_target(session, now)
+                if (not force and live_queue_count + published_count >= stock_target):
                     return None
                 completed = as_utc(row.completed_at) if row.completed_at else None
                 if (
@@ -723,6 +744,8 @@ class InventoryRepository:
             )
             chooser = rng or random.SystemRandom()
             period_target, period_central_target = period_publication_targets(period)
+            period_target = await self._period_stock_target(session, now)
+            period_central_target = round(period_target * CENTRAL_DAILY_SHARE)
             target_override = max(
                 0,
                 period_target - reserved_in_period - published_outside_queue,
@@ -760,15 +783,20 @@ class InventoryRepository:
             # A late refill uses only the remaining slots, never shifts cards
             # into the quiet hours or the following discovery period.
             first_slot = max(period_start, now - timedelta(seconds=1))
+            # Late refills must carry the morning deficit into the remaining
+            # evening window. The dispatcher already uses five-minute catch-up.
+            slot_minutes = PUBLICATION_SPACING_MINUTES
+            if first_slot + timedelta(minutes=slot_minutes * max(0, len(planned) - 1)) >= period_end:
+                slot_minutes = 5
             planned = [
                 PlannedApartment(
                     apartment=item.apartment,
-                    scheduled_at=first_slot + timedelta(minutes=PUBLICATION_SPACING_MINUTES * index),
+                    scheduled_at=first_slot + timedelta(minutes=slot_minutes * index),
                     window_key=item.window_key,
                     sequence=item.sequence,
                 )
                 for index, item in enumerate(planned)
-                if first_slot + timedelta(minutes=PUBLICATION_SPACING_MINUTES * index) < period_end
+                if first_slot + timedelta(minutes=slot_minutes * index) < period_end
             ]
             planned_ids = [item.apartment.id for item in planned]
             existing_rows = {

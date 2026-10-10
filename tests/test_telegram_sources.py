@@ -49,6 +49,14 @@ def test_parses_fresh_owner_apartment_with_album_and_contact() -> None:
     assert len(ad.photo_urls) == 2
 
 
+def test_structured_rental_card_does_not_require_a_sdam_verb():
+    html = _post("Однокомнатная квартира<br>Район: ЦУМ<br>Цена: 32 000 сом<br>Телефон: 0705 123 456")
+    ads = parse_telegram_apartments(html, now=datetime(2026, 9, 23, 7, tzinfo=timezone.utc))
+    assert len(ads) == 1
+    assert ads[0].rooms == "1"
+    assert ads[0].price == 32_000
+
+
 def test_parses_studio_and_uses_center_for_missing_district_above_25k() -> None:
     html = _post(
         "Сдаётся студия. Аренда: 28 000 сом. Собственник. Телефон: 0705 123 457",

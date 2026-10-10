@@ -18,7 +18,7 @@ async def collect(settings, apartments, inventory) -> dict[str, int]:
     """Read Telegram directly without any Lalafo request or discovery lease."""
     ads = await fetch_telegram_apartments(
         settings.telegram_source_channels, timeout=settings.http_timeout_seconds,
-        max_age_hours=48,
+        max_age_hours=48, limit=600, pages_per_channel=30,
     )
     published = await apartments.published_lalafo_ids([ad.lalafo_id for ad in ads])
     duplicates = await apartments.duplicate_candidate_ids(ads)

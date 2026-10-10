@@ -189,6 +189,8 @@ def _telegram_phone(text: str) -> str | None:
 
 
 def _telegram_rooms(text: str) -> str | None:
+    if re.search(r"\b(?:однокомнатн\w*|однушк\w*)\b", text, re.I):
+        return "1"
     if re.search(r"\bстуди(?:я|ю|и)\b", text, re.I):
         return "studio"
     match = ROOM_RE.search(text)
@@ -274,7 +276,8 @@ def parse_telegram_apartments(
         ]
         text = " ".join(lines)
         normalized = text.casefold().replace("ё", "е")
-        if not any(term in normalized for term in OFFER_TERMS):
+        structured_apartment = "квартир" in normalized and _telegram_rooms(text) is not None
+        if not any(term in normalized for term in OFFER_TERMS) and not structured_apartment:
             note("not_a_rental_offer")
             continue
         if any(term in normalized for term in SEARCH_TERMS):
