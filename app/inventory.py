@@ -562,6 +562,14 @@ class InventoryRepository:
         day_start = day_start_local.astimezone(timezone.utc)
         day_end = (day_start_local + timedelta(days=1)).astimezone(timezone.utc)
         async with self.sessions.begin() as session:
+            # Web refills and source collectors share the same database.
+            # Lock before reading reservations so simultaneous refills cannot
+            # insert two queue rows for the same apartment.
+            if session.bind is not None and session.bind.dialect.name == "postgresql":
+                await session.execute(
+                    text("SELECT pg_advisory_xact_lock(:lock_id)"),
+                    {"lock_id": INVENTORY_CLAIM_LOCK_ID},
+                )
             invalid_room_ids = select(Apartment.id).where(
                 Apartment.rooms.not_in(ALLOWED_ROOMS)
             )
