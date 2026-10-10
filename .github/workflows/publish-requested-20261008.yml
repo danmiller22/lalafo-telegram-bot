@@ -1,4 +1,4 @@
-name: Publish requested Vostok 5 apartment 114862425
+name: Retry requested Vostok 5 apartment 114862425
 on:
   push:
     branches: [codex/publish-requested-20261008]
