@@ -8,6 +8,7 @@ from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
+from socksio.exceptions import ProtocolError as SocksProtocolError
 
 from app.config import LALAFO_DISTRICT_FILTERS
 from app.lalafo.parser import (
@@ -173,7 +174,7 @@ class LalafoClient:
                 raise
             except LalafoAccessError:
                 raise
-            except (httpx.TransportError, httpx.HTTPStatusError) as exc:
+            except (httpx.TransportError, httpx.HTTPStatusError, SocksProtocolError) as exc:
                 last_error = exc
                 if attempt >= self.max_retries:
                     if self._proxy_urls:
@@ -218,7 +219,7 @@ class LalafoClient:
                 return response.text
             except (LalafoNotFound, LalafoAccessError):
                 raise
-            except (httpx.TransportError, httpx.HTTPStatusError) as exc:
+            except (httpx.TransportError, httpx.HTTPStatusError, SocksProtocolError) as exc:
                 last_error = exc
                 if attempt >= self.max_retries:
                     break

@@ -32,7 +32,7 @@ jobs:
 
           async def main():
               verified = 0
-              async with LalafoClient(timeout=12, max_retries=0, proxy_url=os.getenv("LALAFO_PROXY_URL", "")) as client:
+              async with LalafoClient(timeout=12, max_retries=3, proxy_url=os.getenv("LALAFO_PROXY_URL", "")) as client:
                   for index, url in enumerate(INVENTORY_SEARCH_URLS[:3]):
                       try:
                           page = await client.search(url)

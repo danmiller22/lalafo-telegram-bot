@@ -6,6 +6,7 @@ import httpx
 
 from app.config import ADDITIONAL_SEARCH_URLS, DEFAULT_SEARCH_URL, INVENTORY_SEARCH_URLS
 from app.lalafo.client import LalafoAccessError, LalafoClient, LalafoError
+from socksio.exceptions import ProtocolError as SocksProtocolError
 
 
 SEARCH_URL = (
@@ -85,6 +86,18 @@ def test_supplementary_search_uses_broad_owner_pool():
         assert not any(key.startswith("parameters[946]") for key in params)
         assert params["price[from]"] == "25000"
         assert params["price[to]"] == "40000"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["_get_json", "_get_text"])
+async def test_socks_protocol_failure_is_reported_as_retryable_lalafo_error(method):
+    client = LalafoClient(max_retries=0)
+    client._client.get = AsyncMock(side_effect=SocksProtocolError("Malformed reply"))
+    try:
+        with pytest.raises(LalafoError, match="ProtocolError"):
+            await getattr(client, method)("https://lalafo.kg/api/search/v3/feed/search")
+    finally:
+        await client.close()
 
 
 @pytest.mark.parametrize(
