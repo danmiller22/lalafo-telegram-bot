@@ -19,6 +19,7 @@ from app.config import (
     get_settings,
 )
 from app.lalafo.client import LalafoClient, LalafoError, LalafoNotFound
+from app.inventory import REALTOR_DAILY_SHARE
 from app.lalafo.exclusions import is_permanently_excluded, is_excluded_agency
 from app.lalafo.models import LalafoAd, SearchAd
 from app.lalafo.parser import LalafoParseError, is_allowed
@@ -100,10 +101,10 @@ MAX_REPOSTS_PER_RUN = 18
 CENTRAL_BATCH_SHARE = 0.50
 OWNER_OTHER_BATCH_SHARE = 0.50
 MAX_CANDIDATE_POOL = 300
-# Target 70% realtors and 30% owners. A category may fill
+# Target 50% realtors and 50% owners. A category may fill
 # the other category's shortage so Telegram publication does not stop.
-REALTOR_CANDIDATE_RESERVE_SHARE = 0.70
-REALTOR_BATCH_SHARE = 0.70
+REALTOR_CANDIDATE_RESERVE_SHARE = REALTOR_DAILY_SHARE
+REALTOR_BATCH_SHARE = REALTOR_DAILY_SHARE
 # Retained for historical reporting helpers; two-bedroom cards are no longer
 # eligible for discovery or publication.
 TWO_BEDROOM_MIN_PRICE = 25_000
@@ -436,7 +437,7 @@ def source_candidate_targets(
     batch_limit: int,
     owner_source_count: int | None = None,
 ) -> list[int]:
-    """Reserve 70% of the discovery pool for realtor searches."""
+    """Reserve half of the discovery pool for each known seller category."""
     if source_count <= 1:
         return [pool_limit]
     owner_source_count = min(
