@@ -22,6 +22,9 @@ jobs:
       - name: Select verified route without exposing credentials
         run: |
           python -m scripts.select_lalafo_proxy > lalafo-route.env
+          while IFS= read -r entry; do
+            echo "::add-mask::${entry#LALAFO_PROXY_URL=}"
+          done < lalafo-route.env
           cat lalafo-route.env >> "$GITHUB_ENV"
       - name: Verify actual public search and matching detail access
         run: |

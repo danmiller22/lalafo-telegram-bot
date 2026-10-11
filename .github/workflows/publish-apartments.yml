@@ -57,6 +57,9 @@ jobs:
         run: |
           for attempt in 1 2 3; do
             if python -m scripts.select_lalafo_proxy > lalafo-proxy.env; then
+              while IFS= read -r entry; do
+                echo "::add-mask::${entry#LALAFO_PROXY_URL=}"
+              done < lalafo-proxy.env
               cat lalafo-proxy.env >> "$GITHUB_ENV"
               exit 0
             fi
