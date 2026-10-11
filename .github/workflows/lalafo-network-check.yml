@@ -17,10 +17,12 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: python -m pip install -r requirements.txt
+      - run: python -m pip install 'curl_cffi>=0.14,<0.15'
       - name: Check public collection routes without credentials
         run: |
           python - <<'PY'
           import asyncio, json
+          from curl_cffi.requests import AsyncSession
           from urllib.parse import urlencode
           from app.config import INVENTORY_SEARCH_URLS
           from app.lalafo.client import LalafoClient
@@ -39,5 +41,16 @@ jobs:
                           print(json.dumps({"route": name, "status": response.status_code, "content_type": response.headers.get("content-type"), "bytes": len(response.content), "items": len(payload.get("items", [])) if isinstance(payload, dict) else None, "challenge": "security_challenge" in response.text or "cf-chl-" in response.text}))
                       except Exception as exc:
                           print(json.dumps({"route": name, "error": type(exc).__name__}))
+                  async with AsyncSession(impersonate="chrome", headers=client._headers, timeout=12) as browser:
+                      for name, url in [routes[0], routes[-2], routes[-1]]:
+                          try:
+                              response = await browser.get(url)
+                              try:
+                                  payload = response.json()
+                              except ValueError:
+                                  payload = None
+                              print(json.dumps({"route": "browser_tls_" + name, "status": response.status_code, "content_type": response.headers.get("content-type"), "items": len(payload.get("items", [])) if isinstance(payload, dict) else None}))
+                          except Exception as exc:
+                              print(json.dumps({"route": "browser_tls_" + name, "error": type(exc).__name__}))
           asyncio.run(main())
           PY
