@@ -50,6 +50,55 @@ async def test_payment_state_machine(repositories, service):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("prepare_only", [False, True])
+@pytest.mark.parametrize("plan", [WEEK_PLAN, MONTH_PLAN])
+async def test_repeated_checkout_cannot_reset_approved_access(repositories, service, prepare_only, plan):
+    apartments, payments, _ = repositories
+    first = await apartments.upsert_discovered(make_ad(lalafo_id=99001))
+    second = await apartments.upsert_discovered(make_ad(lalafo_id=99002))
+    initial = await payments.submit(user_id=990, apartment_id=first.id,
+        username=None, first_name="Buyer", plan=plan)
+    await payments.mark_payment_claimed(user_id=990, apartment_id=first.id)
+    assert await service.decide(initial.request.id, approve=True, actor_id=999) == "approved"
+    expiry = (await service.contact_status(990, first.id)).access_expires_at
+    repeated = await payments.submit(user_id=990, apartment_id=first.id,
+        username=None, first_name="Buyer", plan=plan, prepare_only=prepare_only)
+    assert repeated.outcome == "approved"
+    assert repeated.request.access_expires_at == expiry
+    assert (await service.contact_status(990, second.id)).status == "approved"
+
+
+@pytest.mark.asyncio
+async def test_existing_paid_week_survives_checkout_reset_but_not_rejection(repositories, service):
+    apartments, payments, sessions = repositories
+    first = await apartments.upsert_discovered(make_ad(lalafo_id=99003))
+    second = await apartments.upsert_discovered(make_ad(lalafo_id=99004))
+    initial = await payments.submit(user_id=991, apartment_id=first.id,
+        username=None, first_name="Buyer", plan=WEEK_PLAN)
+    await payments.mark_payment_claimed(user_id=991, apartment_id=first.id)
+    assert await service.decide(initial.request.id, approve=True, actor_id=999) == "approved"
+    # Reproduce a delayed checkout arriving after administrator approval.
+    async with sessions.begin() as session:
+        await session.execute(update(PaymentRequest).where(PaymentRequest.id == initial.request.id)
+            .values(status="awaiting_receipt", approved_at=None, access_expires_at=None))
+    recovered = await service.contact_status(991, second.id)
+    assert recovered.status == "approved"
+    assert recovered.access_expires_at is not None
+    assert (await service.contact_status(992, second.id)).status == "unpaid"
+    async with sessions.begin() as session:
+        await session.execute(update(PaymentRequest).where(PaymentRequest.id == initial.request.id)
+            .values(status="rejected"))
+    assert (await service.contact_status(991, second.id)).status == "unpaid"
+    async with sessions.begin() as session:
+        await session.execute(update(PaymentRequest).where(PaymentRequest.id == initial.request.id)
+            .values(status="awaiting_receipt"))
+        await session.execute(update(PaymentHistory)
+            .where(PaymentHistory.payment_request_id == initial.request.id)
+            .values(access_expires_at=datetime.now(timezone.utc) - timedelta(seconds=1)))
+    assert (await service.contact_status(991, second.id)).status != "approved"
+
+
+@pytest.mark.asyncio
 async def test_verified_finik_payment_alone_does_not_grant_access(
     repositories, service
 ):

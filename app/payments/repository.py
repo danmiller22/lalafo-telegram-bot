@@ -671,8 +671,9 @@ class PaymentRepository:
             active = result.scalar_one_or_none()
             if active is not None:
                 return active
-            # Apartment cleanup cascades checkout deletion. The independent
-            # ledger keeps paid access valid for future apartments.
+            # Apartment cleanup deletes checkouts, and older checkout retries
+            # could reset an approved row. Preserve the paid grant in both cases,
+            # while respecting explicit rejection and expiry on approved rows.
             return await session.scalar(
                 select(PaymentHistory)
                 .where(
@@ -689,6 +690,7 @@ class PaymentRepository:
                     ),
                     ~select(PaymentRequest.id).where(
                         PaymentRequest.id == PaymentHistory.payment_request_id,
+                        PaymentRequest.status.in_(("approved", "rejected")),
                     ).exists(),
                 )
                 .order_by(PaymentHistory.paid_at.desc())
@@ -753,6 +755,9 @@ class PaymentRepository:
                 ).with_for_update()
             )
             request = result.scalar_one_or_none()
+            expires_at = request.access_expires_at if request is not None else None
+            if expires_at is not None and expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
             if request is None:
                 request = PaymentRequest(
                     telegram_user_id=user_id,
@@ -764,7 +769,14 @@ class PaymentRepository:
                 )
                 session.add(request)
                 outcome = "created"
-            elif request.status == "approved" and request.plan == LIFETIME_PLAN and request.access_expires_at is None:
+            elif request.status == "approved" and (
+                (request.plan == LIFETIME_PLAN and expires_at is None)
+                or (
+                    request.plan in (WEEK_PLAN, MONTH_PLAN)
+                    and expires_at is not None
+                    and expires_at > datetime.now(timezone.utc)
+                )
+            ):
                 outcome = "approved"
             elif request.status == "prepared" and request.plan == plan:
                 if not prepare_only:

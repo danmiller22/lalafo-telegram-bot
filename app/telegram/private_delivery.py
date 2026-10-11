@@ -58,6 +58,8 @@ async def send_private_contact(
     max_photos: int = 5,
 ) -> None:
     text = format_private_contact(apartment)
+    # Deliver the paid contact before downloading optional source photos.
+    await bot.send_message(user_id, text)
     # The public card and the paid private copy must contain the same complete
     # photo set. ``max_photos`` remains in the signature for compatibility.
     photo_urls = list(dict.fromkeys(apartment.photo_urls))
@@ -66,14 +68,13 @@ async def send_private_contact(
             await bot.send_photo(
                 user_id,
                 URLInputFile(photo_urls[0], timeout=25),
-                caption=text,
             )
             return
         except (TelegramForbiddenError, TelegramRetryAfter):
             raise
         except Exception as exc:
             logger.warning(
-                "Could not deliver private apartment photo; falling back to text: %s",
+                "Could not deliver private apartment photo: %s",
                 type(exc).__name__,
             )
     elif photo_urls:
@@ -97,7 +98,6 @@ async def send_private_contact(
                     "Could not deliver private apartment photo batch: %s",
                     type(exc).__name__,
                 )
-    await bot.send_message(user_id, text)
 
 
 async def send_private_public_card(

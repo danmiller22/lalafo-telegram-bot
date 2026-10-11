@@ -57,7 +57,8 @@ def test_private_contact_uses_labeled_demo_location_when_district_is_missing():
 
 
 @pytest.mark.asyncio
-async def test_private_contact_repeats_storefront_album_before_contact_card():
+@pytest.mark.parametrize("photo_count", [1, 8])
+async def test_private_contact_delivers_number_before_downloading_photos(photo_count):
     apartment = SimpleNamespace(
         rooms="1",
         district="Центр",
@@ -66,13 +67,19 @@ async def test_private_contact_repeats_storefront_album_before_contact_card():
         deposit=None,
         no_subletting=False,
         phone="+996555123456",
-        photo_urls=[f"https://img.example/{index}.jpg" for index in range(8)],
+        photo_urls=[f"https://img.example/{index}.jpg" for index in range(photo_count)],
     )
     bot = SimpleNamespace(
         send_media_group=AsyncMock(),
         send_photo=AsyncMock(),
         send_message=AsyncMock(),
     )
+    async def photos_started(*args, **kwargs):
+        bot.send_message.assert_awaited_once()
+        assert "+996 555 123 456" in bot.send_message.await_args.args[1]
+
+    bot.send_media_group.side_effect = photos_started
+    bot.send_photo.side_effect = photos_started
 
     await send_private_contact(
         bot,
@@ -82,10 +89,15 @@ async def test_private_contact_repeats_storefront_album_before_contact_card():
         max_photos=5,
     )
 
-    media = bot.send_media_group.await_args.args[1]
-    assert all(isinstance(item.media, URLInputFile) for item in media)
-    assert [item.media.url for item in media] == apartment.photo_urls
-    bot.send_photo.assert_not_awaited()
+    if photo_count == 1:
+        bot.send_photo.assert_awaited_once()
+        assert bot.send_photo.await_args.args[1].url == apartment.photo_urls[0]
+        bot.send_media_group.assert_not_awaited()
+    else:
+        media = bot.send_media_group.await_args.args[1]
+        assert all(isinstance(item.media, URLInputFile) for item in media)
+        assert [item.media.url for item in media] == apartment.photo_urls
+        bot.send_photo.assert_not_awaited()
     bot.send_message.assert_awaited_once()
     assert "+996 555 123 456" in bot.send_message.await_args.args[1]
     assert "подсел" not in bot.send_message.await_args.args[1].casefold()
