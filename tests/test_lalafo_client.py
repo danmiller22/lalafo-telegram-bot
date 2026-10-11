@@ -100,6 +100,34 @@ async def test_socks_protocol_failure_is_reported_as_retryable_lalafo_error(meth
         await client.close()
 
 
+@pytest.mark.asyncio
+async def test_failed_source_does_not_discard_proxy_pool_for_next_source(monkeypatch):
+    client = LalafoClient(max_retries=1, proxy_url="http://route-1,http://route-2")
+    await client._client.aclose()
+    routed_requests = []
+
+    def make_client():
+        route = client._proxy_urls[client._proxy_index] if client._proxy_urls else None
+        def respond(request):
+            routed_requests.append((request.url.path, route))
+            if request.url.path == "/failed" or route is None:
+                return httpx.Response(403, request=request)
+            return httpx.Response(200, json={"items": []}, request=request)
+        return httpx.AsyncClient(transport=httpx.MockTransport(respond))
+
+    client._make_client = make_client
+    client._client = make_client()
+    client._get_json_via_relay = AsyncMock(return_value=None)
+    monkeypatch.setattr("app.lalafo.client.asyncio.sleep", AsyncMock())
+    try:
+        with pytest.raises(LalafoAccessError):
+            await client._get_json("https://lalafo.kg/failed")
+        assert await client._get_json("https://lalafo.kg/next") == {"items": []}
+        assert routed_requests[-1] == ("/next", "http://route-1")
+    finally:
+        await client.close()
+
+
 @pytest.mark.parametrize(
     ("offerer", "expected"),
     [("realtor", "42340"), ("owner", "19057")],

@@ -72,7 +72,8 @@ async def collect(settings, inventory) -> dict:
         )
     return {
         "status": "collected" if code == 0 and error is None else "retryable",
-        "exit_code": code, "error": error or outcome_error,
+        "exit_code": code, "error": error or (outcome_error if code != 0 else None),
+        "inventory_error": outcome_error,
         "verified_routes": routes, "recent_inventory": discovered_count,
         "period_queue": queued_count,
         "period_published": published_count,
