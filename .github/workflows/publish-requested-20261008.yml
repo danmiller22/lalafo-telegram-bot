@@ -1,4 +1,4 @@
-name: Publish requested Vostok 5 apartment 117193159
+name: Publish requested Philharmonia apartment 115356055
 on:
   push:
     branches: [codex/publish-requested-20261008]
@@ -22,7 +22,7 @@ jobs:
       FORCE_SELECTED_REPOST: 'false'
       DRY_RUN: 'false'
       SELECTED_LALAFO_URLS: |
-        https://lalafo.kg/bishkek/ads/1-komnata-vostok-5-mkr-bez-zivotnyh-s-mebelu-casticno-id-117193159
+        https://lalafo.kg/bishkek/ads/1-komnata-filarmonia-rieltor-semejnym-ot-6-mesacev-s-mebelu-polnostu-id-115356055
     steps:
       - uses: actions/checkout@v7
         with:
@@ -50,7 +50,7 @@ jobs:
                   assert chat.username == "rentkg312", "Unexpected destination"
                   print(f"DESTINATION_VERIFIED username={chat.username} chat_id={chat.id}")
                   await init_db(engine)
-                  ad = LalafoAd.model_validate(json.loads('{"lalafo_id":117193159,"source_url":"https://lalafo.kg/bishkek/ads/1-komnata-vostok-5-mkr-bez-zivotnyh-s-mebelu-casticno-id-117193159","phone":"+996708145617","phone_source_version":2,"price":30000,"currency":"KGS","rooms":"1","district":"Восток-5 мкр","city":"Бишкек","deposit":null,"photo_urls":["https://img5.lalafo.com/i/posters/original/9a/07/ae/d173a73e262ba5038dd2b51290.jpeg","https://img5.lalafo.com/i/posters/original/f2/40/a2/280b3d4922909bf6fde34932f3.jpeg","https://img5.lalafo.com/i/posters/original/3d/a5/8d/65efbddd7c2b9c9676567968aa.jpeg","https://img5.lalafo.com/i/posters/original/ec/0d/7b/f10f5fd2af63b3e53b7f7948b2.jpeg"],"category_id":2044,"no_subletting":true,"owner_listing":false,"seller_type":"realtor","source_title":"1 комната, Восток-5 мкр Без животных, С мебелью частично","source_description":"Восток 5мкр \\n1комнатная \\n30000","source_params":[],"source_created_at":"2026-10-11T05:24:13Z","source_updated_at":"2026-10-11T05:27:46Z"}'))
+                  ad = LalafoAd.model_validate(json.loads('{"lalafo_id":115356055,"source_url":"https://lalafo.kg/bishkek/ads/1-komnata-filarmonia-rieltor-semejnym-ot-6-mesacev-s-mebelu-polnostu-id-115356055","phone":"+996778060203","phone_source_version":2,"price":30000,"currency":"KGS","rooms":"1","district":"Филармония","city":"Бишкек","deposit":5000,"photo_urls":["https://img5.lalafo.com/i/posters/original/2c/c2/14/eecf4347086f1b9b34e46f8ad9.jpeg","https://img5.lalafo.com/i/posters/original/63/1d/9c/9523ab980ad63e8ef1933c8b6c.jpeg","https://img5.lalafo.com/i/posters/original/7e/f9/8e/34b07746cd6672855d4964f9a2.jpeg","https://img5.lalafo.com/i/posters/original/4e/24/01/3181c72183208ca1a788f15ce2.jpeg","https://img5.lalafo.com/i/posters/original/26/dd/c8/1ab5bca095a9a9b00a677b56d7.jpeg","https://img5.lalafo.com/i/posters/original/be/b6/c3/8c7061e5f32006a908dc42ce27.jpeg"],"category_id":2044,"no_subletting":true,"owner_listing":false,"seller_type":"realtor","source_title":"1 комната, Филармония Риэлтор, Без животных, от 6 месяцев, С мебелью полностью","source_description":"Сдаётся уютная 1‑комнатная квартира с отдельной кухней.\\nпо адресу: Киев161\\n\\n- Просторная комната: двуспальная кровать с матрасом, тумба под ТВ, телевизор, стеллаж, плотные шторы, ковёр.\\n- Кухня гарнитурного типа: верхние и нижние шкафы, рабочая поверхность, круглая мойка, вытяжка, варочная панель на 2 конфорки (газ), холодильник Indesit. \\n- Обеденная зона: стол с лавкой у окна.\\n- Окна с тюлем и плотными портьерами, высокие потолки с точечным освещением.\\n- Отделка в светлых тонах, ламинат по полу.\\n\\nИдеально для одного или пары: всё необходимое для проживания и готовки уже на месте.","source_params":[],"source_created_at":"2026-10-11T03:22:32Z","source_updated_at":"2026-10-11T03:38:24Z"}'))
                   repository = ApartmentRepository(sessions)
                   published = await repository.published_lalafo_ids([ad.lalafo_id])
                   print(f"PUBLICATION_PREFLIGHT lalafo_id={ad.lalafo_id} already_published={ad.lalafo_id in published}")
@@ -92,10 +92,10 @@ jobs:
           async def verify():
               engine, sessions = create_engine_and_session(get_settings().database_url)
               try:
-                  apartment = await ApartmentRepository(sessions).get_by_lalafo(117193159)
+                  apartment = await ApartmentRepository(sessions).get_by_lalafo(115356055)
                   assert apartment is not None and apartment.telegram_message_id
                   assert apartment.telegram_chat_id == -1004389602150
-                  assert len(apartment.photo_urls) == 4
+                  assert len(apartment.photo_urls) == 6
                   print(f"PUBLICATION_VERIFIED lalafo_id={apartment.lalafo_id} apartment_id={apartment.id} photos={len(apartment.photo_urls)} url=https://t.me/rentkg312/{apartment.telegram_message_id}")
               finally:
                   await engine.dispose()
