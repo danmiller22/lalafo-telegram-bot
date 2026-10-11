@@ -1,0 +1,49 @@
+name: Inspect Lalafo profile for requested publication 117193159
+on:
+  push:
+    branches: [codex/publish-requested-20261008]
+    paths: [.github/workflows/lalafo-requested-117193159.yml]
+permissions:
+  contents: read
+concurrency:
+  group: requested-lalafo-117193159
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      LALAFO_LOGIN: ${{ secrets.LALAFO_LOGIN }}
+      LALAFO_PASSWORD: ${{ secrets.LALAFO_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: c9c6da0ae6c153a7407534ac62f0989bcd843310
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -q -r requirements.txt
+      - name: Authenticate and inspect existing account template and promotion tariff
+        run: |
+          python - <<'PY'
+          import asyncio, json, os
+          from app.lalafo.managed_ads import LalafoManagedAdsClient
+          async def main():
+              client = LalafoManagedAdsClient()
+              try:
+                  login, password = os.environ.get("LALAFO_LOGIN"), os.environ.get("LALAFO_PASSWORD")
+                  if not login or not password:
+                      raise RuntimeError("Configured Lalafo credentials are unavailable")
+                  session = await client.login(login, password)
+                  print(f"LALAFO_AUTHENTICATED profile_id={session.profile_id}")
+                  for ad_id in [116325997, 114740296, 116490159]:
+                      details = await client.my_ad_details(ad_id)
+                      safe = {k:details.get(k) for k in ["id", "category_id", "city_id", "price", "currency", "description", "params", "hide_phone", "hide_chat", "status_id"]}
+                      print("ACCOUNT_TEMPLATE " + json.dumps(safe, ensure_ascii=False))
+                  print("CAMPAIGN_PARAMS " + json.dumps(await client.campaign_params(116325997), ensure_ascii=False))
+                  print("AVAILABLE_SUM " + json.dumps(await client.available_sum(210), ensure_ascii=False))
+              finally:
+                  await client.close()
+          asyncio.run(main())
+          PY
