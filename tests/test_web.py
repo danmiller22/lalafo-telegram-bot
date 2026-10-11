@@ -94,7 +94,8 @@ def configure(monkeypatch: pytest.MonkeyPatch) -> None:
     web._lalafo_auto_responder = None
     web._lalafo_watchdog_task = None
     web._telegram_inventory_state.update(state="pending", last_check_at=None, last_exit_code=None, last_error=None)
-    web._lalafo_inventory_state.update(state="pending", last_check_at=None, last_exit_code=None, last_error=None, last_result=None)
+    web._lalafo_inventory_state.update(state="pending", last_check_at=None, last_exit_code=None,
+        last_error=None, last_result=None, last_collection_result=None, last_success_at=None)
     web._apartment_scheduler_task = None
     web._service_keepalive_task = None
     web._background_watchdog_task = None
@@ -943,6 +944,29 @@ async def test_primary_lalafo_worker_retries_failure_and_reports_separately(monk
     assert web._lalafo_inventory_state["last_exit_code"] == 2
     assert web._lalafo_inventory_state["last_error"] == "LalafoCollectionFailed"
     assert web._lalafo_inventory_state["state"] == "stopped"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("successful", [False, True])
+async def test_lalafo_not_due_preserves_last_real_collection_result(monkeypatch, successful):
+    state = {"last_error": None, "last_success_at": None}
+    monkeypatch.setattr(web, "_lalafo_inventory_state", state)
+    first = {"status": "collected", "search_pages": 1, "stored": 0} if successful else {
+        "status": "retryable", "error": "LalafoAccessError:HTTP403", "search_pages": 0,
+    }
+    results = iter((first, {"status": "not_due", "exit_code": 0}))
+    async def worker(*args, **kwargs):
+        result = next(results)
+        web._record_inventory_collection_result(kwargs["report_state"], result)
+        return 0 if result["status"] != "retryable" else 2
+    monkeypatch.setattr(web, "_run_inventory_worker_process", worker)
+    monkeypatch.setattr(web.asyncio, "sleep", AsyncMock(side_effect=[None, asyncio.CancelledError]))
+    with pytest.raises(asyncio.CancelledError):
+        await web._run_lalafo_inventory_collector()
+    assert state["last_result"]["status"] == "not_due"
+    assert state["last_collection_result"] == first
+    assert state["last_error"] == (None if successful else "LalafoAccessError:HTTP403")
+    assert bool(state["last_success_at"]) == successful
 
 
 @pytest.mark.asyncio

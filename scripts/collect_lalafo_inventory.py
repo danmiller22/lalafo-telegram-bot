@@ -4,6 +4,7 @@ import asyncio
 from datetime import datetime, timezone
 import json
 import logging
+from typing import Any
 
 from app.config import get_settings
 from app.database import create_engine_and_session, init_db
@@ -26,11 +27,11 @@ async def collect(settings, inventory) -> dict:
     error = None
     routes = 0
     discovered_count = queued_count = 0
-    stats: dict[str, int] = {"stored": 0, "search_pages": 0, "search_results": 0}
+    stats: dict[str, Any] = {"stored": 0, "search_pages": 0, "search_results": 0}
     try:
         try:
             async with asyncio.timeout(45):
-                selected = await find_working_proxies()
+                selected = await find_working_proxies(settings.lalafo_proxy_url)
         except Exception:
             selected = []
             logger.exception("Lalafo route selection failed; keeping configured route")
@@ -47,12 +48,20 @@ async def collect(settings, inventory) -> dict:
                 include_telegram_sources=False,
                 discovery_stats=stats,
             )
+        if code == 0 and stats["search_pages"] == 0:
+            code = 2
+            error = "NoSourcePagesRead"
     except asyncio.CancelledError:
         raise
     except Exception as exc:
         error = type(exc).__name__
         logger.exception("Primary Lalafo collection failed; saved inventory retained")
     finally:
+        source_error = stats.get("last_source_error")
+        if code != 0 and error is None and isinstance(source_error, dict):
+            error = str(source_error["type"])
+            if source_error.get("http_status") is not None:
+                error += f":HTTP{source_error['http_status']}"
         discovered_count, queued_count = await inventory.period_counts(now=now)
         published_count = await inventory.period_published_count(now=now)
         success, outcome_error = discovery_outcome(exit_code=code, queued_count=queued_count, published_count=published_count)
