@@ -9,14 +9,35 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 4
     steps:
-      - name: Check Lalafo auth route without credentials
-        shell: bash
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - name: Check public collection routes without credentials
         run: |
-          status=$(curl --silent --output /dev/null --write-out '%{http_code}' \
-            --request POST \
-            --header 'content-type: application/json' \
-            --data '{}' \
-            https://lalafo.kg/api/auth/login)
-          echo "status=$status"
+          python - <<'PY'
+          import asyncio, json
+          from urllib.parse import urlencode
+          from app.config import INVENTORY_SEARCH_URLS
+          from app.lalafo.client import LalafoClient
+
+          async def main():
+              async with LalafoClient(timeout=12, max_retries=0) as client:
+                  routes = [("search_api_" + str(i), "https://lalafo.kg/api/search/v3/feed/search?" + urlencode(client._search_params(url, 1))) for i, url in enumerate(INVENTORY_SEARCH_URLS)]
+                  routes += [("search_page", INVENTORY_SEARCH_URLS[0]), ("detail_api", "https://lalafo.kg/api/search/v3/feed/details/117193159?expand=url")]
+                  for name, url in routes:
+                      try:
+                          response = await client._client.get(url)
+                          try:
+                              payload = response.json()
+                          except ValueError:
+                              payload = None
+                          print(json.dumps({"route": name, "status": response.status_code, "content_type": response.headers.get("content-type"), "bytes": len(response.content), "items": len(payload.get("items", [])) if isinstance(payload, dict) else None, "challenge": "security_challenge" in response.text or "cf-chl-" in response.text}))
+                      except Exception as exc:
+                          print(json.dumps({"route": name, "error": type(exc).__name__}))
+          asyncio.run(main())
+          PY
