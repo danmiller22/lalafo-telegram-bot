@@ -9,7 +9,7 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 4
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -55,5 +55,33 @@ jobs:
                               print(json.dumps({"route": "browser_tls_" + name, "status": response.status_code, "content_type": response.headers.get("content-type"), "items": len(payload.get("items", [])) if isinstance(payload, dict) else None}))
                           except Exception as exc:
                               print(json.dumps({"route": "browser_tls_" + name, "error": type(exc).__name__}))
+          asyncio.run(main())
+          PY
+      - name: Check normal Chromium public page loading
+        run: |
+          python -m pip install 'playwright>=1.55,<2'
+          python -m playwright install --with-deps chromium
+          python - <<'PY'
+          import asyncio, json
+          from playwright.async_api import async_playwright
+          from app.config import INVENTORY_SEARCH_URLS
+          from app.lalafo.parser import parse_search_page
+
+          async def main():
+              async with async_playwright() as playwright:
+                  browser = await playwright.chromium.launch()
+                  page = await browser.new_page(locale="ru-RU")
+                  try:
+                      response = await page.goto(INVENTORY_SEARCH_URLS[0], wait_until="domcontentloaded", timeout=45000)
+                      await page.wait_for_timeout(10000)
+                      html = await page.content()
+                      try:
+                          result = parse_search_page(html)
+                          count = len(result.items)
+                      except ValueError:
+                          count = None
+                      print(json.dumps({"browser": "chromium", "status": response.status if response else None, "title": await page.title(), "parsed_items": count, "bytes": len(html)}))
+                  finally:
+                      await browser.close()
           asyncio.run(main())
           PY
