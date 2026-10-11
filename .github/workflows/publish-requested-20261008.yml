@@ -32,16 +32,41 @@ jobs:
           python-version: '3.12'
           cache: pip
       - run: pip install -q -r requirements.txt
-      - name: Publish and verify requested photo card
+      - name: Verify destination and save observed public source
         run: |
           python - <<'PY'
           import asyncio, json
           from aiogram import Bot
           from app.config import get_settings
-          from app.database import create_engine_and_session
+          from app.database import create_engine_and_session, init_db
+          from app.lalafo.models import LalafoAd
           from app.payments.repository import ApartmentRepository
+          async def seed():
+              settings = get_settings()
+              bot = Bot(token=settings.require_bot_token())
+              engine, sessions = create_engine_and_session(settings.database_url)
+              try:
+                  chat = await bot.get_chat(settings.telegram_group_id)
+                  assert chat.username == "rentkg312", "Unexpected destination"
+                  print(f"DESTINATION_VERIFIED username={chat.username} chat_id={chat.id}")
+                  await init_db(engine)
+                  ad = LalafoAd.model_validate(json.loads('{"lalafo_id":117195714,"source_url":"https://lalafo.kg/bishkek/ads/1-komnata-vostok-5-mkr-rieltor-bez-zivotnyh-ot-1-mesaca-s-mebelu-polnostu-id-117195714","phone":"+996703108500","phone_source_version":2,"price":28000,"currency":"KGS","rooms":"1","district":"Восток-5 мкр","city":"Бишкек","deposit":5000,"photo_urls":["https://img5.lalafo.com/i/posters/original/94/66/fb/b72f72f379f6b4c350c4fe3e70.jpeg","https://img5.lalafo.com/i/posters/original/3d/4d/d8/1f29f3d68b9dec7c726eac0249.jpeg","https://img5.lalafo.com/i/posters/original/07/9a/6a/e614e14a77ed95dfd2143d353b.jpeg","https://img5.lalafo.com/i/posters/original/6b/9f/43/587b9582f2d0763d38b20ca3a9.jpeg"],"category_id":2044,"no_subletting":true,"owner_listing":false,"seller_type":"realtor","source_title":"1 комната, Восток-5 мкр Риэлтор, Без животных, от 1 месяца, С мебелью полностью","source_description":"Светлая 1‑комнатная квартира с отдельной кухней. Современная отделка в нейтральных тонах, большие окна с тюлем и портьерами.\\n\\nПланировка и мебель:\\n- Просторная кухня со встроенным гарнитуром, столешницей под дерево и верхними/нижними шкафами. Обеденная зона на 3–4 персоны.\\n- Комната с двуспальной кроватью, кондиционером и большим окном.\\n- Прихожая с вешалкой и местом для обуви.\\n- Санузел совмещённый.\\n\\nТехника и оснащение:\\n- Холодильник, электрочайник, СВЧ.\\n- Варочная поверхность и сушилка для посуды.\\n- Стиральная машина с фронтальной загрузкой.\\n- Ванная с душем и шторкой.\\n- Электрический водонагреватель.\\n- Кондиционер в комнате.\\n- Современные светильники в каждой зоне.\\n\\nДополнительно:\\n- Напольные дорожки и ковер в комнате.\\n- Зеркальный шкафчик и тумба под умывальник.\\n- Пластиковые окна, радиаторы отопления.\\n- Двери межкомнатные в едином стиле.\\n\\nАккуратная, уютная квартира, полностью укомплектована для проживания.","source_params":[],"source_created_at":"2026-10-11T06:17:10Z","source_updated_at":"2026-10-11T06:19:26Z"}'))
+                  repository = ApartmentRepository(sessions)
+                  published = await repository.published_lalafo_ids([ad.lalafo_id])
+                  print(f"PUBLICATION_PREFLIGHT lalafo_id={ad.lalafo_id} already_published={ad.lalafo_id in published}")
+                  if ad.lalafo_id not in published:
+                      apartment = await repository.upsert_discovered(ad)
+                      print(f"OBSERVED_SOURCE_SAVED lalafo_id={ad.lalafo_id} apartment_id={apartment.id} photos={len(ad.photo_urls)}")
+              finally:
+                  await bot.session.close()
+                  await engine.dispose()
+          asyncio.run(seed())
+          PY
+      - name: Publish requested photos and standard buttons without forcing a repost
+        run: |
+          python - <<'PY'
+          import asyncio, json
           from tools import publish_selected_apartments as selected
-
           class VerifiedPublisher(selected.TelegramPublisher):
               async def publish(self, apartment_id, ad):
                   message = await super().publish(apartment_id, ad)
@@ -54,29 +79,25 @@ jobs:
                       "buttons": message.reply_markup.model_dump(mode="json") if message.reply_markup else None,
                   }, ensure_ascii=False))
                   return message
-
-          async def main():
-              settings = get_settings()
-              bot = Bot(token=settings.require_bot_token())
-              try:
-                  chat = await bot.get_chat(settings.telegram_group_id)
-                  assert chat.username == "rentkg312", "Wrong publication destination"
-                  print(f"DESTINATION_VERIFIED username={chat.username} chat_id={chat.id}")
-              finally:
-                  await bot.session.close()
-              selected.TelegramPublisher = VerifiedPublisher
-              code = await selected.run()
-              engine, sessions = create_engine_and_session(settings.database_url)
+          selected.TelegramPublisher = VerifiedPublisher
+          raise SystemExit(asyncio.run(selected.run()))
+          PY
+      - name: Verify saved publication
+        run: |
+          python - <<'PY'
+          import asyncio
+          from app.config import get_settings
+          from app.database import create_engine_and_session
+          from app.payments.repository import ApartmentRepository
+          async def verify():
+              engine, sessions = create_engine_and_session(get_settings().database_url)
               try:
                   apartment = await ApartmentRepository(sessions).get_by_lalafo(117195714)
-                  if apartment and apartment.telegram_message_id:
-                      print(f"PERSISTED_CARD_VERIFIED apartment_id={apartment.id} message_id={apartment.telegram_message_id} photos={len(apartment.photo_urls)} phone_present={bool(apartment.phone)}")
-                  else:
-                      print("PERSISTED_CARD_MISSING")
-                      code = 2
+                  assert apartment is not None and apartment.telegram_message_id
+                  assert apartment.telegram_chat_id == -1004389602150
+                  assert len(apartment.photo_urls) == 4
+                  print(f"PUBLICATION_VERIFIED lalafo_id={apartment.lalafo_id} apartment_id={apartment.id} photos={len(apartment.photo_urls)} url=https://t.me/rentkg312/{apartment.telegram_message_id}")
               finally:
                   await engine.dispose()
-              raise SystemExit(code)
-
-          asyncio.run(main())
+          asyncio.run(verify())
           PY
