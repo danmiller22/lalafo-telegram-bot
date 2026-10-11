@@ -1,4 +1,4 @@
-name: Publish requested Vostok 5 apartment 117195714
+name: Publish requested Vostok 5 apartment 117193159
 on:
   push:
     branches: [codex/publish-requested-20261008]
@@ -22,7 +22,7 @@ jobs:
       FORCE_SELECTED_REPOST: 'false'
       DRY_RUN: 'false'
       SELECTED_LALAFO_URLS: |
-        https://lalafo.kg/bishkek/ads/1-komnata-vostok-5-mkr-rieltor-bez-zivotnyh-ot-1-mesaca-s-mebelu-polnostu-id-117195714
+        https://lalafo.kg/bishkek/ads/1-komnata-vostok-5-mkr-bez-zivotnyh-s-mebelu-casticno-id-117193159
     steps:
       - uses: actions/checkout@v7
         with:
@@ -50,7 +50,7 @@ jobs:
                   assert chat.username == "rentkg312", "Unexpected destination"
                   print(f"DESTINATION_VERIFIED username={chat.username} chat_id={chat.id}")
                   await init_db(engine)
-                  ad = LalafoAd.model_validate(json.loads('{"lalafo_id":117195714,"source_url":"https://lalafo.kg/bishkek/ads/1-komnata-vostok-5-mkr-rieltor-bez-zivotnyh-ot-1-mesaca-s-mebelu-polnostu-id-117195714","phone":"+996703108500","phone_source_version":2,"price":28000,"currency":"KGS","rooms":"1","district":"Восток-5 мкр","city":"Бишкек","deposit":5000,"photo_urls":["https://img5.lalafo.com/i/posters/original/94/66/fb/b72f72f379f6b4c350c4fe3e70.jpeg","https://img5.lalafo.com/i/posters/original/3d/4d/d8/1f29f3d68b9dec7c726eac0249.jpeg","https://img5.lalafo.com/i/posters/original/07/9a/6a/e614e14a77ed95dfd2143d353b.jpeg","https://img5.lalafo.com/i/posters/original/6b/9f/43/587b9582f2d0763d38b20ca3a9.jpeg"],"category_id":2044,"no_subletting":true,"owner_listing":false,"seller_type":"realtor","source_title":"1 комната, Восток-5 мкр Риэлтор, Без животных, от 1 месяца, С мебелью полностью","source_description":"Светлая 1‑комнатная квартира с отдельной кухней. Современная отделка в нейтральных тонах, большие окна с тюлем и портьерами.\\n\\nПланировка и мебель:\\n- Просторная кухня со встроенным гарнитуром, столешницей под дерево и верхними/нижними шкафами. Обеденная зона на 3–4 персоны.\\n- Комната с двуспальной кроватью, кондиционером и большим окном.\\n- Прихожая с вешалкой и местом для обуви.\\n- Санузел совмещённый.\\n\\nТехника и оснащение:\\n- Холодильник, электрочайник, СВЧ.\\n- Варочная поверхность и сушилка для посуды.\\n- Стиральная машина с фронтальной загрузкой.\\n- Ванная с душем и шторкой.\\n- Электрический водонагреватель.\\n- Кондиционер в комнате.\\n- Современные светильники в каждой зоне.\\n\\nДополнительно:\\n- Напольные дорожки и ковер в комнате.\\n- Зеркальный шкафчик и тумба под умывальник.\\n- Пластиковые окна, радиаторы отопления.\\n- Двери межкомнатные в едином стиле.\\n\\nАккуратная, уютная квартира, полностью укомплектована для проживания.","source_params":[],"source_created_at":"2026-10-11T06:17:10Z","source_updated_at":"2026-10-11T06:19:26Z"}'))
+                  ad = LalafoAd.model_validate(json.loads('{"lalafo_id":117193159,"source_url":"https://lalafo.kg/bishkek/ads/1-komnata-vostok-5-mkr-bez-zivotnyh-s-mebelu-casticno-id-117193159","phone":"+996708145617","phone_source_version":2,"price":30000,"currency":"KGS","rooms":"1","district":"Восток-5 мкр","city":"Бишкек","deposit":null,"photo_urls":["https://img5.lalafo.com/i/posters/original/9a/07/ae/d173a73e262ba5038dd2b51290.jpeg","https://img5.lalafo.com/i/posters/original/f2/40/a2/280b3d4922909bf6fde34932f3.jpeg","https://img5.lalafo.com/i/posters/original/3d/a5/8d/65efbddd7c2b9c9676567968aa.jpeg","https://img5.lalafo.com/i/posters/original/ec/0d/7b/f10f5fd2af63b3e53b7f7948b2.jpeg"],"category_id":2044,"no_subletting":true,"owner_listing":false,"seller_type":"realtor","source_title":"1 комната, Восток-5 мкр Без животных, С мебелью частично","source_description":"Восток 5мкр \\n1комнатная \\n30000","source_params":[],"source_created_at":"2026-10-11T05:24:13Z","source_updated_at":"2026-10-11T05:27:46Z"}'))
                   repository = ApartmentRepository(sessions)
                   published = await repository.published_lalafo_ids([ad.lalafo_id])
                   print(f"PUBLICATION_PREFLIGHT lalafo_id={ad.lalafo_id} already_published={ad.lalafo_id in published}")
@@ -92,7 +92,7 @@ jobs:
           async def verify():
               engine, sessions = create_engine_and_session(get_settings().database_url)
               try:
-                  apartment = await ApartmentRepository(sessions).get_by_lalafo(117195714)
+                  apartment = await ApartmentRepository(sessions).get_by_lalafo(117193159)
                   assert apartment is not None and apartment.telegram_message_id
                   assert apartment.telegram_chat_id == -1004389602150
                   assert len(apartment.photo_urls) == 4
