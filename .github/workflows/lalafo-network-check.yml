@@ -2,6 +2,11 @@ name: Lalafo cloud network check
 
 on:
   workflow_dispatch:
+    inputs:
+      collect_inventory:
+        description: Collect into the shared inventory without publishing messages
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -9,7 +14,7 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 4
+    timeout-minutes: 17
     env:
       LALAFO_PROXY_URL: ${{ secrets.LALAFO_PROXY_URL }}
     steps:
@@ -53,3 +58,9 @@ jobs:
                   raise SystemExit("No working public Lalafo search/detail route")
           asyncio.run(main())
           PY
+      - name: Verify collection into the shared inventory
+        if: inputs.collect_inventory
+        timeout-minutes: 13
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python -m scripts.collect_lalafo_inventory
