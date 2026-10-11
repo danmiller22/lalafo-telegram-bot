@@ -63,4 +63,16 @@ jobs:
         timeout-minutes: 13
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: python -m scripts.collect_lalafo_inventory
+        shell: bash
+        run: |
+          python -m scripts.collect_lalafo_inventory | tee lalafo-collection.log
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from scripts.collect_lalafo_inventory import REPORT_PREFIX
+          reports = [json.loads(line.removeprefix(REPORT_PREFIX))
+                     for line in Path("lalafo-collection.log").read_text().splitlines()
+                     if line.startswith(REPORT_PREFIX)]
+          if not reports or reports[-1].get("status") != "collected" or not reports[-1].get("search_pages"):
+              raise SystemExit("Collection was skipped or failed; actual inventory collection is not verified")
+          PY

@@ -909,6 +909,8 @@ async def run(
                 await apartments.upsert_discovered(
                     priority_ad, discovery_priority=True
                 )
+                if discovery_stats is not None:
+                    discovery_stats["stored"] = discovery_stats.get("stored", 0) + 1
                 early_queued = await InventoryRepository(sessions).schedule_period()
                 logger.info(
                     "Priority inventory scheduled immediately: id=%s queued=%d",
@@ -1182,6 +1184,8 @@ async def run(
                     from app.inventory import InventoryRepository
 
                     await apartments.upsert_discovered(ad)
+                    if discovery_stats is not None:
+                        discovery_stats["stored"] = discovery_stats.get("stored", 0) + 1
                     await InventoryRepository(sessions).schedule_period()
                 if is_repost:
                     repost_candidate_ids.add(ad.lalafo_id)

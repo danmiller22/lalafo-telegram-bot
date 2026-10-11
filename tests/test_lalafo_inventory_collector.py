@@ -96,3 +96,23 @@ async def test_primary_collector_never_reports_success_without_reading_a_source_
     assert result["status"] == "retryable"
     assert result["exit_code"] == 2
     assert result["error"] == "NoSourcePagesRead"
+
+
+@pytest.mark.asyncio
+async def test_timeout_retains_saved_inventory_and_partial_collection_metrics(repositories, monkeypatch):
+    apartments, _, sessions = repositories
+    inventory = InventoryRepository(sessions)
+
+    async def interrupted(**kwargs):
+        await apartments.upsert_discovered(make_ad())
+        kwargs["discovery_stats"].update(stored=1, search_pages=1, search_results=20)
+        raise TimeoutError()
+
+    monkeypatch.setattr(collector, "discover", interrupted)
+    monkeypatch.setattr(collector, "find_working_proxies", AsyncMock(return_value=[]))
+    result = await collector.collect(Settings(), inventory)
+    assert result["status"] == "retryable"
+    assert result["error"] == "TimeoutError"
+    assert result["stored"] == 1
+    assert result["search_pages"] == 1
+    assert await apartments.get_by_lalafo(make_ad().lalafo_id) is not None
