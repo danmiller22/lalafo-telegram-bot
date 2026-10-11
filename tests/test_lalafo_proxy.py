@@ -91,3 +91,10 @@ async def test_proxy_probe_rejects_empty_inventory(monkeypatch):
     client = HTTPClientStub([httpx.Response(200, json={"items": []})])
     monkeypatch.setattr(selector.httpx, "AsyncClient", lambda **kwargs: client)
     assert await selector._works("http://route") is None
+
+
+@pytest.mark.asyncio
+async def test_malformed_socks_proxy_is_rejected_without_aborting_scan(monkeypatch):
+    client = HTTPClientStub([selector.SocksProtocolError("Malformed reply")])
+    monkeypatch.setattr(selector.httpx, "AsyncClient", lambda **kwargs: client)
+    assert await selector._works("socks5://8.8.8.8:1080") is None

@@ -13,6 +13,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import httpx
+from socksio.exceptions import ProtocolError as SocksProtocolError
 
 
 PROXY_LIST_URL = "https://api.proxyscrape.com/v4/free-proxy-list/get"
@@ -118,7 +119,7 @@ async def _works(proxy_url: str, *, timeout: float = 4.0) -> str | None:
                 if not isinstance(detail_payload, dict) or str(detail_payload.get("id")) != match.group(1):
                     return None
             return proxy_url
-    except (httpx.HTTPError, json.JSONDecodeError, ValueError):
+    except (httpx.HTTPError, json.JSONDecodeError, ValueError, SocksProtocolError):
         return None
 
 

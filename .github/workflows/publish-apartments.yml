@@ -62,8 +62,11 @@ jobs:
             fi
             sleep $((attempt * 10))
           done
-          echo "::warning::No verified proxy was available; trying the direct Lalafo route"
-          echo "LALAFO_PROXY_URL=" >> "$GITHUB_ENV"
+          if [ -n "$LALAFO_PROXY_URL" ]; then
+            echo "::warning::Configured Lalafo route could not be verified; retaining it for collector retries"
+          else
+            echo "::warning::No verified proxy was available; trying the direct Lalafo route"
+          fi
       - name: Upgrade database with retries
         shell: bash
         run: |
