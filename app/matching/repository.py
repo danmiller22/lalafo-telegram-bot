@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -19,6 +19,7 @@ from app.models import (
     LalafoAutoReplyMeta,
 )
 from app.state import normalized_district
+from app.listing_lifecycle import listing_expired
 
 
 FRESH_FOR = timedelta(days=2)
@@ -501,43 +502,57 @@ class MatchingRepository:
         now = datetime.now(timezone.utc)
         stale = now - timedelta(minutes=5)
         async with self.sessions.begin() as session:
-            delivery = await session.scalar(
-                select(ApartmentMatchDelivery)
-                .options(selectinload(ApartmentMatchDelivery.apartment))
-                .where(
-                    ApartmentMatchDelivery.attempts < 5,
-                    or_(
-                        and_(
-                            ApartmentMatchDelivery.status.in_(("queued", "retry")),
-                            or_(
-                                ApartmentMatchDelivery.next_attempt_at.is_(None),
-                                ApartmentMatchDelivery.next_attempt_at <= now,
+            # A worker can die during its final attempt; make that terminal.
+            await session.execute(update(ApartmentMatchDelivery).where(
+                ApartmentMatchDelivery.status == "sending",
+                ApartmentMatchDelivery.attempts >= 5,
+                ApartmentMatchDelivery.updated_at <= stale,
+            ).values(status="failed", last_error="stale_final_attempt", updated_at=now))
+            # Skip invalid rows within this tick so they cannot block fresh matches.
+            for _ in range(100):
+                delivery = await session.scalar(
+                    select(ApartmentMatchDelivery)
+                    .options(selectinload(ApartmentMatchDelivery.apartment))
+                    .where(
+                        ApartmentMatchDelivery.attempts < 5,
+                        or_(
+                            and_(
+                                ApartmentMatchDelivery.status.in_(("queued", "retry")),
+                                or_(
+                                    ApartmentMatchDelivery.next_attempt_at.is_(None),
+                                    ApartmentMatchDelivery.next_attempt_at <= now,
+                                ),
+                            ),
+                            and_(
+                                ApartmentMatchDelivery.status == "sending",
+                                ApartmentMatchDelivery.updated_at <= stale,
                             ),
                         ),
-                        and_(
-                            ApartmentMatchDelivery.status == "sending",
-                            ApartmentMatchDelivery.updated_at <= stale,
-                        ),
-                    ),
+                    )
+                    .order_by(ApartmentMatchDelivery.created_at.asc())
+                    .with_for_update(skip_locked=True)
+                    .limit(1)
                 )
-                .order_by(ApartmentMatchDelivery.created_at.asc())
-                .with_for_update(skip_locked=True)
-                .limit(1)
-            )
-            if delivery is None:
-                return None
-            profile = await session.get(
-                ApartmentSearchProfile, delivery.telegram_user_id
-            )
-            if profile is None or not profile.notifications_enabled:
-                delivery.status = "cancelled"
+                if delivery is None:
+                    return None
+                profile = await session.get(
+                    ApartmentSearchProfile, delivery.telegram_user_id
+                )
+                apartment = delivery.apartment
+                if (profile is None or not profile.notifications_enabled
+                    or apartment is None or not apartment.active or not apartment.phone
+                    or apartment.availability_status == "unavailable"
+                    or listing_expired(apartment, now=now)
+                    or not apartment_matches(apartment, profile)):
+                    delivery.status = "cancelled"
+                    delivery.updated_at = now
+                    await session.flush()
+                    continue
+                delivery.status = "sending"
+                delivery.attempts += 1
                 delivery.updated_at = now
-                return None
-            delivery.status = "sending"
-            delivery.attempts += 1
-            delivery.updated_at = now
-            apartment = delivery.apartment
-            return ClaimedDelivery(delivery.id, delivery.telegram_user_id, apartment)
+                return ClaimedDelivery(delivery.id, delivery.telegram_user_id, apartment)
+            return None
 
     async def finish_delivery(
         self,

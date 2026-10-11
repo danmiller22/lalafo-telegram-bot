@@ -828,8 +828,9 @@ async def test_miniapp_access_sends_pending_claim_to_admin(
     assert response.status_code == 200
     assert response.json()["status"] == "pending"
     payments.mark_payment_claimed.assert_awaited_once_with(user_id=778899, apartment_id=42)
-    payments.claim_admin_notification.assert_awaited_once_with(73)
-    payments.finish_admin_notification.assert_awaited_once_with(73, 515)
+    token = payments.claim_admin_notification.await_args.kwargs["token"]
+    payments.claim_admin_notification.assert_awaited_once_with(73, token=token)
+    payments.finish_admin_notification.assert_awaited_once_with(73, 515, token=token)
     bot.send_message.assert_awaited_once()
 
 

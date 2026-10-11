@@ -28,7 +28,10 @@ def verify_telegram_init_data(
 ) -> TelegramMiniAppUser | None:
     """Validate Telegram Mini App initData and return its authenticated user."""
     try:
-        fields = dict(parse_qsl(init_data, keep_blank_values=True, strict_parsing=True))
+        pairs = parse_qsl(init_data, keep_blank_values=True, strict_parsing=True)
+        fields = dict(pairs)
+        if len(pairs) != len(fields):
+            return None
         supplied_hash = fields.pop("hash")
         auth_date = int(fields["auth_date"])
         current_time = int(time.time()) if now is None else now
@@ -46,7 +49,11 @@ def verify_telegram_init_data(
         if not hmac.compare_digest(supplied_hash, expected_hash):
             return None
         raw_user = json.loads(fields["user"])
-        user_id = int(raw_user["id"])
+        if not isinstance(raw_user, dict):
+            return None
+        user_id = raw_user["id"]
+        if type(user_id) is not int or user_id <= 0:
+            return None
         first_name = str(raw_user.get("first_name") or "Пользователь")[:255]
         username_value = raw_user.get("username")
         username = str(username_value)[:64] if username_value else None

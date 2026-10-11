@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections import Counter, defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -51,6 +53,43 @@ def same_listing(ad: LalafoAd, other: LalafoAd | object) -> bool:
     if abs(ad.price - other_price) > max(ad.price, other_price) * 0.2:
         return False
     return len(_photo_keys(ad.photo_urls) & _photo_keys(other_photos)) >= 2
+
+
+class ListingIndex:
+    """Index published identities once instead of comparing every pair of ads."""
+
+    def __init__(self, listings: Iterable[object]) -> None:
+        self.ids: set[int] = set()
+        self.contacts: dict[tuple, list[frozenset[str]]] = defaultdict(list)
+        self.photos: dict[tuple, list[tuple[int, int]]] = defaultdict(list)
+        for item in listings:
+            self.ids.add(item.lalafo_id)
+            district = normalized_district(item.district)
+            if not district or not isinstance(item.price, int):
+                continue
+            urls = item.photo_urls or []
+            self.contacts[(item.rooms, district, item.phone, item.price)].append(frozenset(urls))
+            for photo in _photo_keys(urls):
+                self.photos[(item.rooms, district, photo)].append((item.lalafo_id, item.price))
+
+    def contains(self, ad: LalafoAd) -> bool:
+        if ad.lalafo_id in self.ids:
+            return True
+        district = normalized_district(ad.district)
+        if not district:
+            return False
+        urls = frozenset(ad.photo_urls)
+        contact = (ad.rooms, district, ad.phone, ad.price)
+        if any(not urls or not other or urls == other for other in self.contacts.get(contact, ())):
+            return True
+        overlaps: Counter[int] = Counter()
+        for photo in _photo_keys(ad.photo_urls):
+            for listing_id, price in self.photos.get((ad.rooms, district, photo), ()):
+                if abs(ad.price - price) <= max(ad.price, price) * 0.2:
+                    overlaps[listing_id] += 1
+                    if overlaps[listing_id] >= 2:
+                        return True
+        return False
 
 
 def ad_fingerprint(ad: LalafoAd) -> str:

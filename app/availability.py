@@ -11,6 +11,7 @@ import httpx
 
 from app.config import Settings
 from app.lalafo.client import LalafoClient, LalafoNotFound
+from app.listing_lifecycle import MAX_LISTING_AGE_DAYS
 from app.payments.repository import ApartmentRepository
 
 
@@ -18,7 +19,6 @@ _RENTED = re.compile(r"(?iu)\b(?:сдан[аоы]?|снят[аоы]?|неакт�
 _TAGS = re.compile(r"<[^>]+>")
 _BISHKEK = ZoneInfo("Asia/Bishkek")
 AVAILABILITY_CACHE_HOURS = 12
-MAX_LISTING_AGE_DAYS = 2
 
 
 @dataclass(frozen=True, slots=True)

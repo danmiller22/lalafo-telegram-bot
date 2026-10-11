@@ -191,11 +191,17 @@ async def _finik_checkout_url(
         redirect_url=f"{bot_url}/access?startapp={start_param}",
         webhook_url=settings.require_public_base_url() + "/finik/webhook",
     )
-    await payments.set_provider_payment_url(
+    stored = await payments.set_provider_payment_url(
         prepared.id,
         created.url,
         configuration_id=configuration_id,
+        payment_id=prepared.provider_payment_id,
     )
+    if stored is False:
+        current = await payments.get_request(prepared.id)
+        if current is not None and current.provider_payment_url:
+            return current.provider_payment_url
+        raise RuntimeError("Payment checkout changed while the provider was responding")
     return created.url
 
 
@@ -1427,7 +1433,10 @@ def _miniapp_result_payload(result) -> dict[str, Any]:
             ],
         }
         if result.access_expires_at is not None:
-            local_expiry = result.access_expires_at.astimezone(ZoneInfo("Asia/Bishkek"))
+            expiry = result.access_expires_at
+            if expiry.tzinfo is None:
+                expiry = expiry.replace(tzinfo=UTC)
+            local_expiry = expiry.astimezone(ZoneInfo("Asia/Bishkek"))
             response["expires_at_text"] = local_expiry.strftime("%d.%m.%Y %H:%M")
     return response
 
@@ -1536,7 +1545,7 @@ async def miniapp_prepare_payment(payload: MiniAppRequest) -> dict[str, Any]:
     except Exception as exc:
         logger.exception("Could not prepare Finik checkout")
         raise HTTPException(status_code=503, detail="Не удалось подготовить оплату. Попробуйте ещё раз.") from exc
-    created = prepared.created_at
+    created = prepared.created_at if _uses_dynamic_finik(settings, WEEK_PLAN) else datetime.now(UTC)
     if created.tzinfo is None:
         created = created.replace(tzinfo=UTC)
     return {"payment_url": url, "expires_at_ms": int(created.timestamp() * 1000) + 300_000}
@@ -1548,6 +1557,8 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
     service = runtime.workflow_data["service"]
     await _record_funnel(runtime, user.id, "payment_opened", apartment_id=apartment_id)
     result = await service.contact_status(user.id, apartment_id)
+    if result.status == "approved":
+        return _miniapp_result_payload(result)
     plan = WEEK_PLAN
     payment_url = _finik_payment_url(settings, plan)
     if not payment_url and not _uses_dynamic_finik(settings, plan):
