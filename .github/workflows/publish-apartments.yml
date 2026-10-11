@@ -36,6 +36,7 @@ jobs:
       ADMIN_USER_ID: ${{ secrets.ADMIN_USER_ID }}
       CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      LALAFO_PROXY_URL: ${{ secrets.LALAFO_PROXY_URL }}
       DRY_RUN: "false"
       TEST_MODE: "false"
       MAX_NEW_POSTS_PER_RUN: "50"

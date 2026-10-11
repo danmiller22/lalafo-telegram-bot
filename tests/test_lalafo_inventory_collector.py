@@ -66,3 +66,33 @@ async def test_primary_collector_failure_releases_lease_and_keeps_configured_rou
     assert result["error"] == "RuntimeError"
     # Forced operator retry can reclaim the finished run immediately.
     assert await inventory.claim_discovery(now=datetime.now(timezone.utc), force=True) is not None
+
+
+@pytest.mark.asyncio
+async def test_primary_collector_preserves_exact_http_access_failure(repositories, monkeypatch):
+    _, _, sessions = repositories
+    inventory = InventoryRepository(sessions)
+    selector = AsyncMock(return_value=[])
+    async def blocked(**kwargs):
+        kwargs["discovery_stats"]["last_source_error"] = {
+            "type": "LalafoAccessError", "http_status": 403,
+        }
+        return 2
+    monkeypatch.setattr(collector, "discover", blocked)
+    monkeypatch.setattr(collector, "find_working_proxies", selector)
+    result = await collector.collect(Settings(lalafo_proxy_url="http://configured"), inventory)
+    selector.assert_awaited_once_with("http://configured")
+    assert result["status"] == "retryable"
+    assert result["error"] == "LalafoAccessError:HTTP403"
+    assert result["search_pages"] == 0
+
+
+@pytest.mark.asyncio
+async def test_primary_collector_never_reports_success_without_reading_a_source_page(repositories, monkeypatch):
+    _, _, sessions = repositories
+    monkeypatch.setattr(collector, "discover", AsyncMock(return_value=0))
+    monkeypatch.setattr(collector, "find_working_proxies", AsyncMock(return_value=[]))
+    result = await collector.collect(Settings(), InventoryRepository(sessions))
+    assert result["status"] == "retryable"
+    assert result["exit_code"] == 2
+    assert result["error"] == "NoSourcePagesRead"

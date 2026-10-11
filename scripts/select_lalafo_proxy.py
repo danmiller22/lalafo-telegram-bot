@@ -1,17 +1,23 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
+from itertools import zip_longest
 import json
+import os
 import re
 import ssl
 import sys
 import uuid
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
 
 PROXY_LIST_URL = "https://api.proxyscrape.com/v4/free-proxy-list/get"
+GEONODE_URL = "https://proxylist.geonode.com/api/proxy-list"
+PROXIFLY_URL = "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/all/data.txt"
 SEARCH_URL = (
     "https://lalafo.kg/api/search/v3/feed/search?expand=url&per-page=1&"
     "category_id=2044&page=1&city_id=103184&parameters%5B69%5D%5B0%5D=15496&"
@@ -49,7 +55,32 @@ MAX_CONCURRENT_PROBES = 24
 TLS_CONTEXT = ssl.create_default_context()
 
 
-async def _works(proxy_url: str) -> str | None:
+def _public_proxy(value: str) -> bool:
+    try:
+        parsed = urlsplit(value)
+        return (parsed.scheme in {"http", "https", "socks5"}
+                and parsed.port is not None and not parsed.username and not parsed.password
+                and ipaddress.ip_address(parsed.hostname or "").is_global)
+    except ValueError:
+        return False
+
+
+async def _proxy_candidates(client: httpx.AsyncClient, url: str, params: dict | None = None) -> list[str]:
+    try:
+        response = await client.get(url, params=params)
+        response.raise_for_status()
+        if url == GEONODE_URL:
+            candidates = [f"{protocol}://{row['ip']}:{row['port']}"
+                          for row in response.json().get("data", [])
+                          for protocol in row.get("protocols", [])]
+        else:
+            candidates = response.text.splitlines()[:200]
+        return list(dict.fromkeys(value.strip() for value in candidates if _public_proxy(value.strip())))
+    except (httpx.HTTPError, ValueError, TypeError, KeyError, AttributeError, StopAsyncIteration):
+        return []
+
+
+async def _works(proxy_url: str, *, timeout: float = 4.0) -> str | None:
     headers = dict(HEADERS)
     headers["user-hash"] = str(uuid.uuid4())
     headers["request-id"] = str(uuid.uuid4())
@@ -58,7 +89,7 @@ async def _works(proxy_url: str) -> str | None:
             proxy=proxy_url,
             verify=TLS_CONTEXT,
             headers=headers,
-            timeout=httpx.Timeout(4.0),
+            timeout=httpx.Timeout(timeout),
             follow_redirects=True,
         ) as client:
             response = await client.get(SEARCH_URL)
@@ -68,6 +99,8 @@ async def _works(proxy_url: str) -> str | None:
             if not isinstance(payload, dict) or not isinstance(payload.get("items"), list):
                 return None
             items = payload["items"]
+            if not items or not isinstance(items[0], dict) or not items[0].get("url"):
+                return None
             if items and isinstance(items[0], dict) and items[0].get("url"):
                 detail_url = str(items[0]["url"])
                 match = re.search(r"-id-(\d+)(?:$|[/?#])", detail_url)
@@ -89,7 +122,17 @@ async def _works(proxy_url: str) -> str | None:
         return None
 
 
-async def find_working_proxies() -> list[str]:
+async def find_working_proxies(configured_proxy_url: str = "") -> list[str]:
+    configured = list(dict.fromkeys(
+        value.strip() for value in re.split(r"[,\n]+", configured_proxy_url) if value.strip()
+    ))
+    if configured:
+        # An operator-configured route must never be replaced by a random free
+        # proxy. Verify both search and matching detail through that route.
+        results = await asyncio.gather(*(
+            _works(proxy, timeout=10.0) for proxy in configured[:MAX_CONCURRENT_PROBES]
+        ))
+        return [proxy for proxy in results if proxy][:TARGET_PROXY_COUNT]
     params = {
         "request": "display_proxies",
         "protocol": "http",
@@ -101,9 +144,19 @@ async def find_working_proxies() -> list[str]:
         "limit": "200",
     }
     async with httpx.AsyncClient(timeout=5.0, follow_redirects=True) as client:
-        response = await client.get(PROXY_LIST_URL, params=params)
-        response.raise_for_status()
-    proxies = [line.strip() for line in response.text.splitlines() if line.strip()]
+        sources = await asyncio.gather(
+            _proxy_candidates(client, PROXY_LIST_URL, params),
+            _proxy_candidates(client, GEONODE_URL, {
+                "limit": "50", "page": "1", "sort_by": "lastChecked",
+                "sort_type": "desc", "protocols": "socks5",
+            }),
+            _proxy_candidates(client, PROXIFLY_URL),
+        )
+    # Interleave providers so a slow or dead first list cannot monopolise the
+    # bounded scan before SOCKS5 routes get a chance to be verified.
+    proxies = list(dict.fromkeys(
+        proxy for group in zip_longest(*sources) for proxy in group if proxy
+    ))[:200]
     if not proxies:
         return []
 
@@ -117,7 +170,7 @@ async def find_working_proxies() -> list[str]:
     tasks = [asyncio.create_task(probe(proxy)) for proxy in proxies]
     try:
         # Allow multiple bounded batches and both search/detail probes.
-        for task in asyncio.as_completed(tasks, timeout=20.0):
+        for task in asyncio.as_completed(tasks, timeout=30.0):
             result = await task
             if result:
                 selected.append(result)
@@ -134,7 +187,7 @@ async def find_working_proxies() -> list[str]:
 
 
 async def run() -> int:
-    selected = await find_working_proxies()
+    selected = await find_working_proxies(os.getenv("LALAFO_PROXY_URL", ""))
     if selected:
         print(f"LALAFO_PROXY_URL={','.join(selected)}")
         return 0

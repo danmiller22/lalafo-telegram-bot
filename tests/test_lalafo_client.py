@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
+import httpx
 
 from app.config import ADDITIONAL_SEARCH_URLS, DEFAULT_SEARCH_URL, INVENTORY_SEARCH_URLS
 from app.lalafo.client import LalafoAccessError, LalafoClient, LalafoError
@@ -54,6 +55,23 @@ def test_client_sends_browser_context_headers():
     client = LalafoClient()
     assert client._headers["Origin"] == "https://lalafo.kg"
     assert client._headers["Referer"] == "https://lalafo.kg/"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["_get_json", "_get_text"])
+async def test_access_error_retains_http_status_for_collector_report(method):
+    client = LalafoClient(max_retries=0)
+    await client._client.aclose()
+    client._client = httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda request: httpx.Response(403, request=request),
+    ))
+    client._get_json_via_relay = AsyncMock(return_value=None)
+    try:
+        with pytest.raises(LalafoAccessError) as error:
+            await getattr(client, method)("https://lalafo.kg/api/search/v3/feed/search")
+        assert error.value.status_code == 403
+    finally:
+        await client.close()
 
 
 def test_supplementary_search_uses_broad_owner_pool():

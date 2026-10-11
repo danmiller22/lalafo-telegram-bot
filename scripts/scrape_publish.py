@@ -7,6 +7,7 @@ import logging
 import math
 import random
 import re
+from typing import Any
 from collections.abc import Callable, Mapping
 from zoneinfo import ZoneInfo
 
@@ -621,7 +622,7 @@ async def run(
     discovery_only: bool = False,
     candidate_pool_limit_override: int | None = None,
     include_telegram_sources: bool = True,
-    discovery_stats: dict[str, int] | None = None,
+    discovery_stats: dict[str, Any] | None = None,
 ) -> int:
     settings = get_settings()
     logging.basicConfig(
@@ -1021,6 +1022,11 @@ async def run(
             try:
                 page = await client.search(search_url, page=page_number)
             except (LalafoError, LalafoParseError) as exc:
+                if discovery_stats is not None:
+                    discovery_stats["last_source_error"] = {
+                        "type": type(exc).__name__,
+                        "http_status": getattr(exc, "status_code", None),
+                    }
                 search_index += 1
                 if search_index < len(search_urls):
                     logger.warning(

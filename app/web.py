@@ -67,7 +67,11 @@ _lalafo_watchdog_task: asyncio.Task[None] | None = None
 _lalafo_restart_lock = asyncio.Lock()
 _apartment_scheduler_task: asyncio.Task[None] | None = None
 _telegram_inventory_state: dict[str, Any] = {"state": "pending", "last_check_at": None, "last_exit_code": None, "last_error": None}
-_lalafo_inventory_state: dict[str, Any] = {"state": "pending", "last_check_at": None, "last_exit_code": None, "last_error": None, "last_result": None}
+_lalafo_inventory_state: dict[str, Any] = {
+    "state": "pending", "last_check_at": None, "last_exit_code": None,
+    "last_error": None, "last_result": None, "last_collection_result": None,
+    "last_success_at": None,
+}
 _service_keepalive_task: asyncio.Task[None] | None = None
 _background_watchdog_task: asyncio.Task[None] | None = None
 _matching_worker_task: asyncio.Task[None] | None = None
@@ -463,6 +467,15 @@ async def _select_hosted_lalafo_proxies() -> None:
     logger.warning("Hosted publisher found no proxy; direct Lalafo route will be tried")
 
 
+def _record_inventory_collection_result(state: dict[str, Any], result: dict[str, Any]) -> None:
+    state["last_result"] = result
+    if result.get("status") == "not_due":
+        return
+    state["last_collection_result"] = result
+    if result.get("status") == "collected" and result.get("search_pages", 0) > 0:
+        state["last_success_at"] = _now()
+
+
 async def _run_inventory_worker_process(
     settings: Any, *, module: str = "scripts.publish_inventory_batch",
     report_state: dict[str, Any] | None = None,
@@ -502,7 +515,7 @@ async def _run_inventory_worker_process_unlocked(
                         try:
                             result = json.loads(message.split(" ", 1)[1])
                             if isinstance(result, dict):
-                                report_state["last_result"] = result
+                                _record_inventory_collection_result(report_state, result)
                         except ValueError:
                             logger.warning("Invalid inventory worker result")
             return await process.wait()
@@ -519,7 +532,9 @@ async def _run_inventory_worker_process_unlocked(
         if isinstance(exc, TimeoutError):
             logger.error("Inventory worker exceeded deadline: %s", module)
             if report_state is not None:
-                report_state["last_result"] = {"status": "retryable", "error": "WorkerTimeout", "exit_code": 124}
+                _record_inventory_collection_result(report_state, {
+                    "status": "retryable", "error": "WorkerTimeout", "exit_code": 124,
+                })
             return 124
         raise
 
@@ -760,16 +775,20 @@ async def _run_lalafo_inventory_collector() -> None:
     """Maintain the primary source even when GitHub scheduled runs are late."""
     try:
         while True:
-            _lalafo_inventory_state.update(state="collecting", last_check_at=_now(), last_error=None)
+            _lalafo_inventory_state.update(state="collecting", last_check_at=_now(), last_result=None)
             try:
                 code = await _run_inventory_worker_process(
                     get_settings(), module="scripts.collect_lalafo_inventory",
                     report_state=_lalafo_inventory_state,
                 )
+                result = _lalafo_inventory_state.get("last_result") or {}
                 _lalafo_inventory_state.update(
-                    state="waiting", last_exit_code=code,
-                    last_error=None if code == 0 else "LalafoCollectionFailed",
+                    state="waiting" if code == 0 else "retrying", last_exit_code=code,
                 )
+                if result.get("status") != "not_due":
+                    _lalafo_inventory_state["last_error"] = (
+                        None if code == 0 else result.get("error") or "LalafoCollectionFailed"
+                    )
             except asyncio.CancelledError:
                 raise
             except Exception as exc:

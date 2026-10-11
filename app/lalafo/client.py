@@ -25,7 +25,9 @@ class LalafoError(RuntimeError):
 
 
 class LalafoAccessError(LalafoError):
-    pass
+    def __init__(self, message: str, *, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
 
 
 class LalafoNotFound(LalafoError):
@@ -146,7 +148,8 @@ class LalafoClient:
                             logger.warning("Loaded Lalafo JSON through HTTPS relay")
                             return relayed
                         raise LalafoAccessError(
-                            f"Lalafo returned HTTP {response.status_code}; access was not bypassed"
+                            f"Lalafo returned HTTP {response.status_code}; access was not bypassed",
+                            status_code=response.status_code,
                         )
                     retry_after = float(response.headers.get("Retry-After", 0) or 0)
                     if attempt >= self.max_retries and self._proxy_urls:
@@ -198,7 +201,8 @@ class LalafoClient:
                 if response.status_code in (403, 429):
                     if attempt >= self.max_retries:
                         raise LalafoAccessError(
-                            f"Lalafo returned HTTP {response.status_code}; access was not bypassed"
+                            f"Lalafo returned HTTP {response.status_code}; access was not bypassed",
+                            status_code=response.status_code,
                         )
                     retry_after = float(response.headers.get("Retry-After", 0) or 0)
                     await self._rotate_proxy()
