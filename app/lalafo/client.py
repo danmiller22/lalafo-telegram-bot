@@ -52,6 +52,8 @@ class LalafoClient:
             if value.strip()
         ]
         self._proxy_index = 0
+        self._original_proxy_urls = list(self._proxy_urls)
+        self._retry_original_routes = False
         self._browser_blocked = False
         self._headers = {
             "User-Agent": (
@@ -133,6 +135,12 @@ class LalafoClient:
             return None
 
     async def _get_json(self, url: str) -> dict[str, Any]:
+        if self._retry_original_routes:
+            await self._client.aclose()
+            self._proxy_urls = list(self._original_proxy_urls)
+            self._proxy_index = 0
+            self._client = self._make_client()
+            self._retry_original_routes = False
         last_error: Exception | None = None
         for attempt in range(self.max_retries + 2):
             try:
@@ -173,6 +181,7 @@ class LalafoClient:
             except LalafoNotFound:
                 raise
             except LalafoAccessError:
+                self._retry_original_routes = bool(self._original_proxy_urls and not self._proxy_urls)
                 raise
             except (httpx.TransportError, httpx.HTTPStatusError, SocksProtocolError) as exc:
                 last_error = exc
@@ -186,6 +195,7 @@ class LalafoClient:
                     continue
                 await self._rotate_proxy()
                 await asyncio.sleep(2**attempt)
+        self._retry_original_routes = bool(self._original_proxy_urls and not self._proxy_urls)
         raise LalafoError(f"Lalafo request failed after retries: {type(last_error).__name__}")
 
     async def _get_text(self, url: str) -> str:

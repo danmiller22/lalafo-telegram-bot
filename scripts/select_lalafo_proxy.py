@@ -10,32 +10,33 @@ import ssl
 import sys
 import uuid
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 import httpx
 from socksio.exceptions import ProtocolError as SocksProtocolError
+
+from app.config import INVENTORY_SEARCH_URLS
+from app.lalafo.client import LalafoClient
 
 
 PROXY_LIST_URL = "https://api.proxyscrape.com/v4/free-proxy-list/get"
 GEONODE_URL = "https://proxylist.geonode.com/api/proxy-list"
 PROXIFLY_URL = "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/all/data.txt"
-SEARCH_URL = (
-    "https://lalafo.kg/api/search/v3/feed/search?expand=url&per-page=1&"
-    "category_id=2044&page=1&city_id=103184&parameters%5B69%5D%5B0%5D=15496&"
-    "parameters%5B69%5D%5B1%5D=2773&"
-    "price%5Bto%5D=35000&with_feed_banner=true"
+SEARCH_URL = "https://lalafo.kg/api/search/v3/feed/search?" + urlencode(
+    LalafoClient._search_params(INVENTORY_SEARCH_URLS[0], 1)
 )
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140 Safari/537.36"
     ),
-    "Accept": "application/json,text/plain,*/*",
+    "Accept": "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
     "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.7",
     "device": "pc",
     "language": "ru_RU",
     "country-id": "12",
     "content-type": "application/json",
+    "X-Cache-Bypass": "yes",
     "Origin": "https://lalafo.kg",
     "Referer": "https://lalafo.kg/",
     "sec-ch-ua": '"Chromium";v="140", "Not=A?Brand";v="24"',

@@ -46,6 +46,8 @@ async def test_primary_collector_refills_without_publishing_or_waiting_for_githu
     monkeypatch.setattr(collector, "find_working_proxies", AsyncMock(return_value=["http://route-1", "http://route-2"]))
     result = await collector.collect(settings, inventory)
     assert result["stored"] == 1
+    assert result["error"] is None
+    assert result["inventory_error"] == "ThinInventory"
     assert result["verified_routes"] == 2
     assert result["period_queue"] == 1
     claimed = await inventory.claim_due()
