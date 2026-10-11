@@ -36,6 +36,7 @@ jobs:
       ADMIN_USER_ID: ${{ secrets.ADMIN_USER_ID }}
       CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      LALAFO_PROXY_URL: ${{ secrets.LALAFO_PROXY_URL }}
       DRY_RUN: "false"
       TEST_MODE: "false"
       MAX_NEW_POSTS_PER_RUN: "50"
@@ -56,13 +57,19 @@ jobs:
         run: |
           for attempt in 1 2 3; do
             if python -m scripts.select_lalafo_proxy > lalafo-proxy.env; then
+              while IFS= read -r entry; do
+                echo "::add-mask::${entry#LALAFO_PROXY_URL=}"
+              done < lalafo-proxy.env
               cat lalafo-proxy.env >> "$GITHUB_ENV"
               exit 0
             fi
             sleep $((attempt * 10))
           done
-          echo "::warning::No verified proxy was available; trying the direct Lalafo route"
-          echo "LALAFO_PROXY_URL=" >> "$GITHUB_ENV"
+          if [ -n "$LALAFO_PROXY_URL" ]; then
+            echo "::warning::Configured Lalafo route could not be verified; retaining it for collector retries"
+          else
+            echo "::warning::No verified proxy was available; trying the direct Lalafo route"
+          fi
       - name: Upgrade database with retries
         shell: bash
         run: |
