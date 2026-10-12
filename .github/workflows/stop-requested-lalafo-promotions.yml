@@ -25,6 +25,8 @@ jobs:
     env:
       LALAFO_LOGIN: ${{ secrets.LALAFO_LOGIN }}
       LALAFO_PASSWORD: ${{ secrets.LALAFO_PASSWORD }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7

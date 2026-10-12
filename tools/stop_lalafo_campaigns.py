@@ -10,7 +10,7 @@ from pathlib import Path
 import httpx
 
 from app.config import get_settings
-from app.lalafo.managed_ads import LalafoManagedAdsClient
+from app.lalafo.managed_ads import LalafoManagedAdsClient, ManagedSession
 from scripts.select_lalafo_proxy import find_working_proxies
 
 
@@ -55,7 +55,13 @@ async def stop_authorized(client, plan, *, now, verify_only=False):
 
 async def authenticated_client(plan):
     settings = get_settings()
-    login, password = settings.require_lalafo_auto_reply_credentials()
+    sealed = plan.get('sealed_session')
+    if sealed:
+        from tools.lalafo_campaign_session import load_session
+        existing = await load_session(sealed)
+        login = password = None
+    else:
+        login, password = settings.require_lalafo_auto_reply_credentials()
     routes = await find_working_proxies()
     # Keep direct access as a final fallback. No proxy URL or credential is logged.
     last_error = None
@@ -65,7 +71,11 @@ async def authenticated_client(plan):
             await client._http.aclose()
             client._http = httpx.AsyncClient(base_url='https://lalafo.kg', proxy=proxy, timeout=15, follow_redirects=True)
         try:
-            await client.login(login, password)
+            if sealed:
+                client.session = ManagedSession(**existing)
+                await client.wallet_balances()
+            else:
+                await client.login(login, password)
             if client.session.profile_id != plan['owner_profile_id']:
                 raise RuntimeError('Configured account differs from authorized campaign owner')
             return client
@@ -80,6 +90,9 @@ async def run(plan, *, verify_only=False):
     if not verify_only and now_utc() > deadline + timedelta(days=2):
         print('Expired one-off plan; no account changes')
         return
+    if not verify_only:
+        while now_utc() < deadline - timedelta(seconds=90):
+            await asyncio.sleep(min(20, (deadline - timedelta(seconds=90) - now_utc()).total_seconds()))
     client = await authenticated_client(plan)
     try:
         if verify_only:
@@ -97,6 +110,8 @@ async def run(plan, *, verify_only=False):
                 if attempt == 2:
                     raise
                 await asyncio.sleep(10)
+                await client.close()
+                client = await authenticated_client(plan)
     finally:
         await client.close()
 
