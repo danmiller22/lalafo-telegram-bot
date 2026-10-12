@@ -1,0 +1,17 @@
+{
+  "owner_profile_id": 18166976,
+  "promotion_started_at": "2026-10-12T23:20:22+00:00",
+  "stop_at": "2026-10-13T23:19:22+00:00",
+  "campaigns": [
+    {"ad_id": 117210722, "campaign_id": 44728596},
+    {"ad_id": 117245892, "campaign_id": 44728598},
+    {"ad_id": 117245893, "campaign_id": 44728595},
+    {"ad_id": 113810089, "campaign_id": 44728597},
+    {"ad_id": 115420063, "campaign_id": 44728602},
+    {"ad_id": 117245894, "campaign_id": 44728601},
+    {"ad_id": 117245895, "campaign_id": 44728600},
+    {"ad_id": 115419575, "campaign_id": 44728599},
+    {"ad_id": 117245896, "campaign_id": 44728603},
+    {"ad_id": 117245897, "campaign_id": 44728604}
+  ]
+}
