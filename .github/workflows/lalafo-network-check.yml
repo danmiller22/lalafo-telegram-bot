@@ -3,6 +3,14 @@ name: Lalafo cloud network check
 on:
   workflow_dispatch:
     inputs:
+      prepare_campaign_session_key:
+        description: Prepare encrypted session transfer key for the requested campaign cutoff
+        type: boolean
+        default: false
+      verify_campaign_access:
+        description: Verify credentials and ownership of the requested one-day campaigns without cancelling
+        type: boolean
+        default: false
       collect_inventory:
         description: Collect into the shared inventory without publishing messages
         type: boolean
@@ -24,7 +32,22 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: python -m pip install -r requirements.txt
+      - name: Prepare only the session transfer public key
+        if: inputs.prepare_campaign_session_key
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
+        run: python -m tools.lalafo_campaign_session --prepare-key
+      - name: Verify account access without modifying advertisements or promotions
+        if: inputs.verify_campaign_access
+        env:
+          LALAFO_LOGIN: ${{ secrets.LALAFO_LOGIN }}
+          LALAFO_PASSWORD: ${{ secrets.LALAFO_PASSWORD }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
+        run: python -m tools.stop_lalafo_campaigns --verify-only
       - name: Select verified route without exposing credentials
+        if: ${{ !inputs.verify_campaign_access && !inputs.prepare_campaign_session_key }}
         run: |
           python -m scripts.select_lalafo_proxy > lalafo-route.env
           while IFS= read -r entry; do
@@ -32,6 +55,7 @@ jobs:
           done < lalafo-route.env
           cat lalafo-route.env >> "$GITHUB_ENV"
       - name: Verify actual public search and matching detail access
+        if: ${{ !inputs.verify_campaign_access && !inputs.prepare_campaign_session_key }}
         run: |
           python - <<'PY'
           import asyncio, json, os
