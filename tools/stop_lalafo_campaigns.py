@@ -70,6 +70,7 @@ async def authenticated_client(plan):
         if proxy:
             await client._http.aclose()
             client._http = httpx.AsyncClient(base_url='https://lalafo.kg', proxy=proxy, timeout=15, follow_redirects=True)
+        client._http.headers['X-Cache-Bypass'] = 'yes'
         try:
             if sealed:
                 client.session = ManagedSession(**existing)
