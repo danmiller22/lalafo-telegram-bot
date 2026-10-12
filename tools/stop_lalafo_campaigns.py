@@ -106,6 +106,9 @@ async def run(plan, *, verify_only=False):
         for attempt in range(3):
             try:
                 print(json.dumps(await stop_authorized(client, plan, now=now_utc())))
+                if plan.get('sealed_session'):
+                    from tools.lalafo_campaign_session import retire_session_key
+                    await retire_session_key()
                 return
             except Exception:
                 if attempt == 2:

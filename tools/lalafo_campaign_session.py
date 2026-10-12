@@ -62,6 +62,18 @@ async def load_session(envelope):
     return open_session(await private_key(), envelope)
 
 
+async def retire_session_key():
+    settings = get_settings()
+    engine, sessions = create_engine_and_session(settings.database_url)
+    try:
+        async with sessions.begin() as session:
+            row = await session.get(LalafoAutoReplyMeta, KEY_NAME)
+            if row is not None:
+                await session.delete(row)
+    finally:
+        await engine.dispose()
+
+
 async def prepare():
     key = await private_key(create=True)
     pem = key.public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
