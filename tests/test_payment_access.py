@@ -467,3 +467,36 @@ async def test_published_apartment_blocks_district_alias_and_reused_photo_duplic
         8002,
         8003,
     }
+
+
+@pytest.mark.asyncio
+async def test_cover_only_duplicate_is_blocked_in_single_and_bulk_queries(repositories):
+    apartments, _, _ = repositories
+    original = make_ad(lalafo_id=91001, rooms='studio', district='Токольдош', price=30000,
+        photo_urls=['https://img.example/identical-cover-12345.jpeg'])
+    stored = await apartments.upsert_discovered(original)
+    await apartments.mark_published(stored.id, chat_id=-100123, message_id=200)
+    album = original.model_copy(update={'lalafo_id':91002,'photo_urls':[
+        *original.photo_urls,'https://img.example/extra-album-photo-456.jpeg']})
+    assert await apartments.is_duplicate(album)
+    assert await apartments.duplicate_candidate_ids([album]) == {91002}
+
+
+@pytest.mark.asyncio
+async def test_queued_repeat_checks_newer_publication_of_same_apartment(repositories):
+    apartments, _, sessions = repositories
+    old = make_ad(lalafo_id=92001, photo_urls=['https://img.example/identical-cover-12345.jpeg'])
+    stored = await apartments.upsert_discovered(old)
+    await apartments.mark_published(stored.id, chat_id=-100123, message_id=201)
+    now = datetime.now(timezone.utc)
+    async with sessions.begin() as session:
+        await session.execute(update(Apartment).where(Apartment.id==stored.id).values(
+            published_at=now-timedelta(hours=49)))
+    cutoff = now-timedelta(hours=48)
+    assert not await apartments.is_duplicate(old, repost_before=cutoff)
+    recent = old.model_copy(update={'lalafo_id':92002,'photo_urls':[
+        *old.photo_urls,'https://img.example/extra-album-photo-456.jpeg']})
+    other = await apartments.upsert_discovered(recent)
+    await apartments.mark_published(other.id, chat_id=-100123, message_id=202)
+    assert await apartments.is_duplicate(old, repost_before=cutoff)
+    assert await apartments.is_duplicate(recent, repost_before=cutoff)

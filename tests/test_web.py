@@ -164,7 +164,8 @@ async def test_health_and_authentication() -> None:
             "personal_matching": "disabled",
             "lalafo_auto_reply": "disabled",
             "publication_policy": {"daily_target": 70, "start": "05:00", "end": "02:00", "timezone": "Asia/Bishkek", "spacing_minutes": 18, "watermark_check": False,
-                                   "seller_mix": {"owner": 0.5, "realtor": 0.5}},
+                                   "seller_mix": {"owner": 0.5, "realtor": 0.5},
+                                   "single_photo_duplicate_guard": True},
             "apartment_scheduler": "disabled",
         }
         assert (await client.post("/run")).status_code == 401

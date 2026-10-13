@@ -461,7 +461,9 @@ class ApartmentRepository:
                 if published_at is not None
             }
 
-    async def is_duplicate(self, ad: LalafoAd) -> bool:
+    async def is_duplicate(
+        self, ad: LalafoAd, *, repost_before: datetime | None = None
+    ) -> bool:
         async with self.sessions() as session:
             published = (
                 await session.scalars(
@@ -471,6 +473,16 @@ class ApartmentRepository:
                     )
                 )
             ).all()
+        if repost_before is not None:
+            # A queued repeat is permission to reuse an old card, never to
+            # bypass newer publications of the same apartment under any ID.
+            published = [
+                item for item in published
+                if item.published_at is None
+                or (item.published_at.replace(tzinfo=timezone.utc)
+                    if item.published_at.tzinfo is None else item.published_at)
+                > repost_before
+            ]
         return any(same_listing(ad, apartment) for apartment in published)
 
     async def duplicate_candidate_ids(self, ads: list[LalafoAd]) -> set[int]:
