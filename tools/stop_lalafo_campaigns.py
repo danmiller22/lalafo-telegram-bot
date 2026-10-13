@@ -44,7 +44,17 @@ async def stop_authorized(client, plan, *, now, verify_only=False):
         if campaign is None or campaign.get('status') != 'started':
             already_finished += 1
             continue
-        await client.cancel_campaign(str(row['campaign_id']))
+        try:
+            await client.cancel_campaign(str(row['campaign_id']))
+        except Exception:
+            # Another authorized cutoff worker may have cancelled between our
+            # read and POST. Accept only a fresh ownership-checked confirmation.
+            refreshed = await client.my_ad_details(row['ad_id'])
+            current = owned_campaign(refreshed, owner_id=plan['owner_profile_id'], campaign_id=row['campaign_id'])
+            if current is not None and current.get('status') == 'started':
+                raise
+            already_finished += 1
+            continue
         refreshed = await client.my_ad_details(row['ad_id'])
         current = owned_campaign(refreshed, owner_id=plan['owner_profile_id'], campaign_id=row['campaign_id'])
         if current is not None and current.get('status') == 'started':
@@ -91,6 +101,11 @@ async def run(plan, *, verify_only=False):
     if not verify_only and now_utc() > deadline + timedelta(days=2):
         print('Expired one-off plan; no account changes')
         return
+    if not verify_only and plan.get('completion_marker'):
+        from tools.lalafo_campaign_session import cutoff_completed
+        if await cutoff_completed():
+            print('Authorized cutoff already confirmed; no account changes')
+            return
     if not verify_only:
         while now_utc() < deadline - timedelta(seconds=90):
             await asyncio.sleep(min(20, (deadline - timedelta(seconds=90) - now_utc()).total_seconds()))
@@ -108,7 +123,10 @@ async def run(plan, *, verify_only=False):
                 print(json.dumps(await stop_authorized(client, plan, now=now_utc())))
                 if plan.get('sealed_session'):
                     from tools.lalafo_campaign_session import retire_session_key
-                    await retire_session_key()
+                    if plan.get('completion_marker'):
+                        await retire_session_key(record_completion=True)
+                    else:
+                        await retire_session_key()
                 return
             except Exception:
                 if attempt == 2:

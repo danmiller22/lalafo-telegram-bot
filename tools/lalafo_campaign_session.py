@@ -6,6 +6,7 @@ import asyncio
 import base64
 import hashlib
 import json
+import os
 from pathlib import Path
 
 from cryptography.fernet import Fernet
@@ -16,7 +17,7 @@ from app.config import get_settings
 from app.database import create_engine_and_session
 from app.models import LalafoAutoReplyMeta
 
-KEY_NAME = 'requested_campaign_expiry_key_20261012'
+KEY_NAME = os.getenv('CAMPAIGN_SESSION_KEY_NAME', 'requested_campaign_expiry_key_20261012')
 
 
 def storage_cipher(secret):
@@ -62,7 +63,16 @@ async def load_session(envelope):
     return open_session(await private_key(), envelope)
 
 
-async def retire_session_key():
+async def cutoff_completed():
+    engine, sessions = create_engine_and_session(get_settings().database_url)
+    try:
+        async with sessions() as session:
+            return await session.get(LalafoAutoReplyMeta, KEY_NAME + '_completed') is not None
+    finally:
+        await engine.dispose()
+
+
+async def retire_session_key(*, record_completion=False):
     settings = get_settings()
     engine, sessions = create_engine_and_session(settings.database_url)
     try:
@@ -70,6 +80,8 @@ async def retire_session_key():
             row = await session.get(LalafoAutoReplyMeta, KEY_NAME)
             if row is not None:
                 await session.delete(row)
+            if record_completion and await session.get(LalafoAutoReplyMeta, KEY_NAME + '_completed') is None:
+                session.add(LalafoAutoReplyMeta(key=KEY_NAME + '_completed', value='confirmed'))
     finally:
         await engine.dispose()
 
