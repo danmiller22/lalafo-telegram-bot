@@ -3,6 +3,10 @@ name: Lalafo cloud network check
 on:
   workflow_dispatch:
     inputs:
+      campaign_session_key_name:
+        description: Scoped storage key for the requested campaign expiry
+        type: string
+        default: requested_campaign_expiry_key_20261012
       prepare_campaign_session_key:
         description: Prepare encrypted session transfer key for the requested campaign cutoff
         type: boolean
@@ -45,6 +49,7 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
+          CAMPAIGN_SESSION_KEY_NAME: ${{ inputs.campaign_session_key_name }}
         run: python -m tools.lalafo_campaign_session --prepare-key
       - name: Verify account access without modifying advertisements or promotions
         if: inputs.verify_campaign_access

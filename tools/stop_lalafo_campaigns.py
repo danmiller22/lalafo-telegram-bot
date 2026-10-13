@@ -44,7 +44,17 @@ async def stop_authorized(client, plan, *, now, verify_only=False):
         if campaign is None or campaign.get('status') != 'started':
             already_finished += 1
             continue
-        await client.cancel_campaign(str(row['campaign_id']))
+        try:
+            await client.cancel_campaign(str(row['campaign_id']))
+        except Exception:
+            # Another authorized cutoff worker may have cancelled between our
+            # read and POST. Accept only a fresh ownership-checked confirmation.
+            refreshed = await client.my_ad_details(row['ad_id'])
+            current = owned_campaign(refreshed, owner_id=plan['owner_profile_id'], campaign_id=row['campaign_id'])
+            if current is not None and current.get('status') == 'started':
+                raise
+            already_finished += 1
+            continue
         refreshed = await client.my_ad_details(row['ad_id'])
         current = owned_campaign(refreshed, owner_id=plan['owner_profile_id'], campaign_id=row['campaign_id'])
         if current is not None and current.get('status') == 'started':

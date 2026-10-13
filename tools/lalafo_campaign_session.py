@@ -6,6 +6,7 @@ import asyncio
 import base64
 import hashlib
 import json
+import os
 from pathlib import Path
 
 from cryptography.fernet import Fernet
@@ -16,7 +17,7 @@ from app.config import get_settings
 from app.database import create_engine_and_session
 from app.models import LalafoAutoReplyMeta
 
-KEY_NAME = 'requested_campaign_expiry_key_20261012'
+KEY_NAME = os.getenv('CAMPAIGN_SESSION_KEY_NAME', 'requested_campaign_expiry_key_20261012')
 
 
 def storage_cipher(secret):
