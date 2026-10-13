@@ -64,3 +64,24 @@ def test_district_spelling_and_reused_photos_identify_same_apartment():
     assert not same_listing(
         repeated, original.model_copy(update={"photo_urls": ["unrelated-photo-123.jpg"]})
     )
+
+
+def test_single_cover_and_full_album_are_same_listing_in_both_directions():
+    cover = 'https://img5.lalafo.com/i/posters/original/27/33/31/ba83914fc4b9ec7b59095e1204.jpeg'
+    single = make_ad(lalafo_id=115428474, rooms='studio', district='Токольдош',
+                     price=30000, photo_urls=[cover])
+    album = single.model_copy(update={'lalafo_id':117253947,
+        'phone':'+996700000001', 'photo_urls':[cover,
+            'https://img5.lalafo.com/i/posters/original/e99dc72d583f05c62874acf3bd.jpeg']})
+    assert same_listing(single, album)
+    assert same_listing(album, single)
+    assert not same_listing(single, album.model_copy(update={'price':32000}))
+    assert not same_listing(single, album.model_copy(update={'district':'7 мкр'}))
+
+
+def test_one_shared_image_in_two_full_albums_does_not_merge_apartments():
+    first = make_ad(lalafo_id=1, photo_urls=['https://img.example/shared-cover-123.jpg',
+        'https://img.example/apartment-first-456.jpg'])
+    second = first.model_copy(update={'lalafo_id':2, 'photo_urls':[
+        'https://img.example/shared-cover-123.jpg', 'https://img.example/apartment-second-789.jpg']})
+    assert not same_listing(first, second)

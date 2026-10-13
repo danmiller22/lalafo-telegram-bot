@@ -1347,6 +1347,7 @@ async def health() -> JSONResponse:
                 "daily_target": 70, "start": "05:00", "end": "02:00",
                 "timezone": "Asia/Bishkek", "spacing_minutes": 18, "watermark_check": False,
                 "seller_mix": {"owner": 1 - REALTOR_DAILY_SHARE, "realtor": REALTOR_DAILY_SHARE},
+                "single_photo_duplicate_guard": True,
             },
             "apartment_scheduler": (
                 {

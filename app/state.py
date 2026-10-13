@@ -50,7 +50,18 @@ def same_listing(ad: LalafoAd, other: LalafoAd | object) -> bool:
         return True
     if abs(ad.price - other_price) > max(ad.price, other_price) * 0.2:
         return False
-    return len(_photo_keys(ad.photo_urls) & _photo_keys(other_photos)) >= 2
+    ad_photos = _photo_keys(ad.photo_urls)
+    existing_photos = _photo_keys(other_photos)
+    common = ad_photos & existing_photos
+    # Reserve feeds can expose only the cover of an otherwise complete album.
+    # One identical cover is sufficient only for a single-photo card with the
+    # same room count, district and price; a shared image in two larger albums
+    # must still meet the stronger two-photo rule.
+    return len(common) >= 2 or (
+        len(common) == 1
+        and min(len(ad_photos), len(existing_photos)) == 1
+        and ad.price == other_price
+    )
 
 
 def ad_fingerprint(ad: LalafoAd) -> str:

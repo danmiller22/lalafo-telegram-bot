@@ -8,7 +8,7 @@ from aiogram import Bot
 
 from app.config import get_settings
 from app.database import create_engine_and_session, init_db
-from app.inventory import InventoryRepository, as_utc
+from app.inventory import InventoryRepository, REPOST_AFTER_HOURS, as_utc
 from app.lalafo.client import LalafoClient, LalafoError, LalafoNotFound
 from app.lalafo.parser import LalafoParseError, is_allowed
 from app.payments.repository import ApartmentRepository
@@ -154,7 +154,11 @@ async def run(
             eligible_until=eligible_until,
             remaining_skips=_remaining_skips,
         )
-    if not is_repeat and await apartments.is_duplicate(ad):
+    if await apartments.is_duplicate(
+        ad,
+        repost_before=(datetime.now(timezone.utc) - timedelta(hours=REPOST_AFTER_HOURS))
+        if is_repeat else None,
+    ):
         return await _skip_and_continue(
             inventory=inventory,
             item_id=item.id,
