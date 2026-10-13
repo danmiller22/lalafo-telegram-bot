@@ -295,6 +295,14 @@ def parse_telegram_apartments(
             continue
         if any(term in normalized for term in ("частный дом", "сдается дом", "сдаётся дом", "пол дома")):
             continue
+        if re.search(
+            r"\b(?:сда[её]тся|сдаю|сдам)\s+"
+            r"(?:(?:[1-9]\s*[-‑–—]?\s*(?:ком\w*\.?|кв?\.?)|\w+комнатн\w*)\s+)?"
+            r"(?:пол\s*дома|дом|комната)\b",
+            text, re.I,
+        ):
+            note('house_or_room')
+            continue
 
         price = _telegram_price(text)
         rooms = _telegram_rooms(text)
@@ -482,6 +490,11 @@ async def fetch_telegram_apartments(
         )
     return sorted(
         unique.values(),
-        key=lambda ad: ad.source_updated_at or datetime.min.replace(tzinfo=timezone.utc),
+        # High-volume agency channels must not push confirmed owner offers
+        # out of the bounded discovery batch. Publication keeps its own mix.
+        key=lambda ad: (
+            ad.owner_listing and ad.seller_type == 'owner',
+            ad.source_updated_at or datetime.min.replace(tzinfo=timezone.utc),
+        ),
         reverse=True,
     )[: max(1, limit)]

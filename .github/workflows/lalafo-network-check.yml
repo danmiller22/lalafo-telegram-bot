@@ -27,6 +27,10 @@ on:
         description: Read-only audit of recent publication photo overlap
         type: boolean
         default: false
+      collect_telegram_inventory:
+        description: Collect the configured Telegram sources without publishing messages
+        type: boolean
+        default: false
       collect_inventory:
         description: Collect into the shared inventory without publishing messages
         type: boolean
@@ -99,7 +103,7 @@ jobs:
           async def main():
               verified = 0
               async with LalafoClient(timeout=12, max_retries=3, proxy_url=os.getenv("LALAFO_PROXY_URL", "")) as client:
-                  for index, url in enumerate(INVENTORY_SEARCH_URLS[:3]):
+                  for index, url in enumerate(INVENTORY_SEARCH_URLS[:4]):
                       try:
                           page = await client.search(url)
                           if not page.items:
@@ -109,13 +113,18 @@ jobs:
                           detail = await client.detail(source.detail_url)
                           assert detail.lalafo_id == source.lalafo_id
                           verified += 1
-                          print(json.dumps({"source": index, "items": len(page.items), "detail_verified": True, "phone_present": bool(detail.phone)}))
+                          print(json.dumps({"source": index, "items": len(page.items), "detail_verified": True, "phone_present": bool(detail.phone), "seller_type": detail.seller_type}))
                       except Exception as exc:
                           print(json.dumps({"source": index, "error": type(exc).__name__, "http_status": getattr(exc, "status_code", None)}))
               if not verified:
                   raise SystemExit("No working public Lalafo search/detail route")
           asyncio.run(main())
           PY
+      - name: Collect expanded Telegram sources without publishing
+        if: inputs.collect_telegram_inventory
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python -m scripts.collect_telegram_inventory
       - name: Verify collection into the shared inventory
         if: inputs.collect_inventory
         timeout-minutes: 13
