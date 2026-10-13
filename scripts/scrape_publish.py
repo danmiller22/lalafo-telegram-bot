@@ -1066,6 +1066,8 @@ async def run(
             if discovery_stats is not None:
                 discovery_stats["search_pages"] = discovery_stats.get("search_pages", 0) + 1
                 discovery_stats["search_results"] = discovery_stats.get("search_results", 0) + len(page.items)
+                if '/owner?' in search_url:
+                    discovery_stats["owner_search_pages"] = discovery_stats.get("owner_search_pages", 0) + 1
             if not page.items:
                 search_index += 1
                 if search_index >= len(search_urls):
@@ -1186,6 +1188,9 @@ async def run(
                     await apartments.upsert_discovered(ad)
                     if discovery_stats is not None:
                         discovery_stats["stored"] = discovery_stats.get("stored", 0) + 1
+                        discovery_stats["owner_candidates"] = discovery_stats.get("owner_candidates", 0) + int(
+                            ad.owner_listing and ad.seller_type == 'owner'
+                        )
                     await InventoryRepository(sessions).schedule_period()
                 if is_repost:
                     repost_candidate_ids.add(ad.lalafo_id)

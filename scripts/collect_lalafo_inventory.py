@@ -27,7 +27,8 @@ async def collect(settings, inventory) -> dict:
     error = None
     routes = 0
     discovered_count = queued_count = 0
-    stats: dict[str, Any] = {"stored": 0, "search_pages": 0, "search_results": 0}
+    stats: dict[str, Any] = {"stored": 0, "search_pages": 0, "search_results": 0,
+                             "owner_candidates": 0, "owner_search_pages": 0}
     try:
         try:
             async with asyncio.timeout(45):

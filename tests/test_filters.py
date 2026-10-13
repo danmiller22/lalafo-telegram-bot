@@ -747,3 +747,17 @@ def test_kyrgyz_rental_offers_are_not_wanted_ads(description):
 
 def test_kyrgyz_wanted_ad_still_rejected():
     assert is_substandard_structure(make_ad(source_description="Квартира арендага керек"))
+
+
+def test_owner_price_searches_cover_the_budget_and_agencies_follow_owner_segment():
+    from app.config import INVENTORY_SEARCH_URLS
+    from urllib.parse import parse_qs,urlsplit
+    owner_ranges=[]
+    for url in INVENTORY_SEARCH_URLS:
+        if '/owner?' in url:
+            q=parse_qs(urlsplit(url).query)
+            owner_ranges.append((int(q['price[from]'][0]),int(q['price[to]'][0])))
+    assert owner_ranges==[(25000,27999),(28000,31999),(32000,35999),(36000,40000)]
+    owner_segment=sum('real-estate-agency' not in url for url in INVENTORY_SEARCH_URLS)
+    assert all('real-estate-agency' not in url for url in INVENTORY_SEARCH_URLS[:owner_segment])
+    assert all('real-estate-agency' in url for url in INVENTORY_SEARCH_URLS[owner_segment:])
