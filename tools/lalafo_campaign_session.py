@@ -63,7 +63,16 @@ async def load_session(envelope):
     return open_session(await private_key(), envelope)
 
 
-async def retire_session_key():
+async def cutoff_completed():
+    engine, sessions = create_engine_and_session(get_settings().database_url)
+    try:
+        async with sessions() as session:
+            return await session.get(LalafoAutoReplyMeta, KEY_NAME + '_completed') is not None
+    finally:
+        await engine.dispose()
+
+
+async def retire_session_key(*, record_completion=False):
     settings = get_settings()
     engine, sessions = create_engine_and_session(settings.database_url)
     try:
@@ -71,6 +80,8 @@ async def retire_session_key():
             row = await session.get(LalafoAutoReplyMeta, KEY_NAME)
             if row is not None:
                 await session.delete(row)
+            if record_completion and await session.get(LalafoAutoReplyMeta, KEY_NAME + '_completed') is None:
+                session.add(LalafoAutoReplyMeta(key=KEY_NAME + '_completed', value='confirmed'))
     finally:
         await engine.dispose()
 

@@ -73,3 +73,31 @@ def test_session_envelope_requires_the_private_key_and_storage_secret():
     assert open_session(key, envelope) == secret_session
     with pytest.raises(InvalidToken):
         storage_cipher('wrong').decrypt(storage_cipher('correct').encrypt(b'private-key'))
+
+
+@pytest.mark.asyncio
+async def test_concurrent_cutoff_is_accepted_only_after_confirmed_cancellation():
+    c = client([owned([{'id': 9, 'status': 'started'}]), owned([])])
+    c.cancel_campaign.side_effect = RuntimeError('campaign already cancelled')
+    result = await stop_authorized(c, PLAN, now=NOW)
+    assert result['already_finished'] == 1
+
+
+@pytest.mark.asyncio
+async def test_failed_cancellation_of_still_active_campaign_is_not_hidden():
+    c = client([owned([{'id': 9, 'status': 'started'}])]*2)
+    c.cancel_campaign.side_effect = RuntimeError('request failed')
+    with pytest.raises(RuntimeError, match='request failed'):
+        await stop_authorized(c, PLAN, now=NOW)
+
+
+@pytest.mark.asyncio
+async def test_confirmed_retry_does_not_reopen_the_retired_session(monkeypatch):
+    from tools import stop_lalafo_campaigns, lalafo_campaign_session
+    monkeypatch.setattr(stop_lalafo_campaigns, 'now_utc', lambda: NOW)
+    completed = AsyncMock(return_value=True)
+    auth = AsyncMock()
+    monkeypatch.setattr(lalafo_campaign_session, 'cutoff_completed', completed)
+    monkeypatch.setattr(stop_lalafo_campaigns, 'authenticated_client', auth)
+    await stop_lalafo_campaigns.run({**PLAN, 'completion_marker': True})
+    auth.assert_not_awaited()

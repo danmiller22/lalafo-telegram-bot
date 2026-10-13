@@ -1,0 +1,44 @@
+{
+  "owner_profile_id": 18166976,
+  "promotion_started_at": "2026-10-13T23:21:09+00:00",
+  "stop_at": "2026-10-14T23:20:09+00:00",
+  "campaigns": [
+    {
+      "ad_id": 113810089,
+      "campaign_id": 44759423
+    },
+    {
+      "ad_id": 117274654,
+      "campaign_id": 44759422
+    },
+    {
+      "ad_id": 117274655,
+      "campaign_id": 44759421
+    },
+    {
+      "ad_id": 117210722,
+      "campaign_id": 44759424
+    },
+    {
+      "ad_id": 117245892,
+      "campaign_id": 44759425
+    },
+    {
+      "ad_id": 117245894,
+      "campaign_id": 44759428
+    },
+    {
+      "ad_id": 117245893,
+      "campaign_id": 44759426
+    },
+    {
+      "ad_id": 115419575,
+      "campaign_id": 44759427
+    }
+  ],
+  "sealed_session": {
+    "wrapped_key": "MNn3wO9PAvlK8Jn/QozcAFn6Pnj8TQt82Pw/7kMD5dFzQSvsiWRe9DRduT2B6IT5eIJjsu7CRiydol4xz9kUDpQ2sKlBkeuXnJM5zQe71KDT1Ec6/hfuP45zhcUXGTcjbpIQDa/MhU9N6Ud4f8zKvr5SIBCTs0ADcsOfTtp5xkphn624swxkOXkS0mbnNniOSBH9gcxKa/AdMWJZxWewPkuFwX6sG89zRX1xs0o4HRfJrhGhdKuZ3bs8yxObBzCY9OExND/NOPst2pTzoWhEtFLLmktziddGLprWCVHqltJrZC54cgsPyrPAv0UgRYw7/2ni0ItMuQtqmLQvmLJRYg==",
+    "ciphertext": "gAAAAABqzr0fAYAyznyelEMR2qMwLvHvtgLj6gSAIpPzMs1SVaG2KC4W3ibrRXjCKqdiP75Ip387BxsQaxBRe-xwTlZW48q3d5JRgeN4-TKtxCKbq-JkkOEm6T3wtWfCjJydkODFlfhG1Tvz4rsHcoHdnTdE6dE_a2OjBNPCi7oMrjDlWxqTcqzkDIGRY49C3d-U1mLKFx3OMzG5xJAD9y2QlToUIoDgiiMbZRaDBBGlmJ7aBjeZfRKz089aynvdJaihiNR5dUov1Mk0iat7XMcrbr0NGiMe8W5sEiadWP_TYnhnF5oTfrn6o6FgtjWbUNJ-3azM89H-8Hphis_RdrqVrTI7netREEyqkjlCO5U_7v_u5fzAdkkOFcYkdMbBh6gDjwyjgusqLRhibkLj06-ALO6g2rO_0gGsZqne1pwVBOUIwztIQOVwCu5I3aw4AYsOUlLIZUnY5LHZAyC3OhOjx1tocfDS2ShMpu4XLFFb4KlhUuoBxGgw5imkeALnkSjx35lThP_zUNeBvrcDQe-6rCK0_RXfCp9ODkMMkxZB7hbPACW0k5n1pye3nbX5MO9tOVRwj9qf2xirYTaxxmL92zOtWBmQ7zhujQDQTiaNuxq72Zkj0H4fJ5xu9QgFcQwoVoAGr2vcCB_kd1Y-AN3oQYSPxxC6cLK1rkiq7NfQRR4YExsOE_LQ5O6PGh_CsQK4N6wK7vWcW7RLZyb6ND8uXiT_aTeO_SAFe55AT-HuptdwVHiW0QjxRwU6kxO2YaL1VivrGMn5ORVH6cEcZ8QNhGw218glLxIv96nZtfPO0NSycwCq48ZhGecqa4sX2bPoHOu54KcX"
+  },
+  "completion_marker": true
+}

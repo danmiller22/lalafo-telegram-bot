@@ -11,6 +11,10 @@ on:
         description: Prepare encrypted session transfer key for the requested campaign cutoff
         type: boolean
         default: false
+      verify_renewed_campaign_access:
+        description: Verify the eight explicitly renewed campaigns without cancelling
+        type: boolean
+        default: false
       verify_campaign_access:
         description: Verify credentials and ownership of the requested one-day campaigns without cancelling
         type: boolean
@@ -59,6 +63,13 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
         run: python -m tools.stop_lalafo_campaigns --verify-only
+      - name: Verify renewed campaign access without account changes
+        if: inputs.verify_renewed_campaign_access
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
+          CAMPAIGN_SESSION_KEY_NAME: requested_campaign_expiry_key_20261013
+        run: python -m tools.stop_lalafo_campaigns --plan tools/lalafo_campaigns_20261013.json --verify-only
       - name: Read requested public listing snapshot
         if: inputs.requested_listing_snapshot
         env:
@@ -70,7 +81,7 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python -m tools.audit_publication_duplicates
       - name: Select verified route without exposing credentials
-        if: ${{ !inputs.verify_campaign_access && !inputs.prepare_campaign_session_key && !inputs.audit_duplicates && !inputs.requested_listing_snapshot }}
+        if: ${{ !inputs.verify_campaign_access && !inputs.prepare_campaign_session_key && !inputs.audit_duplicates && !inputs.requested_listing_snapshot && !inputs.verify_renewed_campaign_access }}
         run: |
           python -m scripts.select_lalafo_proxy > lalafo-route.env
           while IFS= read -r entry; do
@@ -78,7 +89,7 @@ jobs:
           done < lalafo-route.env
           cat lalafo-route.env >> "$GITHUB_ENV"
       - name: Verify actual public search and matching detail access
-        if: ${{ !inputs.verify_campaign_access && !inputs.prepare_campaign_session_key && !inputs.audit_duplicates && !inputs.requested_listing_snapshot }}
+        if: ${{ !inputs.verify_campaign_access && !inputs.prepare_campaign_session_key && !inputs.audit_duplicates && !inputs.requested_listing_snapshot && !inputs.verify_renewed_campaign_access }}
         run: |
           python - <<'PY'
           import asyncio, json, os

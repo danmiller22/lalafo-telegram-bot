@@ -101,6 +101,11 @@ async def run(plan, *, verify_only=False):
     if not verify_only and now_utc() > deadline + timedelta(days=2):
         print('Expired one-off plan; no account changes')
         return
+    if not verify_only and plan.get('completion_marker'):
+        from tools.lalafo_campaign_session import cutoff_completed
+        if await cutoff_completed():
+            print('Authorized cutoff already confirmed; no account changes')
+            return
     if not verify_only:
         while now_utc() < deadline - timedelta(seconds=90):
             await asyncio.sleep(min(20, (deadline - timedelta(seconds=90) - now_utc()).total_seconds()))
@@ -118,7 +123,10 @@ async def run(plan, *, verify_only=False):
                 print(json.dumps(await stop_authorized(client, plan, now=now_utc())))
                 if plan.get('sealed_session'):
                     from tools.lalafo_campaign_session import retire_session_key
-                    await retire_session_key()
+                    if plan.get('completion_marker'):
+                        await retire_session_key(record_completion=True)
+                    else:
+                        await retire_session_key()
                 return
             except Exception:
                 if attempt == 2:
