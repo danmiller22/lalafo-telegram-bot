@@ -296,6 +296,19 @@ async def fetch_detail_batch(
 
 
 
+def crawl_source_budget(*, started_at, now, seconds, source_index, owner_count, source_count):
+    """Reserve half the crawl for agencies when owner sources run slowly."""
+    if seconds is None:
+        return source_index, 3600.0
+    remaining = max(0.0, started_at + seconds - now)
+    if 0 < owner_count < source_count and source_index < owner_count:
+        owner_remaining = started_at + seconds / 2 - now
+        if owner_remaining <= 0:
+            return owner_count, remaining
+        remaining = min(remaining, owner_remaining)
+    return source_index, remaining
+
+
 def is_preferred_district(district: str | None) -> bool:
     normalized = (district or "").casefold().replace("ё", "е")
     return any(term in normalized for term in PREFERRED_DISTRICT_TERMS) or bool(
@@ -1029,10 +1042,20 @@ async def run(
         # Always inspect at least one page from each operator-approved source.
         # Once the shared pool is full, move to the next source for one page
         # instead of spending the whole cycle on the first, larger query.
-        deadline = (asyncio.get_running_loop().time() + collection_budget_seconds
-                    if collection_budget_seconds is not None else None)
+        crawl_started = asyncio.get_running_loop().time()
+        owner_count = sum("real-estate-agency" not in url for url in search_urls) if discovery_only else 0
         while len(candidates) < candidate_pool_limit or search_index < len(search_urls) - 1:
-            remaining = deadline - asyncio.get_running_loop().time() if deadline is not None else 3600.0
+            next_index, remaining = crawl_source_budget(
+                started_at=crawl_started, now=asyncio.get_running_loop().time(),
+                seconds=collection_budget_seconds, source_index=search_index,
+                owner_count=owner_count, source_count=len(search_urls))
+            if next_index != search_index:
+                search_index = next_index
+                search_url = search_urls[search_index]
+                source_candidate_limit = source_targets[search_index]
+                page_number = 1
+                if discovery_stats is not None:
+                    discovery_stats["owner_budget_exhausted"] = True
             if remaining <= 0:
                 if discovery_stats is not None:
                     discovery_stats["budget_exhausted"] = True
@@ -1137,7 +1160,12 @@ async def run(
                     continue
                 detail_search_ads.append(search_ad)
 
-            remaining = deadline - asyncio.get_running_loop().time() if deadline is not None else 45.0
+            detail_index, remaining = crawl_source_budget(
+                started_at=crawl_started, now=asyncio.get_running_loop().time(),
+                seconds=collection_budget_seconds, source_index=search_index,
+                owner_count=owner_count, source_count=len(search_urls))
+            if detail_index != search_index:
+                continue
             details = await fetch_detail_batch(detail_search_ads, detail_clients, cache=detail_cache,
                                                batch_timeout_seconds=max(0.001, min(45.0, remaining)))
             parsed_ads = [ad for _, ad in details if ad is not None]

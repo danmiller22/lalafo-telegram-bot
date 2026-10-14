@@ -77,3 +77,16 @@ async def test_single_slow_detail_does_not_block_next_candidate_on_same_worker()
     result=await asyncio.wait_for(fetch_detail_batch(ads,[Client()],detail_timeout_seconds=0.01),timeout=0.5)
     assert result[0][1] is None
     assert result[1][1].lalafo_id==102
+
+
+def test_slow_owner_queries_leave_time_for_agency_sources():
+    from scripts.scrape_publish import crawl_source_budget
+    args=dict(started_at=0,seconds=180,owner_count=4,source_count=10)
+    assert crawl_source_budget(**args,now=30,source_index=0)==(0,60)
+    assert crawl_source_budget(**args,now=91,source_index=1)==(4,89)
+    assert crawl_source_budget(**args,now=180,source_index=4)==(4,0)
+
+
+def test_unused_owner_time_remains_available_to_agencies():
+    from scripts.scrape_publish import crawl_source_budget
+    assert crawl_source_budget(started_at=0,now=30,seconds=180,source_index=4,owner_count=4,source_count=10)==(4,150)
