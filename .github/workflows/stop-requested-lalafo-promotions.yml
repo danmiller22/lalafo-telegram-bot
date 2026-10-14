@@ -1,0 +1,45 @@
+name: Stop requested one-day Lalafo promotions
+
+on:
+  workflow_dispatch:
+    inputs:
+      verify_only:
+        description: Verify account and exact campaign ownership without stopping promotions
+        type: boolean
+        default: true
+  schedule:
+    # Starts 14 minutes before the authorized stop to absorb runner setup delays.
+    - cron: "5 23 13 10 *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: requested-lalafo-promotion-expiry-20261012
+  cancel-in-progress: false
+
+jobs:
+  stop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      LALAFO_LOGIN: ${{ secrets.LALAFO_LOGIN }}
+      LALAFO_PASSWORD: ${{ secrets.LALAFO_PASSWORD }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - name: Verify or stop only the authorized campaigns
+        env:
+          VERIFY_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_only }}
+        run: |
+          if [ "$VERIFY_ONLY" = "true" ]; then
+            python -m tools.stop_lalafo_campaigns --verify-only
+          else
+            python -m tools.stop_lalafo_campaigns
+          fi

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections import Counter
 import logging
+import json
 
 from app.config import get_settings
 from app.database import create_engine_and_session, init_db
@@ -24,6 +25,7 @@ async def collect(settings, apartments, inventory) -> dict[str, int]:
     duplicates = await apartments.duplicate_candidate_ids(ads)
     rejected: Counter[str] = Counter()
     stored = 0
+    owners_stored = 0
     for ad in ads:
         valid, reason = _valid(ad, settings)
         if not valid:
@@ -34,9 +36,17 @@ async def collect(settings, apartments, inventory) -> dict[str, int]:
             continue
         await apartments.upsert_discovered(ad)
         stored += 1
+        owners_stored += int(ad.owner_listing and ad.seller_type == 'owner')
     queued = await inventory.schedule_period()
     result = {"fetched": len(ads), "stored": stored, "queued": queued}
     logger.info("Independent Telegram inventory %s rejected=%s", result, dict(rejected))
+    logger.info(
+        "Telegram owner supply configured_channels=%d eligible_channels=%d owners_fetched=%d owners_stored=%d",
+        len(settings.telegram_source_channels),
+        len({ad.source_url.split('/')[3] for ad in ads}),
+        sum(ad.owner_listing and ad.seller_type == 'owner' for ad in ads),
+        owners_stored,
+    )
     return result
 
 
@@ -45,7 +55,8 @@ async def run() -> int:
     engine, sessions = create_engine_and_session(settings.database_url)
     try:
         await init_db(engine)
-        await collect(settings, ApartmentRepository(sessions), InventoryRepository(sessions))
+        result = await collect(settings, ApartmentRepository(sessions), InventoryRepository(sessions))
+        print("TELEGRAM_COLLECTION_RESULT " + json.dumps({"status": "collected", "exit_code": 0, "configured_channels": len(settings.telegram_source_channels), **result}), flush=True)
         return 0
     finally:
         await engine.dispose()

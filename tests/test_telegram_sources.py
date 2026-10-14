@@ -200,3 +200,52 @@ def test_source_diagnostics_explain_rejections_without_contacts():
     html = _post("Сдам 1-комнатную квартиру. Цена 30 000 сом.")
     assert parse_telegram_apartments(html, now=datetime(2026, 9, 23, 7, tzinfo=timezone.utc), diagnostics=stats) == []
     assert stats == {"messages": 1, "missing_phone": 1}
+
+
+@pytest.mark.asyncio
+async def test_newer_agency_flood_does_not_evict_a_confirmed_owner(monkeypatch):
+    import httpx
+    from app.telegram.sources import fetch_telegram_apartments
+    now = datetime.now(timezone.utc)
+    from datetime import timedelta
+    owner = _post('Сдам 1-комнатную квартиру. Собственник. Цена 30 000 сом. 0705 123 456',
+                  post_id=1, timestamp=(now-timedelta(hours=2)).isoformat())
+    agencies = ''.join(_post('Сдам 1-комнатную квартиру. Агентство. Цена 30 000 сом. 0705 123 457',
+                            post_id=i, timestamp=(now-timedelta(hours=1)).isoformat()) for i in range(2,6))
+    async def get(self, url, **kwargs):
+        return httpx.Response(200, text=owner+agencies, request=httpx.Request('GET',url))
+    monkeypatch.setattr(httpx.AsyncClient, 'get', get)
+    ads = await fetch_telegram_apartments(('https://t.me/s/owners_bishkek',), limit=2, pages_per_channel=1)
+    assert len(ads)==2
+    assert ads[0].owner_listing and ads[0].seller_type=='owner'
+    assert ads[1].seller_type=='realtor'
+
+
+@pytest.mark.parametrize('offer', ['Сдается 1ком дом с хозяином один', 'Сдам 1-к дом', 'Сдаю полдома'])
+def test_numbered_house_offers_are_not_apartments_or_confirmed_owners(offer):
+    html = _post(offer+' Цена 30 000 сом. 0705 123 456')
+    assert parse_telegram_apartments(html, now=datetime(2026,9,23,7,tzinfo=timezone.utc))==[]
+
+
+def test_apartment_in_a_brick_building_remains_eligible():
+    html = _post('Сдается 1ком квартира, кирпичный дом. Цена 30 000 сом. Собственник. 0705 123 456')
+    ads=parse_telegram_apartments(html,now=datetime(2026,9,23,7,tzinfo=timezone.utc))
+    assert len(ads)==1 and ads[0].owner_listing
+
+@pytest.mark.asyncio
+async def test_slow_channel_keeps_partial_results_and_does_not_delay_other_sources(monkeypatch):
+    import asyncio
+    import httpx
+    from app.telegram import sources
+    now = datetime.now(timezone.utc).isoformat()
+    owner = _post('Сдам 1-комнатную квартиру. Собственник. Цена 30 000 сом. 0705 123 456', post_id=1, timestamp=now)
+    agency = _post('Сдам 1-комнатную квартиру. Агентство. Цена 35 000 сом. 0705 123 457', post_id=2, timestamp=now)
+    async def get(self, url, **kwargs):
+        if 'before=' in url:
+            await asyncio.Event().wait()
+        return httpx.Response(200, text=owner if 'owners' in url else agency, request=httpx.Request('GET',url))
+    monkeypatch.setattr(httpx.AsyncClient,'get',get)
+    monkeypatch.setattr(sources,'CHANNEL_FETCH_BUDGET_SECONDS',0.05)
+    ads=await asyncio.wait_for(sources.fetch_telegram_apartments(('https://t.me/s/owners','https://t.me/s/agencies'),pages_per_channel=30),timeout=0.5)
+    assert len(ads)==2
+    assert {ad.seller_type for ad in ads}=={'owner','realtor'}

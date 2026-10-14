@@ -58,6 +58,14 @@ class AvailabilityService:
         published_at = apartment.published_at
         if published_at is not None and published_at.tzinfo is None:
             published_at = published_at.replace(tzinfo=timezone.utc)
+        checked_at = apartment.availability_checked_at
+        if checked_at is not None and checked_at.tzinfo is None:
+            checked_at = checked_at.replace(tzinfo=timezone.utc)
+        if (apartment.availability_status == "unavailable"
+                and apartment.availability_reason in {"source_removed", "marked_unavailable"}
+                and checked_at is not None
+                and (published_at is None or checked_at >= published_at)):
+            return AvailabilityResult("unavailable", apartment.availability_reason, checked_at, True)
         if published_at:
             # A newly published card receives one complete 48-hour window.
             # Reposts must not inherit an old removal check from an earlier card.
@@ -86,17 +94,19 @@ class AvailabilityService:
                 apartment.availability_status, apartment.availability_reason or "cached", checked, True
             )
 
-        url = apartment.source_url
-        if "lalafo.kg/" in url:
-            status, reason = await self._check_lalafo(url)
-        elif url.startswith("https://t.me/"):
-            status, reason = await self._check_telegram(url)
-        else:
-            status, reason = "unknown", "source_not_checkable"
+        status, reason = await self.check_source(apartment.source_url)
         await self.apartments.set_availability(
             apartment_id, status=status, checked_at=now, reason=reason
         )
         return AvailabilityResult(status, reason, now)
+
+    async def check_source(self, url: str) -> tuple[str, str]:
+        """Check upstream independently of the public card's display lifetime."""
+        if "lalafo.kg/" in url:
+            return await self._check_lalafo(url)
+        elif url.startswith("https://t.me/"):
+            return await self._check_telegram(url)
+        return "unknown", "source_not_checkable"
 
     async def _check_lalafo(self, url: str) -> tuple[str, str]:
         try:

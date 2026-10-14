@@ -517,7 +517,7 @@ async def _run_inventory_worker_process_unlocked(
                 assert process.stdout is not None
                 async for line in process.stdout:
                     message = line.decode("utf-8", errors="replace").strip()
-                    if message.startswith("LALAFO_COLLECTION_RESULT "):
+                    if message.startswith(("LALAFO_COLLECTION_RESULT ", "TELEGRAM_COLLECTION_RESULT ")):
                         try:
                             result = json.loads(message.split(" ", 1)[1])
                             if isinstance(result, dict):
@@ -658,25 +658,20 @@ async def _execute_queue_dispatch() -> int:
         last_check_at=_now(),
         last_error=None,
     )
+    apartments = _bot_runtime.workflow_data.get("apartments") if _bot_runtime is not None else None
+    pool_options = {"sessions": apartments.sessions} if apartments is not None else {}
     recent_count, previous_latest = await publication_window_status(
-        window_minutes=180
+        window_minutes=180, **pool_options
     )
     latest_published_at = previous_latest
     exit_code = 0
-    # A queued source can disappear or fail validation between discovery and
-    # publication. Skip a few such rows in the same lightweight tick, but stop
-    # immediately after the first real Telegram publication.
+    # The publisher skips invalid rows within one pool and sends at most one
+    # card. A no-op must not repeat the same claim and schema check four times.
     eligible_until = datetime.now(UTC) + timedelta(minutes=10)
-    for _ in range(4):
-        exit_code = max(
-            exit_code,
-            await publish_one_due(eligible_until=eligible_until),
-        )
-        recent_count, latest_published_at = await publication_window_status(
-            window_minutes=180
-        )
-        if latest_published_at is not None and latest_published_at != previous_latest:
-            break
+    exit_code = await publish_one_due(eligible_until=eligible_until, **pool_options)
+    recent_count, latest_published_at = await publication_window_status(
+        window_minutes=180, **pool_options
+    )
     _apartment_scheduler_state.update(
         running_cycle=False,
         last_exit_code=exit_code,
@@ -723,6 +718,12 @@ async def _inventory_queue_status() -> tuple[int, int, datetime | None]:
                     ApartmentInventoryQueue.status == "queued"
                 )
             )).one()
+            from app.promotions import publications_in_window
+            from app.inventory import publication_day_start
+            day_start = publication_day_start(now).astimezone(UTC)
+            _apartment_scheduler_state["daily_published_count"] = len(
+                await publications_in_window(session, day_start, day_start + timedelta(days=1))
+            )
             return int(row[0]), int(row[1]), row[2]
     finally:
         if engine is not None:
@@ -761,7 +762,8 @@ async def _run_telegram_inventory_collector() -> None:
             _telegram_inventory_state.update(state="collecting", last_check_at=_now(), last_error=None)
             try:
                 code = await _run_inventory_worker_process(
-                    get_settings(), module="scripts.collect_telegram_inventory"
+                    get_settings(), module="scripts.collect_telegram_inventory",
+                    report_state=_telegram_inventory_state,
                 )
                 _telegram_inventory_state.update(
                     state="waiting", last_exit_code=code,
@@ -1353,6 +1355,9 @@ async def health() -> JSONResponse:
                 "daily_target": 70, "start": "05:00", "end": "02:00",
                 "timezone": "Asia/Bishkek", "spacing_minutes": 18, "watermark_check": False,
                 "seller_mix": {"owner": 1 - REALTOR_DAILY_SHARE, "realtor": REALTOR_DAILY_SHARE},
+                "single_photo_duplicate_guard": True,
+                "requested_cards": {"total_publications": 3, "duration_hours": 24, "minimum_gap_hours": 6, "included_in_daily_target": True},
+                "telegram_source_channels": len(settings.telegram_source_channels),
             },
             "apartment_scheduler": (
                 {

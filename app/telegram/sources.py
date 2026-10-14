@@ -18,6 +18,7 @@ from app.telegram.source_filter import is_lodging_offer, is_owner_offer
 logger = logging.getLogger(__name__)
 CHANNEL_REQUEST_ATTEMPTS = 2
 CHANNEL_CONCURRENCY = 4
+CHANNEL_FETCH_BUDGET_SECONDS = 90.0
 
 LALAFO_URL_RE = re.compile(r"https?://(?:www\.)?lalafo\.kg/[\w./?=&%-]+", re.I)
 PHOTO_URL_RE = re.compile(r"background-image:url\(['\"]?([^'\")]+)", re.I)
@@ -295,6 +296,14 @@ def parse_telegram_apartments(
             continue
         if any(term in normalized for term in ("частный дом", "сдается дом", "сдаётся дом", "пол дома")):
             continue
+        if re.search(
+            r"\b(?:сда[её]тся|сдаю|сдам)\s+"
+            r"(?:(?:[1-9]\s*[-‑–—]?\s*(?:ком\w*\.?|кв?\.?)|\w+комнатн\w*)\s+)?"
+            r"(?:пол\s*дома|дом|комната)\b",
+            text, re.I,
+        ):
+            note('house_or_room')
+            continue
 
         price = _telegram_price(text)
         rooms = _telegram_rooms(text)
@@ -388,69 +397,73 @@ async def fetch_telegram_apartments(
         seen_before: set[int] = set()
         diagnostics: Counter[str] = Counter()
         pages_read = 0
-        for _ in range(max(1, pages_per_channel)):
-            url = base if before is None else f"{base}?before={before}"
-            response: httpx.Response | None = None
-            for attempt in range(CHANNEL_REQUEST_ATTEMPTS):
-                try:
-                    async with semaphore:
-                        response = await http.get(url)
-                    response.raise_for_status()
-                    break
-                except httpx.HTTPError as exc:
-                    response = None
-                    if attempt + 1 < CHANNEL_REQUEST_ATTEMPTS:
-                        await asyncio.sleep(0.5 * (attempt + 1))
-                        continue
-                    logger.warning(
-                        "Telegram apartment source failed channel=%s error=%s",
-                        channel,
-                        type(exc).__name__,
-                    )
-            if response is None:
-                break
-            pages_read += 1
-            try:
-                found.extend(
-                    parse_telegram_apartments(
-                        response.text,
-                        max_age_hours=max_age_hours,
-                        diagnostics=diagnostics,
-                    )
-                )
-            except (TypeError, ValueError) as exc:
-                logger.warning(
-                    "Telegram apartment source parse failed channel=%s error=%s",
-                    channel,
-                    type(exc).__name__,
-                )
-                break
-            soup = BeautifulSoup(response.text, "html.parser")
-            message_ids = []
-            for message in soup.select(".tgme_widget_message[data-post]"):
-                try:
-                    message_ids.append(int(str(message.get("data-post")).rsplit("/", 1)[-1]))
-                except ValueError:
-                    continue
-            if not message_ids:
-                break
-            next_before = min(message_ids)
-            if next_before in seen_before:
-                break
-            seen_before.add(next_before)
-            before = next_before
-            timestamps = []
-            for item in soup.select("time[datetime]"):
-                try:
-                    timestamps.append(datetime.fromisoformat(str(item.get("datetime"))))
-                except ValueError:
-                    continue
-            cutoff = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
-            if timestamps and all(
-                (value if value.tzinfo else value.replace(tzinfo=timezone.utc)) < cutoff
-                for value in timestamps
-            ):
-                break
+        try:
+            async with asyncio.timeout(CHANNEL_FETCH_BUDGET_SECONDS):
+                for _ in range(max(1, pages_per_channel)):
+                    url = base if before is None else f"{base}?before={before}"
+                    response: httpx.Response | None = None
+                    for attempt in range(CHANNEL_REQUEST_ATTEMPTS):
+                        try:
+                            async with semaphore:
+                                response = await http.get(url)
+                            response.raise_for_status()
+                            break
+                        except httpx.HTTPError as exc:
+                            response = None
+                            if attempt + 1 < CHANNEL_REQUEST_ATTEMPTS:
+                                await asyncio.sleep(0.5 * (attempt + 1))
+                                continue
+                            logger.warning(
+                                "Telegram apartment source failed channel=%s error=%s",
+                                channel,
+                                type(exc).__name__,
+                            )
+                    if response is None:
+                        break
+                    pages_read += 1
+                    try:
+                        found.extend(
+                            parse_telegram_apartments(
+                                response.text,
+                                max_age_hours=max_age_hours,
+                                diagnostics=diagnostics,
+                            )
+                        )
+                    except (TypeError, ValueError) as exc:
+                        logger.warning(
+                            "Telegram apartment source parse failed channel=%s error=%s",
+                            channel,
+                            type(exc).__name__,
+                        )
+                        break
+                    soup = BeautifulSoup(response.text, "html.parser")
+                    message_ids = []
+                    for message in soup.select(".tgme_widget_message[data-post]"):
+                        try:
+                            message_ids.append(int(str(message.get("data-post")).rsplit("/", 1)[-1]))
+                        except ValueError:
+                            continue
+                    if not message_ids:
+                        break
+                    next_before = min(message_ids)
+                    if next_before in seen_before:
+                        break
+                    seen_before.add(next_before)
+                    before = next_before
+                    timestamps = []
+                    for item in soup.select("time[datetime]"):
+                        try:
+                            timestamps.append(datetime.fromisoformat(str(item.get("datetime"))))
+                        except ValueError:
+                            continue
+                    cutoff = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
+                    if timestamps and all(
+                        (value if value.tzinfo else value.replace(tzinfo=timezone.utc)) < cutoff
+                        for value in timestamps
+                    ):
+                        break
+        except TimeoutError:
+            logger.warning("Telegram source budget exhausted channel=%s pages=%d", channel, pages_read)
         logger.info("Telegram source read channel=%s pages=%d counts=%s", channel, pages_read, dict(diagnostics))
         return found
 
@@ -482,6 +495,11 @@ async def fetch_telegram_apartments(
         )
     return sorted(
         unique.values(),
-        key=lambda ad: ad.source_updated_at or datetime.min.replace(tzinfo=timezone.utc),
+        # High-volume agency channels must not push confirmed owner offers
+        # out of the bounded discovery batch. Publication keeps its own mix.
+        key=lambda ad: (
+            ad.owner_listing and ad.seller_type == 'owner',
+            ad.source_updated_at or datetime.min.replace(tzinfo=timezone.utc),
+        ),
         reverse=True,
     )[: max(1, limit)]

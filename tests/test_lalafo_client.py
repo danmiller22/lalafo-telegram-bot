@@ -273,3 +273,27 @@ def test_inventory_search_is_limited_to_studios_and_one_room():
     for url in INVENTORY_SEARCH_URLS:
         params = LalafoClient._search_params(url, 1)
         assert {value for key,value in params if key.startswith("parameters[69]")} == {"15496", "2773"}
+
+@pytest.mark.asyncio
+async def test_detail_html_parser_does_not_block_customer_event_loop(monkeypatch):
+    import asyncio
+    import threading
+    from tests.helpers import make_ad
+    from app.lalafo import client as source
+    started, release = threading.Event(), threading.Event()
+    def slow_parse(*args, **kwargs):
+        started.set()
+        release.wait(timeout=1)
+        return make_ad()
+    monkeypatch.setattr(source,'parse_detail_page',slow_parse)
+    async with LalafoClient() as client:
+        monkeypatch.setattr(client,'_get_text',AsyncMock(return_value='<html></html>'))
+        task=asyncio.create_task(client.detail('https://lalafo.kg/bishkek/ads/example-id-12345'))
+        try:
+            assert await asyncio.wait_for(asyncio.to_thread(started.wait, timeout=0.5), timeout=0.7)
+            assert started.is_set()
+            assert not task.done()
+        finally:
+            release.set()
+            result=await task
+        assert result.lalafo_id==12345

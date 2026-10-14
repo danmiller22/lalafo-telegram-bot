@@ -52,7 +52,18 @@ def same_listing(ad: LalafoAd, other: LalafoAd | object) -> bool:
         return True
     if abs(ad.price - other_price) > max(ad.price, other_price) * 0.2:
         return False
-    return len(_photo_keys(ad.photo_urls) & _photo_keys(other_photos)) >= 2
+    ad_photos = _photo_keys(ad.photo_urls)
+    existing_photos = _photo_keys(other_photos)
+    common = ad_photos & existing_photos
+    # Reserve feeds can expose only the cover of an otherwise complete album.
+    # One identical cover is sufficient only for a single-photo card with the
+    # same room count, district and price; a shared image in two larger albums
+    # must still meet the stronger two-photo rule.
+    return len(common) >= 2 or (
+        len(common) == 1
+        and min(len(ad_photos), len(existing_photos)) == 1
+        and ad.price == other_price
+    )
 
 
 class ListingIndex:
@@ -61,7 +72,7 @@ class ListingIndex:
     def __init__(self, listings: Iterable[object]) -> None:
         self.ids: set[int] = set()
         self.contacts: dict[tuple, list[frozenset[str]]] = defaultdict(list)
-        self.photos: dict[tuple, list[tuple[int, int]]] = defaultdict(list)
+        self.photos: dict[tuple, list[tuple[int, int, int]]] = defaultdict(list)
         for item in listings:
             self.ids.add(item.lalafo_id)
             district = normalized_district(item.district)
@@ -69,8 +80,9 @@ class ListingIndex:
                 continue
             urls = item.photo_urls or []
             self.contacts[(item.rooms, district, item.phone, item.price)].append(frozenset(urls))
-            for photo in _photo_keys(urls):
-                self.photos[(item.rooms, district, photo)].append((item.lalafo_id, item.price))
+            keys = _photo_keys(urls)
+            for photo in keys:
+                self.photos[(item.rooms, district, photo)].append((item.lalafo_id, item.price, len(keys)))
 
     def contains(self, ad: LalafoAd) -> bool:
         if ad.lalafo_id in self.ids:
@@ -83,9 +95,12 @@ class ListingIndex:
         if any(not urls or not other or urls == other for other in self.contacts.get(contact, ())):
             return True
         overlaps: Counter[int] = Counter()
-        for photo in _photo_keys(ad.photo_urls):
-            for listing_id, price in self.photos.get((ad.rooms, district, photo), ()):
+        keys = _photo_keys(ad.photo_urls)
+        for photo in keys:
+            for listing_id, price, photo_count in self.photos.get((ad.rooms, district, photo), ()):
                 if abs(ad.price - price) <= max(ad.price, price) * 0.2:
+                    if min(len(keys), photo_count) == 1 and ad.price == price:
+                        return True
                     overlaps[listing_id] += 1
                     if overlaps[listing_id] >= 2:
                         return True

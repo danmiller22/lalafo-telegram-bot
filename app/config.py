@@ -86,6 +86,9 @@ DEFAULT_SEARCH_URL = (
 )
 
 TELEGRAM_SOURCE_CHANNELS: tuple[str, ...] = (
+    "https://t.me/s/TuraqJai",
+    "https://t.me/s/cosmoddom",
+    "https://t.me/s/bishkektunduk",
     "https://t.me/s/arenda_kvartiry_kg",
     "https://t.me/s/bishkekarendakv",
     "https://t.me/s/house_kg_official",
@@ -114,14 +117,18 @@ _INVENTORY_BASE = (
 # Split owner results by price as well as location. This exposes older affordable
 # ads that can be buried behind the newest broad-search results.
 INVENTORY_SEARCH_URLS: tuple[str, ...] = (
-    f"{_INVENTORY_BASE}owner?price[from]=25000&price[to]=29999",
-    f"{_INVENTORY_BASE}owner?price[from]=30000&price[to]=40000",
-    f"{_INVENTORY_BASE}real-estate-agency?price[from]=25000&price[to]=40000",
+    f"{_INVENTORY_BASE}owner?price[from]=25000&price[to]=27999",
+    f"{_INVENTORY_BASE}owner?price[from]=28000&price[to]=31999",
+    f"{_INVENTORY_BASE}owner?price[from]=32000&price[to]=35999",
+    f"{_INVENTORY_BASE}owner?price[from]=36000&price[to]=40000",
     # Lalafo authors do not always fill the offerer field. Broad searches keep
     # those fresh cards available; seller classification still happens from
     # the detail page before anything enters the Telegram queue.
     f"{_INVENTORY_BASE}?price[from]=25000&price[to]=29999",
     f"{_INVENTORY_BASE}?price[from]=30000&price[to]=40000",
+    # The discovery targets reserve their first segment for owner-capable
+    # searches; agency-only searches must come after that segment.
+    f"{_INVENTORY_BASE}real-estate-agency?price[from]=25000&price[to]=40000",
 )
 
 APARTMENT_PUBLISH_INTERVAL_MINUTES = 90

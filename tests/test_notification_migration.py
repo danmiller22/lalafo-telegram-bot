@@ -11,7 +11,7 @@ from app.models import Base, Apartment, PaymentRequest, PaymentHistory
 
 
 def test_notification_migration_preserves_existing_requests_and_ledger(monkeypatch):
-    path = Path(__file__).parents[1] / "alembic/versions/0030_payment_notification_lease.py"
+    path = Path(__file__).parents[1] / "alembic/versions/0031_payment_notification_lease.py"
     spec = importlib.util.spec_from_file_location("notification_migration", path)
     migration = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migration)

@@ -275,7 +275,7 @@ async def test_queue_skips_invalid_cards_using_one_pool(repositories, monkeypatc
     valid = await apartments.upsert_discovered(make_ad(lalafo_id=2, price=30_000,
         source_url="https://t.me/apartments/2"))
     inventory = SimpleNamespace(claim_due=AsyncMock(side_effect=[
-        SimpleNamespace(id=1, apartment=invalid), SimpleNamespace(id=2, apartment=valid)]),
+        SimpleNamespace(id=1, apartment=invalid, window_key="ordinary"), SimpleNamespace(id=2, apartment=valid, window_key="ordinary")]),
         finish_item=AsyncMock(), retry_item=AsyncMock())
     engine = SimpleNamespace(dispose=AsyncMock())
     initialize = AsyncMock()
@@ -306,3 +306,37 @@ async def test_queue_pool_is_closed_if_initialization_fails(monkeypatch):
     with pytest.raises(RuntimeError, match="database unavailable"):
         await publisher.run()
     engine.dispose.assert_awaited_once()
+
+@pytest.mark.parametrize('existing_count,candidate_count,price', [(1,3,30000),(3,1,30000),(3,3,30000),(1,3,31000)])
+def test_listing_index_preserves_single_cover_duplicate_rule(existing_count,candidate_count,price):
+    from tests.helpers import make_ad
+    shared='https://img5.lalafo.com/shared-cover-image-123456.jpg'
+    existing=make_ad(lalafo_id=1,price=30000,photo_urls=[shared]+[f'https://img5.lalafo.com/existing-extra-image-{i}.jpg' for i in range(existing_count-1)])
+    candidate=make_ad(lalafo_id=2,price=price,phone='+996555987654',photo_urls=[shared]+[f'https://img5.lalafo.com/candidate-extra-image-{i}.jpg' for i in range(candidate_count-1)])
+    assert ListingIndex([existing]).contains(candidate)==same_listing(candidate,existing)
+
+@pytest.mark.asyncio
+async def test_queue_dispatch_reuses_customer_pool_and_claims_empty_queue_once(repositories,monkeypatch):
+    from app import web
+    from scripts import publish_inventory,publish_if_due
+    apartments,_,sessions=repositories
+    monkeypatch.setattr(web,'_bot_runtime',SimpleNamespace(workflow_data={'apartments':apartments}))
+    publish=AsyncMock(return_value=0)
+    stats=AsyncMock(return_value=(0,None))
+    monkeypatch.setattr(publish_inventory,'run',publish)
+    monkeypatch.setattr(publish_if_due,'publication_window_status',stats)
+    monkeypatch.setattr(web,'_inventory_queue_status',AsyncMock(return_value=(0,0,None)))
+    assert await web._execute_queue_dispatch()==0
+    publish.assert_awaited_once()
+    assert publish.await_args.kwargs['sessions'] is sessions
+    assert stats.await_count==2
+    assert all(call.kwargs['sessions'] is sessions for call in stats.await_args_list)
+
+@pytest.mark.asyncio
+async def test_publisher_borrowed_pool_avoids_schema_checks_and_owns_no_engine(repositories,monkeypatch):
+    from scripts import publish_inventory as publisher
+    _,_,sessions=repositories
+    monkeypatch.setattr(publisher,'create_engine_and_session',lambda *args:pytest.fail('must reuse the supplied pool'))
+    monkeypatch.setattr(publisher,'init_db',AsyncMock(side_effect=AssertionError('no schema checks on web ticks')))
+    monkeypatch.setattr(publisher,'InventoryRepository',lambda *args:SimpleNamespace(claim_due=AsyncMock(return_value=None)))
+    assert await publisher.run(sessions=sessions)==0

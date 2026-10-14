@@ -2,8 +2,8 @@
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0030_payment_notification_lease"
-down_revision = "0029_manual_payment_review"
+revision = "0031_payment_notification_lease"
+down_revision = "0030_requested_card_promotions"
 branch_labels = None
 depends_on = None
 
