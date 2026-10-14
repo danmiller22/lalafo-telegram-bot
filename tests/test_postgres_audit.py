@@ -86,3 +86,12 @@ async def test_postgres_matching_delivery_is_claimed_once(postgres_repositories)
     assert await matching.seed_notifications() == 1
     claims = await asyncio.gather(*(matching.claim_delivery() for _ in range(10)))
     assert len([r for r in claims if r is not None]) == 1
+
+async def test_postgres_forced_collectors_share_one_live_lease(postgres_repositories):
+    from datetime import datetime,timezone
+    from app.inventory import InventoryRepository
+    _,_,sessions=postgres_repositories
+    inventory=InventoryRepository(sessions)
+    now=datetime.now(timezone.utc)
+    claimed=await asyncio.gather(*(inventory.claim_discovery(now=now,force=True,lease_minutes=15) for _ in range(10)))
+    assert sum(key is not None for key in claimed)==1

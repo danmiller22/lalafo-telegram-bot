@@ -19,6 +19,7 @@ from app.lalafo.parser import (
 )
 
 logger = logging.getLogger(__name__)
+BROWSER_DETAIL_BUDGET_SECONDS = 8.0
 
 
 class LalafoError(RuntimeError):
@@ -338,9 +339,10 @@ class LalafoClient:
         try:
             if self._browser_blocked:
                 raise LalafoAccessError("Browser route was blocked earlier in this cycle")
-            html = await self._get_text(detail_url)
-            ad = await asyncio.to_thread(parse_detail_page, html, source_url=detail_url)
-        except LalafoAccessError as exc:
+            async with asyncio.timeout(min(BROWSER_DETAIL_BUDGET_SECONDS, self._timeout)):
+                html = await self._get_text(detail_url)
+                ad = await asyncio.to_thread(parse_detail_page, html, source_url=detail_url)
+        except (LalafoAccessError, TimeoutError) as exc:
             self._browser_blocked = True
             logger.info("Lalafo browser route blocked; using public detail API: %s", exc)
         except (LalafoError, LalafoParseError) as exc:

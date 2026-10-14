@@ -4,6 +4,7 @@ import asyncio
 from datetime import datetime, timezone
 import json
 import logging
+import os
 from typing import Any
 
 from app.config import get_settings
@@ -17,10 +18,10 @@ logger = logging.getLogger(__name__)
 REPORT_PREFIX = "LALAFO_COLLECTION_RESULT "
 
 
-async def collect(settings, inventory) -> dict:
+async def collect(settings, inventory, *, force: bool = False) -> dict:
     """Refill the primary source using the same lease as GitHub collectors."""
     now = datetime.now(timezone.utc)
-    key = await inventory.claim_discovery(now=now, lease_minutes=15)
+    key = await inventory.claim_discovery(now=now, lease_minutes=15, force=force)
     if key is None:
         return {"status": "not_due", "exit_code": 0}
     code = 1
@@ -42,12 +43,13 @@ async def collect(settings, inventory) -> dict:
         logger.info("Primary Lalafo collection starting verified_routes=%d", routes)
         # Keep larger searches within the small cloud instance's memory.
         settings.apartment_detail_concurrency = min(2, settings.apartment_detail_concurrency)
-        async with asyncio.timeout(600):
+        async with asyncio.timeout(300):
             code = await discover(
                 discovery_only=True,
                 candidate_pool_limit_override=96,
                 include_telegram_sources=False,
                 discovery_stats=stats,
+                collection_budget_seconds=180,
             )
         if code == 0 and stats["search_pages"] == 0:
             code = 2
@@ -87,7 +89,8 @@ async def run() -> int:
     engine, sessions = create_engine_and_session(settings.database_url)
     try:
         await init_db(engine)
-        result = await collect(settings, InventoryRepository(sessions))
+        result = await collect(settings, InventoryRepository(sessions),
+            force=os.getenv("FORCE_DISCOVERY", "").strip().casefold() in {"1", "true", "yes", "on"})
         print(REPORT_PREFIX + json.dumps(result), flush=True)
         return result["exit_code"]
     finally:

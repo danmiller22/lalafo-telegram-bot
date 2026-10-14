@@ -39,6 +39,10 @@ on:
         description: Collect the configured Telegram sources without publishing messages
         type: boolean
         default: false
+      force_inventory_collection:
+        description: Retry the requested collection now while respecting an active collector lease
+        type: boolean
+        default: false
       collect_inventory:
         description: Collect into the shared inventory without publishing messages
         type: boolean
@@ -151,6 +155,7 @@ jobs:
         timeout-minutes: 13
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          FORCE_DISCOVERY: ${{ inputs.force_inventory_collection }}
         shell: bash
         run: |
           verify_collection() {

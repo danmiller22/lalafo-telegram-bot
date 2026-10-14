@@ -297,3 +297,18 @@ async def test_detail_html_parser_does_not_block_customer_event_loop(monkeypatch
             release.set()
             result=await task
         assert result.lalafo_id==12345
+
+@pytest.mark.asyncio
+async def test_slow_browser_falls_back_to_matching_api_without_repeating_browser(monkeypatch):
+    import asyncio
+    from app.lalafo import client as module
+    monkeypatch.setattr(module,'BROWSER_DETAIL_BUDGET_SECONDS',0.01)
+    async def slow(*args):await asyncio.Event().wait()
+    async with LalafoClient() as client:
+        client._get_text=AsyncMock(side_effect=slow)
+        client._get_json=AsyncMock(return_value=detail_payload(77701377,'+996554252534'))
+        for _ in range(2):
+            ad=await asyncio.wait_for(client.detail('https://lalafo.kg/bishkek/ads/example-id-77701377'),timeout=0.5)
+            assert ad.lalafo_id==77701377
+        client._get_text.assert_awaited_once()
+        assert client._get_json.await_count==2
