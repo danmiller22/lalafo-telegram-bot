@@ -102,7 +102,7 @@ MAX_REPOSTS_PER_RUN = 18
 CENTRAL_BATCH_SHARE = 0.50
 OWNER_OTHER_BATCH_SHARE = 0.50
 MAX_CANDIDATE_POOL = 300
-# Target 25% realtors and 75% owners. A category may fill
+# Target 50% realtors and 50% owners. A category may fill
 # the other category's shortage so Telegram publication does not stop.
 REALTOR_CANDIDATE_RESERVE_SHARE = REALTOR_DAILY_SHARE
 REALTOR_BATCH_SHARE = REALTOR_DAILY_SHARE
@@ -459,7 +459,7 @@ def source_candidate_targets(
     batch_limit: int,
     owner_source_count: int | None = None,
 ) -> list[int]:
-    """Reserve 75% of the discovery pool for owners and 25% for realtors."""
+    """Reserve half of the discovery pool for each known seller category."""
     if source_count <= 1:
         return [pool_limit]
     owner_source_count = min(
