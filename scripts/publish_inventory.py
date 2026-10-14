@@ -28,6 +28,7 @@ from scripts.scrape_publish import (
 
 
 logger = logging.getLogger(__name__)
+PUBLIC_DETAIL_REFRESH_SECONDS = 45.0
 MAX_TERMINAL_SKIPS_PER_RUN = 100
 STORED_FALLBACK_MAX_AGE_HOURS = 48
 
@@ -124,12 +125,13 @@ async def _publish_item(settings, sessions, inventory, apartments, item) -> int 
         ad = stored
     else:
         try:
-            async with LalafoClient(
-                timeout=settings.http_timeout_seconds,
-                max_retries=settings.http_max_retries,
-                proxy_url=settings.lalafo_proxy_url,
-            ) as client:
-                ad = await client.detail(apartment.source_url)
+            async with asyncio.timeout(PUBLIC_DETAIL_REFRESH_SECONDS):
+                async with LalafoClient(
+                    timeout=settings.http_timeout_seconds,
+                    max_retries=settings.http_max_retries,
+                    proxy_url=settings.lalafo_proxy_url,
+                ) as client:
+                    ad = await client.detail(apartment.source_url)
         except LalafoNotFound:
             if is_requested:
                 await apartments.set_availability(apartment.id, status="unavailable",
@@ -137,7 +139,7 @@ async def _publish_item(settings, sessions, inventory, apartments, item) -> int 
             else:
                 await apartments.mark_inactive(apartment.id)
             return await _skip(inventory, item.id, "not_found")
-        except (LalafoError, LalafoParseError, ValueError) as exc:
+        except (LalafoError, LalafoParseError, ValueError, TimeoutError) as exc:
             last_seen = as_utc(apartment.last_seen_at or apartment.updated_at)
             if last_seen >= datetime.now(timezone.utc) - timedelta(
                 hours=STORED_FALLBACK_MAX_AGE_HOURS

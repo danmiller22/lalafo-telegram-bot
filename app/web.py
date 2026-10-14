@@ -7,6 +7,7 @@ import secrets
 import inspect
 import json
 import sys
+import shutil
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -500,14 +501,14 @@ async def _run_inventory_worker_process_unlocked(
     env = os.environ.copy()
     env["LALAFO_PROXY_URL"] = settings.lalafo_proxy_url
     process_options: dict[str, Any] = {}
-    if os.name != "nt":
-        process_options["preexec_fn"] = lambda: os.nice(15)
+    command = [sys.executable, "-m", module]
+    nice = shutil.which("nice") if os.name != "nt" else None
+    if nice is not None:
+        command = [nice, "-n", "15", *command]
     if report_state is not None:
         process_options["stdout"] = asyncio.subprocess.PIPE
     process = await asyncio.create_subprocess_exec(
-        sys.executable,
-        "-m",
-        module,
+        *command,
         env=env,
         **process_options,
     )

@@ -340,3 +340,29 @@ async def test_publisher_borrowed_pool_avoids_schema_checks_and_owns_no_engine(r
     monkeypatch.setattr(publisher,'init_db',AsyncMock(side_effect=AssertionError('no schema checks on web ticks')))
     monkeypatch.setattr(publisher,'InventoryRepository',lambda *args:SimpleNamespace(claim_due=AsyncMock(return_value=None)))
     assert await publisher.run(sessions=sessions)==0
+
+@pytest.mark.asyncio
+async def test_timed_out_source_skips_old_snapshot_and_publishes_next_card(repositories,monkeypatch):
+    from app.config import Settings
+    from scripts import publish_inventory as publisher
+    apartments,_,sessions=repositories
+    old=await apartments.upsert_discovered(make_ad(lalafo_id=230001))
+    old.last_seen_at=datetime.now(timezone.utc)-timedelta(days=3)
+    fresh=await apartments.upsert_discovered(make_ad(lalafo_id=230002,source_url='https://t.me/apartments/230002',phone='+996555987654'))
+    class SlowSource:
+        async def __aenter__(self):return self
+        async def __aexit__(self,*args):pass
+        async def detail(self,*args):await asyncio.Event().wait()
+    inventory=SimpleNamespace(claim_due=AsyncMock(side_effect=[SimpleNamespace(id=1,apartment=old,window_key='ordinary'),SimpleNamespace(id=2,apartment=fresh,window_key='ordinary')]),finish_item=AsyncMock(),retry_item=AsyncMock())
+    bot=SimpleNamespace(session=SimpleNamespace(close=AsyncMock()))
+    send=SimpleNamespace(publish=AsyncMock(return_value=SimpleNamespace(message_id=999)))
+    monkeypatch.setattr(publisher,'get_settings',lambda:Settings(telegram_bot_token='123456:token',callback_secret='c'*32))
+    monkeypatch.setattr(publisher,'PUBLIC_DETAIL_REFRESH_SECONDS',0.01)
+    monkeypatch.setattr(publisher,'LalafoClient',lambda **kwargs:SlowSource())
+    monkeypatch.setattr(publisher,'InventoryRepository',lambda *args:inventory)
+    monkeypatch.setattr(publisher,'Bot',lambda **kwargs:bot)
+    monkeypatch.setattr(publisher,'TelegramPublisher',lambda *args,**kwargs:send)
+    assert await asyncio.wait_for(publisher.run(sessions=sessions),timeout=1)==0
+    inventory.finish_item.assert_any_await(1,status='skipped',error='stale_TimeoutError')
+    inventory.finish_item.assert_any_await(2,status='published')
+    send.publish.assert_awaited_once()
