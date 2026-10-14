@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import AsyncExitStack
-from datetime import datetime, time, timezone
+from datetime import datetime, time, timedelta, timezone
 import logging
 import math
 import random
@@ -676,6 +676,7 @@ async def run(
     repost_last_published_at: dict[int, datetime] = {}
     direct_priority_count = 0
     detail_cache: dict[int, LalafoAd | None] = {}
+    persisted_catalog_ids: set[int] = set()
 
     engine = None
     apartments = None
@@ -753,16 +754,16 @@ async def run(
     async with AsyncExitStack() as stack:
         client = await stack.enter_async_context(
             LalafoClient(
-                timeout=settings.http_timeout_seconds,
-                max_retries=settings.http_max_retries,
+                timeout=min(8.0, settings.http_timeout_seconds) if collection_budget_seconds else settings.http_timeout_seconds,
+                max_retries=min(1, settings.http_max_retries) if collection_budget_seconds else settings.http_max_retries,
                 proxy_url=settings.lalafo_proxy_url,
             )
         )
         detail_clients = [
             await stack.enter_async_context(
                 LalafoClient(
-                    timeout=settings.http_timeout_seconds,
-                    max_retries=settings.http_max_retries,
+                    timeout=min(8.0, settings.http_timeout_seconds) if collection_budget_seconds else settings.http_timeout_seconds,
+                    max_retries=min(1, settings.http_max_retries) if collection_budget_seconds else settings.http_max_retries,
                     proxy_url=settings.lalafo_proxy_url,
                 )
             )
@@ -1132,7 +1133,11 @@ async def run(
                 if apartments is not None
                 else set()
             )
-            repostable_publications = {}
+            repostable_publications = (
+                await apartments.repostable_lalafo_publications(
+                    [item.lalafo_id for item in page.items], after_hours=SOURCE_REPOST_AFTER_HOURS
+                ) if apartments is not None else {}
+            )
             repostable_ids = set(repostable_publications)
             repost_last_published_at.update(repostable_publications)
             detail_search_ads = []
@@ -1170,10 +1175,12 @@ async def run(
                                                batch_timeout_seconds=max(0.001, min(45.0, remaining)))
             parsed_ads = [ad for _, ad in details if ad is not None]
             duplicate_ids = (
-                await apartments.duplicate_candidate_ids(parsed_ads)
+                await apartments.duplicate_candidate_ids(parsed_ads,
+                    repost_before=datetime.now(timezone.utc) - timedelta(hours=SOURCE_REPOST_AFTER_HOURS))
                 if apartments is not None
                 else set()
             )
+            stored_this_page = 0
             for search_ad, ad in details:
                 if len(candidates) >= source_candidate_limit:
                     break
@@ -1221,7 +1228,7 @@ async def run(
                     continue
                 if state.contains(ad.lalafo_id, ad_fingerprint(ad)) and not is_repost:
                     continue
-                if ad.lalafo_id in duplicate_ids and not is_repost:
+                if ad.lalafo_id in duplicate_ids:
                     logger.info("Skipping DB duplicate id=%s", ad.lalafo_id)
                     continue
                 candidates.append(ad)
@@ -1234,14 +1241,18 @@ async def run(
                     from app.inventory import InventoryRepository
 
                     await apartments.upsert_discovered(ad)
+                    persisted_catalog_ids.add(ad.lalafo_id)
+                    stored_this_page += 1
                     if discovery_stats is not None:
                         discovery_stats["stored"] = discovery_stats.get("stored", 0) + 1
                         discovery_stats["owner_candidates"] = discovery_stats.get("owner_candidates", 0) + int(
                             ad.owner_listing and ad.seller_type == 'owner'
                         )
-                    await InventoryRepository(sessions).schedule_period()
                 if is_repost:
                     repost_candidate_ids.add(ad.lalafo_id)
+            if discovery_only and stored_this_page:
+                # One queue rebuild per detail batch, not per listing.
+                await InventoryRepository(sessions).schedule_period()
             if len(candidates) >= source_candidate_limit:
                 search_index += 1
                 if search_index >= len(search_urls):
@@ -1294,6 +1305,8 @@ async def run(
             return 0
         priority_ids = managed_profile_ids | curated_ids
         for ad in inventory_candidates:
+            if ad.lalafo_id in persisted_catalog_ids:
+                continue
             await apartments.upsert_discovered(
                 ad, discovery_priority=ad.lalafo_id in priority_ids
             )
