@@ -6,7 +6,11 @@ from app.config import get_settings
 from app.database import create_engine_and_session
 from app.models import Apartment,ApartmentInventoryQueue,RequestedCardPromotion,RequestedCardPublication,ApartmentMatchDelivery,PaymentRequest
 from app.promotions import publications_in_window,promotion_work
-from app.inventory import publication_day_start
+from app.inventory import publication_day_start, as_utc, daily_realtor_target
+from app.payments.repository import ApartmentRepository
+from app.state import ListingIndex
+from scripts.scrape_publish import apartment_to_ad
+from scripts.publish_inventory import _valid
 async def main():
  engine,sessions=create_engine_and_session(get_settings().database_url)
  now=datetime.now(timezone.utc);start=publication_day_start(now).astimezone(timezone.utc)
@@ -24,6 +28,35 @@ async def main():
     print('RUNTIME_DIAGNOSTICS='+json.dumps({label:dict(counts)}))
    urls=(await s.scalars(select(Apartment.source_url).where(Apartment.active.is_(True),Apartment.last_seen_at>=now-timedelta(hours=48)))).all()
    print('RUNTIME_DIAGNOSTICS='+json.dumps({'fresh_active_inventory':len(urls),'lalafo_inventory':sum('lalafo.kg/' in url for url in urls),'telegram_inventory':sum(url.startswith('https://t.me/') for url in urls)}))
+   stock=list((await s.scalars(select(Apartment).where(
+       Apartment.active.is_(True), Apartment.last_seen_at>=now-timedelta(hours=48),
+       Apartment.availability_status!="unavailable",
+   ).order_by(Apartment.last_seen_at.desc()))).all())
+   valid=[(a,apartment_to_ad(a)) for a in stock]
+   valid=[(a,ad) for a,ad in valid if _valid(ad,get_settings())[0]]
+   fresh=[ad for a,ad in valid if a.publication_status=="discovered"]
+   repeats=[ad for a,ad in valid if a.publication_status=="published"
+            and a.published_at is not None and as_utc(a.published_at)<=now-timedelta(hours=48)]
+   repo=ApartmentRepository(sessions)
+   blocked_fresh=await repo.duplicate_candidate_ids(fresh)
+   blocked_repeats=await repo.duplicate_candidate_ids(repeats,repost_before=now-timedelta(hours=48))
+   fresh=[ad for ad in fresh if ad.lalafo_id not in blocked_fresh]
+   repeats=[ad for ad in repeats if ad.lalafo_id not in blocked_repeats]
+   unique=[];fresh_ids={ad.lalafo_id for ad in fresh}
+   for ad in fresh+repeats:
+    if not ListingIndex(unique).contains(ad):unique.append(ad)
+   def by_seller(ads):
+    return {kind:sum(ad.seller_type==kind for ad in ads) for kind in ("owner","realtor","unknown")}
+   target_realtors=daily_realtor_target(now)
+   print('RUNTIME_DIAGNOSTICS='+json.dumps({
+       "seller_inventory":{
+           "fresh_active_valid":by_seller([ad for a,ad in valid]),
+           "unpublished_unique":by_seller([ad for ad in unique if ad.lalafo_id in fresh_ids]),
+           "repeat_eligible_unique":by_seller([ad for ad in unique if ad.lalafo_id not in fresh_ids]),
+           "total_publishable_unique":by_seller(unique),
+           "daily_targets":{"owner":70-target_realtors,"realtor":target_realtors},
+           "repeat_after_hours":48,"requires_source_check_at_send":True,
+       }}))
    active=(await s.scalars(select(ApartmentInventoryQueue).where(ApartmentInventoryQueue.status=='publishing'))).all()
    print('RUNTIME_DIAGNOSTICS='+json.dumps({'active_queue_claims':len(active),'claims':[{'item_id':q.id,'claimed_at':q.claimed_at.isoformat() if q.claimed_at else None} for q in active]}))
  finally:await engine.dispose()
