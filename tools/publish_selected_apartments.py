@@ -626,6 +626,8 @@ async def run() -> int:
                     apartment.id,
                     chat_id=settings.telegram_group_id,
                     message_id=message.message_id,
+                    promote_requested=True,
+                    acknowledged_at=getattr(message, "date", None),
                 )
             except TelegramPublishError as exc:
                 logger.error(

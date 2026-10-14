@@ -134,12 +134,19 @@ class ApartmentRepository:
         self, *, chat_id: int, message_id: int
     ) -> Apartment | None:
         async with self.sessions() as session:
-            return await session.scalar(
+            apartment = await session.scalar(
                 select(Apartment).where(
                     Apartment.telegram_chat_id == chat_id,
                     Apartment.telegram_message_id == message_id,
                 )
             )
+            if apartment is not None:
+                return apartment
+            from app.models import RequestedCardPublication
+            return await session.scalar(select(Apartment).join(
+                RequestedCardPublication, RequestedCardPublication.apartment_id == Apartment.id,
+            ).where(RequestedCardPublication.telegram_chat_id == chat_id,
+                    RequestedCardPublication.telegram_message_id == message_id))
 
     async def find_forwarded_card(
         self,
@@ -576,15 +583,35 @@ class ApartmentRepository:
             return apartment
 
     async def mark_published(
-        self, apartment_id: int, *, chat_id: int, message_id: int
+        self, apartment_id: int, *, chat_id: int, message_id: int,
+        promote_requested: bool = False,
+        acknowledged_at: datetime | None = None,
     ) -> Apartment:
         async with self.sessions.begin() as session:
             apartment = await session.get(Apartment, apartment_id)
             if apartment is None:
                 raise LookupError("Apartment not found")
+            from app.models import RequestedCardPromotion, RequestedCardPublication
+            from app.promotions import record_delivery, register_requested
+            now = acknowledged_at or datetime.now(timezone.utc)
+            existing_receipt = await session.scalar(select(RequestedCardPublication).where(
+                RequestedCardPublication.telegram_chat_id == chat_id,
+                RequestedCardPublication.telegram_message_id == message_id,
+            ))
+            if existing_receipt is not None:
+                if existing_receipt.apartment_id != apartment_id:
+                    raise RuntimeError("Publication receipt belongs to another apartment")
+                return apartment
+            if promote_requested:
+                await register_requested(session, apartment, now=now)
+            if promote_requested or await session.get(RequestedCardPromotion, apartment_id) is not None:
+                added = await record_delivery(session, apartment, chat_id=chat_id,
+                                              message_id=message_id, published_at=now)
+                if not added:
+                    return apartment
             apartment.telegram_chat_id = chat_id
             apartment.telegram_message_id = message_id
-            apartment.published_at = datetime.now(timezone.utc)
+            apartment.published_at = now
             apartment.publication_status = "published"
             apartment.active = True
             apartment.availability_status = "active"

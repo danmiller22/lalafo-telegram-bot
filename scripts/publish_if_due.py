@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 from app.config import get_settings
 from app.database import create_engine_and_session, init_db
 from app.models import Apartment
+from app.promotions import publication_window
 from app.publication_schedule import (
     claim_publication,
     finish_publication,
@@ -51,12 +52,7 @@ async def publication_window_status(
         async with sessions() as session:
             recent_count_query = (
                 select(func.count())
-                .select_from(Apartment)
-                .where(
-                    Apartment.publication_status == "published",
-                    Apartment.published_at.is_not(None),
-                    Apartment.published_at >= cutoff,
-                )
+                .select_from(publication_window(cutoff, datetime.now(timezone.utc) + timedelta(seconds=1)))
                 .scalar_subquery()
             )
             latest_query = (
@@ -83,12 +79,7 @@ async def published_since_count(
         return int(
             await session.scalar(
                 select(func.count())
-                .select_from(Apartment)
-                .where(
-                    Apartment.publication_status == "published",
-                    Apartment.published_at.is_not(None),
-                    Apartment.published_at >= started_at,
-                )
+                .select_from(publication_window(started_at, datetime.now(timezone.utc) + timedelta(seconds=1)))
             )
             or 0
         )
