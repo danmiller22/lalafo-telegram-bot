@@ -58,6 +58,7 @@ _run_lock = asyncio.Lock()
 from app.worker_resources import inventory_worker_lock as _inventory_worker_lock
 _scraper_task: asyncio.Task[None] | None = None
 _bot_runtime: BotRuntime | None = None
+_finik_http_client: httpx.AsyncClient | None = None
 _lalafo_bot_runtime: BotRuntime | None = None
 _bot_setup_task: asyncio.Task[None] | None = None
 _lalafo_bot_setup_task: asyncio.Task[None] | None = None
@@ -135,6 +136,8 @@ class LalafoIngestRequest(BaseModel):
 
 
 def _finik_payment_url(settings: Any, plan: str) -> str:
+    if plan == WEEK_PLAN and settings.finik_automatic_access_enabled and settings.finik_auto_enabled:
+        return ""
     if plan == LIFETIME_PLAN:
         return settings.lifetime_finik_payment_url
     return (
@@ -145,6 +148,8 @@ def _finik_payment_url(settings: Any, plan: str) -> str:
 
 
 def _uses_dynamic_finik(settings: Any, plan: str) -> bool:
+    if plan == WEEK_PLAN and settings.finik_automatic_access_enabled and settings.finik_auto_enabled:
+        return True
     if plan == WEEK_PLAN and settings.weekly_finik_payment_url:
         return False
     if plan == LIFETIME_PLAN and settings.lifetime_finik_payment_url:
@@ -171,9 +176,10 @@ async def _finik_checkout_url(
         api_url=settings.finik_api_url,
         account_id=settings.finik_account_id,
     )
+    from uuid import uuid4
     prepared = await payments.prepare_provider_payment(
         payment_request.id,
-        f"arenda-{payment_request.id}-{secrets.token_hex(8)}",
+        str(uuid4()),
         configuration_id=configuration_id,
     )
     if prepared.provider_payment_url:
@@ -190,6 +196,8 @@ async def _finik_checkout_url(
             pem=settings.finik_private_key_pem,
             encoded=settings.finik_private_key_b64,
         ),
+        timeout=2.0,
+        **({"client": _finik_http_client} if _finik_http_client is not None else {}),
     )
     created = await client.create_payment(
         payment_id=prepared.provider_payment_id,
@@ -998,6 +1006,7 @@ async def _watch_background_tasks() -> None:
 
 @app.on_event("startup")
 async def startup() -> None:
+    global _finik_http_client
     global _bot_runtime, _lalafo_bot_runtime, _bot_setup_task, _lalafo_bot_setup_task
     global _legacy_featured_cleanup_task
     global _keyboard_sync_task, _lalafo_auto_responder
@@ -1023,6 +1032,13 @@ async def startup() -> None:
         settings.require_telegram_webhook_url()
         settings.require_telegram_webhook_secret()
         _bot_runtime = await create_runtime()
+        from app.payment_runtime import load_enabled_config
+        try:
+            await load_enabled_config(settings, _bot_runtime.workflow_data["payments"].sessions)
+        except Exception as exc:
+            logger.warning("Payment runtime configuration unavailable: %s", type(exc).__name__)
+        _finik_http_client = httpx.AsyncClient(timeout=httpx.Timeout(2.0), follow_redirects=False,
+            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10))
         if settings.lalafo_bot_token and settings.lalafo_bot_cloud_enabled:
             _lalafo_bot_runtime = await create_runtime(
                 bot_token=settings.require_lalafo_bot_token(), lalafo_only=True
@@ -1090,6 +1106,7 @@ async def startup() -> None:
 
 @app.on_event("shutdown")
 async def shutdown() -> None:
+    global _finik_http_client
     global _bot_runtime, _lalafo_bot_runtime, _bot_setup_task, _lalafo_bot_setup_task
     global _legacy_featured_cleanup_task
     global _keyboard_sync_task, _lalafo_auto_responder
@@ -1098,6 +1115,9 @@ async def shutdown() -> None:
     global _shutting_down
     global _lalafo_mcp_context
     _shutting_down = True
+    if _finik_http_client is not None:
+        await _finik_http_client.aclose()
+        _finik_http_client = None
     if _lalafo_mcp_context is not None:
         await _lalafo_mcp_context.__aexit__(None, None, None)
         _lalafo_mcp_context = None
@@ -1309,7 +1329,7 @@ async def health() -> JSONResponse:
             "status": "ok",
             "bot": "running" if settings.run_bot else "disabled",
             "finik_auto_payment": "ready" if settings.finik_auto_enabled else "disabled",
-            "payment_access_mode": "manual",
+            "payment_access_mode": "automatic" if settings.finik_automatic_access_enabled and settings.finik_auto_enabled else "manual",
             "payment_review_worker": (
                 "running" if settings.run_bot and not _task_stopped(_payment_review_worker_task)
                 else "stopped" if settings.run_bot else "disabled"
@@ -1518,6 +1538,7 @@ async def miniapp_session(payload: MiniAppRequest, background_tasks: BackgroundT
         )
     response = _miniapp_result_payload(result)
     response["monthly_available"] = False
+    response["automatic_payment"] = settings.finik_automatic_access_enabled and settings.finik_auto_enabled
     bot_url = f"https://t.me/{settings.telegram_bot_username.lstrip('@')}"
     response["privacy_url"] = f"{bot_url}?start=privacy"
     background_tasks.add_task(_record_miniapp_open, runtime, user.id, apartment_id)
@@ -1635,7 +1656,7 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
         response["status"] = payment_request.status
         response["plan"] = getattr(payment_request, "plan", plan)
     response["payment_url"] = payment_url
-    response["automatic_payment"] = _uses_dynamic_finik(settings, plan)
+    response["automatic_payment"] = settings.finik_automatic_access_enabled and settings.finik_auto_enabled
     response["monthly_available"] = False
     return response
 
@@ -1646,6 +1667,8 @@ async def miniapp_issue_access(payload: MiniAppRequest) -> dict[str, Any]:
     service = runtime.workflow_data["service"]
     current = await service.contact_status(user.id, apartment_id)
     if current.status == "approved":
+        return _miniapp_result_payload(current)
+    if settings.finik_automatic_access_enabled and settings.finik_auto_enabled:
         return _miniapp_result_payload(current)
     if not settings.admin_user_id:
         raise HTTPException(status_code=503, detail="Проверка оплаты временно недоступна. Обратитесь в поддержку.")
@@ -1715,11 +1738,73 @@ async def finik_webhook(request: Request) -> dict[str, str]:
         payment_id,
         succeeded=payment_succeeded(provider_status),
         amount=amount,
+        **({"automatic_access": True} if settings.finik_automatic_access_enabled else {}),
     )
     if outcome == "amount_mismatch":
         logger.error("Finik amount mismatch for payment request %s", payment_request.id)
         raise HTTPException(status_code=status.HTTP_409_CONFLICT)
+    if outcome in {"approved", "already_approved"} and payment_request is not None:
+        from app.payments.signals import notify
+        notify(payment_request.telegram_user_id)
     return {"status": outcome}
+
+
+@app.post("/miniapp/api/watch", include_in_schema=False)
+async def miniapp_watch_payment(payload: MiniAppRequest):
+    settings, runtime, user, apartment_id = _miniapp_context(payload)
+    if not (settings.finik_automatic_access_enabled and settings.finik_auto_enabled):
+        raise HTTPException(status_code=409, detail="Автоматическая оплата не подключена.")
+    from app.payments.signals import subscribe, unsubscribe
+    try:
+        event = subscribe(user.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=429, detail="Закройте лишние окна оплаты.") from exc
+    try:
+        service = runtime.workflow_data["service"]
+        current = await service.contact_status(user.id, apartment_id)
+        if current.status not in {"approved", "rejected", "unavailable"}:
+            try:
+                await asyncio.wait_for(event.wait(), timeout=20)
+            except TimeoutError:
+                pass
+            current = await service.contact_status(user.id, apartment_id)
+        return _miniapp_result_payload(current)
+    finally:
+        unsubscribe(user.id, event)
+
+
+@app.post("/internal/payments/activate", include_in_schema=False)
+async def activate_automatic_payments(authorization: str | None = Header(default=None)):
+    settings = get_settings()
+    supplied = (authorization or "").removeprefix("Bearer ")
+    if not secrets.compare_digest(supplied, settings.require_callback_secret()):
+        raise HTTPException(status_code=401)
+    if _bot_runtime is None or not settings.finik_auto_enabled:
+        raise HTTPException(status_code=503, detail="Merchant account or signing key is missing")
+    from app.payment_runtime import read_config, write_config
+    sessions = _bot_runtime.workflow_data["payments"].sessions
+    config = await read_config(sessions, settings.require_callback_secret())
+    if not config or not config.get("api_key"):
+        raise HTTPException(status_code=409, detail="Encrypted API key has not been staged")
+    client = FinikClient(api_url="https://api.acquiring.averspay.kg/v1/payment",
+        api_key=config["api_key"], account_id=settings.finik_account_id,
+        private_key_pem=decode_private_key(pem=settings.finik_private_key_pem, encoded=settings.finik_private_key_b64),
+        timeout=5.0)
+    from uuid import uuid4
+    try:
+        await client.create_payment(payment_id=str(uuid4()), amount=WEEK_PRICE,
+            redirect_url=f"https://t.me/{settings.telegram_bot_username}",
+            webhook_url=settings.require_public_base_url()+"/finik/webhook")
+    except Exception as exc:
+        reason = str(exc) if isinstance(exc, RuntimeError) else type(exc).__name__
+        logger.warning("Payment credential probe failed: %s", reason)
+        raise HTTPException(status_code=502, detail=reason) from exc
+    config.update(enabled=True, api_url="https://api.acquiring.averspay.kg/v1/payment")
+    await write_config(sessions, settings.require_callback_secret(), config)
+    settings.finik_api_key = config["api_key"]
+    settings.finik_api_url = config["api_url"]
+    settings.finik_automatic_access_enabled = True
+    return {"status": "automatic", "price": WEEK_PRICE, "probe": "unpaid_checkout_created"}
 
 
 @app.get("/pay/{token}", include_in_schema=False)

@@ -167,6 +167,7 @@ class Settings(BaseSettings):
     finik_private_key_pem: str = ""
     finik_private_key_b64: str = ""
     finik_webhook_public_key_pem: str = ""
+    finik_automatic_access_enabled: bool = False
     callback_secret: str = "change-me-in-production"
 
     lalafo_proxy_url: str = ""

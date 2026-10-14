@@ -144,6 +144,8 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
   let startParam = query.get("tgWebAppStartParam") || hash.get("tgWebAppStartParam") || "";
   let paymentOpening = false;
   let paymentPoll = null;
+  let paymentWatchRunning = false;
+  let automaticPayment = false;
   let paymentStart = null;
   let accessApproved = false;
   let sessionReady = false;
@@ -216,6 +218,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     return data;
   }}
   function render(data) {{
+    if (typeof data.automatic_payment === "boolean") automaticPayment = data.automatic_payment;
     // A response sent before access was granted must not undo the success screen.
     if (accessApproved && data.status !== "approved") return;
     const approved = data.status === "approved";
@@ -234,7 +237,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     show("agreement-caption", !approved);
     show("payment-step", data.status === "awaiting_receipt");
     show("pay-lifetime", canPay);
-    show("access", waiting);
+    show("access", waiting && !automaticPayment);
     show("reopen-payment", waiting && data.status === "awaiting_receipt");
     if (!approved) {{
       el("privacy").href = data.privacy_url || "#";
@@ -265,7 +268,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
       el("phone").textContent = "📞 " + data.phone;
       el("phone").href = "tel:" + String(data.phone || "").replace(/\\s+/g, "");
     }} else if (waiting && data.status === "pending") {{
-      message("Оплата отправлена на проверку. Ожидайте подтверждения.");
+      message(automaticPayment ? "Проверяем оплату автоматически…" : "Оплата отправлена на проверку. Ожидайте подтверждения.");
       startPaymentPolling();
     }} else if (waiting) {{
       message("");
@@ -331,19 +334,22 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     }}
   }}
   function startPaymentPolling() {{
-    if (paymentPoll || accessApproved) return;
+    if (paymentPoll || paymentWatchRunning || accessApproved || document.hidden) return;
     const poll = async () => {{
+      paymentPoll = null;
+      if (document.hidden || accessApproved) return;
+      paymentWatchRunning = true;
       try {{
-        const data = await api("/miniapp/api/session", {{}});
+        const data = await api(automaticPayment ? "/miniapp/api/watch" : "/miniapp/api/session", {{}});
         render(data);
         if (data.status === "approved" || data.status === "rejected") {{
           paymentPoll = null;
           return;
         }}
-      }} catch (_) {{}}
-      if (!accessApproved) paymentPoll = setTimeout(poll, 5000);
+      }} catch (_) {{}} finally {{ paymentWatchRunning = false; }}
+      if (!accessApproved && !document.hidden) paymentPoll = setTimeout(poll, automaticPayment ? 1000 : 5000);
     }};
-    paymentPoll = setTimeout(poll, 5000);
+    paymentPoll = setTimeout(poll, automaticPayment ? 0 : 5000);
   }}
   document.addEventListener("visibilitychange", () => {{
     if (!document.hidden && !accessApproved) {{

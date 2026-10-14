@@ -61,6 +61,20 @@ async def test_postgres_checkout_reservation_is_stable_under_concurrent_clicks(p
     assert len({r.provider_payment_id for r in reserved}) == 1
 
 
+async def test_postgres_duplicate_verified_callbacks_issue_one_week(postgres_repositories):
+    apartments, payments, sessions = postgres_repositories
+    apartment = await apartments.upsert_discovered(make_ad(lalafo_id=339991))
+    submitted = await payments.submit(user_id=339991, apartment_id=apartment.id,
+        username=None, first_name=None, plan=WEEK_PLAN)
+    await payments.prepare_provider_payment(submitted.request.id, "provider-confirmed")
+    results = await asyncio.gather(*(payments.apply_provider_result("provider-confirmed",
+        succeeded=True, amount=499, automatic_access=True) for _ in range(10)))
+    assert sum(outcome == "approved" for outcome, _ in results) == 1
+    assert sum(outcome == "already_approved" for outcome, _ in results) == 9
+    async with sessions() as session:
+        assert await session.scalar(select(func.count(PaymentHistory.id))) == 1
+
+
 async def test_postgres_manual_approval_and_notification_are_claimed_once(postgres_repositories):
     apartments, payments, sessions = postgres_repositories
     apartment = await apartments.upsert_discovered(make_ad())

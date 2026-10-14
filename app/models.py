@@ -26,6 +26,12 @@ class Base(DeclarativeBase):
     pass
 
 
+class PaymentRuntimeConfig(Base):
+    __tablename__ = "payment_runtime_config"
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+
+
 class Apartment(Base):
     __tablename__ = "apartments"
     __table_args__ = (

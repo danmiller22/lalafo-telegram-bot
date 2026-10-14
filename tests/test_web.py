@@ -553,7 +553,7 @@ async def test_miniapp_status_does_not_wait_for_or_fail_on_open_analytics(monkey
 
     service = SimpleNamespace(contact_status=AsyncMock(return_value=SimpleNamespace(status="unpaid", apartment=SimpleNamespace(), plan=None)))
     runtime = SimpleNamespace(workflow_data={"service": service})
-    monkeypatch.setattr(web, "_miniapp_context", lambda _: (SimpleNamespace(telegram_bot_username="arenda312bot"), runtime, SimpleNamespace(id=778899), 42))
+    monkeypatch.setattr(web, "_miniapp_context", lambda _: (get_settings(), runtime, SimpleNamespace(id=778899), 42))
     analytics = AsyncMock(side_effect=RuntimeError("Analytics database unavailable"))
     monkeypatch.setattr(web, "_record_funnel", analytics)
     tasks = BackgroundTasks()

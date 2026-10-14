@@ -956,9 +956,13 @@ class PaymentRepository:
     def _approve_request(session, current: PaymentRequest, *, now: datetime, admin_id: int) -> None:
         if admin_id <= 0:
             raise ValueError("Administrator approval is required")
+        PaymentRepository._grant_access(session, current, now=now, actor_id=admin_id)
+
+    @staticmethod
+    def _grant_access(session, current: PaymentRequest, *, now: datetime, actor_id: int | None) -> None:
         current.status = "approved"
         current.approved_at = now
-        current.approved_by = admin_id
+        current.approved_by = actor_id
         current.access_expires_at = expires_at_for(current.plan, now)
         if current.access_expires_at is not None or current.plan == LIFETIME_PLAN:
             session.add(
@@ -1066,9 +1070,9 @@ class PaymentRepository:
             return result.scalar_one_or_none()
 
     async def apply_provider_result(
-        self, payment_id: str, *, succeeded: bool, amount: int | float | None
+        self, payment_id: str, *, succeeded: bool, amount: int | float | None, automatic_access: bool = False
     ) -> tuple[str, PaymentRequest | None]:
-        """Record the provider result without bypassing administrator approval."""
+        """Apply a verified provider result atomically, with optional paid access."""
         async with self.sessions.begin() as session:
             result = await session.execute(
                 select(PaymentRequest)
@@ -1095,6 +1099,11 @@ class PaymentRepository:
                 current.provider_status = "failed"
                 return "failed", current
             current.provider_status = "succeeded"
+            if automatic_access and current.plan == WEEK_PLAN:
+                if current.status == "rejected":
+                    return "rejected", current
+                self._grant_access(session, current, now=datetime.now(timezone.utc), actor_id=None)
+                return "approved", current
             return ("pending" if current.status == "pending" else "awaiting_confirmation"), current
 
     async def pending(self, limit: int = 20) -> list[PaymentRequest]:

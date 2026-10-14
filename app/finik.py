@@ -174,8 +174,7 @@ class FinikClient:
             payload = response.json()
             location = payload.get("url") or payload.get("paymentUrl") or payload.get("redirectUrl")
         if response.status_code not in {200, 201, 302, 303} or not location:
-            detail = response.text[:500]
-            raise RuntimeError(f"Finik create payment failed ({response.status_code}): {detail}")
+            raise RuntimeError(f"Finik create payment failed (HTTP {response.status_code})")
         if not location.startswith("https://"):
             raise RuntimeError("Finik returned an unsafe payment URL")
         return FinikPayment(payment_id=payment_id, url=location)

@@ -121,7 +121,8 @@ def test_ready_checkout_opens_before_waiting_for_payment_request():
     assert html.index("current.openLink(readyUrl)") < html.index("const data = await paymentStart")
     assert "if (paymentStart) await paymentStart" in html
     assert "setInterval" not in html
-    assert "setTimeout(poll, 5000)" in html
+    assert "/miniapp/api/watch" in html
+    assert "paymentWatchRunning" in html
 
 
 def test_checkout_configuration_is_script_safe():

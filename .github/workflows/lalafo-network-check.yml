@@ -3,6 +3,13 @@ name: Lalafo cloud network check
 on:
   workflow_dispatch:
     inputs:
+      payment_setup_operation:
+        type: string
+        default: ''
+        description: Secure payment setup (prepare, stage, activate)
+      encrypted_payment_configuration:
+        type: string
+        default: '{}'
       runtime_diagnostics:
         description: Read-only source, publication, repeat and outbox diagnostics
         type: boolean
@@ -64,6 +71,16 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: python -m pip install -r requirements.txt
+      - name: Configure payment credentials without exposing secrets or charging
+        if: inputs.payment_setup_operation != ''
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
+          SETUP_OPERATION: ${{ inputs.payment_setup_operation }}
+          ENCRYPTED_PAYMENT_CONFIGURATION: ${{ inputs.encrypted_payment_configuration }}
+        run: |
+          alembic upgrade head
+          python -m tools.configure_automatic_payments "$SETUP_OPERATION"
       - name: Read shared runtime counters without sending messages or changing data
         if: inputs.runtime_diagnostics
         env:
@@ -110,7 +127,7 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python -m tools.audit_publication_duplicates
       - name: Select verified route without exposing credentials
-        if: ${{ !inputs.verify_campaign_access && !inputs.prepare_campaign_session_key && !inputs.audit_duplicates && !inputs.requested_listing_snapshot && !inputs.verify_renewed_campaign_access && !inputs.register_requested_promotions && !inputs.runtime_diagnostics }}
+        if: ${{ !inputs.verify_campaign_access && !inputs.prepare_campaign_session_key && !inputs.audit_duplicates && !inputs.requested_listing_snapshot && !inputs.verify_renewed_campaign_access && !inputs.register_requested_promotions && !inputs.runtime_diagnostics && !inputs.payment_setup_operation }}
         run: |
           python -m scripts.select_lalafo_proxy > lalafo-route.env
           while IFS= read -r entry; do
@@ -118,7 +135,7 @@ jobs:
           done < lalafo-route.env
           cat lalafo-route.env >> "$GITHUB_ENV"
       - name: Verify actual public search and matching detail access
-        if: ${{ !inputs.verify_campaign_access && !inputs.prepare_campaign_session_key && !inputs.audit_duplicates && !inputs.requested_listing_snapshot && !inputs.verify_renewed_campaign_access && !inputs.register_requested_promotions && !inputs.runtime_diagnostics }}
+        if: ${{ !inputs.verify_campaign_access && !inputs.prepare_campaign_session_key && !inputs.audit_duplicates && !inputs.requested_listing_snapshot && !inputs.verify_renewed_campaign_access && !inputs.register_requested_promotions && !inputs.runtime_diagnostics && !inputs.payment_setup_operation }}
         run: |
           python - <<'PY'
           import asyncio, json, os
