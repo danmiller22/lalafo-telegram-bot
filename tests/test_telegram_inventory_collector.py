@@ -1,4 +1,7 @@
 from unittest.mock import AsyncMock
+from datetime import datetime, timedelta, timezone
+from sqlalchemy import update
+from app.models import Apartment
 
 import pytest
 
@@ -37,3 +40,20 @@ async def test_telegram_collector_rejects_two_rooms_and_skips_published_cards(re
     monkeypatch.setattr("scripts.collect_telegram_inventory.fetch_telegram_apartments", AsyncMock(return_value=[old, two_rooms, make_ad(lalafo_id=-103, source_url="https://t.me/bishkekarendakv/103", rooms="1", phone="+996700000103"), make_ad(lalafo_id=-102, rooms="3", source_url="https://t.me/bishkekarendakv/102")]))
     result = await collect(Settings(), apartments, InventoryRepository(sessions))
     assert result == {"fetched": 4, "stored": 1, "queued": 1}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("hours,expected_stored", [(47,0),(49,1)])
+async def test_new_source_post_of_same_flat_waits_forty_eight_hours(repositories,monkeypatch,hours,expected_stored):
+    monkeypatch.setattr("scripts.collect_telegram_inventory.datetime",datetime)
+    apartments,_,sessions = repositories
+    ad = make_ad(lalafo_id=-201,source_url="https://t.me/bishkekarendakv/201")
+    apartment = await apartments.upsert_discovered(ad)
+    await apartments.mark_published(apartment.id,chat_id=-1001,message_id=201)
+    old = datetime.now(timezone.utc)-timedelta(hours=hours)
+    async with sessions.begin() as s:
+        await s.execute(update(Apartment).where(Apartment.id==apartment.id).values(published_at=old,last_seen_at=old))
+    new_post = ad.model_copy(update={"lalafo_id":-202,"source_url":"https://t.me/bishkekarendakv/202"})
+    monkeypatch.setattr("scripts.collect_telegram_inventory.fetch_telegram_apartments",AsyncMock(return_value=[new_post]))
+    result = await collect(Settings(),apartments,InventoryRepository(sessions))
+    assert result["stored"] == expected_stored

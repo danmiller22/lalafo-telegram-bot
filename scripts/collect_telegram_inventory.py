@@ -4,6 +4,7 @@ import asyncio
 from collections import Counter
 import logging
 import json
+from datetime import datetime, timedelta, timezone
 
 from app.config import get_settings
 from app.database import create_engine_and_session, init_db
@@ -22,7 +23,9 @@ async def collect(settings, apartments, inventory) -> dict[str, int]:
         max_age_hours=48, limit=600, pages_per_channel=30,
     )
     published = await apartments.published_lalafo_ids([ad.lalafo_id for ad in ads])
-    duplicates = await apartments.duplicate_candidate_ids(ads)
+    eligible_repeats = await apartments.repostable_lalafo_ids([ad.lalafo_id for ad in ads], after_hours=48)
+    duplicates = await apartments.duplicate_candidate_ids(ads,
+        repost_before=datetime.now(timezone.utc)-timedelta(hours=48))
     rejected: Counter[str] = Counter()
     stored = 0
     owners_stored = 0
@@ -31,7 +34,7 @@ async def collect(settings, apartments, inventory) -> dict[str, int]:
         if not valid:
             rejected[reason] += 1
             continue
-        if ad.lalafo_id in published or ad.lalafo_id in duplicates:
+        if (ad.lalafo_id in published and ad.lalafo_id not in eligible_repeats) or ad.lalafo_id in duplicates:
             rejected["already_published_or_duplicate"] += 1
             continue
         await apartments.upsert_discovered(ad)

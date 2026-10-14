@@ -107,6 +107,7 @@ class ApartmentRepository:
                             Apartment.telegram_message_id.is_not(None),
                             Apartment.published_at.is_not(None),
                             Apartment.published_at < cutoff,
+                            Apartment.last_seen_at < cutoff,
                         )
                     )
                 ).all()
@@ -459,7 +460,7 @@ class ApartmentRepository:
                     select(Apartment.lalafo_id, Apartment.published_at).where(
                         Apartment.lalafo_id.in_(lalafo_ids),
                         Apartment.publication_status == "published",
-                        Apartment.active.is_(True),
+                        or_(Apartment.active.is_(True), Apartment.availability_reason == "listing_age_limit"),
                         Apartment.published_at.is_not(None),
                         Apartment.published_at <= cutoff,
                     )
@@ -571,6 +572,10 @@ class ApartmentRepository:
                 apartment.source_updated_at = ad.source_updated_at
                 apartment.last_seen_at = now
                 apartment.active = True
+                if apartment.availability_reason == "listing_age_limit":
+                    apartment.availability_status = "active"
+                    apartment.availability_checked_at = now
+                    apartment.availability_reason = "source_revalidated"
             await session.flush()
             await session.refresh(apartment)
             return apartment

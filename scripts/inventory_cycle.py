@@ -104,7 +104,7 @@ async def run(*, force_discovery: bool | None = None) -> int:
     # Schedule existing stock first, but never let that suppress a requested
     # cloud collection.  The previous early return made a manual "collect now"
     # run publish one saved card without actually refreshing either source.
-    period_key = await inventory.claim_discovery(now=now, force=force)
+    period_key = await inventory.claim_discovery(now=now, force=force, lease_minutes=15)
     await engine.dispose()
 
     if period_key is not None:
@@ -113,12 +113,12 @@ async def run(*, force_discovery: bool | None = None) -> int:
         try:
             if settings.run_bot:
                 settings.apartment_detail_concurrency = min(2, settings.apartment_detail_concurrency)
-            code = await discover(
-                discovery_only=True,
-                # Fill a complete day-sized reserve; limit concurrent detail
-                # parsing rather than limiting the inventory to twenty cards.
-                candidate_pool_limit_override=96 if settings.run_bot else None,
-            )
+            async with asyncio.timeout(300):
+                code = await discover(
+                    discovery_only=True,
+                    candidate_pool_limit_override=96 if settings.run_bot else None,
+                    collection_budget_seconds=180,
+                )
         except Exception as exc:
             raised_error = type(exc).__name__
             logger.exception("Large apartment discovery failed; existing inventory retained")

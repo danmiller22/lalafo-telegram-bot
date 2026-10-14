@@ -72,7 +72,12 @@ class AvailabilityService:
             deadline = published_at + timedelta(days=MAX_LISTING_AGE_DAYS)
             status = "active" if now < deadline else "unavailable"
             reason = "publication_age_window" if status == "active" else "listing_age_limit"
-            if force or apartment.availability_status != status or apartment.active != (status == "active"):
+            seen = getattr(apartment, "last_seen_at", None)
+            if seen is not None and seen.tzinfo is None:
+                seen = seen.replace(tzinfo=timezone.utc)
+            fresh_revalidation = (status == "unavailable" and apartment.availability_reason == "source_revalidated"
+                and seen is not None and seen > now - timedelta(days=MAX_LISTING_AGE_DAYS))
+            if not fresh_revalidation and (force or apartment.availability_status != status or apartment.active != (status == "active")):
                 await self.apartments.set_availability(
                     apartment_id, status=status, checked_at=now, reason=reason,
                 )
