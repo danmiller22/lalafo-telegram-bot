@@ -1348,6 +1348,7 @@ async def health() -> JSONResponse:
                 "timezone": "Asia/Bishkek", "spacing_minutes": 18, "watermark_check": False,
                 "seller_mix": {"owner": 1 - REALTOR_DAILY_SHARE, "realtor": REALTOR_DAILY_SHARE},
                 "single_photo_duplicate_guard": True,
+                "requested_cards": {"total_publications": 3, "duration_hours": 24, "minimum_gap_hours": 6, "included_in_daily_target": True},
                 "telegram_source_channels": len(settings.telegram_source_channels),
             },
             "apartment_scheduler": (

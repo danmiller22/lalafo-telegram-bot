@@ -201,6 +201,34 @@ class ApartmentInventoryQueue(Base):
     apartment: Mapped[Apartment] = relationship()
 
 
+class RequestedCardPromotion(Base):
+    """Explicitly requested cards that may bypass the ordinary 48-hour cooldown."""
+
+    __tablename__ = "requested_card_promotions"
+    apartment_id: Mapped[int] = mapped_column(ForeignKey("apartments.id", ondelete="CASCADE"), primary_key=True)
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+
+class RequestedCardPublication(Base):
+    """Acknowledged messages, including the initial send, never send attempts."""
+
+    __tablename__ = "requested_card_publications"
+    __table_args__ = (
+        UniqueConstraint("telegram_chat_id", "telegram_message_id", name="uq_requested_card_receipt"),
+        Index("ix_requested_card_publication_day", "published_at", "apartment_id"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    apartment_id: Mapped[int] = mapped_column(ForeignKey("apartments.id", ondelete="CASCADE"), nullable=False, index=True)
+    telegram_chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    telegram_message_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    seller_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    district: Mapped[str | None] = mapped_column(String(255))
+    price: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
 class ApartmentDiscoveryRun(Base):
     """Lease and outcome for one 00:00/12:00 Bishkek discovery period."""
 

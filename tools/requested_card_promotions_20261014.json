@@ -1,0 +1,70 @@
+{
+  "chat_id": -1004389602150,
+  "cards": [
+    {
+      "source_id": 117259118,
+      "receipts": [
+        {
+          "message_id": 44840,
+          "published_at": "2026-10-13T23:20:23+00:00"
+        },
+        {
+          "message_id": 45068,
+          "published_at": "2026-10-14T09:15:49+00:00"
+        }
+      ]
+    },
+    {
+      "source_id": 111455613,
+      "receipts": [
+        {
+          "message_id": 44845,
+          "published_at": "2026-10-13T23:20:28+00:00"
+        },
+        {
+          "message_id": 45073,
+          "published_at": "2026-10-14T09:15:56+00:00"
+        }
+      ]
+    },
+    {
+      "source_id": 116922177,
+      "receipts": [
+        {
+          "message_id": 44884,
+          "published_at": "2026-10-13T23:21:12+00:00"
+        },
+        {
+          "message_id": 45082,
+          "published_at": "2026-10-14T09:16:03+00:00"
+        }
+      ]
+    },
+    {
+      "source_id": 117195714,
+      "receipts": [
+        {
+          "message_id": 44889,
+          "published_at": "2026-10-13T23:21:19+00:00"
+        },
+        {
+          "message_id": 45087,
+          "published_at": "2026-10-14T09:16:11+00:00"
+        }
+      ]
+    },
+    {
+      "source_id": 69284467,
+      "receipts": [
+        {
+          "message_id": 44902,
+          "published_at": "2026-10-13T23:21:38+00:00"
+        },
+        {
+          "message_id": 45095,
+          "published_at": "2026-10-14T09:16:23+00:00"
+        }
+      ]
+    }
+  ]
+}

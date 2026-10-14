@@ -8,7 +8,8 @@ from aiogram import Bot
 
 from app.config import get_settings
 from app.database import create_engine_and_session, init_db
-from app.inventory import InventoryRepository, REPOST_AFTER_HOURS, as_utc
+from app.inventory import InventoryRepository, REPOST_AFTER_HOURS, as_utc, publication_day_start
+from app.promotions import REQUESTED_WINDOW_PREFIX, requested_send_allowed
 from app.lalafo.client import LalafoClient, LalafoError, LalafoNotFound
 from app.lalafo.parser import LalafoParseError, is_allowed
 from app.payments.repository import ApartmentRepository
@@ -94,12 +95,26 @@ async def run(
         return 0
 
     apartment = item.apartment
+    is_requested = item.window_key.startswith(REQUESTED_WINDOW_PREFIX)
+    if is_requested:
+        now = datetime.now(timezone.utc)
+        start = publication_day_start(now).astimezone(timezone.utc)
+        if not await requested_send_allowed(
+            sessions, apartment_id=apartment.id, now=now, day_start=start,
+            day_end=start + timedelta(hours=21),
+        ):
+            return await _skip_and_continue(
+                inventory=inventory, item_id=item.id, engine=engine,
+                error="requested_limit_or_gap", eligible_until=eligible_until,
+                remaining_skips=_remaining_skips,
+            )
     is_repeat = apartment.publication_status == "published"
     stored = apartment_to_ad(apartment)
     ad = None
+    stored_fallback = False
     if apartment.source_url.startswith("https://t.me/"):
         source_updated = as_utc(apartment.source_updated_at or apartment.updated_at)
-        if source_updated < datetime.now(timezone.utc) - timedelta(hours=168):
+        if not is_requested and source_updated < datetime.now(timezone.utc) - timedelta(hours=168):
             return await _skip_and_continue(
                 inventory=inventory,
                 item_id=item.id,
@@ -108,6 +123,19 @@ async def run(
                 eligible_until=eligible_until,
                 remaining_skips=_remaining_skips,
             )
+        if is_requested:
+            from app.availability import AvailabilityService
+            status, source_reason = await AvailabilityService(apartments, settings).check_source(apartment.source_url)
+            if status == "unavailable":
+                await apartments.set_availability(apartment.id, status=status,
+                    checked_at=datetime.now(timezone.utc), reason=source_reason)
+                return await _skip_and_continue(inventory=inventory, item_id=item.id,
+                    engine=engine, error=source_reason, eligible_until=eligible_until,
+                    remaining_skips=_remaining_skips)
+            if status != "active":
+                await inventory.retry_item(item.id, error=source_reason)
+                await engine.dispose()
+                return 0
         ad = stored
     else:
         try:
@@ -118,7 +146,11 @@ async def run(
             ) as client:
                 ad = await client.detail(apartment.source_url)
         except LalafoNotFound:
-            await apartments.mark_inactive(apartment.id)
+            if is_requested:
+                await apartments.set_availability(apartment.id, status="unavailable",
+                    checked_at=datetime.now(timezone.utc), reason="source_removed")
+            else:
+                await apartments.mark_inactive(apartment.id)
             return await _skip_and_continue(
                 inventory=inventory,
                 item_id=item.id,
@@ -133,6 +165,7 @@ async def run(
                 hours=STORED_FALLBACK_MAX_AGE_HOURS
             ):
                 ad = stored
+                stored_fallback = True
             else:
                 return await _skip_and_continue(
                     inventory=inventory,
@@ -145,6 +178,12 @@ async def run(
 
     assert ad is not None
     valid, reason = _valid(ad, settings)
+    # Hand-picked cards may legitimately have a different budget/room count;
+    # source, whole-apartment, structure and lodging protections still apply.
+    if is_requested and reason in {"rooms", "min_price", "max_price", "price"}:
+        valid = (is_supported_source(ad) and not is_excluded_agency(ad)
+                 and bool(ad.photo_urls) and bool(ad.phone)
+                 and ad.price > 0 and ad.no_subletting and not is_substandard_structure(ad))
     if not valid:
         return await _skip_and_continue(
             inventory=inventory,
@@ -154,7 +193,7 @@ async def run(
             eligible_until=eligible_until,
             remaining_skips=_remaining_skips,
         )
-    if await apartments.is_duplicate(
+    if not is_requested and await apartments.is_duplicate(
         ad,
         repost_before=(datetime.now(timezone.utc) - timedelta(hours=REPOST_AFTER_HOURS))
         if is_repeat else None,
@@ -172,9 +211,22 @@ async def run(
     # endpoint temporarily omits it.
     if not ad.phone:
         ad = ad.model_copy(update={"phone": stored.phone})
-    apartment = await apartments.upsert_discovered(
-        ad, discovery_priority=apartment.discovery_priority
-    )
+    if not (is_requested and stored_fallback):
+        apartment = await apartments.upsert_discovered(
+            ad, discovery_priority=apartment.discovery_priority
+        )
+    if is_requested:
+        now = datetime.now(timezone.utc)
+        start = publication_day_start(now).astimezone(timezone.utc)
+        if not await requested_send_allowed(
+            sessions, apartment_id=apartment.id, now=now, day_start=start,
+            day_end=start + timedelta(hours=21),
+        ):
+            return await _skip_and_continue(
+                inventory=inventory, item_id=item.id, engine=engine,
+                error="requested_limit_or_gap", eligible_until=eligible_until,
+                remaining_skips=_remaining_skips,
+            )
     bot = Bot(token=settings.require_bot_token())
     publisher = TelegramPublisher(
         bot,
@@ -194,6 +246,7 @@ async def run(
                 apartment.id,
                 chat_id=settings.telegram_group_id,
                 message_id=message.message_id,
+                acknowledged_at=getattr(message, "date", None),
             )
         except Exception:
             logger.exception(

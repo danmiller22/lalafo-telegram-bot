@@ -19,6 +19,7 @@ from app.models import (
 from app.state import normalized_district
 from app.listing_quality import district_priority, price_bucket, mix_prices
 from app.telegram.formatting import is_supported_source
+from app.promotions import publications_in_window, queue_due_promotions, REQUESTED_WINDOW_PREFIX
 
 
 BISHKEK = ZoneInfo("Asia/Bishkek")
@@ -880,6 +881,7 @@ class InventoryRepository:
                 .where(
                     ApartmentInventoryQueue.status == "queued",
                     ApartmentInventoryQueue.apartment_id.in_(ineligible_apartment_ids),
+                    ~ApartmentInventoryQueue.window_key.startswith(REQUESTED_WINDOW_PREFIX),
                 )
                 .values(status="skipped", last_error="publication_filter")
             )
@@ -893,6 +895,12 @@ class InventoryRepository:
             )
             if active_publication:
                 return None
+            # The same transactional claim serializes normal and promoted
+            # cards across the live service and GitHub workers.
+            reserved_promotions = await queue_due_promotions(
+                session, now=now, day_start=day_start,
+                day_end=(day_start_local + timedelta(hours=21)).astimezone(timezone.utc),
+            )
             latest_queue_publication = await session.scalar(
                 select(func.max(ApartmentInventoryQueue.published_at)).where(
                     ApartmentInventoryQueue.status == "published",
@@ -912,18 +920,8 @@ class InventoryRepository:
                 )
                 if value is not None
             ]
-            published_today = int(
-                await session.scalar(
-                    select(func.count())
-                    .select_from(Apartment)
-                    .where(
-                        Apartment.publication_status == "published",
-                        Apartment.published_at >= day_start,
-                        Apartment.published_at < day_end,
-                    )
-                )
-                or 0
-            )
+            day_publications = await publications_in_window(session, day_start, day_end)
+            published_today = len(day_publications)
             overdue_count = int(await session.scalar(
                 select(func.count()).select_from(ApartmentInventoryQueue).where(
                     ApartmentInventoryQueue.status == "queued",
@@ -941,28 +939,8 @@ class InventoryRepository:
                 return None
             if published_today >= MAX_PUBLICATIONS_PER_DAY:
                 return None
-            published_non_owners = int(
-                await session.scalar(
-                    select(func.count())
-                    .select_from(Apartment)
-                    .where(
-                        Apartment.publication_status == "published",
-                        Apartment.published_at >= day_start,
-                        Apartment.published_at < day_end,
-                        func.coalesce(Apartment.seller_type, "unknown") == "realtor",
-                    )
-                )
-                or 0
-            )
-            published_districts = (
-                await session.scalars(
-                    select(Apartment.district).where(
-                        Apartment.publication_status == "published",
-                        Apartment.published_at >= day_start,
-                        Apartment.published_at < day_end,
-                    )
-                )
-            ).all()
+            published_non_owners = sum(row.seller_type == 'realtor' for row in day_publications)
+            published_districts = [row.district for row in day_publications]
             published_central = sum(is_central(value) for value in published_districts)
             due_rows = (
                 await session.execute(
@@ -971,6 +949,7 @@ class InventoryRepository:
                         Apartment.district,
                         Apartment.seller_type,
                         Apartment.price,
+                        ApartmentInventoryQueue.window_key,
                     )
                     .join(Apartment)
                     .where(
@@ -979,8 +958,10 @@ class InventoryRepository:
                             (ApartmentInventoryQueue.last_error.is_(None)) & (ApartmentInventoryQueue.scheduled_at <= eligible_until),
                             (ApartmentInventoryQueue.last_error.is_not(None)) & (ApartmentInventoryQueue.scheduled_at <= now),
                         ),
-                        Apartment.rooms.in_(ALLOWED_ROOMS),
-                        Apartment.price.between(25_000, 40_000),
+                        or_(
+                            ApartmentInventoryQueue.window_key.startswith(REQUESTED_WINDOW_PREFIX),
+                            Apartment.rooms.in_(ALLOWED_ROOMS) & Apartment.price.between(25_000, 40_000),
+                        ),
                         _supported_source_filter(),
                     )
                     .order_by(
@@ -992,6 +973,14 @@ class InventoryRepository:
             ).all()
             if not due_rows:
                 return None
+            # Leave room for repeats that become due later today. They belong
+            # to the same 70-card plan, rather than being added above it.
+            if published_today >= MAX_PUBLICATIONS_PER_DAY - reserved_promotions:
+                due_rows = [row for row in due_rows if row[4].startswith(REQUESTED_WINDOW_PREFIX)]
+                if not due_rows:
+                    return None
+            requested_rows = [row for row in due_rows if row[4].startswith(REQUESTED_WINDOW_PREFIX)]
+            due_rows = requested_rows or due_rows
             central_needed = published_central < math.ceil(
                 (published_today + 1) * CENTRAL_DAILY_SHARE
             )
@@ -1003,15 +992,10 @@ class InventoryRepository:
             due_rows = balanced_rows or due_rows
             area_rows = [row for row in due_rows if is_central(row[1]) == central_needed]
             due_rows = area_rows or due_rows
-            recent_prices = list((await session.scalars(
-                select(Apartment.price).where(
-                    Apartment.publication_status == "published",
-                    Apartment.published_at >= day_start,
-                    Apartment.published_at <= now,
-                ).order_by(Apartment.published_at.desc(), Apartment.id.desc()).limit(6)
-            )).all())
+            recent_prices = [row.price for row in day_publications if as_utc(row.published_at) <= now][:6]
             recent_buckets = [price_bucket(price) for price in recent_prices]
             selected_id = min(due_rows, key=lambda row: (
+                not row[4].startswith(REQUESTED_WINDOW_PREFIX),
                 -district_priority(row[1]),
                 bool(recent_buckets) and price_bucket(row[3]) == recent_buckets[0],
                 recent_buckets.count(price_bucket(row[3])),
