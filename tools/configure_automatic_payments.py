@@ -23,7 +23,13 @@ async def run(operation):
         await init_db(engine)
         secret = settings.require_callback_secret()
         encryption = cipher(secret)
-        if operation == "prepare":
+        if operation == "retire":
+            async with sessions.begin() as s:
+                row = await s.get(PaymentRuntimeConfig, TRANSFER_KEY, with_for_update=True)
+                if row is not None:
+                    await s.delete(row)
+            print("PAYMENT_SETUP=transfer_retired_without_activation")
+        elif operation == "prepare":
             key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
             pem = key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
             async with sessions.begin() as s:
@@ -64,5 +70,5 @@ async def run(operation):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("operation", choices=["prepare","stage","activate"])
+    parser.add_argument("operation", choices=["prepare","stage","activate","retire"])
     asyncio.run(run(parser.parse_args().operation))

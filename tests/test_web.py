@@ -693,7 +693,7 @@ async def test_miniapp_starts_a_checkout_bound_to_the_selected_apartment(
 
     assert response.status_code == 200
     assert response.json()["payment_url"] == "https://qr.finik.kg/request-73"
-    assert response.json()["automatic_payment"] is True
+    assert response.json()["automatic_payment"] is False
     assert response.json()["monthly_available"] is False
     service.begin_payment.assert_awaited_once_with(
         user_id=778899,

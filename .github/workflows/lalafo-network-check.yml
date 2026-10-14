@@ -81,6 +81,11 @@ jobs:
         run: |
           alembic upgrade head
           python -m tools.configure_automatic_payments "$SETUP_OPERATION"
+      - name: Remove only unused payment configuration preparation
+        if: inputs.payment_setup_operation == 'retire'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: alembic downgrade 0031_payment_notification_lease
       - name: Read shared runtime counters without sending messages or changing data
         if: inputs.runtime_diagnostics
         env:
