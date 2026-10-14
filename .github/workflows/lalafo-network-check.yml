@@ -3,6 +3,10 @@ name: Lalafo cloud network check
 on:
   workflow_dispatch:
     inputs:
+      runtime_diagnostics:
+        description: Read-only source, publication, repeat and outbox diagnostics
+        type: boolean
+        default: false
       register_requested_promotions:
         description: Register the five explicitly requested cards for three sends within 24 hours
         type: boolean
@@ -56,6 +60,11 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: python -m pip install -r requirements.txt
+      - name: Read shared runtime counters without sending messages or changing data
+        if: inputs.runtime_diagnostics
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python -m tools.runtime_diagnostics
       - name: Register requested Telegram cards using actual publication receipts
         if: inputs.register_requested_promotions
         env:
@@ -97,7 +106,7 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python -m tools.audit_publication_duplicates
       - name: Select verified route without exposing credentials
-        if: ${{ !inputs.verify_campaign_access && !inputs.prepare_campaign_session_key && !inputs.audit_duplicates && !inputs.requested_listing_snapshot && !inputs.verify_renewed_campaign_access && !inputs.register_requested_promotions }}
+        if: ${{ !inputs.verify_campaign_access && !inputs.prepare_campaign_session_key && !inputs.audit_duplicates && !inputs.requested_listing_snapshot && !inputs.verify_renewed_campaign_access && !inputs.register_requested_promotions && !inputs.runtime_diagnostics }}
         run: |
           python -m scripts.select_lalafo_proxy > lalafo-route.env
           while IFS= read -r entry; do
@@ -105,7 +114,7 @@ jobs:
           done < lalafo-route.env
           cat lalafo-route.env >> "$GITHUB_ENV"
       - name: Verify actual public search and matching detail access
-        if: ${{ !inputs.verify_campaign_access && !inputs.prepare_campaign_session_key && !inputs.audit_duplicates && !inputs.requested_listing_snapshot && !inputs.verify_renewed_campaign_access && !inputs.register_requested_promotions }}
+        if: ${{ !inputs.verify_campaign_access && !inputs.prepare_campaign_session_key && !inputs.audit_duplicates && !inputs.requested_listing_snapshot && !inputs.verify_renewed_campaign_access && !inputs.register_requested_promotions && !inputs.runtime_diagnostics }}
         run: |
           python - <<'PY'
           import asyncio, json, os

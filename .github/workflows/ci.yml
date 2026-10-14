@@ -9,6 +9,20 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: arenda_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -18,6 +32,13 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: pip install -r requirements.txt
       - run: pytest -q
+      - name: Validate PostgreSQL migration and concurrent requests
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/arenda_test
+          POSTGRES_TEST_URL: postgresql://postgres:postgres@localhost:5432/arenda_test
+        run: |
+          alembic upgrade head
+          pytest -q tests/test_postgres_audit.py
       - name: Validate SQLite migration
         env:
           DATABASE_URL: sqlite:///data/ci-migration.db

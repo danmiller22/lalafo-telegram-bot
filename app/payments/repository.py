@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from datetime import datetime, timedelta, timezone
 from pathlib import PurePosixPath
 from urllib.parse import urlsplit
+from uuid import uuid4
 
 from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
@@ -11,9 +13,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from app.lalafo.models import PHONE_SOURCE_VERSION, LalafoAd
+from app.listing_lifecycle import listing_expired
 from app.models import Apartment, ApartmentInventoryQueue, DailyFeaturedPublication, PaymentHistory, PaymentRequest
 from app.payment_plans import LIFETIME_PLAN, MONTH_PLAN, WEEK_PLAN, expires_at_for, plan_price
-from app.state import ad_fingerprint, same_listing
+from app.state import ListingIndex, ad_fingerprint
 from app.telegram.keyboards import APARTMENT_KEYBOARD_VERSION
 
 
@@ -468,31 +471,11 @@ class ApartmentRepository:
                 if published_at is not None
             }
 
-    async def is_duplicate(
-        self, ad: LalafoAd, *, repost_before: datetime | None = None
-    ) -> bool:
-        async with self.sessions() as session:
-            published = (
-                await session.scalars(
-                    select(Apartment).where(
-                        Apartment.publication_status == "published",
-                        or_(Apartment.rooms == ad.rooms, Apartment.lalafo_id == ad.lalafo_id),
-                    )
-                )
-            ).all()
-        if repost_before is not None:
-            # A queued repeat is permission to reuse an old card, never to
-            # bypass newer publications of the same apartment under any ID.
-            published = [
-                item for item in published
-                if item.published_at is None
-                or (item.published_at.replace(tzinfo=timezone.utc)
-                    if item.published_at.tzinfo is None else item.published_at)
-                > repost_before
-            ]
-        return any(same_listing(ad, apartment) for apartment in published)
+    async def is_duplicate(self, ad: LalafoAd, *, repost_before: datetime | None = None) -> bool:
+        return ad.lalafo_id in await self.duplicate_candidate_ids([ad], repost_before=repost_before)
 
-    async def duplicate_candidate_ids(self, ads: list[LalafoAd]) -> set[int]:
+
+    async def duplicate_candidate_ids(self, ads: list[LalafoAd], *, repost_before: datetime | None = None) -> set[int]:
         """Resolve all ID/fingerprint/contact duplicates in one database trip."""
         if not ads:
             return set()
@@ -500,21 +483,31 @@ class ApartmentRepository:
         lalafo_ids = {ad.lalafo_id for ad in ads}
         async with self.sessions() as session:
             published = (
-                await session.scalars(
-                    select(Apartment).where(
+                await session.execute(
+                    select(Apartment.lalafo_id, Apartment.rooms, Apartment.district,
+                           Apartment.price, Apartment.phone, Apartment.photo_urls).where(
                         Apartment.publication_status == "published",
                         or_(Apartment.rooms.in_(rooms), Apartment.lalafo_id.in_(lalafo_ids)),
+                        or_(Apartment.published_at.is_(None), Apartment.published_at > repost_before)
+                        if repost_before is not None else True,
                     )
                 )
             ).all()
-        return {
-            ad.lalafo_id
-            for ad in ads
-            if any(same_listing(ad, apartment) for apartment in published)
-        }
+        index = ListingIndex(published)
+        return {ad.lalafo_id for ad in ads if index.contains(ad)}
 
     async def upsert_discovered(
         self, ad: LalafoAd, *, discovery_priority: bool = False
+    ) -> Apartment:
+        try:
+            return await self._upsert_discovered_once(ad, discovery_priority=discovery_priority)
+        except IntegrityError:
+            # Independent collectors can discover the same source simultaneously.
+            # The losing insert reads and updates the row created by the winner.
+            return await self._upsert_discovered_once(ad, discovery_priority=discovery_priority)
+
+    async def _upsert_discovered_once(
+        self, ad: LalafoAd, *, discovery_priority: bool
     ) -> Apartment:
         if not ad.district and ad.price >= 25_000:
             ad = ad.model_copy(update={"district": "Центр"})
@@ -522,7 +515,7 @@ class ApartmentRepository:
         now = datetime.now(timezone.utc)
         async with self.sessions.begin() as session:
             result = await session.execute(
-                select(Apartment).where(Apartment.lalafo_id == ad.lalafo_id)
+                select(Apartment).where(Apartment.lalafo_id == ad.lalafo_id).with_for_update()
             )
             apartment = result.scalar_one_or_none()
             if apartment is None:
@@ -646,7 +639,7 @@ class ApartmentRepository:
                     update(ApartmentInventoryQueue)
                     .where(
                         ApartmentInventoryQueue.apartment_id == apartment_id,
-                        ApartmentInventoryQueue.status.in_(("queued", "claimed")),
+                        ApartmentInventoryQueue.status.in_(("queued", "publishing")),
                     )
                     .values(status="skipped", last_error="source_unavailable")
                 )
@@ -785,6 +778,7 @@ class PaymentRepository:
                 apartment is None
                 or not apartment.phone
                 or apartment.availability_status == "unavailable"
+                or listing_expired(apartment)
             ):
                 raise LookupError("Apartment is unavailable")
             result = await session.execute(
@@ -839,6 +833,8 @@ class PaymentRepository:
                 request.rejected_at = None
                 request.rejected_by = None
                 request.admin_message_id = None
+                request.admin_notification_token = None
+                request.admin_notification_claimed_at = None
                 request.provider_payment_id = None
                 request.provider_payment_url = None
                 request.provider_status = None
@@ -883,42 +879,55 @@ class PaymentRepository:
                 .values(admin_message_id=message_id)
             )
 
-    async def claim_admin_notification(self, request_id: int) -> bool:
+    @staticmethod
+    def _notification_due(now: datetime):
+        return or_(
+            PaymentRequest.admin_message_id.is_(None),
+            and_(PaymentRequest.admin_message_id == -1,
+                or_(PaymentRequest.admin_notification_claimed_at.is_(None),
+                    PaymentRequest.admin_notification_claimed_at <= now - timedelta(minutes=5))),
+        )
+
+    async def claim_admin_notification(self, request_id: int, *, token: str | None = None) -> bool:
         """Atomically reserve one admin notification send for a pending request."""
+        now = datetime.now(timezone.utc)
         async with self.sessions.begin() as session:
             result = await session.execute(
                 update(PaymentRequest)
                 .where(
                     PaymentRequest.id == request_id,
                     PaymentRequest.status == "pending",
-                    PaymentRequest.admin_message_id.is_(None),
+                    self._notification_due(now),
                 )
-                .values(admin_message_id=-1)
+                .values(admin_message_id=-1, admin_notification_token=token or uuid4().hex,
+                        admin_notification_claimed_at=now)
             )
             return result.rowcount == 1
 
-    async def finish_admin_notification(self, request_id: int, message_id: int) -> bool:
+    async def finish_admin_notification(self, request_id: int, message_id: int, *, token: str | None = None) -> bool:
         async with self.sessions.begin() as session:
+            conditions = [PaymentRequest.id == request_id, PaymentRequest.admin_message_id == -1]
+            if token is not None:
+                conditions.append(PaymentRequest.admin_notification_token == token)
             result = await session.execute(
                 update(PaymentRequest)
-                .where(
-                    PaymentRequest.id == request_id,
-                    PaymentRequest.admin_message_id == -1,
-                )
-                .values(admin_message_id=message_id)
+                .where(*conditions)
+                .values(admin_message_id=message_id, admin_notification_token=None,
+                        admin_notification_claimed_at=None)
             )
             return result.rowcount == 1
 
-    async def release_admin_notification(self, request_id: int) -> None:
+    async def release_admin_notification(self, request_id: int, *, token: str | None = None) -> None:
         """Allow a later click to retry after Telegram notification failure."""
         async with self.sessions.begin() as session:
+            conditions = [PaymentRequest.id == request_id, PaymentRequest.admin_message_id == -1]
+            if token is not None:
+                conditions.append(PaymentRequest.admin_notification_token == token)
             await session.execute(
                 update(PaymentRequest)
-                .where(
-                    PaymentRequest.id == request_id,
-                    PaymentRequest.admin_message_id == -1,
-                )
-                .values(admin_message_id=None)
+                .where(*conditions)
+                .values(admin_message_id=None, admin_notification_token=None,
+                        admin_notification_claimed_at=None)
             )
 
 
@@ -974,7 +983,7 @@ class PaymentRepository:
         async with self.sessions() as session:
             return list((await session.scalars(
                 select(PaymentRequest)
-                .where(PaymentRequest.status == "pending", PaymentRequest.admin_message_id.is_(None))
+                .where(PaymentRequest.status == "pending", self._notification_due(datetime.now(timezone.utc)))
                 .order_by(PaymentRequest.created_at.asc())
                 .limit(limit)
             )).all())
@@ -988,7 +997,7 @@ class PaymentRepository:
     ) -> PaymentRequest:
         """Reserve a stable Finik id and replace links from an old merchant."""
         async with self.sessions.begin() as session:
-            current = await session.get(PaymentRequest, request_id)
+            current = await session.get(PaymentRequest, request_id, with_for_update=True)
             if current is None:
                 raise LookupError("Payment request is unavailable")
             expected_statuses = (
@@ -1005,16 +1014,17 @@ class PaymentRepository:
             now = datetime.now(timezone.utc)
             created_at = current.created_at.replace(tzinfo=timezone.utc) if current.created_at.tzinfo is None else current.created_at
             checkout_expired = (
-                current.plan == LIFETIME_PLAN
-                and current.status in {"prepared", "awaiting_receipt"}
+                current.status in {"prepared", "awaiting_receipt"}
                 and current.provider_payment_id is not None
                 and now - created_at >= timedelta(minutes=5)
+                and current.provider_status != "succeeded"
             )
-            if not current.provider_payment_id or configuration_changed or checkout_expired:
+            if current.status != "approved" and current.provider_status != "succeeded" and (
+                not current.provider_payment_id or configuration_changed or checkout_expired
+            ):
                 current.provider_payment_id = payment_id
                 current.provider_payment_url = None
-                if current.plan == LIFETIME_PLAN:
-                    current.created_at = now
+                current.created_at = now
                 current.provider_status = (
                     f"created:{configuration_id}" if configuration_id else "created"
                 )
@@ -1031,18 +1041,22 @@ class PaymentRepository:
         payment_url: str,
         *,
         configuration_id: str | None = None,
-    ) -> None:
+        payment_id: str | None = None,
+    ) -> bool:
         async with self.sessions.begin() as session:
-            await session.execute(
-                update(PaymentRequest)
-                .where(PaymentRequest.id == request_id)
-                .values(
-                    provider_payment_url=payment_url,
-                    provider_status=(
-                        f"waiting:{configuration_id}" if configuration_id else "waiting"
-                    ),
-                )
+            statement = update(PaymentRequest).where(PaymentRequest.id == request_id)
+            if payment_id is not None:
+                statement = statement.where(PaymentRequest.provider_payment_id == payment_id)
+            # A slow checkout response must not erase an acknowledged payment.
+            result = await session.execute(
+                statement.where(
+                    PaymentRequest.status != "approved",
+                    or_(PaymentRequest.provider_status.is_(None),
+                        PaymentRequest.provider_status.not_in(("succeeded", "amount_mismatch", "failed"))),
+                ).values(provider_payment_url=payment_url,
+                    provider_status=f"waiting:{configuration_id}" if configuration_id else "waiting")
             )
+            return result.rowcount == 1
 
     async def get_by_provider_payment_id(self, payment_id: str) -> PaymentRequest | None:
         async with self.sessions() as session:
@@ -1065,12 +1079,19 @@ class PaymentRepository:
             if current is None:
                 return "missing", None
             expected = plan_price(current.plan)
-            if succeeded and (amount is None or float(amount) != float(expected)):
-                current.provider_status = "amount_mismatch"
+            try:
+                amount_matches = amount is not None and Decimal(str(amount)) == Decimal(expected)
+            except (InvalidOperation, ValueError, TypeError):
+                amount_matches = False
+            if succeeded and not amount_matches:
+                if current.status != "approved" and current.provider_status != "succeeded":
+                    current.provider_status = "amount_mismatch"
                 return "amount_mismatch", current
             if current.status == "approved":
                 return "already_approved", current
             if not succeeded:
+                if current.provider_status == "succeeded":
+                    return "already_succeeded", current
                 current.provider_status = "failed"
                 return "failed", current
             current.provider_status = "succeeded"

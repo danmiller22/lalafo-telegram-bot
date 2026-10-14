@@ -339,7 +339,7 @@ class LalafoClient:
             if self._browser_blocked:
                 raise LalafoAccessError("Browser route was blocked earlier in this cycle")
             html = await self._get_text(detail_url)
-            ad = parse_detail_page(html, source_url=detail_url)
+            ad = await asyncio.to_thread(parse_detail_page, html, source_url=detail_url)
         except LalafoAccessError as exc:
             self._browser_blocked = True
             logger.info("Lalafo browser route blocked; using public detail API: %s", exc)

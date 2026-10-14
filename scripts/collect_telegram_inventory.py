@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections import Counter
 import logging
+import json
 
 from app.config import get_settings
 from app.database import create_engine_and_session, init_db
@@ -54,7 +55,8 @@ async def run() -> int:
     engine, sessions = create_engine_and_session(settings.database_url)
     try:
         await init_db(engine)
-        await collect(settings, ApartmentRepository(sessions), InventoryRepository(sessions))
+        result = await collect(settings, ApartmentRepository(sessions), InventoryRepository(sessions))
+        print("TELEGRAM_COLLECTION_RESULT " + json.dumps({"status": "collected", "exit_code": 0, "configured_channels": len(settings.telegram_source_channels), **result}), flush=True)
         return 0
     finally:
         await engine.dispose()

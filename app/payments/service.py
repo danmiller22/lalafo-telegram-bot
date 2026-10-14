@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from app.models import Apartment, PaymentRequest
+from app.listing_lifecycle import listing_expired
 from app.payments.repository import ApartmentRepository, PaymentRepository, PaymentSubmission
 
 
@@ -29,6 +30,7 @@ class PaymentService:
             apartment is None
             or not apartment.phone
             or apartment.availability_status == "unavailable"
+            or listing_expired(apartment)
         ):
             return ContactResult("unavailable", apartment)
         weekly = await self.payments.active_weekly_access(user_id)

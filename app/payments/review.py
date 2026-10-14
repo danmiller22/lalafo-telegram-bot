@@ -1,6 +1,8 @@
 """Deliver customer payment claims to the configured administrator."""
 from __future__ import annotations
 
+import asyncio
+from uuid import uuid4
 from aiogram import Bot
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -30,7 +32,8 @@ async def notify_payment_admin(
         return False
     if not settings.admin_user_id:
         raise RuntimeError("Payment administrator is not configured")
-    if not await payments.claim_admin_notification(request.id):
+    token = uuid4().hex
+    if not await payments.claim_admin_notification(request.id, token=token):
         return False
     try:
         username = f"@{request.username}" if request.username else "без username"
@@ -41,8 +44,7 @@ async def notify_payment_admin(
                 "Клиент нажал «Я оплатил(а)». Проверьте поступление оплаты.")
         markup = payment_review_keyboard(request.id, signer)
         sent = await bot.send_message(settings.admin_user_id, text, reply_markup=markup)
-        await payments.finish_admin_notification(request.id, sent.message_id)
-        return True
-    except Exception:
-        await payments.release_admin_notification(request.id)
+        return await payments.finish_admin_notification(request.id, sent.message_id, token=token)
+    except (Exception, asyncio.CancelledError):
+        await payments.release_admin_notification(request.id, token=token)
         raise

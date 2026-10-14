@@ -28,6 +28,7 @@ from scripts.scrape_publish import (
 
 
 logger = logging.getLogger(__name__)
+PUBLIC_DETAIL_REFRESH_SECONDS = 45.0
 MAX_TERMINAL_SKIPS_PER_RUN = 100
 STORED_FALLBACK_MAX_AGE_HOURS = 48
 
@@ -58,42 +59,41 @@ def _valid(ad, settings) -> tuple[bool, str]:
     return True, "ok"
 
 
-async def _skip_and_continue(
-    *,
-    inventory: InventoryRepository,
-    item_id: int,
-    engine,
-    error: str,
-    eligible_until: datetime | None,
-    remaining_skips: int,
-) -> int:
+async def _skip(inventory: InventoryRepository, item_id: int, error: str) -> None:
     await inventory.finish_item(item_id, status="skipped", error=error)
-    await engine.dispose()
     logger.info("Skipped queued apartment reason=%s; checking the next due card", error)
-    if remaining_skips <= 0:
-        return 0
-    return await run(
-        eligible_until=eligible_until,
-        _remaining_skips=remaining_skips - 1,
-    )
 
 
 async def run(
     *,
     eligible_until: datetime | None = None,
     _remaining_skips: int = MAX_TERMINAL_SKIPS_PER_RUN,
+    sessions=None,
 ) -> int:
     """Claim due cards until one is published, retryable, or none remain."""
     settings = get_settings()
-    engine, sessions = create_engine_and_session(settings.database_url)
-    await init_db(engine)
-    inventory = InventoryRepository(sessions)
-    apartments = ApartmentRepository(sessions)
-    item = await inventory.claim_due(eligible_until=eligible_until)
-    if item is None:
-        await engine.dispose()
+    engine = None
+    if sessions is None:
+        engine, sessions = create_engine_and_session(settings.database_url)
+    try:
+        if engine is not None:
+            await init_db(engine)
+        inventory = InventoryRepository(sessions)
+        apartments = ApartmentRepository(sessions)
+        for _ in range(max(0, _remaining_skips) + 1):
+            item = await inventory.claim_due(eligible_until=eligible_until)
+            if item is None:
+                return 0
+            result = await _publish_item(settings, sessions, inventory, apartments, item)
+            if result is not None:
+                return result
         return 0
+    finally:
+        if engine is not None:
+            await engine.dispose()
 
+
+async def _publish_item(settings, sessions, inventory, apartments, item) -> int | None:
     apartment = item.apartment
     is_requested = item.window_key.startswith(REQUESTED_WINDOW_PREFIX)
     if is_requested:
@@ -103,11 +103,7 @@ async def run(
             sessions, apartment_id=apartment.id, now=now, day_start=start,
             day_end=start + timedelta(hours=21),
         ):
-            return await _skip_and_continue(
-                inventory=inventory, item_id=item.id, engine=engine,
-                error="requested_limit_or_gap", eligible_until=eligible_until,
-                remaining_skips=_remaining_skips,
-            )
+            return await _skip(inventory, item.id, "requested_limit_or_gap")
     is_repeat = apartment.publication_status == "published"
     stored = apartment_to_ad(apartment)
     ad = None
@@ -115,51 +111,35 @@ async def run(
     if apartment.source_url.startswith("https://t.me/"):
         source_updated = as_utc(apartment.source_updated_at or apartment.updated_at)
         if not is_requested and source_updated < datetime.now(timezone.utc) - timedelta(hours=168):
-            return await _skip_and_continue(
-                inventory=inventory,
-                item_id=item.id,
-                engine=engine,
-                error="stale_telegram",
-                eligible_until=eligible_until,
-                remaining_skips=_remaining_skips,
-            )
+            return await _skip(inventory, item.id, "stale_telegram")
         if is_requested:
             from app.availability import AvailabilityService
             status, source_reason = await AvailabilityService(apartments, settings).check_source(apartment.source_url)
             if status == "unavailable":
                 await apartments.set_availability(apartment.id, status=status,
                     checked_at=datetime.now(timezone.utc), reason=source_reason)
-                return await _skip_and_continue(inventory=inventory, item_id=item.id,
-                    engine=engine, error=source_reason, eligible_until=eligible_until,
-                    remaining_skips=_remaining_skips)
+                return await _skip(inventory, item.id, source_reason)
             if status != "active":
                 await inventory.retry_item(item.id, error=source_reason)
-                await engine.dispose()
                 return 0
         ad = stored
     else:
         try:
-            async with LalafoClient(
-                timeout=settings.http_timeout_seconds,
-                max_retries=settings.http_max_retries,
-                proxy_url=settings.lalafo_proxy_url,
-            ) as client:
-                ad = await client.detail(apartment.source_url)
+            async with asyncio.timeout(PUBLIC_DETAIL_REFRESH_SECONDS):
+                async with LalafoClient(
+                    timeout=settings.http_timeout_seconds,
+                    max_retries=settings.http_max_retries,
+                    proxy_url=settings.lalafo_proxy_url,
+                ) as client:
+                    ad = await client.detail(apartment.source_url)
         except LalafoNotFound:
             if is_requested:
                 await apartments.set_availability(apartment.id, status="unavailable",
                     checked_at=datetime.now(timezone.utc), reason="source_removed")
             else:
                 await apartments.mark_inactive(apartment.id)
-            return await _skip_and_continue(
-                inventory=inventory,
-                item_id=item.id,
-                engine=engine,
-                error="not_found",
-                eligible_until=eligible_until,
-                remaining_skips=_remaining_skips,
-            )
-        except (LalafoError, LalafoParseError, ValueError) as exc:
+            return await _skip(inventory, item.id, "not_found")
+        except (LalafoError, LalafoParseError, ValueError, TimeoutError) as exc:
             last_seen = as_utc(apartment.last_seen_at or apartment.updated_at)
             if last_seen >= datetime.now(timezone.utc) - timedelta(
                 hours=STORED_FALLBACK_MAX_AGE_HOURS
@@ -167,14 +147,7 @@ async def run(
                 ad = stored
                 stored_fallback = True
             else:
-                return await _skip_and_continue(
-                    inventory=inventory,
-                    item_id=item.id,
-                    engine=engine,
-                    error=f"stale_{type(exc).__name__}",
-                    eligible_until=eligible_until,
-                    remaining_skips=_remaining_skips,
-                )
+                return await _skip(inventory, item.id, f"stale_{type(exc).__name__}")
 
     assert ad is not None
     valid, reason = _valid(ad, settings)
@@ -185,27 +158,13 @@ async def run(
                  and bool(ad.photo_urls) and bool(ad.phone)
                  and ad.price > 0 and ad.no_subletting and not is_substandard_structure(ad))
     if not valid:
-        return await _skip_and_continue(
-            inventory=inventory,
-            item_id=item.id,
-            engine=engine,
-            error=reason,
-            eligible_until=eligible_until,
-            remaining_skips=_remaining_skips,
-        )
+        return await _skip(inventory, item.id, reason)
     if not is_requested and await apartments.is_duplicate(
         ad,
         repost_before=(datetime.now(timezone.utc) - timedelta(hours=REPOST_AFTER_HOURS))
         if is_repeat else None,
     ):
-        return await _skip_and_continue(
-            inventory=inventory,
-            item_id=item.id,
-            engine=engine,
-            error="duplicate",
-            eligible_until=eligible_until,
-            remaining_skips=_remaining_skips,
-        )
+        return await _skip(inventory, item.id, "duplicate")
 
     # Keep the private phone from the discovery snapshot if the public detail
     # endpoint temporarily omits it.
@@ -222,11 +181,7 @@ async def run(
             sessions, apartment_id=apartment.id, now=now, day_start=start,
             day_end=start + timedelta(hours=21),
         ):
-            return await _skip_and_continue(
-                inventory=inventory, item_id=item.id, engine=engine,
-                error="requested_limit_or_gap", eligible_until=eligible_until,
-                remaining_skips=_remaining_skips,
-            )
+            return await _skip(inventory, item.id, "requested_limit_or_gap")
     bot = Bot(token=settings.require_bot_token())
     publisher = TelegramPublisher(
         bot,
@@ -265,7 +220,6 @@ async def run(
         return 1
     finally:
         await bot.session.close()
-        await engine.dispose()
 
 
 def main() -> None:

@@ -8,27 +8,28 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
+from sqlalchemy.engine import make_url
 
 from app.models import Base
 
 
 def normalize_database_url(url: str) -> str:
-    if url.startswith("sqlite+aiosqlite://") or url.startswith("postgresql+asyncpg://"):
-        normalized = url
-    elif url.startswith("sqlite://"):
-        normalized = url.replace("sqlite://", "sqlite+aiosqlite://", 1)
-    elif url.startswith("postgres://"):
-        normalized = url.replace("postgres://", "postgresql+asyncpg://", 1)
-    elif url.startswith("postgresql://"):
-        normalized = url.replace("postgresql://", "postgresql+asyncpg://", 1)
-    else:
+    parsed = make_url(url)
+    drivers = {"sqlite": "sqlite+aiosqlite", "sqlite+aiosqlite": "sqlite+aiosqlite",
+               "postgres": "postgresql+asyncpg", "postgresql": "postgresql+asyncpg",
+               "postgresql+asyncpg": "postgresql+asyncpg"}
+    if parsed.drivername not in drivers:
         raise ValueError("DATABASE_URL must use sqlite:// or postgresql://")
-    if normalized.startswith("postgresql+asyncpg://"):
-        normalized = normalized.replace("sslmode=require", "ssl=require")
-        normalized = normalized.replace("&channel_binding=require", "")
-        normalized = normalized.replace("?channel_binding=require&", "?")
-        normalized = normalized.replace("?channel_binding=require", "")
-    return normalized
+    parsed = parsed.set(drivername=drivers[parsed.drivername])
+    if parsed.drivername == "postgresql+asyncpg":
+        query = dict(parsed.query)
+        sslmode = query.pop("sslmode", None)
+        if sslmode is not None:
+            query.setdefault("ssl", sslmode)
+        # asyncpg does not accept libpq's channel_binding option.
+        query.pop("channel_binding", None)
+        parsed = parsed.set(query=query)
+    return parsed.render_as_string(hide_password=False)
 
 
 def create_engine_and_session(

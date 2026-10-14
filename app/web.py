@@ -7,6 +7,7 @@ import secrets
 import inspect
 import json
 import sys
+import shutil
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -196,11 +197,17 @@ async def _finik_checkout_url(
         redirect_url=f"{bot_url}/access?startapp={start_param}",
         webhook_url=settings.require_public_base_url() + "/finik/webhook",
     )
-    await payments.set_provider_payment_url(
+    stored = await payments.set_provider_payment_url(
         prepared.id,
         created.url,
         configuration_id=configuration_id,
+        payment_id=prepared.provider_payment_id,
     )
+    if stored is False:
+        current = await payments.get_request(prepared.id)
+        if current is not None and current.provider_payment_url:
+            return current.provider_payment_url
+        raise RuntimeError("Payment checkout changed while the provider was responding")
     return created.url
 
 
@@ -494,14 +501,14 @@ async def _run_inventory_worker_process_unlocked(
     env = os.environ.copy()
     env["LALAFO_PROXY_URL"] = settings.lalafo_proxy_url
     process_options: dict[str, Any] = {}
-    if os.name != "nt":
-        process_options["preexec_fn"] = lambda: os.nice(15)
+    command = [sys.executable, "-m", module]
+    nice = shutil.which("nice") if os.name != "nt" else None
+    if nice is not None:
+        command = [nice, "-n", "15", *command]
     if report_state is not None:
         process_options["stdout"] = asyncio.subprocess.PIPE
     process = await asyncio.create_subprocess_exec(
-        sys.executable,
-        "-m",
-        module,
+        *command,
         env=env,
         **process_options,
     )
@@ -511,7 +518,7 @@ async def _run_inventory_worker_process_unlocked(
                 assert process.stdout is not None
                 async for line in process.stdout:
                     message = line.decode("utf-8", errors="replace").strip()
-                    if message.startswith("LALAFO_COLLECTION_RESULT "):
+                    if message.startswith(("LALAFO_COLLECTION_RESULT ", "TELEGRAM_COLLECTION_RESULT ")):
                         try:
                             result = json.loads(message.split(" ", 1)[1])
                             if isinstance(result, dict):
@@ -652,25 +659,20 @@ async def _execute_queue_dispatch() -> int:
         last_check_at=_now(),
         last_error=None,
     )
+    apartments = _bot_runtime.workflow_data.get("apartments") if _bot_runtime is not None else None
+    pool_options = {"sessions": apartments.sessions} if apartments is not None else {}
     recent_count, previous_latest = await publication_window_status(
-        window_minutes=180
+        window_minutes=180, **pool_options
     )
     latest_published_at = previous_latest
     exit_code = 0
-    # A queued source can disappear or fail validation between discovery and
-    # publication. Skip a few such rows in the same lightweight tick, but stop
-    # immediately after the first real Telegram publication.
+    # The publisher skips invalid rows within one pool and sends at most one
+    # card. A no-op must not repeat the same claim and schema check four times.
     eligible_until = datetime.now(UTC) + timedelta(minutes=10)
-    for _ in range(4):
-        exit_code = max(
-            exit_code,
-            await publish_one_due(eligible_until=eligible_until),
-        )
-        recent_count, latest_published_at = await publication_window_status(
-            window_minutes=180
-        )
-        if latest_published_at is not None and latest_published_at != previous_latest:
-            break
+    exit_code = await publish_one_due(eligible_until=eligible_until, **pool_options)
+    recent_count, latest_published_at = await publication_window_status(
+        window_minutes=180, **pool_options
+    )
     _apartment_scheduler_state.update(
         running_cycle=False,
         last_exit_code=exit_code,
@@ -717,6 +719,12 @@ async def _inventory_queue_status() -> tuple[int, int, datetime | None]:
                     ApartmentInventoryQueue.status == "queued"
                 )
             )).one()
+            from app.promotions import publications_in_window
+            from app.inventory import publication_day_start
+            day_start = publication_day_start(now).astimezone(UTC)
+            _apartment_scheduler_state["daily_published_count"] = len(
+                await publications_in_window(session, day_start, day_start + timedelta(days=1))
+            )
             return int(row[0]), int(row[1]), row[2]
     finally:
         if engine is not None:
@@ -755,7 +763,8 @@ async def _run_telegram_inventory_collector() -> None:
             _telegram_inventory_state.update(state="collecting", last_check_at=_now(), last_error=None)
             try:
                 code = await _run_inventory_worker_process(
-                    get_settings(), module="scripts.collect_telegram_inventory"
+                    get_settings(), module="scripts.collect_telegram_inventory",
+                    report_state=_telegram_inventory_state,
                 )
                 _telegram_inventory_state.update(
                     state="waiting", last_exit_code=code,
@@ -1454,7 +1463,10 @@ def _miniapp_result_payload(result) -> dict[str, Any]:
             ],
         }
         if result.access_expires_at is not None:
-            local_expiry = result.access_expires_at.astimezone(ZoneInfo("Asia/Bishkek"))
+            expiry = result.access_expires_at
+            if expiry.tzinfo is None:
+                expiry = expiry.replace(tzinfo=UTC)
+            local_expiry = expiry.astimezone(ZoneInfo("Asia/Bishkek"))
             response["expires_at_text"] = local_expiry.strftime("%d.%m.%Y %H:%M")
     return response
 
@@ -1563,7 +1575,7 @@ async def miniapp_prepare_payment(payload: MiniAppRequest) -> dict[str, Any]:
     except Exception as exc:
         logger.exception("Could not prepare Finik checkout")
         raise HTTPException(status_code=503, detail="Не удалось подготовить оплату. Попробуйте ещё раз.") from exc
-    created = prepared.created_at
+    created = prepared.created_at if _uses_dynamic_finik(settings, WEEK_PLAN) else datetime.now(UTC)
     if created.tzinfo is None:
         created = created.replace(tzinfo=UTC)
     return {"payment_url": url, "expires_at_ms": int(created.timestamp() * 1000) + 300_000}
@@ -1575,6 +1587,8 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
     service = runtime.workflow_data["service"]
     await _record_funnel(runtime, user.id, "payment_opened", apartment_id=apartment_id)
     result = await service.contact_status(user.id, apartment_id)
+    if result.status == "approved":
+        return _miniapp_result_payload(result)
     plan = WEEK_PLAN
     payment_url = _finik_payment_url(settings, plan)
     if not payment_url and not _uses_dynamic_finik(settings, plan):

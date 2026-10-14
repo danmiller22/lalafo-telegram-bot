@@ -59,7 +59,10 @@ class TokenSigner:
         if not encoded:
             return None
         try:
-            return base36_decode(encoded)
+            # PostgreSQL apartment IDs are signed 32-bit integers. Reject an
+            # arbitrary public token before it can overflow the database driver.
+            value = base36_decode(encoded)
+            return value if 0 < value <= 2**31 - 1 else None
         except (ValueError, TypeError):
             return None
 
@@ -87,7 +90,8 @@ class TokenSigner:
         if not encoded:
             return None
         try:
-            return base36_decode(encoded)
+            value = base36_decode(encoded)
+            return value if 0 < value <= 2**31 - 1 else None
         except (ValueError, TypeError):
             return None
 
