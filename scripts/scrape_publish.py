@@ -254,6 +254,8 @@ async def fetch_detail_batch(
     clients: list[LalafoClient],
     *,
     cache: dict[int, LalafoAd | None] | None = None,
+    detail_timeout_seconds: float = 30.0,
+    batch_timeout_seconds: float = 45.0,
 ) -> list[tuple[SearchAd, LalafoAd | None]]:
     """Fetch each unique detail once without sharing a rotating HTTP client."""
     unique_search_ads = list(
@@ -267,11 +269,12 @@ async def fetch_detail_batch(
         results = []
         for search_ad in items:
             try:
-                ad = await client.detail(search_ad.detail_url)
+                async with asyncio.timeout(detail_timeout_seconds):
+                    ad = await client.detail(search_ad.detail_url)
             except LalafoNotFound:
                 logger.info("Skipping unavailable ad id=%s", search_ad.lalafo_id)
                 ad = None
-            except (LalafoError, LalafoParseError, ValueError) as exc:
+            except (LalafoError, LalafoParseError, ValueError, TimeoutError) as exc:
                 logger.warning(
                     "Skipping broken ad id=%s error=%s",
                     search_ad.lalafo_id,
@@ -282,10 +285,15 @@ async def fetch_detail_batch(
             cache[search_ad.lalafo_id] = ad
         return results
 
-    await asyncio.gather(
-        *(worker(client, chunk) for client, chunk in zip(clients, chunks) if chunk)
-    )
-    return [(ad, cache[ad.lalafo_id]) for ad in unique_search_ads]
+    try:
+        async with asyncio.timeout(batch_timeout_seconds):
+            await asyncio.gather(
+                *(worker(client, chunk) for client, chunk in zip(clients, chunks) if chunk)
+            )
+    except TimeoutError:
+        logger.warning("Detail batch budget exhausted; keeping completed replies")
+    return [(ad, cache.get(ad.lalafo_id)) for ad in unique_search_ads]
+
 
 
 def is_preferred_district(district: str | None) -> bool:
@@ -623,6 +631,7 @@ async def run(
     candidate_pool_limit_override: int | None = None,
     include_telegram_sources: bool = True,
     discovery_stats: dict[str, Any] | None = None,
+    collection_budget_seconds: float | None = None,
 ) -> int:
     settings = get_settings()
     logging.basicConfig(
@@ -1020,10 +1029,19 @@ async def run(
         # Always inspect at least one page from each operator-approved source.
         # Once the shared pool is full, move to the next source for one page
         # instead of spending the whole cycle on the first, larger query.
+        deadline = (asyncio.get_running_loop().time() + collection_budget_seconds
+                    if collection_budget_seconds is not None else None)
         while len(candidates) < candidate_pool_limit or search_index < len(search_urls) - 1:
+            remaining = deadline - asyncio.get_running_loop().time() if deadline is not None else 3600.0
+            if remaining <= 0:
+                if discovery_stats is not None:
+                    discovery_stats["budget_exhausted"] = True
+                logger.info("Source crawl budget reached; finishing durable partial inventory")
+                break
             try:
-                page = await client.search(search_url, page=page_number)
-            except (LalafoError, LalafoParseError) as exc:
+                async with asyncio.timeout(min(20.0, remaining)):
+                    page = await client.search(search_url, page=page_number)
+            except (LalafoError, LalafoParseError, TimeoutError) as exc:
                 if discovery_stats is not None:
                     discovery_stats["last_source_error"] = {
                         "type": type(exc).__name__,
@@ -1119,7 +1137,9 @@ async def run(
                     continue
                 detail_search_ads.append(search_ad)
 
-            details = await fetch_detail_batch(detail_search_ads, detail_clients, cache=detail_cache)
+            remaining = deadline - asyncio.get_running_loop().time() if deadline is not None else 45.0
+            details = await fetch_detail_batch(detail_search_ads, detail_clients, cache=detail_cache,
+                                               batch_timeout_seconds=max(0.001, min(45.0, remaining)))
             parsed_ads = [ad for _, ad in details if ad is not None]
             duplicate_ids = (
                 await apartments.duplicate_candidate_ids(parsed_ads)

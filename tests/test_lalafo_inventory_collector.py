@@ -12,7 +12,8 @@ pytestmark = pytest.mark.usefixtures("publication_clock")
 
 
 @pytest.mark.asyncio
-async def test_primary_collector_respects_running_github_lease(repositories, monkeypatch):
+@pytest.mark.parametrize("force", [True, False])
+async def test_primary_collector_respects_running_github_lease(repositories, monkeypatch, force):
     _, _, sessions = repositories
     inventory = InventoryRepository(sessions)
     assert await inventory.claim_discovery(now=datetime.now(timezone.utc)) is not None
@@ -20,7 +21,7 @@ async def test_primary_collector_respects_running_github_lease(repositories, mon
     select = AsyncMock()
     monkeypatch.setattr(collector, "discover", discover)
     monkeypatch.setattr(collector, "find_working_proxies", select)
-    assert await collector.collect(Settings(), inventory) == {"status": "not_due", "exit_code": 0}
+    assert await collector.collect(Settings(), inventory, force=force) == {"status": "not_due", "exit_code": 0}
     discover.assert_not_awaited()
     select.assert_not_awaited()
 
@@ -35,6 +36,7 @@ async def test_primary_collector_refills_without_publishing_or_waiting_for_githu
         assert kwargs["discovery_only"]
         assert not kwargs["include_telegram_sources"]
         assert kwargs["candidate_pool_limit_override"] == 96
+        assert kwargs["collection_budget_seconds"] == 180
         assert settings.apartment_detail_concurrency <= 2
         assert settings.lalafo_proxy_url == "http://route-1,http://route-2"
         await apartments.upsert_discovered(make_ad())

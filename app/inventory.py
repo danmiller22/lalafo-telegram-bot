@@ -477,12 +477,8 @@ class InventoryRepository:
                     )
                     return key
                 lease = as_utc(row.lease_until) if row.lease_until else None
-                if (
-                    not force
-                    and row.status == "running"
-                    and lease
-                    and lease > as_utc(now)
-                ):
+                # Operator retries bypass backoff, never another live collector.
+                if row.status == "running" and lease and lease > as_utc(now):
                     return None
                 live_queue_count = int(
                     await session.scalar(
