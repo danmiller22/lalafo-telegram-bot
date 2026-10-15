@@ -10,7 +10,7 @@ from app.models import Apartment,DailyFeaturedPublication
 
 async def main(manifest="tools/lalafo_requested_batch_20261014.json"):
     data=json.loads(Path(manifest).read_text())
-    assert data['owner_profile_id']==18166976 and 1 <= len(data['cards']) <= 20
+    assert data['owner_profile_id'] in {18166976,18193783} and 1 <= len(data['cards']) <= 20
     engine,sessions=create_engine_and_session(get_settings().database_url)
     day=datetime.now(ZoneInfo('Asia/Bishkek')).date()
     try:
@@ -22,6 +22,10 @@ async def main(manifest="tools/lalafo_requested_batch_20261014.json"):
                 row=await session.scalar(select(DailyFeaturedPublication).where(DailyFeaturedPublication.managed_lalafo_ad_id==card['managed_ad_id']))
                 if row is not None:
                     assert row.source_lalafo_id==card['source_id']
+                    row.campaign_id=str(card['campaign_id'])
+                    row.campaign_status='started'
+                    row.campaign_daily_budget=int(card.get('daily_kgs',210)*100)
+                    row.lalafo_publication_status='active'
                     continue
                 slot+=1
                 session.add(DailyFeaturedPublication(business_date=day,slot=slot,source_apartment_id=source.id,

@@ -1,0 +1,25 @@
+{
+  "owner_profile_id": 18193783,
+  "promotion_started_at": "2026-10-15T15:34:11+00:00",
+  "stop_at": "2026-10-16T15:33:11+00:00",
+  "completion_marker": true,
+  "session_key_name": "requested_campaign_expiry_key_20261015_new997_three",
+  "campaigns": [
+    {
+      "ad_id": 117333389,
+      "campaign_id": 44810427
+    },
+    {
+      "ad_id": 117333392,
+      "campaign_id": 44810426
+    },
+    {
+      "ad_id": 117333397,
+      "campaign_id": 44810425
+    }
+  ],
+  "sealed_session": {
+    "wrapped_key": "HbziMa5lOYPUbrQUay/RcswhdyJ3RJn1Ht5dPeziTR2KtVAaBFH7BYL5KwxJvHQteawA9QAUUGpux3jGOCZ7L/5ika1TkQoYO2nttsW9GBmV2DVs7LXeghRZmU0Ecg9MdptUe9Cip6FBQWu5epK9J6OfsSGdjt1P4woyV7bBxKGno297VSHYsRF9pz+fJQSqKSmAWQgMABOOtVZVRgBcmAVzdE9Y9SEBsK55vZ6Vo8hjt9BnMeMx9apedHlkQj1HMVR7k3MK8kwKqg7nto7uuS3eiH8uAuSHJTICIG3yFeSUmR/m0fsA9hRNFb6getXslbKODU1Ex/OW6ngb53qbgw==",
+    "ciphertext": "gAAAAABq0PORPLy1v1YStmwAVQvu3x1VjQ_3RucBl_Q7nS7SAfRLm3S0_yZ8sSF9K3y5cP5_b5MmcfuboT83DeRqH4cx35nrL5gIFcn7dTcG9yii-Yh_87EJNZqaSWJ9tjTjAAkyPqkCPxp3g85WL0j7NuSGuXluums7I8_5In-k7bk6jRKL2dcFOSVECwIEiUP1bElWf8pBc9KL_NOH5fAPQZ0G-5OLGw3dZu1UJjM3vdPFSL-NX1Z3GyS56RuG0VM7l2zr430gD6lclpKHpsOqREkbLn645WISMIfyJoi7FG8tV5nSTA6nlnMyjMlSAq4be7EsQBWmDTK2W-j-m7OrfIuCE2VwUDqWObeVWNIHAsTRY9dkQBpqbSmvCjTf_Fb1QuFvAKFj_jxyzgX26elot2_UL8urax7neI5KbKxiLR2sin-PcvaznHq1NUTeujMjkROytMNuWtrbQBjVU2O4XQhyOG3k8bSqU4rgSn32GGfeJV49woAM5cAEjbdSmPLt6qCu4mTRoErngbcuYl0QgMwLJSbmcIZhoszcZ24JtVWphQhEclveQuhxzxPpPzAazeWy10m_xISe0hEc3dLYL8uvR_ENxxwrA01S_knOaeB3pPnKF5LNnT-UsuDJ07Svc8OQK9Qv_qnVDqEBGLNwa1qn-aF0prorUlon6pGSsWg4dYnQ624rPDu13qFVp22e9YkCyjHZ2KP4CcualEKGpp8w1EjE2Fbra1FNNpWttvUCVZAAIMFZFOJaMFO_8TsXxqFFRop59zNSuQcM-UPe0IFRVTexv_7HQV1nzKqvP0p9QKm-6GAVu_OJVmvs8RWRfifDJvMz"
+  }
+}

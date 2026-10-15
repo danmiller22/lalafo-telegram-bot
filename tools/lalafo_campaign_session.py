@@ -108,7 +108,12 @@ async def retire_session_key(*, record_completion=False, key_name=None):
 async def rewrap_for_hosted():
     # Preserve the RSA key and existing session envelope. This operation changes
     # only the explicitly selected transfer record, never signing credentials.
-    if KEY_NAME not in {"requested_campaign_expiry_key_20261014", "requested_campaign_expiry_key_20261015_three"}:
+    if KEY_NAME not in {
+        "requested_campaign_expiry_key_20261014",
+        "requested_campaign_expiry_key_20261015_three",
+        "requested_campaign_expiry_key_20261015_new997_one",
+        "requested_campaign_expiry_key_20261015_new997_three",
+    }:
         raise RuntimeError("Hosted transfer is limited to these five requested campaigns")
     key = await private_key()
     settings = get_settings()
