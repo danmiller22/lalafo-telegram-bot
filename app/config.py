@@ -128,9 +128,9 @@ INVENTORY_SEARCH_URLS: tuple[str, ...] = (
     f"{_INVENTORY_BASE}?price[from]=30000&price[to]=40000",
     # The discovery targets reserve their first segment for owner-capable
     # searches; agency-only searches must come after that segment.
-    f"{_INVENTORY_BASE}real-estate-agency?price[from]=25000&price[to]=29999",
-    f"{_INVENTORY_BASE}real-estate-agency?price[from]=30000&price[to]=34999",
-    f"{_INVENTORY_BASE}real-estate-agency?price[from]=35000&price[to]=40000",
+    f"{_INVENTORY_BASE}agent/real-estate-agency?price[from]=25000&price[to]=29999",
+    f"{_INVENTORY_BASE}agent/real-estate-agency?price[from]=30000&price[to]=34999",
+    f"{_INVENTORY_BASE}agent/real-estate-agency?price[from]=35000&price[to]=40000",
 )
 
 APARTMENT_PUBLISH_INTERVAL_MINUTES = 90
