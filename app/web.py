@@ -25,6 +25,7 @@ from pydantic import BaseModel
 from app.bot.main import BotRuntime, configure_bot_profile, create_runtime
 from app.availability import MAX_LISTING_AGE_DAYS
 from app.config import get_settings
+from app.campaign_cutoffs import cutoff_state as requested_lalafo_cutoff_state
 from app.inventory import REALTOR_DAILY_SHARE
 from app.lalafo.auto_reply import LalafoAutoResponder
 from app.lalafo.models import LalafoAd
@@ -1318,6 +1319,8 @@ async def health() -> JSONResponse:
         # the customer/payment bot merely because Lalafo itself is unavailable.
     return JSONResponse(
         content={
+            **({"requested_lalafo_cutoff": dict(requested_lalafo_cutoff_state)}
+               if settings.run_bot and _requested_campaign_cutoff_task is not None else {}),
             "status": "ok",
             "bot": "running" if settings.run_bot else "disabled",
             "finik_auto_payment": "ready" if settings.finik_auto_enabled else "disabled",
