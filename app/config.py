@@ -114,8 +114,8 @@ _INVENTORY_BASE = (
     "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
     "dolgosrochnaya-arenda-kvartir/studio/1-bedroom/"
 )
-# Split owner results by price as well as location. This exposes older affordable
-# ads that can be buried behind the newest broad-search results.
+# Split both seller categories by price. This exposes affordable ads that can
+# be buried behind newer, more expensive broad-search results.
 INVENTORY_SEARCH_URLS: tuple[str, ...] = (
     f"{_INVENTORY_BASE}owner?price[from]=25000&price[to]=27999",
     f"{_INVENTORY_BASE}owner?price[from]=28000&price[to]=31999",
@@ -128,7 +128,9 @@ INVENTORY_SEARCH_URLS: tuple[str, ...] = (
     f"{_INVENTORY_BASE}?price[from]=30000&price[to]=40000",
     # The discovery targets reserve their first segment for owner-capable
     # searches; agency-only searches must come after that segment.
-    f"{_INVENTORY_BASE}real-estate-agency?price[from]=25000&price[to]=40000",
+    f"{_INVENTORY_BASE}real-estate-agency?price[from]=25000&price[to]=29999",
+    f"{_INVENTORY_BASE}real-estate-agency?price[from]=30000&price[to]=34999",
+    f"{_INVENTORY_BASE}real-estate-agency?price[from]=35000&price[to]=40000",
 )
 
 APARTMENT_PUBLISH_INTERVAL_MINUTES = 90

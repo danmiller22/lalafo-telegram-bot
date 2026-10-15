@@ -25,14 +25,14 @@ from app.promotions import publications_in_window, queue_due_promotions, REQUEST
 BISHKEK = ZoneInfo("Asia/Bishkek")
 ALLOWED_ROOMS = frozenset({"studio", "1"})
 CENTRAL_DAILY_SHARE = 0.50
-REALTOR_DAILY_SHARE = 0.50
+REALTOR_DAILY_SHARE = 0.75
 MIN_PUBLICATIONS_PER_DAY = 70
 MAX_PUBLICATIONS_PER_DAY = 70
 # The daily target is chosen once per Bishkek date, then split across the two
 # discovery periods so retries cannot increase the day's publication volume.
-# Aim for 50% realtors and 50% owners. Either category fills
+# Aim for 75% realtors and 25% owners. Either category fills
 # shortages in the other. Unknown authors can fill remaining slots.
-MIN_NON_OWNERS_PER_DAY = round(MAX_PUBLICATIONS_PER_DAY * REALTOR_DAILY_SHARE)
+MIN_NON_OWNERS_PER_DAY = math.ceil(MAX_PUBLICATIONS_PER_DAY * REALTOR_DAILY_SHARE)
 MAX_NON_OWNERS_PER_DAY = MIN_NON_OWNERS_PER_DAY
 TARGET_NON_OWNERS_PER_PERIOD = (MAX_NON_OWNERS_PER_DAY + 1) // 2
 # Fresh cards win. Listings may fill a shortage only after 48 hours.
@@ -94,7 +94,7 @@ def daily_publication_target(period_start: datetime) -> int:
 
 
 def daily_realtor_target(period_start: datetime) -> int:
-    """Return the 50% daily realtor target."""
+    """Return the 75% daily realtor target, rounded up for indivisible cards."""
     del period_start
     return MAX_NON_OWNERS_PER_DAY
 
@@ -110,7 +110,7 @@ def period_publication_targets(period_start: datetime) -> tuple[int, int]:
 
 
 def period_realtor_target(period_start: datetime) -> int:
-    """Split the daily 50% realtor target across the two periods."""
+    """Split the daily realtor target across the two periods."""
     daily_target = daily_realtor_target(period_start)
     first_target = (daily_target + 1) // 2
     if period_start.astimezone(BISHKEK).hour == 5:
@@ -403,7 +403,7 @@ class InventoryRepository:
 
     async def reset_publication_history_for_code(self, code_version: str) -> bool:
         """Rebuild the queue once per deployment without erasing repost history."""
-        version = code_version.strip() or "publication-70-05-to-02-50-50-v8"
+        version = code_version.strip() or "publication-70-05-to-02-75-realtors-v9"
         key = "apartment_publication_code_version"
         async with self.sessions.begin() as session:
             marker = await session.get(LalafoAutoReplyMeta, key)
