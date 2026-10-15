@@ -163,15 +163,15 @@ def test_source_urls_follow_the_operator_filters():
     assert all("price[from]=25000&price[to]=40000" in url for url in ADDITIONAL_SEARCH_URLS)
 
 
-def test_discovery_pool_reserves_half_for_each_seller_category():
+def test_discovery_pool_reserves_three_quarters_for_realtors():
     targets = source_candidate_targets(300, source_count=3, batch_limit=18)
 
-    assert REALTOR_CANDIDATE_RESERVE_SHARE == 0.50
-    assert targets == [75, 150, 300]
-    assert targets[-1] - targets[-2] == 150
+    assert REALTOR_CANDIDATE_RESERVE_SHARE == 0.75
+    assert targets == [37, 75, 300]
+    assert targets[-1] - targets[-2] == 225
 
 
-def test_inventory_sources_reserve_half_for_each_seller_category():
+def test_inventory_sources_reserve_three_quarters_for_realtors():
     targets = source_candidate_targets(
         240,
         source_count=4,
@@ -179,7 +179,7 @@ def test_inventory_sources_reserve_half_for_each_seller_category():
         owner_source_count=2,
     )
 
-    assert targets == [60, 120, 180, 240]
+    assert targets == [30, 60, 150, 240]
 
 
 def test_supported_room_types_have_twenty_five_thousand_price_floor():
@@ -461,20 +461,20 @@ def test_quality_prefers_requested_area_and_photos_over_low_price():
     elsewhere = make_ad(district="Асанбай", photo_urls=["1", "2"], price=20_000)
     assert candidate_quality(preferred) > candidate_quality(elsewhere)
 
-    bargain = make_ad(district="5 мкр", photo_urls=["1"] * 5, price=20_000)
+    bargain = make_ad(district="5 мкр", photo_urls=["1"] * 5, price=25_000)
     expensive = make_ad(district="5 мкр", photo_urls=["1"] * 10, price=35_000)
     sparse = make_ad(district="5 мкр", photo_urls=["1"] * 4, price=10_000)
-    assert candidate_quality(expensive) > candidate_quality(bargain)
+    assert candidate_quality(bargain) > candidate_quality(expensive)
     assert candidate_quality(bargain) > candidate_quality(sparse)
 
 
-def test_quality_does_not_put_the_cheapest_central_apartment_first():
+def test_quality_prefers_affordable_central_apartments_with_useful_photos():
     central_bargain = make_ad(district="Центр", photo_urls=["1"] * 5, price=25_000)
     central_expensive = make_ad(district="ЦУМ", photo_urls=["1"] * 10, price=39_000)
     cheap_outskirts = make_ad(district="Асанбай", photo_urls=["1"] * 10, price=20_000)
 
     assert is_central_district(central_bargain.district)
-    assert candidate_quality(central_expensive) > candidate_quality(central_bargain)
+    assert candidate_quality(central_bargain) > candidate_quality(central_expensive)
     assert candidate_quality(central_bargain) > candidate_quality(cheap_outskirts)
 
 
@@ -761,3 +761,8 @@ def test_owner_price_searches_cover_the_budget_and_agencies_follow_owner_segment
     owner_segment=sum('real-estate-agency' not in url for url in INVENTORY_SEARCH_URLS)
     assert all('real-estate-agency' not in url for url in INVENTORY_SEARCH_URLS[:owner_segment])
     assert all('real-estate-agency' in url for url in INVENTORY_SEARCH_URLS[owner_segment:])
+    agency_ranges = []
+    for url in INVENTORY_SEARCH_URLS[owner_segment:]:
+        query = parse_qs(urlsplit(url).query)
+        agency_ranges.append((int(query['price[from]'][0]), int(query['price[to]'][0])))
+    assert agency_ranges == [(25000, 29999), (30000, 34999), (35000, 40000)]

@@ -274,6 +274,7 @@ class LalafoClient:
             params.append(("parameters[2149][0]", "19057"))
         elif offerer == "realtor":
             params.append(("parameters[2149][0]", "42340"))
+            params.append(("parameters[2149][1]", "19055"))
         else:
             offerer_index = 0
             if "owner" in path_parts:
@@ -281,6 +282,9 @@ class LalafoClient:
                 offerer_index += 1
             if "real-estate-agency" in path_parts:
                 params.append((f"parameters[2149][{offerer_index}]", "42340"))
+                offerer_index += 1
+            if "agent" in path_parts:
+                params.append((f"parameters[2149][{offerer_index}]", "19055"))
         for key, value in parse_qsl(parts.query, keep_blank_values=True):
             if key in {"price[from]", "price[to]", "currency", "sort_by"}:
                 params.append((key, value))

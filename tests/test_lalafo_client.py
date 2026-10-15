@@ -130,14 +130,24 @@ async def test_failed_source_does_not_discard_proxy_pool_for_next_source(monkeyp
 
 @pytest.mark.parametrize(
     ("offerer", "expected"),
-    [("realtor", "42340"), ("owner", "19057")],
+    [("realtor", ["42340", "19055"]), ("owner", ["19057"])],
 )
 def test_search_params_can_target_each_offerer_independently(offerer, expected):
     params = dict(LalafoClient._search_params(SEARCH_URL, 1, offerer))
     offerer_values = [
         value for key, value in params.items() if key.startswith("parameters[2149]")
     ]
-    assert offerer_values == [expected]
+    assert offerer_values == expected
+
+
+def test_inventory_realtor_sources_include_individual_agents_and_agencies():
+    for url in INVENTORY_SEARCH_URLS:
+        if 'real-estate-agency' not in url:
+            continue
+        params = dict(LalafoClient._search_params(url, 1))
+        assert {v for k, v in params.items() if k.startswith('parameters[2149]')} == {
+            '19055', '42340',
+        }
 
 
 @pytest.mark.asyncio

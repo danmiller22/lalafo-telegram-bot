@@ -13,10 +13,10 @@ def test_requested_good_areas_outrank_unpreferred_outskirts(district):
     assert district_priority(district) > district_priority("Арча-Бешик")
 
 
-def test_price_floor_has_no_automatic_priority():
+def test_lower_rent_wins_when_area_and_photo_quality_match():
     low = make_ad(price=25_000, district="ЦУМ")
     middle = make_ad(price=33_000, district="ЦУМ")
-    assert candidate_quality(middle) > candidate_quality(low)
+    assert candidate_quality(low) > candidate_quality(middle)
     assert candidate_quality(low) > candidate_quality(make_ad(price=33_000, district="Арча-Бешик"))
 
 

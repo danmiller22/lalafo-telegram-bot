@@ -102,7 +102,7 @@ MAX_REPOSTS_PER_RUN = 18
 CENTRAL_BATCH_SHARE = 0.50
 OWNER_OTHER_BATCH_SHARE = 0.50
 MAX_CANDIDATE_POOL = 300
-# Target 50% realtors and 50% owners. A category may fill
+# Target 75% realtors and 25% owners. A category may fill
 # the other category's shortage so Telegram publication does not stop.
 REALTOR_CANDIDATE_RESERVE_SHARE = REALTOR_DAILY_SHARE
 REALTOR_BATCH_SHARE = REALTOR_DAILY_SHARE
@@ -297,12 +297,12 @@ async def fetch_detail_batch(
 
 
 def crawl_source_budget(*, started_at, now, seconds, source_index, owner_count, source_count):
-    """Reserve half the crawl for agencies when owner sources run slowly."""
+    """Reserve the requested agency share when owner sources run slowly."""
     if seconds is None:
         return source_index, 3600.0
     remaining = max(0.0, started_at + seconds - now)
     if 0 < owner_count < source_count and source_index < owner_count:
-        owner_remaining = started_at + seconds / 2 - now
+        owner_remaining = started_at + seconds * (1 - REALTOR_CANDIDATE_RESERVE_SHARE) - now
         if owner_remaining <= 0:
             return owner_count, remaining
         remaining = min(remaining, owner_remaining)
@@ -322,14 +322,15 @@ def is_central_district(district: str | None) -> bool:
 
 
 def candidate_quality(ad: LalafoAd) -> tuple:
-    """Prioritize requested areas and useful photos, without favoring the price floor."""
+    """Prefer requested areas, affordable rents and useful photos."""
     updated_at = ad.source_updated_at.timestamp() if ad.source_updated_at else 0
     return (
         district_priority(ad.district),
         is_central_district(ad.district),
         is_preferred_district(ad.district),
+        ad.price <= 35_000,
         min(5, len(ad.photo_urls)),
-        abs(ad.price - 32_500) * -1,
+        -ad.price,
         len(ad.photo_urls),
         bool(ad.district),
         updated_at,
@@ -459,7 +460,7 @@ def source_candidate_targets(
     batch_limit: int,
     owner_source_count: int | None = None,
 ) -> list[int]:
-    """Reserve half of the discovery pool for each known seller category."""
+    """Reserve discovery capacity according to the requested seller shares."""
     if source_count <= 1:
         return [pool_limit]
     owner_source_count = min(
