@@ -3,6 +3,13 @@ name: Lalafo cloud network check
 on:
   workflow_dispatch:
     inputs:
+      manual_card_envelope:
+        description: Encrypted owner-requested card manifest in this repository
+        type: string
+        default: ''
+      confirm_manual_public_send:
+        type: boolean
+        default: false
       verified_campaign_plan:
         type: string
         default: tools/lalafo_campaigns_20261014.json
@@ -85,6 +92,15 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: python -m pip install -r requirements.txt
+      - name: Publish the explicitly authorized manual card
+        if: inputs.manual_card_envelope != '' && inputs.confirm_manual_public_send
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_GROUP_ID: "-1004389602150"
+          MANUAL_CARD_ENVELOPE: ${{ inputs.manual_card_envelope }}
+        run: python -m tools.publish_manual_requested_card --envelope "$MANUAL_CARD_ENVELOPE"
       - name: Register only this explicit requested batch from actual receipts
         if: inputs.selected_promotion_ids != ''
         env:
@@ -155,7 +171,7 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python -m tools.audit_publication_duplicates
       - name: Select verified route without exposing credentials
-        if: ${{ !inputs.verify_campaign_access && !inputs.prepare_campaign_session_key && !inputs.audit_duplicates && !inputs.requested_listing_snapshot && !inputs.verify_renewed_campaign_access && !inputs.register_requested_promotions && !inputs.runtime_diagnostics && !inputs.selected_promotion_ids && !inputs.verify_selected_campaigns }}
+        if: ${{ !inputs.verify_campaign_access && !inputs.prepare_campaign_session_key && !inputs.audit_duplicates && !inputs.requested_listing_snapshot && !inputs.verify_renewed_campaign_access && !inputs.register_requested_promotions && !inputs.runtime_diagnostics && !inputs.selected_promotion_ids && !inputs.verify_selected_campaigns && !inputs.manual_card_envelope }}
         run: |
           python -m scripts.select_lalafo_proxy > lalafo-route.env
           while IFS= read -r entry; do
@@ -163,7 +179,7 @@ jobs:
           done < lalafo-route.env
           cat lalafo-route.env >> "$GITHUB_ENV"
       - name: Verify actual public search and matching detail access
-        if: ${{ !inputs.verify_campaign_access && !inputs.prepare_campaign_session_key && !inputs.audit_duplicates && !inputs.requested_listing_snapshot && !inputs.verify_renewed_campaign_access && !inputs.register_requested_promotions && !inputs.runtime_diagnostics && !inputs.selected_promotion_ids && !inputs.verify_selected_campaigns }}
+        if: ${{ !inputs.verify_campaign_access && !inputs.prepare_campaign_session_key && !inputs.audit_duplicates && !inputs.requested_listing_snapshot && !inputs.verify_renewed_campaign_access && !inputs.register_requested_promotions && !inputs.runtime_diagnostics && !inputs.selected_promotion_ids && !inputs.verify_selected_campaigns && !inputs.manual_card_envelope }}
         run: |
           python - <<'PY'
           import asyncio, json, os
