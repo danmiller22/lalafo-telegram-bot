@@ -722,10 +722,31 @@ async def _inventory_queue_status() -> tuple[int, int, datetime | None]:
                 )
             )).one()
             from app.promotions import publications_in_window
-            from app.inventory import publication_day_start
+            from app.inventory import (
+                MAX_PUBLICATIONS_PER_DAY, PUBLICATION_SPACING_MINUTES,
+                publication_day_start, publication_slots_due, publication_window_open,
+            )
             day_start = publication_day_start(now).astimezone(UTC)
-            _apartment_scheduler_state["daily_published_count"] = len(
+            published = len(
                 await publications_in_window(session, day_start, day_start + timedelta(days=1))
+            )
+            daily_limit_reached = published >= MAX_PUBLICATIONS_PER_DAY
+            quiet_hours = not publication_window_open(now)
+            pace_reached = published >= publication_slots_due(now)
+            slot_at = (
+                day_start + timedelta(days=1)
+                if daily_limit_reached or quiet_hours
+                else max(now, day_start + timedelta(minutes=published * PUBLICATION_SPACING_MINUTES))
+            )
+            _apartment_scheduler_state.update(
+                daily_published_count=published,
+                daily_remaining_count=max(0, MAX_PUBLICATIONS_PER_DAY - published),
+                dispatch_pause_reason=(
+                    "daily_limit_reached" if daily_limit_reached else
+                    "quiet_hours" if quiet_hours else
+                    "waiting_for_daily_slot" if pace_reached else None
+                ),
+                daily_slot_available_at=slot_at.isoformat(),
             )
             return int(row[0]), int(row[1]), row[2]
     finally:

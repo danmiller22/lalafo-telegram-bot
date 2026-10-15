@@ -12,6 +12,7 @@ from app.inventory import (
     BISHKEK,
     publication_day_start,
     publication_window_open,
+    publication_slots_due,
     discovery_period_start,
     InventoryRepository,
     PUBLICATION_SPACING_MINUTES,
@@ -27,6 +28,35 @@ from tests.helpers import make_ad
 
 def test_publication_schedule_uses_eighteen_minute_slots() -> None:
     assert PUBLICATION_SPACING_MINUTES == 18
+
+
+@pytest.mark.parametrize("hour,minute,expected", [(5,0,1),(5,17,1),(5,18,2),(20,0,51),(1,42,70)])
+def test_daily_pace_spans_the_entire_bishkek_publication_window(hour, minute, expected):
+    now = datetime(2026, 10, 15, hour, minute, tzinfo=BISHKEK)
+    assert publication_slots_due(now) == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("requested_receipts", [False, True])
+async def test_overdue_queue_cannot_spend_future_slots_even_after_requested_sends(repositories, requested_receipts):
+    from app.promotions import record_delivery
+    apartments, _, sessions = repositories
+    now = datetime(2026, 10, 15, 5, 30, tzinfo=BISHKEK).astimezone(timezone.utc)
+    for index, minutes_ago in enumerate((30, 6)):
+        previous = await apartments.upsert_discovered(make_ad(lalafo_id=225000+index))
+        sent_at = now-timedelta(minutes=minutes_ago)
+        async with sessions.begin() as session:
+            await session.execute(update(Apartment).where(Apartment.id==previous.id).values(
+                publication_status='published',published_at=sent_at))
+            if requested_receipts:
+                await record_delivery(session,previous,chat_id=-1001,message_id=225000+index,published_at=sent_at)
+    for index in range(4):
+        waiting = await apartments.upsert_discovered(make_ad(lalafo_id=226000+index))
+        async with sessions.begin() as session:
+            session.add(ApartmentInventoryQueue(apartment_id=waiting.id,scheduled_at=now-timedelta(minutes=30),window_key='rebuilt',sequence=index))
+    inventory = InventoryRepository(sessions)
+    assert await inventory.claim_due(now=now) is None
+    assert await inventory.claim_due(now=now+timedelta(minutes=12)) is not None
 
 
 @pytest.mark.asyncio
@@ -899,7 +929,7 @@ async def test_stock_load_uses_spare_category_capacity(repositories, monkeypatch
 @pytest.mark.usefixtures("publication_clock")
 async def test_claim_can_exceed_category_share_to_fill_shortage(repositories, owner):
     apartments, _, sessions = repositories
-    now = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc).astimezone(BISHKEK).replace(hour=20,minute=0).astimezone(timezone.utc)
     past = []
     for index in range(48):
         past.append(await apartments.upsert_discovered(make_ad(
@@ -1014,10 +1044,11 @@ async def test_watermarked_listing_is_not_queued_again(repositories):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("overdue_count,expected", [(1,False),(3,True)])
-async def test_backlog_catches_up_without_waiting_eighteen_minutes(repositories, overdue_count, expected):
+@pytest.mark.parametrize("overdue_count,minute,expected", [(1,30,False),(3,30,False),(3,90,True)])
+async def test_backlog_catches_up_only_when_daily_pace_is_behind(repositories, overdue_count, minute, expected):
     apartments, _, sessions = repositories
-    now = datetime.now(timezone.utc).astimezone(BISHKEK).replace(hour=5,minute=30).astimezone(timezone.utc)
+    now = (datetime.now(timezone.utc).astimezone(BISHKEK).replace(hour=5,minute=0,second=0,microsecond=0)
+           + timedelta(minutes=minute)).astimezone(timezone.utc)
     previous = await apartments.upsert_discovered(make_ad(lalafo_id=220000, phone="+996555500000"))
     async with sessions.begin() as session:
         await session.execute(update(Apartment).where(Apartment.id==previous.id).values(publication_status="published", published_at=now-timedelta(minutes=6)))

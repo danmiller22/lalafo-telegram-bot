@@ -1,12 +1,13 @@
 """Read-only verification of requested-card campaign receipts and queue state."""
 import asyncio,json
+from collections import Counter
 from datetime import datetime,timedelta,timezone
 from sqlalchemy import select,func
 from app.config import get_settings
 from app.database import create_engine_and_session
 from app.models import Apartment,ApartmentInventoryQueue,RequestedCardPromotion,RequestedCardPublication,ApartmentMatchDelivery,PaymentRequest
 from app.promotions import publications_in_window,promotion_work
-from app.inventory import publication_day_start, as_utc, daily_realtor_target
+from app.inventory import BISHKEK, publication_day_start, as_utc, daily_realtor_target, publication_slots_due
 from app.payments.repository import ApartmentRepository
 from app.state import ListingIndex
 from scripts.scrape_publish import apartment_to_ad
@@ -19,6 +20,11 @@ async def main():
    events=await publications_in_window(s,start,start+timedelta(days=1))
    due,reserved=await promotion_work(s,now=now,day_start=start,day_end=start+timedelta(hours=21))
    print('RUNTIME_DIAGNOSTICS='+json.dumps({'published_today':len(events),'due_promotions':len(due),'reserved':reserved}))
+   print('RUNTIME_DIAGNOSTICS='+json.dumps({'publication_timing':{
+       'timezone':'Asia/Bishkek','slots_due':publication_slots_due(now),
+       'counts_by_hour':dict(sorted(Counter(as_utc(e.published_at).astimezone(BISHKEK).strftime('%Y-%m-%dT%H:00') for e in events).items())),
+       'latest_publication':as_utc(events[0].published_at).isoformat() if events else None,
+   }}))
    rows=(await s.execute(select(Apartment,RequestedCardPromotion,ApartmentInventoryQueue).join(RequestedCardPromotion,Apartment.id==RequestedCardPromotion.apartment_id).outerjoin(ApartmentInventoryQueue,Apartment.id==ApartmentInventoryQueue.apartment_id))).all()
    for a,p,q in rows:
     count=await s.scalar(select(func.count()).select_from(RequestedCardPublication).where(RequestedCardPublication.apartment_id==a.id,RequestedCardPublication.published_at>=p.requested_at))

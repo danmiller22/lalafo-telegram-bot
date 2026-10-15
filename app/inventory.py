@@ -73,6 +73,13 @@ def publication_window_open(now: datetime) -> bool:
     return local.hour < 2 or local.hour >= 5
 
 
+def publication_slots_due(now: datetime) -> int:
+    """Count elapsed daily slots, including requested cards in the same pace."""
+    start = publication_day_start(now).astimezone(timezone.utc)
+    elapsed = (as_utc(now) - start).total_seconds()
+    return min(MAX_PUBLICATIONS_PER_DAY, max(0, int(elapsed // (PUBLICATION_SPACING_MINUTES * 60)) + 1))
+
+
 def discovery_period_start(now: datetime | None = None) -> datetime:
     local = (now or datetime.now(timezone.utc)).astimezone(BISHKEK)
     if 2 <= local.hour < 5:
@@ -919,14 +926,13 @@ class InventoryRepository:
             ]
             day_publications = await publications_in_window(session, day_start, day_end)
             published_today = len(day_publications)
-            overdue_count = int(await session.scalar(
-                select(func.count()).select_from(ApartmentInventoryQueue).where(
-                    ApartmentInventoryQueue.status == "queued",
-                    ApartmentInventoryQueue.scheduled_at <= now - timedelta(minutes=PUBLICATION_SPACING_MINUTES),
-                )
-            ) or 0)
-            expected_by_now = min(MAX_PUBLICATIONS_PER_DAY, int((now-day_start).total_seconds() // (PUBLICATION_SPACING_MINUTES*60)) + 1)
-            catch_up = overdue_count >= 3 or expected_by_now - published_today >= 3
+            expected_by_now = publication_slots_due(now)
+            # A rebuilt/overdue queue is not proof of a publication deficit.
+            # Requested repeats count against the same daily clock: otherwise
+            # ordinary catch-up sends can consume all 70 slots before evening.
+            if published_today >= expected_by_now:
+                return None
+            catch_up = expected_by_now - published_today >= 3
             gap_minutes = 5 if catch_up else MIN_PUBLICATION_GAP_MINUTES
             if catch_up:
                 eligible_until = max(eligible_until, (day_start_local + timedelta(hours=21)).astimezone(timezone.utc))
