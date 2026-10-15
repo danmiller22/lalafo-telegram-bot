@@ -30,3 +30,22 @@ async def test_campaign_transfer_uses_only_its_scoped_key(repositories,monkeypat
         assert await s.get(LalafoAutoReplyMeta,"requested-a") is None
         assert await s.get(LalafoAutoReplyMeta,"requested-b") is not None
         assert await s.get(LalafoAutoReplyMeta,"unrelated-default-key") is None
+
+
+@pytest.mark.asyncio
+async def test_hosted_transfer_survives_distinct_callback_secrets(repositories, monkeypatch):
+    from cryptography.fernet import InvalidToken
+    sessions = repositories[2]
+    monkeypatch.setattr(transfer, "create_engine_and_session", lambda _: (SimpleNamespace(dispose=AsyncMock()), sessions))
+    settings = Settings(_env_file=None, callback_secret="github-secret", database_url="postgresql://runner:shared-private-password@db/arenda")
+    monkeypatch.setattr(transfer, "get_settings", lambda: settings)
+    monkeypatch.setattr(transfer, "KEY_NAME", "requested_campaign_expiry_key_20261014")
+    key = await transfer.private_key(create=True)
+    public = key.public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
+    envelope = transfer.seal_session(public, {"profile_id": 17, "token": "test-session"})
+    await transfer.rewrap_for_hosted()
+    settings.callback_secret = "independent-hosted-secret"
+    assert (await transfer.load_session(envelope))["profile_id"] == 17
+    settings.database_url = "postgresql://runner:wrong-password@db/arenda"
+    with pytest.raises(InvalidToken):
+        await transfer.load_session(envelope)
