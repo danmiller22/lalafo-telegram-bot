@@ -71,7 +71,7 @@ async def main(path):
     data=await load_session(envelope['sealed_card'],key_name=envelope['key_name'])
     settings=get_settings()
     engine,sessions=create_engine_and_session(settings.database_url)
-    bot=Bot(settings.require_telegram_bot_token())
+    bot=Bot(settings.require_bot_token())
     try:
         await publish_card(data,sessions,bot,settings)
     finally:
