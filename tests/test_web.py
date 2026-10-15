@@ -1104,6 +1104,33 @@ async def test_queue_status_reuses_bot_pool_and_counts_only_queued(repositories,
 
 
 @pytest.mark.asyncio
+async def test_queue_status_explains_daily_cap_even_when_more_cards_are_due(repositories, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from sqlalchemy import update
+    from app.models import Apartment, ApartmentInventoryQueue
+    from app.inventory import publication_day_start
+    from tests.helpers import make_ad
+    apartments, _, sessions = repositories
+    now = datetime.now(timezone.utc)
+    monkeypatch.setattr('app.inventory.MAX_PUBLICATIONS_PER_DAY', 1)
+    sent = await apartments.upsert_discovered(make_ad(lalafo_id=990101))
+    waiting = await apartments.upsert_discovered(make_ad(lalafo_id=990102))
+    async with sessions.begin() as session:
+        await session.execute(update(Apartment).where(Apartment.id==sent.id).values(
+            publication_status='published',published_at=now))
+        session.add(ApartmentInventoryQueue(apartment_id=waiting.id,scheduled_at=now-timedelta(minutes=5),window_key='overdue',sequence=1))
+    web._bot_runtime = SimpleNamespace(workflow_data={'apartments': apartments})
+    queued, due, _ = await web._inventory_queue_status()
+    assert (queued, due) == (1, 1)
+    state = web._apartment_scheduler_state
+    assert state['daily_remaining_count'] == 0
+    assert state['dispatch_pause_reason'] == 'daily_limit_reached'
+    assert datetime.fromisoformat(state['daily_slot_available_at']) == (
+        publication_day_start(now)+timedelta(days=1)
+    ).astimezone(timezone.utc)
+
+
+@pytest.mark.asyncio
 async def test_saved_refill_reuses_initialized_runtime_database(repositories, monkeypatch):
     apartments, _, _ = repositories
     web._bot_runtime = SimpleNamespace(workflow_data={'apartments': apartments})
