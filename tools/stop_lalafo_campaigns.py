@@ -68,14 +68,15 @@ async def authenticated_client(plan):
     sealed = plan.get('sealed_session')
     if sealed:
         from tools.lalafo_campaign_session import load_session
-        existing = await load_session(sealed)
+        existing = await load_session(sealed, key_name=plan.get("session_key_name"))
         login = password = None
     else:
         login, password = settings.require_lalafo_auto_reply_credentials()
-    routes = await find_working_proxies()
-    # Keep direct access as a final fallback. No proxy URL or credential is logged.
+    # Try direct access before searching fallback routes. A wallet endpoint can
+    # be blocked independently; validate the exact owned ad needed for cutoff.
+    routes = [None]
     last_error = None
-    for proxy in [*routes, None]:
+    for proxy in routes:
         client = LalafoManagedAdsClient(timeout=15)
         if proxy:
             await client._http.aclose()
@@ -84,7 +85,9 @@ async def authenticated_client(plan):
         try:
             if sealed:
                 client.session = ManagedSession(**existing)
-                await client.wallet_balances()
+                details = await client.my_ad_details(plan["campaigns"][0]["ad_id"])
+                owned_campaign(details, owner_id=plan["owner_profile_id"],
+                               campaign_id=plan["campaigns"][0]["campaign_id"])
             else:
                 await client.login(login, password)
             if client.session.profile_id != plan['owner_profile_id']:
@@ -93,6 +96,8 @@ async def authenticated_client(plan):
         except Exception as exc:
             last_error = type(exc).__name__
             await client.close()
+            if proxy is None:
+                routes.extend(await find_working_proxies(settings.lalafo_proxy_url))
     raise RuntimeError(f'No authenticated Lalafo route: {last_error}')
 
 
@@ -103,7 +108,7 @@ async def run(plan, *, verify_only=False):
         return
     if not verify_only and plan.get('completion_marker'):
         from tools.lalafo_campaign_session import cutoff_completed
-        if await cutoff_completed():
+        if await cutoff_completed(key_name=plan.get("session_key_name")):
             print('Authorized cutoff already confirmed; no account changes')
             return
     if not verify_only:
@@ -124,9 +129,9 @@ async def run(plan, *, verify_only=False):
                 if plan.get('sealed_session'):
                     from tools.lalafo_campaign_session import retire_session_key
                     if plan.get('completion_marker'):
-                        await retire_session_key(record_completion=True)
+                        await retire_session_key(record_completion=True, key_name=plan.get("session_key_name"))
                     else:
-                        await retire_session_key()
+                        await retire_session_key(key_name=plan.get("session_key_name"))
                 return
             except Exception:
                 if attempt == 2:

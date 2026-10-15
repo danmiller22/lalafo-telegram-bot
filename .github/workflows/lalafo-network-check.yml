@@ -3,6 +3,16 @@ name: Lalafo cloud network check
 on:
   workflow_dispatch:
     inputs:
+      verify_selected_campaigns:
+        type: boolean
+        default: false
+      selected_promotion_ids:
+        type: string
+        default: ''
+        description: Explicit source IDs whose recent acknowledged cards get this one-day request
+      selected_promotion_batch_key:
+        type: string
+        default: ''
       runtime_diagnostics:
         description: Read-only source, publication, repeat and outbox diagnostics
         type: boolean
@@ -64,6 +74,23 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: python -m pip install -r requirements.txt
+      - name: Register only this explicit requested batch from actual receipts
+        if: inputs.selected_promotion_ids != ''
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SELECTED_PROMOTION_IDS: ${{ inputs.selected_promotion_ids }}
+          SELECTED_PROMOTION_BATCH_KEY: ${{ inputs.selected_promotion_batch_key }}
+        run: |
+          python -m tools.register_selected_requested_cards
+          python -m tools.register_selected_requested_cards --apply
+          python -m tools.link_requested_lalafo_cards
+      - name: Verify these exact five VIP campaigns without cancellation or payment
+        if: inputs.verify_selected_campaigns
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
+          CAMPAIGN_SESSION_KEY_NAME: requested_campaign_expiry_key_20261014
+        run: python -m tools.stop_lalafo_campaigns --plan tools/lalafo_campaigns_20261014.json --verify-only
       - name: Read shared runtime counters without sending messages or changing data
         if: inputs.runtime_diagnostics
         env:
@@ -110,7 +137,7 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python -m tools.audit_publication_duplicates
       - name: Select verified route without exposing credentials
-        if: ${{ !inputs.verify_campaign_access && !inputs.prepare_campaign_session_key && !inputs.audit_duplicates && !inputs.requested_listing_snapshot && !inputs.verify_renewed_campaign_access && !inputs.register_requested_promotions && !inputs.runtime_diagnostics }}
+        if: ${{ !inputs.verify_campaign_access && !inputs.prepare_campaign_session_key && !inputs.audit_duplicates && !inputs.requested_listing_snapshot && !inputs.verify_renewed_campaign_access && !inputs.register_requested_promotions && !inputs.runtime_diagnostics && !inputs.selected_promotion_ids && !inputs.verify_selected_campaigns }}
         run: |
           python -m scripts.select_lalafo_proxy > lalafo-route.env
           while IFS= read -r entry; do
@@ -118,7 +145,7 @@ jobs:
           done < lalafo-route.env
           cat lalafo-route.env >> "$GITHUB_ENV"
       - name: Verify actual public search and matching detail access
-        if: ${{ !inputs.verify_campaign_access && !inputs.prepare_campaign_session_key && !inputs.audit_duplicates && !inputs.requested_listing_snapshot && !inputs.verify_renewed_campaign_access && !inputs.register_requested_promotions && !inputs.runtime_diagnostics }}
+        if: ${{ !inputs.verify_campaign_access && !inputs.prepare_campaign_session_key && !inputs.audit_duplicates && !inputs.requested_listing_snapshot && !inputs.verify_renewed_campaign_access && !inputs.register_requested_promotions && !inputs.runtime_diagnostics && !inputs.selected_promotion_ids && !inputs.verify_selected_campaigns }}
         run: |
           python - <<'PY'
           import asyncio, json, os
