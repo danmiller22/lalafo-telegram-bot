@@ -1,0 +1,62 @@
+{
+  "batch": "requested_batch:three-20261015-0123",
+  "owner_profile_id": 18166976,
+  "cards": [
+    {
+      "source_id": 113964314,
+      "message_id": 45436,
+      "price": 30000,
+      "rooms": "1",
+      "district": "Дордой Плаза",
+      "photo_urls": [
+        "https://img5.lalafo.com/i/posters/original/01/78/8e/7574a7faf408d7981de6e8aed8.jpeg",
+        "https://img5.lalafo.com/i/posters/original/6d/5d/8f/2eb6fefa1ad38798476bbf9e07.jpeg",
+        "https://img5.lalafo.com/i/posters/original/34/f5/3e/76e5d56a9a27485ef1042159c4.jpeg",
+        "https://img5.lalafo.com/i/posters/original/41/73/27/df5e973dba411f1c9e821e0b76.jpeg",
+        "https://img5.lalafo.com/i/posters/original/cf/b4/8f/a4ab0b93128439779452def01f.jpeg",
+        "https://img5.lalafo.com/i/posters/original/7e/13/19/6b55978395890ef065c7ccf16a.jpeg",
+        "https://img5.lalafo.com/i/posters/original/36/d4/13/e7d9d03f805a2557b370cad554.jpeg"
+      ],
+      "managed_ad_id": 113074950,
+      "managed_ad_url": "https://lalafo.kg/bishkek/ads/1-komnata-dordoj-plaza-trc-agentstvo-nedvizimosti-mozno-s-zivotnymi-ot-1-mesaca-ot-3-mesacev-ot-6-mesacev-s-mebelu-polnostu-id-113074950",
+      "campaign_id": 44787719,
+      "daily_kgs": 120
+    },
+    {
+      "source_id": 114028542,
+      "message_id": 45442,
+      "price": 35000,
+      "rooms": "1",
+      "district": "Восток-5 мкр",
+      "photo_urls": [
+        "https://img5.lalafo.com/i/posters/original/03/3f/d4/03d2507ea290a741846d7158d9.jpeg",
+        "https://img5.lalafo.com/i/posters/original/a5/fb/a4/f81b6ddb5c936ed3292c083937.jpeg",
+        "https://img5.lalafo.com/i/posters/original/3a/1c/b2/82e5a7df5a36a9a75e3b86c9e4.jpeg",
+        "https://img5.lalafo.com/i/posters/original/6b/e9/5d/1bffded84fcbca1c459b948296.jpeg",
+        "https://img5.lalafo.com/i/posters/original/42/68/23/649d4948fee8e6ea524d37ef4c.jpeg"
+      ],
+      "managed_ad_id": 110383797,
+      "managed_ad_url": "https://lalafo.kg/bishkek/ads/1-komnata-vostok-5-mkr-agentstvo-nedvizimosti-mozno-s-zivotnymi-ot-1-mesaca-ot-3-mesacev-ot-6-mesacev-s-mebelu-polnostu-id-110383797",
+      "campaign_id": 44787720,
+      "daily_kgs": 120
+    },
+    {
+      "source_id": 69589758,
+      "message_id": 45448,
+      "price": 37000,
+      "rooms": "1",
+      "district": "Филармония",
+      "photo_urls": [
+        "https://img5.lalafo.com/i/posters/original/39/21/9d/56d57ca1999e6f3277485b500a.jpeg",
+        "https://img5.lalafo.com/i/posters/original/09/82/56/3e6f96721633e4a4d57c591325.jpeg",
+        "https://img5.lalafo.com/i/posters/original/56/05/d9/55f92ddc3dd0f0b26b9bc800ea.jpeg",
+        "https://img5.lalafo.com/i/posters/original/de/8c/19/471ae621e7ec3969718193a3eb.jpeg",
+        "https://img5.lalafo.com/i/posters/original/5d/5d/a8/7b6c8b1ab49ab45f0e4cc3b81a.jpeg"
+      ],
+      "managed_ad_id": 117308930,
+      "managed_ad_url": "https://lalafo.kg/bishkek/ads/1-komnata-filarmonia-agentstvo-nedvizimosti-mozno-s-zivotnymi-ot-1-mesaca-ot-3-mesacev-ot-6-mesacev-s-mebelu-polnostu-id-117308930",
+      "campaign_id": 44787718,
+      "daily_kgs": 120
+    }
+  ]
+}

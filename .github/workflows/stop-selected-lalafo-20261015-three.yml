@@ -1,0 +1,38 @@
+name: Stop these three one-day Lalafo campaigns
+on:
+  workflow_dispatch:
+    inputs:
+      verify_only:
+        type: boolean
+        default: true
+  schedule:
+    - cron: '0,5,10,15,20,25 1 16 10 *'
+permissions:
+  contents: read
+concurrency:
+  group: requested-lalafo-expiry-20261015-three
+  cancel-in-progress: false
+jobs:
+  stop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
+      CAMPAIGN_SESSION_KEY_NAME: requested_campaign_expiry_key_20261015_three
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Verify or stop only these exact three owned campaigns
+        env:
+          VERIFY_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_only }}
+        run: |
+          if [ "$VERIFY_ONLY" = "true" ]; then
+            python -m tools.stop_lalafo_campaigns --plan tools/lalafo_campaigns_20261015_three.json --verify-only
+          else
+            python -m tools.stop_lalafo_campaigns --plan tools/lalafo_campaigns_20261015_three.json
+          fi

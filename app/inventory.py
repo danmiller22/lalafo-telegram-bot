@@ -158,7 +158,7 @@ def _candidate_key(item: Apartment, *, central: bool) -> tuple[object, ...]:
         not item.discovery_priority,
         not hot,
         -min(5, len(getattr(item, "photo_urls", []) or [])),
-        abs(item.price - 32_500),
+        item.price,
         -last_seen.timestamp(),
         item.id,
     )
@@ -200,6 +200,7 @@ def _pick_for_window(
             bucket = price_bucket(item.price)
             return (
                 -district_priority(item.district),
+                item.price > 35_000,
                 price_counts.get(bucket, 0),
                 district_counts.get(district, 0),
                 room_counts.get(item.rooms, 0),
@@ -993,6 +994,7 @@ class InventoryRepository:
             selected_id = min(due_rows, key=lambda row: (
                 not row[4].startswith(REQUESTED_WINDOW_PREFIX),
                 -district_priority(row[1]),
+                row[3] > 35_000,
                 bool(recent_buckets) and price_bucket(row[3]) == recent_buckets[0],
                 recent_buckets.count(price_bucket(row[3])),
                 due_rows.index(row),
