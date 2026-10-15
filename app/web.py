@@ -60,6 +60,7 @@ _scraper_task: asyncio.Task[None] | None = None
 _bot_runtime: BotRuntime | None = None
 _lalafo_bot_runtime: BotRuntime | None = None
 _bot_setup_task: asyncio.Task[None] | None = None
+_requested_campaign_cutoff_task: asyncio.Task[None] | None = None
 _lalafo_bot_setup_task: asyncio.Task[None] | None = None
 _legacy_featured_cleanup_task: asyncio.Task[None] | None = None
 _keyboard_sync_task: asyncio.Task[None] | None = None
@@ -998,6 +999,7 @@ async def _watch_background_tasks() -> None:
 
 @app.on_event("startup")
 async def startup() -> None:
+    global _requested_campaign_cutoff_task
     global _bot_runtime, _lalafo_bot_runtime, _bot_setup_task, _lalafo_bot_setup_task
     global _legacy_featured_cleanup_task
     global _keyboard_sync_task, _lalafo_auto_responder
@@ -1023,6 +1025,10 @@ async def startup() -> None:
         settings.require_telegram_webhook_url()
         settings.require_telegram_webhook_secret()
         _bot_runtime = await create_runtime()
+        from app.campaign_cutoffs import run_requested_campaign_cutoff
+        _requested_campaign_cutoff_task = asyncio.create_task(
+            run_requested_campaign_cutoff(), name="requested-lalafo-day-cutoff"
+        )
         if settings.lalafo_bot_token and settings.lalafo_bot_cloud_enabled:
             _lalafo_bot_runtime = await create_runtime(
                 bot_token=settings.require_lalafo_bot_token(), lalafo_only=True
@@ -1090,6 +1096,7 @@ async def startup() -> None:
 
 @app.on_event("shutdown")
 async def shutdown() -> None:
+    global _requested_campaign_cutoff_task
     global _bot_runtime, _lalafo_bot_runtime, _bot_setup_task, _lalafo_bot_setup_task
     global _legacy_featured_cleanup_task
     global _keyboard_sync_task, _lalafo_auto_responder
@@ -1098,6 +1105,11 @@ async def shutdown() -> None:
     global _shutting_down
     global _lalafo_mcp_context
     _shutting_down = True
+    if _requested_campaign_cutoff_task is not None:
+        _requested_campaign_cutoff_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await _requested_campaign_cutoff_task
+        _requested_campaign_cutoff_task = None
     if _lalafo_mcp_context is not None:
         await _lalafo_mcp_context.__aexit__(None, None, None)
         _lalafo_mcp_context = None

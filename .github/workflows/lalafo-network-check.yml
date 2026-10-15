@@ -80,6 +80,7 @@ jobs:
         run: |
           python -m tools.register_selected_requested_cards
           python -m tools.register_selected_requested_cards --apply
+          python -m tools.link_requested_lalafo_cards
       - name: Read shared runtime counters without sending messages or changing data
         if: inputs.runtime_diagnostics
         env:

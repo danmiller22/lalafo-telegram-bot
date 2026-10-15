@@ -27,19 +27,20 @@ def storage_cipher(secret):
     return Fernet(base64.urlsafe_b64encode(key))
 
 
-async def private_key(*, create=False):
+async def private_key(*, create=False, key_name=None):
+    chosen_key = key_name or KEY_NAME
     settings = get_settings()
     cipher = storage_cipher(settings.require_callback_secret())
     engine, sessions = create_engine_and_session(settings.database_url)
     try:
         async with sessions.begin() as session:
-            row = await session.get(LalafoAutoReplyMeta, KEY_NAME, with_for_update=True)
+            row = await session.get(LalafoAutoReplyMeta, chosen_key, with_for_update=True)
             if row is None:
                 if not create:
                     raise RuntimeError('Campaign session transfer key has not been prepared')
                 key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
                 pem = key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
-                session.add(LalafoAutoReplyMeta(key=KEY_NAME, value=cipher.encrypt(pem).decode()))
+                session.add(LalafoAutoReplyMeta(key=chosen_key, value=cipher.encrypt(pem).decode()))
                 return key
             return serialization.load_pem_private_key(cipher.decrypt(row.value.encode()), password=None)
     finally:
@@ -59,29 +60,31 @@ def open_session(private_key, envelope):
     return json.loads(Fernet(content_key).decrypt(envelope['ciphertext'].encode()))
 
 
-async def load_session(envelope):
-    return open_session(await private_key(), envelope)
+async def load_session(envelope, *, key_name=None):
+    return open_session(await private_key(key_name=key_name), envelope)
 
 
-async def cutoff_completed():
+async def cutoff_completed(*, key_name=None):
+    chosen_key = key_name or KEY_NAME
     engine, sessions = create_engine_and_session(get_settings().database_url)
     try:
         async with sessions() as session:
-            return await session.get(LalafoAutoReplyMeta, KEY_NAME + '_completed') is not None
+            return await session.get(LalafoAutoReplyMeta, chosen_key + '_completed') is not None
     finally:
         await engine.dispose()
 
 
-async def retire_session_key(*, record_completion=False):
+async def retire_session_key(*, record_completion=False, key_name=None):
+    chosen_key = key_name or KEY_NAME
     settings = get_settings()
     engine, sessions = create_engine_and_session(settings.database_url)
     try:
         async with sessions.begin() as session:
-            row = await session.get(LalafoAutoReplyMeta, KEY_NAME)
+            row = await session.get(LalafoAutoReplyMeta, chosen_key)
             if row is not None:
                 await session.delete(row)
-            if record_completion and await session.get(LalafoAutoReplyMeta, KEY_NAME + '_completed') is None:
-                session.add(LalafoAutoReplyMeta(key=KEY_NAME + '_completed', value='confirmed'))
+            if record_completion and await session.get(LalafoAutoReplyMeta, chosen_key + '_completed') is None:
+                session.add(LalafoAutoReplyMeta(key=chosen_key + '_completed', value='confirmed'))
     finally:
         await engine.dispose()
 
