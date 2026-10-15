@@ -38,9 +38,14 @@ async def _run_plan(path, state):
 
 
 async def run_requested_campaign_cutoff():
-    additional = PLAN_PATH.with_name("lalafo_campaigns_20261015_three.json")
     jobs = [_run_plan(PLAN_PATH, cutoff_state)]
-    if additional.exists():
-        state = cutoff_state.setdefault("requested_three_20261015", {})
-        jobs.append(_run_plan(additional, state))
+    for filename, state_key in (
+        ("lalafo_campaigns_20261015_three.json", "requested_three_20261015"),
+        ("lalafo_campaigns_20261015_new997_one.json", "new_profile_existing_vip"),
+        ("lalafo_campaigns_20261015_new997_three.json", "new_profile_three_vip"),
+    ):
+        path = PLAN_PATH.with_name(filename)
+        if path.exists():
+            state = cutoff_state.setdefault(state_key, {})
+            jobs.append(_run_plan(path, state))
     await asyncio.gather(*jobs)
