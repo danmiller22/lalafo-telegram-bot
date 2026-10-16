@@ -18,19 +18,21 @@ def card():
 
 
 @pytest.mark.asyncio
-async def test_chat_only_delivery_has_no_paid_number_button_and_is_idempotent(repositories):
+async def test_reviewed_delivery_keeps_standard_buttons_and_is_idempotent(repositories):
     _, _, sessions = repositories
     bot = SimpleNamespace(send_media_group=AsyncMock(), send_message=AsyncMock(
         return_value=SimpleNamespace(message_id=45899, date=datetime.now(timezone.utc))))
     settings = SimpleNamespace(telegram_group_id=-100123, telegram_bot_username='arenda312bot',
-                               support_bot_url='https://t.me/arenda312bot?start=support')
+                               support_bot_url='https://t.me/arenda312bot?start=support',
+                               require_callback_secret=lambda: 'test-secret-long-enough')
     await publish_card(card(), sessions=sessions, bot=bot, settings=settings)
     await publish_card(card(), sessions=sessions, bot=bot, settings=settings)
     bot.send_message.assert_awaited_once()
     bot.send_media_group.assert_awaited_once()
     message = bot.send_message.call_args.kwargs
-    assert message['reply_markup'].inline_keyboard[0][0].url == card()['chat_url']
-    assert 'Получить номер' not in message['reply_markup'].model_dump_json()
+    assert message['reply_markup'].inline_keyboard[0][0].text == 'Получить номер'
+    assert '/access?startapp=' in message['reply_markup'].inline_keyboard[0][0].url
+    assert message['reply_markup'].inline_keyboard[1][0].text == '🔄 Проверить актуальность'
     assert 'Депозит 10000' in message['text']
 
 
@@ -39,7 +41,8 @@ async def test_ambiguous_delivery_requires_reconciliation_before_retry(repositor
     _, _, sessions = repositories
     bot = SimpleNamespace(send_media_group=AsyncMock(), send_message=AsyncMock(side_effect=TimeoutError))
     settings = SimpleNamespace(telegram_group_id=-100123, telegram_bot_username='arenda312bot',
-                               support_bot_url='https://t.me/arenda312bot?start=support')
+                               support_bot_url='https://t.me/arenda312bot?start=support',
+                               require_callback_secret=lambda: 'test-secret-long-enough')
     with pytest.raises(TimeoutError):
         await publish_card(card(), sessions=sessions, bot=bot, settings=settings)
     with pytest.raises(RuntimeError, match='reconcile'):
