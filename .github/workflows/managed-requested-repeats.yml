@@ -4,6 +4,10 @@ on:
     - cron: '*/5 * * * *'
   workflow_dispatch:
     inputs:
+      managed_only:
+        description: Publish only due current-account Lalafo cards
+        type: boolean
+        default: false
       manifest:
         type: string
         default: ''
@@ -25,7 +29,7 @@ jobs:
       CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
       LALAFO_PROXY_URL: ${{ secrets.LALAFO_PROXY_URL }}
       TELEGRAM_GROUP_ID: '-1004389602150'
-      QUEUE_RESERVATION_ALL_CARDS: 'true'
+      QUEUE_RESERVATION_ALL_CARDS: ${{ inputs.managed_only && 'false' || 'true' }}
       MANAGED_REPEAT_MANIFEST: ${{ inputs.manifest }}
       CONFIRM_MANAGED_REPEATS: ${{ inputs.confirm_enrollment && 'true' || 'false' }}
     steps:
