@@ -1,0 +1,36 @@
+name: Repeat current managed Telegram apartments
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+    inputs:
+      manifest:
+        type: string
+        default: ''
+      confirm_enrollment:
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: managed-requested-telegram
+  cancel-in-progress: false
+jobs:
+  repeat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
+      TELEGRAM_GROUP_ID: '-1004389602150'
+      MANAGED_REPEAT_MANIFEST: ${{ inputs.manifest }}
+      CONFIRM_MANAGED_REPEATS: ${{ inputs.confirm_enrollment && 'true' || 'false' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python -m scripts.managed_requested_repeats
