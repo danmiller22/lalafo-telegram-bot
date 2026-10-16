@@ -1,7 +1,7 @@
 name: Repeat current managed Telegram apartments
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '0 0 1 1 *'
   workflow_dispatch:
     inputs:
       manifest:
@@ -13,7 +13,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: managed-requested-telegram
+  group: repair-managed-binding-18194628
   cancel-in-progress: false
 jobs:
   repeat:
@@ -43,4 +43,4 @@ jobs:
             done < lalafo-route.env
             cat lalafo-route.env >> "$GITHUB_ENV"
           fi
-      - run: python -m scripts.managed_requested_repeats
+      - run: python -m tools.repair_managed_marker
