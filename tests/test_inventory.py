@@ -1087,7 +1087,7 @@ async def test_late_day_catchup_can_use_future_reserved_stock(repositories):
 
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("publication_clock")
-async def test_claim_mixes_price_ranges_after_a_low_price_publication(repositories):
+async def test_claim_keeps_bargain_ahead_of_expensive_price_mixing(repositories):
     apartments, _, sessions = repositories
     now = datetime.now(timezone.utc)
     previous = await apartments.upsert_discovered(make_ad(lalafo_id=280000, price=25_000, district="ЦУМ", phone="+996555280000"))
@@ -1100,7 +1100,7 @@ async def test_claim_mixes_price_ranges_after_a_low_price_publication(repositori
             session.add(ApartmentInventoryQueue(apartment_id=card.id,scheduled_at=now-timedelta(minutes=3-index),window_key="mixed-prices",sequence=index))
     claimed=await InventoryRepository(sessions).claim_due(now=now)
     assert claimed is not None
-    assert claimed.apartment.price in {33_000,39_000}
+    assert claimed.apartment.price == 25_000
 
 
 @pytest.mark.parametrize("owner_count,realtor_count,expected_owners", [(110, 110, 55), (10, 110, 10), (110, 5, 105)])

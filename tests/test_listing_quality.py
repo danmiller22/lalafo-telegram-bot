@@ -35,3 +35,17 @@ def test_price_mix_keeps_all_stock_when_one_range_is_short():
     result = mix_prices(cards,rng=random.Random(3))
     assert Counter(card.lalafo_id for card in result) == Counter(card.lalafo_id for card in cards)
     assert {price_bucket(card.price) for card in result[:3]} == {0,1,2}
+
+
+def test_affordable_center_beats_expensive_east_five_even_with_more_photos():
+    cheap = make_ad(price=29_000, district='ЦУМ', rooms='1', photo_urls=['https://img/one'])
+    expensive = make_ad(price=40_000, district='Восток-5', photo_urls=['https://img/photo'] * 5)
+    assert candidate_quality(cheap) > candidate_quality(expensive)
+
+
+def test_same_rent_furnished_one_room_beats_unfurnished_or_studio():
+    ready = make_ad(price=30_000, rooms='1', source_description='С мебелью и техникой.')
+    empty = ready.model_copy(update={'source_description': 'Без мебели.'})
+    studio = ready.model_copy(update={'rooms': 'studio'})
+    assert candidate_quality(ready) > candidate_quality(empty)
+    assert candidate_quality(ready) > candidate_quality(studio)

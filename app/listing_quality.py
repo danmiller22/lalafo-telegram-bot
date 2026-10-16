@@ -6,6 +6,20 @@ import re
 from collections import Counter
 
 
+def rental_value_band(price: int, rooms: str, description: str | None = None) -> int:
+    """A selection preference, not an estimate of market value or availability.
+
+    Prefer studios up to 28k and one-room flats up to 30k; use 30–35k
+    next, then the remaining allowed stock. Explicitly unfurnished flats
+    need a lower rent to compete with furnished/unspecified alternatives.
+    """
+    cheap_limit = 28_000 if rooms == 'studio' else 30_000
+    band = 0 if price <= cheap_limit else 1 if price <= 35_000 else 2
+    text = (description or '').casefold().replace('ё', 'е')
+    unfurnished = bool(re.search(r'\bбез\s+мебели\b|\bпустая\s+квартира\b', text))
+    return band + int(unfurnished)
+
+
 def district_priority(district: str | None) -> int:
     text = re.sub(r"[-–—]", " ", (district or "").casefold().replace("ё", "е"))
     if "филармони" in text or re.search(r"восток\s*5(?!\d)", text):

@@ -17,7 +17,7 @@ from app.models import (
     LalafoAutoReplyMeta,
 )
 from app.state import normalized_district
-from app.listing_quality import district_priority, price_bucket, mix_prices
+from app.listing_quality import district_priority, price_bucket, mix_prices, rental_value_band
 from app.telegram.formatting import is_supported_source
 from app.promotions import publications_in_window, queue_due_promotions, REQUESTED_WINDOW_PREFIX
 
@@ -161,11 +161,12 @@ def _candidate_key(item: Apartment, *, central: bool) -> tuple[object, ...]:
     last_seen = as_utc(item.last_seen_at or item.updated_at)
     hot = last_seen >= datetime.now(timezone.utc) - timedelta(hours=24)
     return (
+        rental_value_band(item.price, item.rooms, getattr(item, "source_description", None)),
         -district_priority(item.district),
         not item.discovery_priority,
         not hot,
-        -min(5, len(getattr(item, "photo_urls", []) or [])),
         item.price,
+        -min(5, len(getattr(item, "photo_urls", []) or [])),
         -last_seen.timestamp(),
         item.id,
     )
@@ -206,6 +207,7 @@ def _pick_for_window(
             district = normalized_district(item.district) or "unknown"
             bucket = price_bucket(item.price)
             return (
+                rental_value_band(item.price, item.rooms, getattr(item, "source_description", None)),
                 -district_priority(item.district),
                 item.price > 35_000,
                 price_counts.get(bucket, 0),
@@ -958,6 +960,8 @@ class InventoryRepository:
                         Apartment.seller_type,
                         Apartment.price,
                         ApartmentInventoryQueue.window_key,
+                        Apartment.rooms,
+                        Apartment.source_description,
                     )
                     .join(Apartment)
                     .where(
@@ -1006,6 +1010,7 @@ class InventoryRepository:
             recent_buckets = [price_bucket(price) for price in recent_prices]
             selected_id = min(due_rows, key=lambda row: (
                 not row[4].startswith(REQUESTED_WINDOW_PREFIX),
+                rental_value_band(row[3], row[5], row[6]),
                 -district_priority(row[1]),
                 row[3] > 35_000,
                 bool(recent_buckets) and price_bucket(row[3]) == recent_buckets[0],
