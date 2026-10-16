@@ -27,7 +27,7 @@ from app.lalafo.parser import LalafoParseError, is_allowed
 from app.lalafo.phone import mask_phone
 from app.models import Apartment
 from app.state import PostedState, ad_fingerprint, normalized_district
-from app.listing_quality import district_priority, mix_prices
+from app.listing_quality import district_priority, mix_prices, rental_value_band
 from app.telegram.formatting import format_apartment
 from app.telegram.source_filter import is_lodging_offer
 from app.telegram.sources import (
@@ -325,12 +325,15 @@ def candidate_quality(ad: LalafoAd) -> tuple:
     """Prefer requested areas, affordable rents and useful photos."""
     updated_at = ad.source_updated_at.timestamp() if ad.source_updated_at else 0
     return (
+        minimum_price_for_rooms(ad.rooms) <= ad.price <= (
+            TWO_BEDROOM_MAX_PRICE if ad.rooms == '2' else SOURCE_MAX_PRICE),
+        -rental_value_band(ad.price, ad.rooms, ad.source_description),
         district_priority(ad.district),
         is_central_district(ad.district),
         is_preferred_district(ad.district),
         ad.price <= 35_000,
-        min(5, len(ad.photo_urls)),
         -ad.price,
+        min(5, len(ad.photo_urls)),
         len(ad.photo_urls),
         bool(ad.district),
         updated_at,
