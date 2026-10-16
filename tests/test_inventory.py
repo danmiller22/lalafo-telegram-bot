@@ -137,8 +137,8 @@ def test_two_periods_plan_seventy_cards_from_five_until_two():
     daily_target = daily_publication_target(first_start)
     assert daily_target == 70
     assert len(all_items) == daily_target
-    assert sum(item.apartment.seller_type == "realtor" for item in all_items) == 35
-    assert sum(item.apartment.seller_type == "owner" for item in all_items) == 35
+    assert sum(item.apartment.seller_type == "realtor" for item in all_items) == 53
+    assert sum(item.apartment.seller_type == "owner" for item in all_items) == 17
     assert sum(
         "золотой" in item.apartment.district.casefold() for item in all_items
     ) == round(daily_target * 0.50)
@@ -212,11 +212,12 @@ def test_central_realtors_can_fill_central_share():
     period_count, central_count = period_publication_targets(period_start)
     assert len(planned) == period_count
     assert any(item.apartment.seller_type == "owner" for item in planned)
-    assert sum(is_central(item.apartment.district) for item in planned) == 18
+    # All available realtors are central: seller targets take precedence.
+    assert sum(is_central(item.apartment.district) for item in planned) == 27
     assert central_count == 18
 
 
-def test_two_periods_target_equal_seller_categories():
+def test_two_periods_target_seventy_five_percent_realtors():
     owners = _apartments(160, central=True, start_id=1)
     realtors = _apartments(80, central=False, start_id=500, owner=False)
     first_start = datetime(2026, 9, 13, 5, tzinfo=timezone(timedelta(hours=6)))
@@ -232,8 +233,8 @@ def test_two_periods_target_equal_seller_categories():
 
     assert len(first) == 35
     assert len(second) == 35
-    assert sum(item.apartment.seller_type == "realtor" for item in first) == 18
-    assert sum(item.apartment.seller_type == "realtor" for item in second) == 17
+    assert sum(item.apartment.seller_type == "realtor" for item in first) == 27
+    assert sum(item.apartment.seller_type == "realtor" for item in second) == 26
     assert {item.apartment.seller_type for item in first + second} == {"owner", "realtor"}
 
 
@@ -250,11 +251,11 @@ def test_unknown_authors_fill_remaining_publication_slots():
     assert all(item.apartment.seller_type == "unknown" for item in planned)
 
 
-def test_daily_realtor_target_is_half_of_seventy_cards():
+def test_daily_realtor_target_rounds_seventy_five_percent_up():
     start = datetime(2026, 9, 13, 5, tzinfo=timezone(timedelta(hours=6)))
     assert {
         daily_realtor_target(start + timedelta(days=offset)) for offset in range(4)
-    } == {35}
+    } == {53}
 
 
 def test_period_honors_remaining_daily_realtor_quota():
@@ -888,8 +889,8 @@ async def test_stock_load_reserves_room_for_both_seller_categories(repositories,
         kinds = (await session.scalars(
             select(Apartment.seller_type).join(ApartmentInventoryQueue)
         )).all()
-    assert kinds.count("owner") == 2
-    assert kinds.count("realtor") == 2
+    assert kinds.count("owner") == 1
+    assert kinds.count("realtor") == 3
 
 
 @pytest.mark.asyncio
@@ -1102,7 +1103,7 @@ async def test_claim_mixes_price_ranges_after_a_low_price_publication(repositori
     assert claimed.apartment.price in {33_000,39_000}
 
 
-@pytest.mark.parametrize("owner_count,realtor_count,expected_owners", [(100, 100, 35), (10, 100, 10), (100, 5, 65)])
+@pytest.mark.parametrize("owner_count,realtor_count,expected_owners", [(100, 100, 17), (10, 100, 10), (100, 5, 65)])
 def test_seventy_card_day_fills_category_shortages(owner_count, realtor_count, expected_owners):
     stock = _apartments(owner_count, central=True, start_id=1) + _apartments(
         realtor_count, central=False, start_id=200, owner=False

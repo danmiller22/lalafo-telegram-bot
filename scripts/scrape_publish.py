@@ -102,7 +102,7 @@ MAX_REPOSTS_PER_RUN = 18
 CENTRAL_BATCH_SHARE = 0.50
 OWNER_OTHER_BATCH_SHARE = 0.50
 MAX_CANDIDATE_POOL = 300
-# Target 50% realtors and 50% owners. A category may fill
+# Target 75% realtors and 25% owners. A category may fill
 # the other category's shortage so Telegram publication does not stop.
 REALTOR_CANDIDATE_RESERVE_SHARE = REALTOR_DAILY_SHARE
 REALTOR_BATCH_SHARE = REALTOR_DAILY_SHARE
