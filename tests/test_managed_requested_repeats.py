@@ -42,7 +42,7 @@ async def test_public_refresh_preserves_original_verified_contact():
 
 
 @pytest.mark.parametrize('changes', [{'status_id': 3}, {'user_id': 2}, {'id': 1},
-                                     {'category_id': 1}, {'city_id': 1}, {'images': []}])
+                                     {'category_id': 1}, {'city_id': 1}])
 @pytest.mark.asyncio
 async def test_withdrawn_or_changed_card_cannot_repeat(changes):
     client = SimpleNamespace(_get_json=AsyncMock(return_value=public_ad(**changes)))
@@ -186,3 +186,20 @@ async def test_generic_worker_cannot_expose_managed_queued_rows_to_old_web(repos
     async with sessions() as session:
         rows = list(await session.scalars(select(ApartmentInventoryQueue)))
         assert len(rows) == 1 and rows[0].status == 'publishing'
+
+
+@pytest.mark.parametrize('response', [{}, {'code': 451, 'message': 'not available'},
+                                     public_ad(status_id=None), public_ad(images=[])])
+@pytest.mark.asyncio
+async def test_incomplete_or_error_payload_is_unknown_not_withdrawn(response):
+    client = SimpleNamespace(_get_json=AsyncMock(return_value=response))
+    with pytest.raises(ValueError) as error:
+        await refresh_managed_card(client, BINDING, make_ad())
+    assert not isinstance(error.value, ManagedCardUnavailable)
+
+
+@pytest.mark.asyncio
+async def test_public_room_id_works_independently_of_translation():
+    client = SimpleNamespace(_get_json=AsyncMock(return_value=public_ad(
+        params=[{'id': 69, 'value': '1 room', 'value_id': 2773}])))
+    assert (await refresh_managed_card(client, BINDING, make_ad())).rooms == '1'
