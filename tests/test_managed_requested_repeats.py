@@ -321,3 +321,39 @@ async def test_future_slot_uses_queue_ack_clock_to_avoid_rounding_rejection(repo
     when=reservation_time(NOW+timedelta(minutes=1),1,latest,catch_up=True)
     assert when==ack+timedelta(minutes=5)
     assert await InventoryRepository(sessions).claim_due(now=when,reservation_clock=NOW) is not None
+
+
+@pytest.mark.asyncio
+async def test_managed_only_dispatch_uses_shared_backlog_gap(repositories,monkeypatch):
+    from scripts import managed_requested_repeats as worker
+    from app.config import Settings
+    class Clock(datetime):
+        @classmethod
+        def now(cls,tz=None):return NOW.astimezone(tz) if tz else NOW.replace(tzinfo=None)
+    apartments,_,sessions=repositories
+    managed=await apartments.upsert_discovered(make_ad())
+    await apartments.mark_published(managed.id,chat_id=1,message_id=1,acknowledged_at=NOW-timedelta(hours=7))
+    await enroll(sessions,{'batch':'managed-backlog','cards':[{**BINDING,'source_id':12345}]},now=NOW-timedelta(hours=7))
+    previous=await apartments.upsert_discovered(make_ad(lalafo_id=50000,phone='+996555500000',photo_urls=['https://img/previous']))
+    await apartments.mark_published(previous.id,chat_id=1,message_id=2,acknowledged_at=NOW-timedelta(minutes=6))
+    monkeypatch.setattr(worker,'datetime',Clock)
+    monkeypatch.setattr(worker,'create_engine_and_session',lambda _: (SimpleNamespace(dispose=AsyncMock()),sessions))
+    monkeypatch.setattr(worker,'get_settings',lambda:Settings(_env_file=None))
+    monkeypatch.setenv('QUEUE_RESERVATION_ALL_CARDS','false')
+    monkeypatch.delenv('MANAGED_REPEAT_MANIFEST',raising=False)
+    class Client:
+        def __init__(self,**kwargs):pass
+        async def __aenter__(self):return self
+        async def __aexit__(self,*args):pass
+    monkeypatch.setattr(worker,'LalafoClient',Client)
+    monkeypatch.setattr(worker,'refresh_managed_card',AsyncMock())
+    monkeypatch.setattr(worker.asyncio,'sleep',AsyncMock(side_effect=AssertionError('Unneeded delay instead of shared catch-up')))
+    async def deliver(settings,factory,inventory,repo,item):
+        assert item.apartment_id==managed.id
+        await inventory.finish_item(item.id,status='published')
+        await repo.mark_published(item.apartment_id,chat_id=1,message_id=3,acknowledged_at=NOW)
+        return 0
+    delivery=AsyncMock(side_effect=deliver)
+    monkeypatch.setattr(worker,'_publish_item',delivery)
+    assert await worker.run()==0
+    delivery.assert_awaited_once()
