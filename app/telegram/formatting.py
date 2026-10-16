@@ -4,6 +4,7 @@ from html import escape
 
 from app.lalafo.models import LalafoAd
 from app.models import Apartment
+from app.telegram.description import short_public_description
 
 
 def format_money(value: int) -> str:
@@ -75,9 +76,12 @@ def format_public_apartment(
     wanted_deep_link: bool = False,
 ) -> str:
     username = bot_username.lstrip("@")
+    description = escape(short_public_description(
+        getattr(ad, "source_description", None), phone=getattr(ad, "phone", ""),
+    ))
     if wanted_deep_link:
         apartment = escape(format_apartment(ad))
         url = escape(f"https://t.me/{username}?start=want", quote=True)
         mention = f'<a href="{url}">@{escape(username)}</a>'
-        return f"{apartment}\n\n🔎 Ищете квартиру? Подайте заявку: {mention}"
-    return f"{format_apartment(ad)}\n\n🔎 Ищете квартиру? Подайте заявку: @{username}"
+        return f"{apartment}\n\n{description}\n\n🔎 Ищете квартиру? Подайте заявку: {mention}"
+    return f"{format_apartment(ad)}\n\n{description}\n\n🔎 Ищете квартиру? Подайте заявку: @{username}"

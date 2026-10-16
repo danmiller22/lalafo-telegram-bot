@@ -2,7 +2,6 @@
 import asyncio
 import json
 import os
-from html import escape
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -56,7 +55,6 @@ async def publish_card(row, *, sessions, bot, settings):
             await bot.send_media_group(chat_id=settings.telegram_group_id,
                                        media=[InputMediaPhoto(media=url) for url in chunk])
     text = format_public_apartment(ad, bot_username=settings.telegram_bot_username)
-    text += '\n\n' + escape(ad.source_description)
     message = await bot.send_message(
         chat_id=settings.telegram_group_id, text=text, parse_mode='HTML',
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
