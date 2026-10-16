@@ -299,3 +299,25 @@ async def test_cloud_publisher_interleaves_managed_repeats_with_fresh_options(
     monkeypatch.setattr(worker,'_publish_item',delivery)
     assert await worker.run()==0
     delivery.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_future_slot_uses_queue_ack_clock_to_avoid_rounding_rejection(repositories):
+    from scripts.managed_requested_repeats import latest_delivery_time
+    apartments,_,sessions=repositories
+    previous=await apartments.upsert_discovered(make_ad())
+    await apartments.mark_published(previous.id,chat_id=1,message_id=1,acknowledged_at=NOW)
+    fresh=await apartments.upsert_discovered(make_ad(lalafo_id=40000,phone='+996555400000',
+        photo_urls=['https://img/fresh-clock']))
+    ack=NOW+timedelta(seconds=2,microseconds=100)
+    async with sessions.begin() as session:
+        session.add(ApartmentInventoryQueue(apartment_id=previous.id,scheduled_at=NOW,
+            window_key='prior',sequence=1,status='published',published_at=ack))
+        session.add(ApartmentInventoryQueue(apartment_id=fresh.id,scheduled_at=NOW,
+            window_key='next',sequence=2,status='queued'))
+    async with sessions() as session:
+        latest=await latest_delivery_time(session,[SimpleNamespace(published_at=NOW)])
+    assert latest==ack
+    when=reservation_time(NOW+timedelta(minutes=1),1,latest,catch_up=True)
+    assert when==ack+timedelta(minutes=5)
+    assert await InventoryRepository(sessions).claim_due(now=when,reservation_clock=NOW) is not None

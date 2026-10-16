@@ -6,7 +6,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 
 from app.config import get_settings
 from app.database import create_engine_and_session
@@ -24,6 +24,18 @@ from scripts.publish_inventory import _publish_item, run as publish_next_due
 from scripts.scrape_publish import apartment_to_ad
 
 LOOKAHEAD = timedelta(minutes=15)
+
+
+async def latest_delivery_time(session, events):
+    # Telegram timestamps have whole-second precision; the queue commits its
+    # acknowledgement slightly later. Use the same clocks as claim_due so a
+    # valid future reservation is not rejected by that sub-second difference.
+    clocks = [as_utc(row.published_at) for row in events]
+    queued = await session.scalar(select(func.max(ApartmentInventoryQueue.published_at)).where(
+        ApartmentInventoryQueue.status == 'published'))
+    if queued is not None:
+        clocks.append(as_utc(queued))
+    return max(clocks, default=None)
 
 
 def reservation_gap(now, published_count, *, catch_up=False):
@@ -125,7 +137,7 @@ async def run():
                 return 0
             start = publication_day_start(now).astimezone(timezone.utc)
             events = await publications_in_window(session, start, start + timedelta(days=1))
-            latest = max((as_utc(row.published_at) for row in events), default=None)
+            latest = await latest_delivery_time(session, events)
         when = reservation_time(now, len(events), latest, catch_up=all_cards)
         if when is None:
             print('MANAGED_REPEATS_WAITING_FOR_SLOT', flush=True)
@@ -184,7 +196,7 @@ async def run():
         async with sessions() as session:
             start = publication_day_start(datetime.now(timezone.utc)).astimezone(timezone.utc)
             current = await publications_in_window(session, start, start + timedelta(days=1))
-            latest = max((as_utc(row.published_at) for row in current), default=None)
+            latest = await latest_delivery_time(session, current)
         gap = reservation_gap(datetime.now(timezone.utc), len(current), catch_up=all_cards)
         if len(current) >= MAX_PUBLICATIONS_PER_DAY or (latest and datetime.now(timezone.utc) - latest < timedelta(minutes=gap)):
             await inventory.finish_item(item.id, status='skipped', error='managed_slot_taken')
