@@ -8,6 +8,8 @@ from collections import Counter
 
 def district_priority(district: str | None) -> int:
     text = re.sub(r"[-–—]", " ", (district or "").casefold().replace("ё", "е"))
+    if "филармони" in text or re.search(r"восток\s*5(?!\d)", text):
+        return 3
     central = (
         "центр", "золотой квадрат", "моссовет", "филармони", "эркиндик",
         "цум", "гум", "восток 5", "бишкек парк", "дордой плаза",
