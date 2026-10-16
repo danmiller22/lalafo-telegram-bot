@@ -1,7 +1,7 @@
 name: Repeat current managed Telegram apartments
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '0 0 1 1 *'
   workflow_dispatch:
     inputs:
       manifest:
@@ -33,4 +33,4 @@ jobs:
           python-version: '3.12'
           cache: pip
       - run: pip install -r requirements.txt
-      - run: python -m scripts.managed_requested_repeats
+      - run: python -m tools.inspect_managed_repeats
