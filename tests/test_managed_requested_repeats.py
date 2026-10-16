@@ -90,10 +90,10 @@ async def test_managed_claim_reserves_shared_slot_and_cannot_claim_ordinary_rows
 
 
 def test_reservations_respect_daily_cap_clock_and_minimum_gap():
-    assert reservation_time(NOW, 70, None) is None
+    assert reservation_time(NOW, 100, None) is None
     assert reservation_time(NOW.replace(hour=21), 0, None) is None  # 03:00 Bishkek
-    assert reservation_time(NOW, 0, NOW) is None  # gap 17 min exceeds 15 min lookahead
-    assert reservation_time(NOW, 0, NOW-timedelta(minutes=4)) == NOW+timedelta(minutes=13)
+    assert reservation_time(NOW, 0, NOW) == NOW+timedelta(minutes=12)
+    assert reservation_time(NOW, 0, NOW-timedelta(minutes=4)) == NOW+timedelta(minutes=8)
     assert reservation_time(NOW, 0, None) == NOW
 
 @pytest.mark.asyncio
@@ -203,3 +203,53 @@ async def test_public_room_id_works_independently_of_translation():
     client = SimpleNamespace(_get_json=AsyncMock(return_value=public_ad(
         params=[{'id': 69, 'value': '1 room', 'value_id': 2773}])))
     assert (await refresh_managed_card(client, BINDING, make_ad())).rooms == '1'
+
+
+def test_queue_catchup_uses_five_minutes_only_when_three_slots_behind():
+    from scripts.managed_requested_repeats import reservation_gap
+    from app.inventory import publication_slots_due
+    due = publication_slots_due(NOW)
+    assert reservation_gap(NOW, due-3, catch_up=True) == 5
+    assert reservation_gap(NOW, due-2, catch_up=True) == 12
+    assert reservation_gap(NOW, due-3, catch_up=False) == 12
+    assert reservation_time(NOW, due-3, NOW, catch_up=True) == NOW+timedelta(minutes=5)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("terminal_skip", [False, True])
+async def test_general_queue_worker_sends_fresh_stock_without_any_managed_campaign(repositories, monkeypatch, terminal_skip):
+    from scripts import managed_requested_repeats as worker
+    from app.config import Settings
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None): return NOW.astimezone(tz) if tz else NOW.replace(tzinfo=None)
+    monkeypatch.setattr(worker, 'datetime', Clock)
+    apartments, _, sessions = repositories
+    original = await apartments.upsert_discovered(make_ad(owner_listing=False,
+        photo_urls=['https://img/room','https://img/kitchen']))
+    engine = SimpleNamespace(dispose=AsyncMock())
+    monkeypatch.setattr(worker, 'create_engine_and_session', lambda _: (engine, sessions))
+    monkeypatch.setattr(worker, 'get_settings', lambda: Settings(_env_file=None))
+    monkeypatch.setenv('QUEUE_RESERVATION_ALL_CARDS', 'true')
+    monkeypatch.delenv('MANAGED_REPEAT_MANIFEST', raising=False)
+    async def send(settings, factory, inventory, repo, item):
+        assert item.apartment_id == original.id
+        if terminal_skip:
+            await inventory.finish_item(item.id, status='skipped', error='not_found')
+            return None
+        await inventory.finish_item(item.id, status='published')
+        await repo.mark_published(item.apartment_id, chat_id=1, message_id=46100, acknowledged_at=NOW)
+        return 0
+    delivery = AsyncMock(side_effect=send)
+    monkeypatch.setattr(worker, '_publish_item', delivery)
+    next_delivery = AsyncMock(return_value=0)
+    monkeypatch.setattr(worker, 'publish_next_due', next_delivery)
+    assert await worker.run() == 0
+    delivery.assert_awaited_once()
+    if terminal_skip:
+        next_delivery.assert_awaited_once_with(sessions=sessions)
+        assert (await apartments.get(original.id)).telegram_message_id is None
+    else:
+        next_delivery.assert_not_awaited()
+        assert (await apartments.get(original.id)).telegram_message_id == 46100
+    engine.dispose.assert_awaited_once()

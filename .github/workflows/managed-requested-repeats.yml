@@ -1,7 +1,7 @@
-name: Repeat current managed Telegram apartments
+name: Publish Telegram queue and managed apartment repeats
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '*/5 * * * *'
   workflow_dispatch:
     inputs:
       manifest:
@@ -25,6 +25,7 @@ jobs:
       CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
       LALAFO_PROXY_URL: ${{ secrets.LALAFO_PROXY_URL }}
       TELEGRAM_GROUP_ID: '-1004389602150'
+      QUEUE_RESERVATION_ALL_CARDS: 'true'
       MANAGED_REPEAT_MANIFEST: ${{ inputs.manifest }}
       CONFIRM_MANAGED_REPEATS: ${{ inputs.confirm_enrollment && 'true' || 'false' }}
     steps:
