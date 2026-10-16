@@ -253,3 +253,49 @@ async def test_general_queue_worker_sends_fresh_stock_without_any_managed_campai
         next_delivery.assert_not_awaited()
         assert (await apartments.get(original.id)).telegram_message_id == 46100
     engine.dispose.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('fresh_stock,ordinary_sends,expect_managed',
+                         [(True,0,False),(True,1,False),(True,2,True),(False,0,True)])
+async def test_cloud_publisher_interleaves_managed_repeats_with_fresh_options(
+        repositories, monkeypatch, fresh_stock, ordinary_sends, expect_managed):
+    from scripts import managed_requested_repeats as worker
+    from app.config import Settings
+    class Clock(datetime):
+        @classmethod
+        def now(cls,tz=None): return NOW.astimezone(tz) if tz else NOW.replace(tzinfo=None)
+    apartments,_,sessions=repositories
+    managed=await apartments.upsert_discovered(make_ad())
+    await apartments.mark_published(managed.id,chat_id=-1004389602150,message_id=1,
+                                    acknowledged_at=NOW-timedelta(hours=7))
+    await enroll(sessions,{'batch':'interleaving','cards':[{**BINDING,'source_id':12345}]},
+                 now=NOW-timedelta(hours=7))
+    for index in range(ordinary_sends):
+        prior=await apartments.upsert_discovered(make_ad(lalafo_id=20000+index,
+            phone=f'+99655520000{index}',photo_urls=[f'https://img/prior{index}']))
+        await apartments.mark_published(prior.id,chat_id=1,message_id=10+index,
+                                        acknowledged_at=NOW-timedelta(hours=3-index))
+    if fresh_stock:
+        fresh=await apartments.upsert_discovered(make_ad(lalafo_id=30000,owner_listing=False,
+            phone='+996555300000',price=28000,photo_urls=['https://img/new1','https://img/new2']))
+    monkeypatch.setattr(worker,'datetime',Clock)
+    monkeypatch.setattr(worker,'create_engine_and_session',lambda _: (SimpleNamespace(dispose=AsyncMock()),sessions))
+    monkeypatch.setattr(worker,'get_settings',lambda:Settings(_env_file=None))
+    monkeypatch.setenv('QUEUE_RESERVATION_ALL_CARDS','true')
+    monkeypatch.delenv('MANAGED_REPEAT_MANIFEST',raising=False)
+    class Client:
+        def __init__(self,**kwargs):pass
+        async def __aenter__(self):return self
+        async def __aexit__(self,*args):pass
+    monkeypatch.setattr(worker,'LalafoClient',Client)
+    monkeypatch.setattr(worker,'refresh_managed_card',AsyncMock())
+    async def deliver(settings,factory,inventory,repo,item):
+        assert item.apartment_id == (managed.id if expect_managed else fresh.id)
+        await inventory.finish_item(item.id,status='published')
+        await repo.mark_published(item.apartment_id,chat_id=1,message_id=99,acknowledged_at=NOW)
+        return 0
+    delivery=AsyncMock(side_effect=deliver)
+    monkeypatch.setattr(worker,'_publish_item',delivery)
+    assert await worker.run()==0
+    delivery.assert_awaited_once()

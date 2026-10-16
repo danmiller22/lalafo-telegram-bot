@@ -136,6 +136,12 @@ async def run():
             # Reserve only one managed row; leave no queued rows for an older
             # deployment to pick up and refresh through the original source.
             candidate = next((apartment.id for _, apartment in due if apartment.id in ids), None)
+        managed_candidate = candidate
+        if all_cards and any(event.apartment_id in bindings for event in events[:2]):
+            # Interleave requested repeats with two different ordinary cards
+            # whenever fresh stock exists, rather than filling consecutive
+            # slots with previously seen managed apartments.
+            candidate = None
         if candidate is None and not all_cards:
             print('MANAGED_REPEATS_NOT_DUE', flush=True)
             return 0
@@ -146,6 +152,12 @@ async def run():
                                          only_apartment_ids={candidate} if candidate is not None else None,
                                          requested_only=candidate is not None,
                                          reservation_clock=now)
+        if item is None and candidate is None and managed_candidate is not None:
+            # A fresh-stock shortage or reserved repeat quota must not leave
+            # the channel empty when a requested repeat is due.
+            item = await inventory.claim_due(now=when, eligible_until=when,
+                only_apartment_ids={managed_candidate}, requested_only=True,
+                reservation_clock=now)
         if item is None:
             print('MANAGED_REPEATS_NOT_DUE', flush=True)
             return 0
