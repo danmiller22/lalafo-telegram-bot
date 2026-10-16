@@ -5,7 +5,8 @@ from html import unescape
 import re
 
 
-SUMMARY_LIMIT = 280
+SUMMARY_LIMIT = 160
+SENTENCE_LIMIT = 80
 _URL = re.compile(
     r"(?:https?://|www\.|tel:|mailto:)\S+|"
     r"\b(?:t\.me|wa\.me|api\.whatsapp\.com|telegram\.me)/\S+|"
@@ -44,7 +45,21 @@ def short_public_description(value: str | None, *, phone: str = "") -> str:
             continue
         if line not in lines:
             lines.append(line)
-    result = " ".join(lines)
+    sentences = []
+    for line in lines:
+        # A decimal point inside a price or area is not a sentence boundary.
+        for sentence in re.split(r"(?<=[.!?…])\s+(?!\d)|(?<=[!?…])(?=\S)", line):
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+            if len(sentence) > SENTENCE_LIMIT:
+                sentence = sentence[:SENTENCE_LIMIT - 1].rsplit(' ', 1)[0].rstrip(' ,;:-') + '…'
+            sentences.append(sentence)
+            if len(sentences) == 2:
+                break
+        if len(sentences) == 2:
+            break
+    result = " ".join(sentences)
     if len(result) > SUMMARY_LIMIT:
         result = result[:SUMMARY_LIMIT - 1].rsplit(' ', 1)[0].rstrip(' ,;:-') + '…'
     return result or "Подробные условия аренды уточняйте при обращении."

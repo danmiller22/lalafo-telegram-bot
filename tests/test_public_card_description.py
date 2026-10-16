@@ -26,7 +26,8 @@ def test_public_card_places_safe_short_description_below_price():
 
 def test_summary_is_bounded_and_does_not_infer_missing_facts():
     text = short_public_description('Квартира с лоджией. ' * 100)
-    assert len(text) <= SUMMARY_LIMIT and text.endswith('…')
+    assert text == 'Квартира с лоджией. Квартира с лоджией.'
+    assert len(text) <= SUMMARY_LIMIT
     assert 'мебель' not in short_public_description(None)
 
 
@@ -35,3 +36,9 @@ def test_source_html_is_not_rendered_as_a_contact_link():
     text = format_public_apartment(ad, bot_username='arenda312bot', wanted_deep_link=True)
     assert 'С мебелью &amp; уютная.' in text
     assert 'wa.me' not in text and '123456' not in text
+
+
+def test_summary_keeps_only_two_short_sentences():
+    assert short_public_description('С мебелью. Есть балкон! Рядом парк. Уютная.') == 'С мебелью. Есть балкон!'
+    text = short_public_description('Светлая квартира с мебелью и техникой ' * 20)
+    assert len(text) <= 80 and text.endswith('…')
