@@ -22,6 +22,7 @@ jobs:
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
       TELEGRAM_GROUP_ID: '-1004389602150'
       CHAT_CARD_MANIFEST: ${{ inputs.manifest }}
       CONFIRM_CHAT_CARD_PUBLIC_SEND: 'true'

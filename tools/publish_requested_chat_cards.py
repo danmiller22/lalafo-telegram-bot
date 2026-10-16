@@ -6,7 +6,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from aiogram import Bot
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
+from aiogram.types import InputMediaPhoto
 
 from app.config import get_settings
 from app.database import create_engine_and_session
@@ -14,6 +14,8 @@ from app.lalafo.models import LalafoAd
 from app.models import LalafoAutoReplyMeta
 from app.payments.repository import ApartmentRepository
 from app.telegram.formatting import format_public_apartment
+from app.telegram.keyboards import apartment_keyboard
+from app.security import TokenSigner
 
 
 def reviewed_card(row):
@@ -57,10 +59,9 @@ async def publish_card(row, *, sessions, bot, settings):
     text = format_public_apartment(ad, bot_username=settings.telegram_bot_username)
     message = await bot.send_message(
         chat_id=settings.telegram_group_id, text=text, parse_mode='HTML',
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text='💬 Связаться через Lalafo', url=row['chat_url'])],
-            [InlineKeyboardButton(text='🛟 Техподдержка', url=settings.support_bot_url)],
-        ]))
+        reply_markup=apartment_keyboard(apartment.id,
+            signer=TokenSigner(settings.require_callback_secret()),
+            bot_username=settings.telegram_bot_username, support_url=settings.support_bot_url))
     await repo.mark_published(apartment.id, chat_id=settings.telegram_group_id,
                               message_id=message.message_id, acknowledged_at=message.date)
     async with sessions.begin() as session:

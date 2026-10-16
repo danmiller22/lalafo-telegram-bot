@@ -5,7 +5,6 @@ from datetime import datetime, timedelta, timezone
 import logging
 
 from aiogram import Bot
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from app.config import get_settings
 from app.database import create_engine_and_session, init_db
@@ -210,13 +209,7 @@ async def _publish_item(settings, sessions, inventory, apartments, item) -> int 
         max_photos=settings.max_photos_per_apartment,
     )
     try:
-        kwargs = {}
-        if binding and not ad.phone:
-            kwargs['reply_markup'] = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text='💬 Связаться через Lalafo', url=binding['url'])],
-                [InlineKeyboardButton(text='🛟 Техподдержка', url=settings.support_bot_url)],
-            ])
-        message = await publisher.publish(apartment.id, ad, **kwargs)
+        message = await publisher.publish(apartment.id, ad)
         # A Telegram acknowledgement is the point of no return. Mark the queue
         # terminal first so a later DB metadata error can never resend the card.
         await inventory.finish_item(item.id, status="published")
