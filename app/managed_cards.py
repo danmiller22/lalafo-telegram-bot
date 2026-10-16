@@ -39,6 +39,9 @@ async def refresh_managed_card(client, binding, stored):
     binding = validate_binding(binding)
     data = await client._get_json(
         f"https://lalafo.kg/api/search/v3/feed/details/{binding['ad_id']}?expand=url")
+    required = ('id', 'user_id', 'status_id', 'category_id', 'city_id', 'currency', 'price')
+    if any(data.get(key) is None for key in required):
+        raise ValueError('managed_ad_public_data_unknown')
     if (data.get('id') != binding['ad_id'] or data.get('user_id') != binding['profile_id']
             or data.get('status_id') != 2):
         raise ManagedCardUnavailable('managed_ad_not_active_or_owner_changed')
@@ -53,15 +56,16 @@ async def refresh_managed_card(client, binding, stored):
     # expose dropdown choices with a selected flag.
     room_param = params.get(69, {})
     room_label = str(room_param.get('value') or selected(69).get('value') or '').strip().casefold()
-    rooms = ({2773: '1', 15496: 'studio'}.get(selected(69).get('id'))
+    room_id = room_param.get('value_id') or selected(69).get('id')
+    rooms = ({2773: '1', 15496: 'studio'}.get(room_id)
              or {'1 комната': '1', 'студия': 'studio'}.get(room_label))
-    if not room_label and not selected(69):
+    if not rooms and room_id not in (2774, 2775, 2776, 2777, 2781, 30624):
         raise ValueError('managed_ad_room_data_unknown')
     if not rooms:
         raise ManagedCardUnavailable('managed_ad_room_type_changed')
     photos = [im['original_url'] for im in data.get('images', []) if im.get('original_url')]
     if not photos:
-        raise ManagedCardUnavailable('managed_ad_has_no_photos')
+        raise ValueError('managed_ad_photos_unknown')
     deposit = params.get(947, {}).get('value')
     deposit = int(deposit) if str(deposit or '').isdigit() and int(deposit) > 1 else None
     return stored.model_copy(update={

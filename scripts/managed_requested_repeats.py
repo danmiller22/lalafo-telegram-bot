@@ -142,15 +142,15 @@ async def run():
             return 0
         print(f'MANAGED_REPEAT_RESERVED apartment_id={item.apartment_id} not_before={when.isoformat()}', flush=True)
         try:
-            async with LalafoClient(timeout=15, max_retries=0) as client:
+            async with LalafoClient(timeout=15, max_retries=0, proxy_url=settings.lalafo_proxy_url) as client:
                 await refresh_managed_card(client, bindings[item.apartment_id], apartment_to_ad(item.apartment))
-        except (ManagedCardUnavailable, LalafoNotFound):
+        except (ManagedCardUnavailable, LalafoNotFound) as exc:
             async with sessions.begin() as session:
                 marker = await session.get(LalafoAutoReplyMeta, PREFIX + str(item.apartment_id))
                 value = json.loads(marker.value)
                 value['enabled'] = False
                 marker.value = json.dumps(value)
-            print('MANAGED_AD_NO_LONGER_ACTIVE', flush=True)
+            print(f'MANAGED_AD_NO_LONGER_ACTIVE type={type(exc).__name__}', flush=True)
             return 0
         except (LalafoError, ValueError, TimeoutError) as exc:
             print(f'MANAGED_PUBLIC_CHECK_UNKNOWN type={type(exc).__name__}', flush=True)
