@@ -13,7 +13,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: managed-requested-telegram
+  group: inspect-managed-repeats-read-only
   cancel-in-progress: false
 jobs:
   repeat:
