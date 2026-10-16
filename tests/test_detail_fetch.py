@@ -82,8 +82,8 @@ async def test_single_slow_detail_does_not_block_next_candidate_on_same_worker()
 def test_slow_owner_queries_leave_time_for_agency_sources():
     from scripts.scrape_publish import crawl_source_budget
     args=dict(started_at=0,seconds=180,owner_count=4,source_count=10)
-    assert crawl_source_budget(**args,now=30,source_index=0)==(0,15)
-    assert crawl_source_budget(**args,now=45,source_index=1)==(4,135)
+    assert crawl_source_budget(**args,now=30,source_index=0)==(0,60)
+    assert crawl_source_budget(**args,now=90,source_index=1)==(4,90)
     assert crawl_source_budget(**args,now=91,source_index=1)==(4,89)
     assert crawl_source_budget(**args,now=180,source_index=4)==(4,0)
 

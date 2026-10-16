@@ -25,12 +25,12 @@ from app.promotions import publications_in_window, queue_due_promotions, REQUEST
 BISHKEK = ZoneInfo("Asia/Bishkek")
 ALLOWED_ROOMS = frozenset({"studio", "1"})
 CENTRAL_DAILY_SHARE = 0.50
-REALTOR_DAILY_SHARE = 0.75
+REALTOR_DAILY_SHARE = 0.50
 MIN_PUBLICATIONS_PER_DAY = 70
 MAX_PUBLICATIONS_PER_DAY = 70
 # The daily target is chosen once per Bishkek date, then split across the two
 # discovery periods so retries cannot increase the day's publication volume.
-# Aim for 75% realtors and 25% owners. Either category fills
+# Aim for 50% realtors and 50% owners. Either category fills
 # shortages in the other. Unknown authors can fill remaining slots.
 MIN_NON_OWNERS_PER_DAY = math.ceil(MAX_PUBLICATIONS_PER_DAY * REALTOR_DAILY_SHARE)
 MAX_NON_OWNERS_PER_DAY = MIN_NON_OWNERS_PER_DAY
@@ -101,7 +101,7 @@ def daily_publication_target(period_start: datetime) -> int:
 
 
 def daily_realtor_target(period_start: datetime) -> int:
-    """Return the 75% daily realtor target, rounded up for indivisible cards."""
+    """Return the 50% daily realtor target."""
     del period_start
     return MAX_NON_OWNERS_PER_DAY
 
@@ -410,7 +410,7 @@ class InventoryRepository:
 
     async def reset_publication_history_for_code(self, code_version: str) -> bool:
         """Rebuild the queue once per deployment without erasing repost history."""
-        version = code_version.strip() or "publication-70-05-to-02-75-realtors-v9"
+        version = code_version.strip() or "publication-70-05-to-02-50-50-paced-v10"
         key = "apartment_publication_code_version"
         async with self.sessions.begin() as session:
             marker = await session.get(LalafoAutoReplyMeta, key)
