@@ -79,11 +79,14 @@ async def promotion_work(session, *, now, day_start, day_end):
     """Return due work and reserve future feasible repeats inside today's quota."""
     from app.managed_cards import managed_bindings
     bindings = await managed_bindings(session)
+    continuous_ids = [key for key, value in bindings.items()
+                      if value.get('repeat_every_hours') == 3 and value.get('repeat_while_active') is True]
     rows = list((await session.execute(select(RequestedCardPromotion, Apartment).join(
         Apartment, Apartment.id == RequestedCardPromotion.apartment_id,
     ).where(or_(RequestedCardPromotion.enabled.is_(True),
                 RequestedCardPromotion.apartment_id.in_(bindings)), Apartment.active.is_(True),
-            RequestedCardPromotion.expires_at > now,
+            or_(RequestedCardPromotion.expires_at > now,
+                RequestedCardPromotion.apartment_id.in_(continuous_ids)),
     ))).all())
     ids = [apartment.id for _, apartment in rows]
     stats = {}
@@ -106,15 +109,20 @@ async def promotion_work(session, *, now, day_start, day_end):
             continue
         recent, count, campaign_count = stats.get(apartment.id, (None, 0, 0))
         latest = max([utc(v) for v in (recent, apartment.published_at) if v is not None], default=utc(promotion.requested_at))
-        remaining = max(0, min(DAILY_REQUESTED_CARD_LIMIT - count,
-                               DAILY_REQUESTED_CARD_LIMIT - campaign_count))
-        next_send = max(now, latest + REQUESTED_CARD_GAP)
-        end = min(day_end, utc(promotion.expires_at)) if promotion.expires_at else day_end
+        three_hour = bindings.get(apartment.id, {}).get('repeat_every_hours') == 3
+        limit = 8 if three_hour else DAILY_REQUESTED_CARD_LIMIT
+        gap = timedelta(hours=3) if three_hour else REQUESTED_CARD_GAP
+        continuous = apartment.id in continuous_ids
+        remaining = max(0, limit - count if continuous else min(limit - count, limit - campaign_count))
+        # A new explicit batch includes one immediate send, then the normal gap.
+        immediate = three_hour and campaign_count == 0 and latest < utc(promotion.requested_at)
+        next_send = now if immediate else max(now, latest + gap)
+        end = day_end if continuous else min(day_end, utc(promotion.expires_at))
         possible = 0
         cursor = next_send
         while possible < remaining and cursor < end:
             possible += 1
-            cursor += REQUESTED_CARD_GAP
+            cursor += gap
         reserved += possible
         if remaining and next_send <= now and now < end:
             due.append((latest, apartment))

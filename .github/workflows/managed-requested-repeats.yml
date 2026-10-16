@@ -8,6 +8,11 @@ on:
         description: Publish only due current-account Lalafo cards
         type: boolean
         default: false
+      managed_batch_size:
+        description: Number of due managed cards to send in this manual run
+        type: choice
+        options: ['1', '5']
+        default: '1'
       manifest:
         type: string
         default: ''
@@ -22,7 +27,7 @@ concurrency:
 jobs:
   repeat:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 75
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -32,6 +37,7 @@ jobs:
       QUEUE_RESERVATION_ALL_CARDS: ${{ inputs.managed_only && 'false' || 'true' }}
       MANAGED_REPEAT_MANIFEST: ${{ inputs.manifest }}
       CONFIRM_MANAGED_REPEATS: ${{ inputs.confirm_enrollment && 'true' || 'false' }}
+      MANAGED_BATCH_SIZE: ${{ inputs.managed_only && inputs.managed_batch_size || '1' }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -48,4 +54,20 @@ jobs:
             done < lalafo-route.env
             cat lalafo-route.env >> "$GITHUB_ENV"
           fi
-      - run: python -m scripts.managed_requested_repeats
+      - name: Publish requested batch within the shared queue limits
+        shell: bash
+        run: |
+          delivered=0
+          for attempt in $(seq 1 15); do
+            python -m scripts.managed_requested_repeats | tee /tmp/managed-delivery.log
+            if grep -q '^QUEUE_CARD_PUBLISHED ' /tmp/managed-delivery.log; then
+              delivered=$((delivered + 1))
+            fi
+            if [ "$delivered" -ge "$MANAGED_BATCH_SIZE" ]; then break; fi
+            if [ "$MANAGED_BATCH_SIZE" = 1 ]; then break; fi
+            sleep 30
+          done
+          echo "MANAGED_BATCH_DELIVERED=$delivered/$MANAGED_BATCH_SIZE"
+          if [ "$MANAGED_BATCH_SIZE" != 1 ] && [ "$delivered" -lt "$MANAGED_BATCH_SIZE" ]; then
+            exit 1
+          fi

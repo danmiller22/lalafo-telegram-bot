@@ -1,0 +1,37 @@
+{
+  "batch": "current-owned-18194628-three-hour-20261016",
+  "cards": [
+    {
+      "ad_id": 117338201,
+      "profile_id": 18194628,
+      "url": "https://lalafo.kg/bishkek/ads/sdaetsa-1-komnatnaa-kvartira-v-vostok-5-id-117338201",
+      "source_id": 111455613
+    },
+    {
+      "ad_id": 117338212,
+      "profile_id": 18194628,
+      "url": "https://lalafo.kg/bishkek/ads/sdaetsa-1-komnatnaa-kvartira-id-117338212",
+      "source_id": 84731829
+    },
+    {
+      "ad_id": 117338213,
+      "profile_id": 18194628,
+      "url": "https://lalafo.kg/bishkek/ads/1-komnata-vefa-tc-rieltor-bez-podselenia-bez-mebeli-id-117338213",
+      "source_id": 113580599
+    },
+    {
+      "ad_id": 117347863,
+      "profile_id": 18194628,
+      "url": "https://lalafo.kg/bishkek/ads/studia-vostok-5-mkr-rieltor-bez-zivotnyh-ot-6-mesacev-ot-1-goda-s-mebelu-casticno-id-117347863",
+      "source_id": 117326942
+    },
+    {
+      "ad_id": 117348442,
+      "profile_id": 18194628,
+      "url": "https://lalafo.kg/bishkek/ads/sdaetsa-1-komnatnaa-kvartira-v-id-117348442",
+      "telegram_message_id": 45892
+    }
+  ],
+  "repeat_every_hours": 3,
+  "repeat_while_active": true
+}
