@@ -1,0 +1,33 @@
+name: Restore standard managed card buttons
+on:
+  workflow_dispatch:
+    inputs:
+      follow_publication_run:
+        description: Optional active publication run to follow for new receipts
+        type: string
+        default: ''
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: restore-managed-card-buttons
+  cancel-in-progress: false
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
+      TELEGRAM_GROUP_ID: '-1004389602150'
+      GH_TOKEN: ${{ github.token }}
+      FOLLOW_PUBLICATION_RUN: ${{ inputs.follow_publication_run }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python -m scripts.restore_managed_card_buttons

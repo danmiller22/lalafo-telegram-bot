@@ -1,0 +1,39 @@
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import pytest
+
+from app.config import Settings
+from scripts.managed_requested_repeats import enroll
+from scripts import restore_managed_card_buttons as repair
+from tests.helpers import make_ad
+from tests.test_managed_requested_repeats import BINDING, NOW
+
+
+@pytest.mark.asyncio
+async def test_repair_restores_both_historical_and_latest_card_buttons(repositories, monkeypatch):
+    apartments, _, sessions = repositories
+    apartment = await apartments.upsert_discovered(make_ad(phone=''))
+    await apartments.mark_published(apartment.id, chat_id=-1004389602150,
+                                    message_id=100, acknowledged_at=NOW)
+    await enroll(sessions, {'batch': 'restore-buttons',
+        'cards': [{**BINDING, 'source_id': 12345}]}, now=NOW)
+    await apartments.mark_published(apartment.id, chat_id=-1004389602150,
+                                    message_id=101, acknowledged_at=NOW)
+    bot = SimpleNamespace(edit_message_reply_markup=AsyncMock(),
+                          session=SimpleNamespace(close=AsyncMock()))
+    engine = SimpleNamespace(dispose=AsyncMock())
+    monkeypatch.setattr(repair, 'create_engine_and_session', lambda _: (engine, sessions))
+    monkeypatch.setattr(repair, 'Bot', lambda **_: bot)
+    monkeypatch.setattr(repair, 'get_settings', lambda: Settings(_env_file=None,
+        telegram_bot_token='123:fake', callback_secret='test-secret-long-enough',
+        telegram_group_id=-1004389602150))
+    monkeypatch.delenv('FOLLOW_PUBLICATION_RUN', raising=False)
+    assert await repair.run() == 0
+    calls = bot.edit_message_reply_markup.await_args_list
+    assert {call.kwargs['message_id'] for call in calls} == {100, 101}
+    for call in calls:
+        rows = call.kwargs['reply_markup'].inline_keyboard
+        assert rows[0][0].text == 'Получить номер' and '/access?startapp=' in rows[0][0].url
+        assert rows[1][0].text == '🔄 Проверить актуальность'
+        assert rows[1][0].callback_data.startswith('availability:')

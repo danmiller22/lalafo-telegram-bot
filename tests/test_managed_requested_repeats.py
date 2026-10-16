@@ -179,9 +179,8 @@ async def test_managed_repeat_checks_current_ad_before_send_preserves_private_or
     else:
         publish.assert_awaited_once()
         assert publish.await_args.args[1].price == 32000
-        keyboard = publish.await_args.kwargs['reply_markup']
-        assert keyboard.inline_keyboard[0][0].url == BINDING['url']
-        assert 'Получить номер' not in keyboard.model_dump_json()
+        # Managed repeats use the publisher's normal payment/availability buttons.
+        assert 'reply_markup' not in publish.await_args.kwargs
         async with sessions() as session:
             receipts = (await session.scalars(select(RequestedCardPublication))).all()
             assert len(receipts) == 2 and receipts[-1].telegram_message_id == 45999
