@@ -26,15 +26,15 @@ def test_mixed_prices_do_not_form_cheap_then_expensive_blocks():
         result = mix_prices(cards, rng=random.Random(seed))
         buckets = [price_bucket(card.price) for card in result]
         assert {card.lalafo_id for card in result} == {card.lalafo_id for card in cards}
-        assert all(a != b for a,b in zip(buckets,buckets[1:]))
-        assert all(len(set(buckets[i:i+3])) == 3 for i in range(0,len(buckets),3))
+        assert Counter(buckets[:5]) == {0: 3, 1: 1, 2: 1}
+        assert Counter(buckets[5:10]) == {0: 3, 1: 1, 2: 1}
 
 
 def test_price_mix_keeps_all_stock_when_one_range_is_short():
     cards = [make_ad(lalafo_id=i, price=price) for i,price in enumerate([25_000]*8+[33_000,39_000])]
     result = mix_prices(cards,rng=random.Random(3))
     assert Counter(card.lalafo_id for card in result) == Counter(card.lalafo_id for card in cards)
-    assert {price_bucket(card.price) for card in result[:3]} == {0,1,2}
+    assert {price_bucket(card.price) for card in result[:5]} == {0,1,2}
 
 
 def test_affordable_center_beats_expensive_east_five_even_with_more_photos():
