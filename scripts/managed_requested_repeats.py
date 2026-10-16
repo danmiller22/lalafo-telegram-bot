@@ -6,7 +6,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 
 from app.config import get_settings
 from app.database import create_engine_and_session
@@ -54,6 +54,9 @@ def reservation_time(now, published_count, last_sent, *, catch_up=False):
 
 async def enroll(sessions, manifest, *, now):
     """Enroll once; rerunning the same batch cannot extend or reset it."""
+    cadence = manifest.get('repeat_every_hours')
+    if cadence is not None and cadence != 3:
+        raise ValueError('Unsupported managed repeat interval')
     key = 'managed_requested_batch:' + manifest['batch']
     repo = ApartmentRepository(sessions)
     resolved = []
@@ -95,6 +98,9 @@ async def enroll(sessions, manifest, *, now):
             ).values(status='skipped', last_error='managed_enrollment'))
             binding = {k: row[k] for k in ('profile_id', 'ad_id', 'url')}
             binding['enabled'] = True
+            if cadence is not None:
+                binding['repeat_every_hours'] = cadence
+                binding['repeat_while_active'] = manifest.get('repeat_while_active') is True
             marker = await session.get(LalafoAutoReplyMeta, PREFIX + str(apartment.id))
             if marker is None:
                 session.add(LalafoAutoReplyMeta(key=PREFIX + str(apartment.id), value=json.dumps(binding)))
@@ -131,7 +137,10 @@ async def run():
                 return 0
             ids = set(await session.scalars(select(RequestedCardPromotion.apartment_id).where(
                 RequestedCardPromotion.apartment_id.in_(bindings),
-                RequestedCardPromotion.expires_at > now)))
+                or_(RequestedCardPromotion.expires_at > now,
+                    RequestedCardPromotion.apartment_id.in_([
+                        key for key, value in bindings.items()
+                        if value.get('repeat_every_hours') == 3 and value.get('repeat_while_active') is True])))))
             if not ids and not all_cards:
                 print('MANAGED_REPEATS_EXPIRED', flush=True)
                 return 0

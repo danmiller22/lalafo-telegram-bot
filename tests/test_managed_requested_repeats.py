@@ -17,6 +17,32 @@ BINDING = {'ad_id': 117338212, 'profile_id': 18194628,
            'url': 'https://lalafo.kg/bishkek/ads/example-id-117338212', 'enabled': True}
 
 
+@pytest.mark.asyncio
+async def test_three_hour_managed_batch_sends_now_then_every_three_hours_until_withdrawn(repositories):
+    apartments, _, sessions = repositories
+    apartment = await apartments.upsert_discovered(make_ad())
+    await apartments.mark_published(apartment.id, chat_id=1, message_id=1,
+                                    acknowledged_at=NOW-timedelta(minutes=30))
+    manifest = {'batch': 'three-hour', 'repeat_every_hours': 3, 'repeat_while_active': True,
+                'cards': [{**BINDING, 'source_id': 12345}]}
+    await enroll(sessions, manifest, now=NOW)
+    async def due(when):
+        async with sessions() as session:
+            rows, _ = await promotion_work(session, now=when,
+                day_start=when.replace(hour=0, minute=0, second=0),
+                day_end=when.replace(hour=0, minute=0, second=0)+timedelta(days=1))
+            return [row[1].id for row in rows]
+    assert await due(NOW) == [apartment.id]
+    await apartments.mark_published(apartment.id, chat_id=1, message_id=2, acknowledged_at=NOW)
+    assert await due(NOW+timedelta(hours=2, minutes=59)) == []
+    assert await due(NOW+timedelta(hours=3)) == [apartment.id]
+    # Ongoing managed repeats survive the ordinary one-day requested campaign.
+    assert await due(NOW+timedelta(days=2)) == [apartment.id]
+    await apartments.set_availability(apartment.id, status='unavailable',
+        checked_at=NOW+timedelta(days=2), reason='source_removed')
+    assert await due(NOW+timedelta(days=2)) == []
+
+
 def public_ad(**overrides):
     data = {'id': 117338212, 'user_id': 18194628, 'status_id': 2,
             'category_id': 2044, 'city_id': 103184, 'currency': 'KGS', 'price': 32000,
