@@ -138,7 +138,7 @@ async def run():
             start = publication_day_start(now).astimezone(timezone.utc)
             events = await publications_in_window(session, start, start + timedelta(days=1))
             latest = await latest_delivery_time(session, events)
-        when = reservation_time(now, len(events), latest, catch_up=all_cards)
+        when = reservation_time(now, len(events), latest, catch_up=True)
         if when is None:
             print('MANAGED_REPEATS_WAITING_FOR_SLOT', flush=True)
             return 0
@@ -197,7 +197,7 @@ async def run():
             start = publication_day_start(datetime.now(timezone.utc)).astimezone(timezone.utc)
             current = await publications_in_window(session, start, start + timedelta(days=1))
             latest = await latest_delivery_time(session, current)
-        gap = reservation_gap(datetime.now(timezone.utc), len(current), catch_up=all_cards)
+        gap = reservation_gap(datetime.now(timezone.utc), len(current), catch_up=True)
         if len(current) >= MAX_PUBLICATIONS_PER_DAY or (latest and datetime.now(timezone.utc) - latest < timedelta(minutes=gap)):
             await inventory.finish_item(item.id, status='skipped', error='managed_slot_taken')
             item = None
