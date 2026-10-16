@@ -42,8 +42,16 @@ def price_bucket(price: int) -> int:
     return min(2, max(0, (price - 25_000) // 5_000))
 
 
+PRICE_MIX_WEIGHTS = {0: 3, 1: 1, 2: 1}
+
+
+def price_mix_rank(bucket: int, counts: dict[int, int]) -> float:
+    """Target a 60/20/20 mix when all ranges are available; never block fallback."""
+    return (counts.get(bucket, 0) + 1) / PRICE_MIX_WEIGHTS[bucket]
+
+
 def mix_prices(items: list, *, rng=None) -> list:
-    """Interleave available price ranges, shuffling cards within each range."""
+    """Interleave every price range, with three inexpensive cards per five."""
     rng = rng or random.SystemRandom()
     buckets: dict[int, list] = {}
     for item in items:
@@ -56,7 +64,7 @@ def mix_prices(items: list, *, rng=None) -> list:
     while buckets:
         available = list(buckets)
         rng.shuffle(available)
-        selected = min(available, key=lambda bucket: (bucket == previous, counts[bucket]))
+        selected = min(available, key=lambda bucket: (price_mix_rank(bucket, counts), bucket == previous))
         result.append(buckets[selected].pop())
         counts[selected] += 1
         previous = selected

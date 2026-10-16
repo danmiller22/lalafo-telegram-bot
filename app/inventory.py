@@ -17,7 +17,7 @@ from app.models import (
     LalafoAutoReplyMeta,
 )
 from app.state import normalized_district
-from app.listing_quality import district_priority, price_bucket, mix_prices, rental_value_band
+from app.listing_quality import district_priority, price_bucket, mix_prices, rental_value_band, price_mix_rank
 from app.telegram.formatting import is_supported_source
 from app.promotions import publications_in_window, queue_due_promotions, REQUESTED_WINDOW_PREFIX
 
@@ -207,6 +207,7 @@ def _pick_for_window(
             district = normalized_district(item.district) or "unknown"
             bucket = price_bucket(item.price)
             return (
+                price_mix_rank(bucket, price_counts),
                 rental_value_band(item.price, item.rooms, getattr(item, "source_description", None)),
                 -district_priority(item.district),
                 item.price > 35_000,
@@ -1008,12 +1009,18 @@ class InventoryRepository:
             due_rows = area_rows or due_rows
             recent_prices = [row.price for row in day_publications if as_utc(row.published_at) <= now][:6]
             recent_buckets = [price_bucket(price) for price in recent_prices]
+            day_price_counts = {}
+            for event in day_publications:
+                if as_utc(event.published_at) <= now:
+                    bucket = price_bucket(event.price)
+                    day_price_counts[bucket] = day_price_counts.get(bucket, 0) + 1
             selected_id = min(due_rows, key=lambda row: (
                 not row[4].startswith(REQUESTED_WINDOW_PREFIX),
+                price_mix_rank(price_bucket(row[3]), day_price_counts),
+                bool(recent_buckets) and price_bucket(row[3]) == recent_buckets[0],
                 rental_value_band(row[3], row[5], row[6]),
                 -district_priority(row[1]),
                 row[3] > 35_000,
-                bool(recent_buckets) and price_bucket(row[3]) == recent_buckets[0],
                 recent_buckets.count(price_bucket(row[3])),
                 due_rows.index(row),
             ))[0]

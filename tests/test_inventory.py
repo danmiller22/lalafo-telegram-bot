@@ -1087,20 +1087,40 @@ async def test_late_day_catchup_can_use_future_reserved_stock(repositories):
 
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("publication_clock")
-async def test_claim_keeps_bargain_ahead_of_expensive_price_mixing(repositories):
+@pytest.mark.parametrize('previous_sends,expected_prices', [(1, {25_000}), (2, {33_000,39_000})])
+async def test_claim_mixes_prices_with_more_cheap_cards(repositories, previous_sends, expected_prices):
     apartments, _, sessions = repositories
     now = datetime.now(timezone.utc)
     previous = await apartments.upsert_discovered(make_ad(lalafo_id=280000, price=25_000, district="ЦУМ", phone="+996555280000"))
     await apartments.mark_published(previous.id, chat_id=-1001, message_id=1)
     async with sessions.begin() as session:
         await session.execute(update(Apartment).where(Apartment.id==previous.id).values(published_at=now-timedelta(minutes=20)))
+        if previous_sends == 2:
+            from app.promotions import record_delivery
+            await record_delivery(session, previous, chat_id=-1001, message_id=1,
+                                  published_at=now-timedelta(minutes=20))
+            await record_delivery(session, previous, chat_id=-1001, message_id=2,
+                                  published_at=now-timedelta(minutes=15))
     for index,price in enumerate((25_000,33_000,39_000)):
         card=await apartments.upsert_discovered(make_ad(lalafo_id=280001+index,price=price,district="ЦУМ",phone=f"+99655528000{index+1}"))
         async with sessions.begin() as session:
             session.add(ApartmentInventoryQueue(apartment_id=card.id,scheduled_at=now-timedelta(minutes=3-index),window_key="mixed-prices",sequence=index))
     claimed=await InventoryRepository(sessions).claim_due(now=now)
     assert claimed is not None
-    assert claimed.apartment.price == 25_000
+    assert claimed.apartment.price in expected_prices
+
+
+def test_period_mixes_all_ranges_with_sixty_percent_cheap_when_stock_allows():
+    from collections import Counter
+    stock = _apartments(300, central=True, start_id=300000)
+    for index, item in enumerate(stock):
+        item.price = (25_000, 32_000, 39_000)[index % 3]
+        item.seller_type = 'owner' if index % 2 == 0 else 'realtor'
+    start = datetime(2026, 10, 16, 5, tzinfo=timezone(timedelta(hours=6)))
+    planned = plan_period(stock, period_start=start, rng=random.Random(42))
+    counts = Counter(item.apartment.price for item in planned)
+    assert counts == {25_000: 33, 32_000: 11, 39_000: 11}
+    assert {item.apartment.price for item in planned[:5]} == {25_000, 32_000, 39_000}
 
 
 @pytest.mark.parametrize("owner_count,realtor_count,expected_owners", [(110, 110, 55), (10, 110, 10), (110, 5, 105)])
