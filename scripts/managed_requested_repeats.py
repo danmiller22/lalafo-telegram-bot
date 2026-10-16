@@ -1,4 +1,4 @@
-"""Repeat explicitly enrolled managed ads through the shared publication queue."""
+"""Reserve shared Telegram publication slots for fresh stock and managed repeats."""
 import asyncio
 import json
 import logging
@@ -12,26 +12,31 @@ from app.config import get_settings
 from app.database import create_engine_and_session
 from app.inventory import (InventoryRepository, MAX_PUBLICATIONS_PER_DAY,
                            MIN_PUBLICATION_GAP_MINUTES, PUBLICATION_SPACING_MINUTES,
-                           as_utc, publication_day_start, publication_window_open)
+                           as_utc, publication_day_start, publication_slots_due,
+                           publication_window_open)
 from app.lalafo.client import LalafoClient, LalafoError, LalafoNotFound
 from app.managed_cards import (PREFIX, ManagedCardUnavailable, managed_bindings,
                                refresh_managed_card, validate_binding)
 from app.models import Apartment, ApartmentInventoryQueue, LalafoAutoReplyMeta, RequestedCardPromotion
 from app.payments.repository import ApartmentRepository
 from app.promotions import promotion_work, publications_in_window, register_requested
-from scripts.publish_inventory import _publish_item
+from scripts.publish_inventory import _publish_item, run as publish_next_due
 from scripts.scrape_publish import apartment_to_ad
 
 LOOKAHEAD = timedelta(minutes=15)
 
 
-def reservation_time(now, published_count, last_sent):
+def reservation_gap(now, published_count, *, catch_up=False):
+    return 5 if catch_up and publication_slots_due(now) - published_count >= 3 else MIN_PUBLICATION_GAP_MINUTES
+
+
+def reservation_time(now, published_count, last_sent, *, catch_up=False):
     if not publication_window_open(now) or published_count >= MAX_PUBLICATIONS_PER_DAY:
         return None
     start = publication_day_start(now).astimezone(timezone.utc)
     when = max(now, start + timedelta(minutes=PUBLICATION_SPACING_MINUTES * published_count))
     if last_sent is not None:
-        when = max(when, as_utc(last_sent) + timedelta(minutes=MIN_PUBLICATION_GAP_MINUTES))
+        when = max(when, as_utc(last_sent) + timedelta(minutes=reservation_gap(now, published_count, catch_up=catch_up)))
     return when if when - now <= LOOKAHEAD and publication_window_open(when) else None
 
 
@@ -98,6 +103,7 @@ async def run():
     repo = ApartmentRepository(sessions)
     item = None
     handed_to_publisher = False
+    all_cards = os.environ.get('QUEUE_RESERVATION_ALL_CARDS') == 'true'
     try:
         if os.environ.get('MANAGED_REPEAT_MANIFEST'):
             if os.environ.get('CONFIRM_MANAGED_REPEATS') != 'true':
@@ -105,20 +111,22 @@ async def run():
             manifest = json.loads(Path(os.environ['MANAGED_REPEAT_MANIFEST']).read_text())
             await enroll(sessions, manifest, now=datetime.now(timezone.utc))
         now = datetime.now(timezone.utc)
+        if all_cards:
+            await inventory.schedule_period(now=now)
         async with sessions() as session:
             bindings = await managed_bindings(session)
-            if not bindings:
+            if not bindings and not all_cards:
                 return 0
             ids = set(await session.scalars(select(RequestedCardPromotion.apartment_id).where(
                 RequestedCardPromotion.apartment_id.in_(bindings),
                 RequestedCardPromotion.expires_at > now)))
-            if not ids:
+            if not ids and not all_cards:
                 print('MANAGED_REPEATS_EXPIRED', flush=True)
                 return 0
             start = publication_day_start(now).astimezone(timezone.utc)
             events = await publications_in_window(session, start, start + timedelta(days=1))
             latest = max((as_utc(row.published_at) for row in events), default=None)
-        when = reservation_time(now, len(events), latest)
+        when = reservation_time(now, len(events), latest, catch_up=all_cards)
         if when is None:
             print('MANAGED_REPEATS_WAITING_FOR_SLOT', flush=True)
             return 0
@@ -128,22 +136,37 @@ async def run():
             # Reserve only one managed row; leave no queued rows for an older
             # deployment to pick up and refresh through the original source.
             candidate = next((apartment.id for _, apartment in due if apartment.id in ids), None)
-        if candidate is None:
+        managed_candidate = candidate
+        if all_cards and any(event.apartment_id in bindings for event in events[:2]):
+            # Interleave requested repeats with two different ordinary cards
+            # whenever fresh stock exists, rather than filling consecutive
+            # slots with previously seen managed apartments.
+            candidate = None
+        if candidate is None and not all_cards:
             print('MANAGED_REPEATS_NOT_DUE', flush=True)
             return 0
         # The normal transactional claim is also a reservation. While it waits
         # for this one slot, every old/new publisher sees the shared in-flight
         # row. Source collection, payments and the bot remain independent.
         item = await inventory.claim_due(now=when, eligible_until=when,
-                                         only_apartment_ids={candidate}, requested_only=True,
+                                         only_apartment_ids={candidate} if candidate is not None else None,
+                                         requested_only=candidate is not None,
                                          reservation_clock=now)
+        if item is None and candidate is None and managed_candidate is not None:
+            # A fresh-stock shortage or reserved repeat quota must not leave
+            # the channel empty when a requested repeat is due.
+            item = await inventory.claim_due(now=when, eligible_until=when,
+                only_apartment_ids={managed_candidate}, requested_only=True,
+                reservation_clock=now)
         if item is None:
             print('MANAGED_REPEATS_NOT_DUE', flush=True)
             return 0
         print(f'MANAGED_REPEAT_RESERVED apartment_id={item.apartment_id} not_before={when.isoformat()}', flush=True)
+        binding = bindings.get(item.apartment_id)
         try:
-            async with LalafoClient(timeout=15, max_retries=0, proxy_url=settings.lalafo_proxy_url) as client:
-                await refresh_managed_card(client, bindings[item.apartment_id], apartment_to_ad(item.apartment))
+            if binding:
+                async with LalafoClient(timeout=15, max_retries=0, proxy_url=settings.lalafo_proxy_url) as client:
+                    await refresh_managed_card(client, binding, apartment_to_ad(item.apartment))
         except (ManagedCardUnavailable, LalafoNotFound) as exc:
             async with sessions.begin() as session:
                 marker = await session.get(LalafoAutoReplyMeta, PREFIX + str(item.apartment_id))
@@ -162,17 +185,24 @@ async def run():
             start = publication_day_start(datetime.now(timezone.utc)).astimezone(timezone.utc)
             current = await publications_in_window(session, start, start + timedelta(days=1))
             latest = max((as_utc(row.published_at) for row in current), default=None)
-        if len(current) >= MAX_PUBLICATIONS_PER_DAY or (latest and datetime.now(timezone.utc) - latest < timedelta(minutes=MIN_PUBLICATION_GAP_MINUTES)):
+        gap = reservation_gap(datetime.now(timezone.utc), len(current), catch_up=all_cards)
+        if len(current) >= MAX_PUBLICATIONS_PER_DAY or (latest and datetime.now(timezone.utc) - latest < timedelta(minutes=gap)):
             await inventory.finish_item(item.id, status='skipped', error='managed_slot_taken')
             item = None
             return 0
         handed_to_publisher = True
-        result = await _publish_item(settings, sessions, inventory, repo, item) or 0
+        result = await _publish_item(settings, sessions, inventory, repo, item)
+        if result is None and all_cards:
+            # A removed/rejected card must not waste the whole cloud tick.
+            # The ordinary dispatcher skips terminal failures until one real
+            # delivery, while retaining the same shared gap and daily cap.
+            return await publish_next_due(sessions=sessions)
         latest_card = await repo.get(item.apartment_id)
         if latest_card.published_at and as_utc(latest_card.published_at) >= when:
-            print(f'MANAGED_REPEAT_PUBLISHED managed_id={bindings[item.apartment_id]["ad_id"]} '
+            print(f'QUEUE_CARD_PUBLISHED apartment_id={item.apartment_id} '
+                  f'managed_id={binding["ad_id"] if binding else "none"} '
                   f'message_id={latest_card.telegram_message_id}', flush=True)
-        return result
+        return result or 0
     finally:
         if item is not None and not handed_to_publisher:
             await inventory.finish_item(item.id, status='skipped', error='managed_preflight_interrupted')

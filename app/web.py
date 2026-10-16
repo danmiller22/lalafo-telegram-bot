@@ -26,7 +26,7 @@ from app.bot.main import BotRuntime, configure_bot_profile, create_runtime
 from app.availability import MAX_LISTING_AGE_DAYS
 from app.config import get_settings
 from app.campaign_cutoffs import cutoff_state as requested_lalafo_cutoff_state
-from app.inventory import REALTOR_DAILY_SHARE
+from app.inventory import REALTOR_DAILY_SHARE, MAX_PUBLICATIONS_PER_DAY, PUBLICATION_SPACING_MINUTES
 from app.lalafo.auto_reply import LalafoAutoResponder
 from app.lalafo.models import LalafoAd
 from app.payment_plans import LIFETIME_PLAN, MONTH_PLAN, WEEK_PLAN, WEEK_PRICE, plan_price
@@ -1389,8 +1389,8 @@ async def health() -> JSONResponse:
             ),
             "lalafo_auto_reply": auto_reply,
             "publication_policy": {
-                "daily_target": 70, "start": "05:00", "end": "02:00",
-                "timezone": "Asia/Bishkek", "spacing_minutes": 18, "watermark_check": False,
+                "daily_target": MAX_PUBLICATIONS_PER_DAY, "start": "05:00", "end": "02:00",
+                "timezone": "Asia/Bishkek", "spacing_minutes": PUBLICATION_SPACING_MINUTES, "watermark_check": False,
                 "seller_mix": {"owner": 1 - REALTOR_DAILY_SHARE, "realtor": REALTOR_DAILY_SHARE},
                 "single_photo_duplicate_guard": True,
                 "requested_cards": {"total_publications": 3, "duration_hours": 24, "minimum_gap_hours": 6, "included_in_daily_target": True},
