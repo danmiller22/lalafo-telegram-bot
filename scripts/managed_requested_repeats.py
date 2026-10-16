@@ -58,6 +58,8 @@ async def enroll(sessions, manifest, *, now):
     if cadence is not None and cadence != 3:
         raise ValueError('Unsupported managed repeat interval')
     key = 'managed_requested_batch:' + manifest['batch']
+    if len(key) > 64:
+        raise ValueError('Managed batch identifier exceeds database key limit')
     repo = ApartmentRepository(sessions)
     resolved = []
     async with sessions() as session:
