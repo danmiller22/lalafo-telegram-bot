@@ -12,6 +12,11 @@ from tests.test_managed_requested_repeats import BINDING, NOW
 
 @pytest.mark.asyncio
 async def test_repair_restores_both_historical_and_latest_card_buttons(repositories, monkeypatch):
+    class Clock(repair.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return NOW.astimezone(tz) if tz else NOW.replace(tzinfo=None)
+    monkeypatch.setattr(repair, 'datetime', Clock)
     apartments, _, sessions = repositories
     apartment = await apartments.upsert_discovered(make_ad(phone=''))
     await apartments.mark_published(apartment.id, chat_id=-1004389602150,
