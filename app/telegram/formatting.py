@@ -83,5 +83,5 @@ def format_public_apartment(
         apartment = escape(format_apartment(ad))
         url = escape(f"https://t.me/{username}?start=want", quote=True)
         mention = f'<a href="{url}">@{escape(username)}</a>'
-        return f"{apartment}\n\n{description}\n\n⚠️ Никому не переводите деньги.\n\n🔎 Ищете квартиру? Подайте заявку: {mention}"
-    return f"{format_apartment(ad)}\n\n{description}\n\n⚠️ Никому не переводите деньги.\n\n🔎 Ищете квартиру? Подайте заявку: @{username}"
+        return f"{apartment}\n\n{description}\n\n⚠️ Никому не переводите задаток до заселения.\n\n🔎 Ищете квартиру? Подайте заявку: {mention}"
+    return f"{format_apartment(ad)}\n\n{description}\n\n⚠️ Никому не переводите задаток до заселения.\n\n🔎 Ищете квартиру? Подайте заявку: @{username}"
