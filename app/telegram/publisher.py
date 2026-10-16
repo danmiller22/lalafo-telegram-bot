@@ -5,7 +5,7 @@ import logging
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramNetworkError, TelegramRetryAfter, TelegramServerError
-from aiogram.types import InputMediaPhoto, Message, URLInputFile
+from aiogram.types import InlineKeyboardMarkup, InputMediaPhoto, Message, URLInputFile
 
 from app.lalafo.models import LalafoAd
 from app.security import TokenSigner
@@ -74,7 +74,7 @@ class TelegramPublisher:
                 await asyncio.sleep(min(8.0, 2**attempt + attempt * 0.25))
         raise TelegramPublishError("Telegram retry loop ended unexpectedly")
 
-    async def publish(self, apartment_id: int, ad: LalafoAd) -> Message:
+    async def publish(self, apartment_id: int, ad: LalafoAd, *, reply_markup: InlineKeyboardMarkup | None = None) -> Message:
         if not is_supported_source(ad):
             raise TelegramPublishError("Unsupported apartment source")
         if is_excluded_agency(ad):
@@ -166,7 +166,7 @@ class TelegramPublisher:
                     wanted_deep_link=True,
                 ),
                 parse_mode="HTML",
-                reply_markup=apartment_keyboard(
+                reply_markup=reply_markup if reply_markup is not None else apartment_keyboard(
                     apartment_id,
                     signer=self.signer,
                     bot_username=self.bot_username,

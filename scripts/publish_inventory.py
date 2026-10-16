@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 import logging
 
 from aiogram import Bot
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from app.config import get_settings
 from app.database import create_engine_and_session, init_db
@@ -33,7 +34,7 @@ MAX_TERMINAL_SKIPS_PER_RUN = 100
 STORED_FALLBACK_MAX_AGE_HOURS = 48
 
 
-def _valid(ad, settings) -> tuple[bool, str]:
+def _valid(ad, settings, *, allow_chat_contact=False) -> tuple[bool, str]:
     if not is_supported_source(ad):
         return False, "unsupported_source"
     if is_excluded_agency(ad):
@@ -44,7 +45,7 @@ def _valid(ad, settings) -> tuple[bool, str]:
         max_price=SOURCE_MAX_PRICE,
         rooms=SOURCE_ALLOWED_ROOMS,
     )
-    if not allowed:
+    if not allowed and not (allow_chat_contact and reason == 'phone'):
         return False, reason
     if ad.price < max(25_000, settings.min_price, minimum_price_for_rooms(ad.rooms)):
         return False, "min_price"
@@ -108,7 +109,24 @@ async def _publish_item(settings, sessions, inventory, apartments, item) -> int 
     stored = apartment_to_ad(apartment)
     ad = None
     stored_fallback = False
-    if apartment.source_url.startswith("https://t.me/"):
+    binding = None
+    if is_requested:
+        from app.managed_cards import managed_bindings
+        async with sessions() as session:
+            binding = (await managed_bindings(session)).get(apartment.id)
+    if binding:
+        from app.managed_cards import ManagedCardUnavailable, refresh_managed_card
+        try:
+            async with LalafoClient(timeout=15, max_retries=0, proxy_url=settings.lalafo_proxy_url) as client:
+                ad = await refresh_managed_card(client, binding, stored)
+        except (ManagedCardUnavailable, LalafoNotFound) as exc:
+            await apartments.set_availability(apartment.id, status='unavailable',
+                checked_at=datetime.now(timezone.utc), reason=type(exc).__name__)
+            return await _skip(inventory, item.id, 'managed_ad_unavailable')
+        except (LalafoError, ValueError, TimeoutError):
+            await inventory.finish_item(item.id, status='skipped', error='managed_public_check_unknown')
+            return 0
+    elif apartment.source_url.startswith("https://t.me/"):
         source_updated = as_utc(apartment.source_updated_at or apartment.updated_at)
         if not is_requested and source_updated < datetime.now(timezone.utc) - timedelta(hours=168):
             return await _skip(inventory, item.id, "stale_telegram")
@@ -150,7 +168,7 @@ async def _publish_item(settings, sessions, inventory, apartments, item) -> int 
                 return await _skip(inventory, item.id, f"stale_{type(exc).__name__}")
 
     assert ad is not None
-    valid, reason = _valid(ad, settings)
+    valid, reason = _valid(ad, settings, allow_chat_contact=bool(binding))
     # Hand-picked cards may legitimately have a different budget/room count;
     # source, whole-apartment, structure and lodging protections still apply.
     if is_requested and reason in {"rooms", "min_price", "max_price", "price"}:
@@ -170,7 +188,7 @@ async def _publish_item(settings, sessions, inventory, apartments, item) -> int 
     # endpoint temporarily omits it.
     if not ad.phone:
         ad = ad.model_copy(update={"phone": stored.phone})
-    if not (is_requested and stored_fallback):
+    if not binding and not (is_requested and stored_fallback):
         apartment = await apartments.upsert_discovered(
             ad, discovery_priority=apartment.discovery_priority
         )
@@ -192,7 +210,13 @@ async def _publish_item(settings, sessions, inventory, apartments, item) -> int 
         max_photos=settings.max_photos_per_apartment,
     )
     try:
-        message = await publisher.publish(apartment.id, ad)
+        kwargs = {}
+        if binding and not ad.phone:
+            kwargs['reply_markup'] = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text='💬 Связаться через Lalafo', url=binding['url'])],
+                [InlineKeyboardButton(text='🛟 Техподдержка', url=settings.support_bot_url)],
+            ])
+        message = await publisher.publish(apartment.id, ad, **kwargs)
         # A Telegram acknowledgement is the point of no return. Mark the queue
         # terminal first so a later DB metadata error can never resend the card.
         await inventory.finish_item(item.id, status="published")
@@ -212,11 +236,17 @@ async def _publish_item(settings, sessions, inventory, apartments, item) -> int 
         return 0
     except TelegramPublishError as exc:
         logger.warning("Queued publication will retry: %s", type(exc).__name__)
-        await inventory.retry_item(item.id, error=type(exc).__name__)
+        if binding:
+            await inventory.finish_item(item.id, status='skipped', error=type(exc).__name__)
+        else:
+            await inventory.retry_item(item.id, error=type(exc).__name__)
         return 0
     except Exception as exc:
         logger.exception("Queued publication failed safely")
-        await inventory.retry_item(item.id, error=type(exc).__name__)
+        if binding:
+            await inventory.finish_item(item.id, status='skipped', error=type(exc).__name__)
+        else:
+            await inventory.retry_item(item.id, error=type(exc).__name__)
         return 1
     finally:
         await bot.session.close()

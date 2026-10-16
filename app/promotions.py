@@ -1,7 +1,7 @@
 """Durable, explicitly requested card promotion and acknowledged-send accounting."""
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select, union_all
+from sqlalchemy import func, or_, select, union_all
 
 from app.telegram.formatting import is_supported_source
 from app.models import Apartment, ApartmentInventoryQueue, RequestedCardPromotion, RequestedCardPublication
@@ -77,9 +77,12 @@ async def register_requested(session, apartment, *, now):
 
 async def promotion_work(session, *, now, day_start, day_end):
     """Return due work and reserve future feasible repeats inside today's quota."""
+    from app.managed_cards import managed_bindings
+    bindings = await managed_bindings(session)
     rows = list((await session.execute(select(RequestedCardPromotion, Apartment).join(
         Apartment, Apartment.id == RequestedCardPromotion.apartment_id,
-    ).where(RequestedCardPromotion.enabled.is_(True), Apartment.active.is_(True),
+    ).where(or_(RequestedCardPromotion.enabled.is_(True),
+                RequestedCardPromotion.apartment_id.in_(bindings)), Apartment.active.is_(True),
             RequestedCardPromotion.expires_at > now,
     ))).all())
     ids = [apartment.id for _, apartment in rows]
@@ -99,7 +102,7 @@ async def promotion_work(session, *, now, day_start, day_end):
     due = []
     reserved = 0
     for promotion, apartment in rows:
-        if not apartment.phone or not apartment.photo_urls or not is_supported_source(apartment):
+        if (not apartment.phone and apartment.id not in bindings) or not apartment.photo_urls or not is_supported_source(apartment):
             continue
         recent, count, campaign_count = stats.get(apartment.id, (None, 0, 0))
         latest = max([utc(v) for v in (recent, apartment.published_at) if v is not None], default=utc(promotion.requested_at))
@@ -118,8 +121,15 @@ async def promotion_work(session, *, now, day_start, day_end):
     return sorted(due, key=lambda row: row[0]), reserved
 
 
-async def queue_due_promotions(session, *, now, day_start, day_end):
+async def queue_due_promotions(session, *, now, day_start, day_end, managed_ids=()):
     due, reserved = await promotion_work(session, now=now, day_start=day_start, day_end=day_end)
+    from app.managed_cards import managed_bindings
+    bindings = await managed_bindings(session)
+    # Only the dedicated worker can queue a managed card, and it claims that
+    # single row in the same transaction. Old web workers must never see a
+    # leftover managed row in queued/retry state.
+    due = [(latest, apartment) for latest, apartment in due
+           if apartment.id not in bindings or apartment.id in managed_ids]
     due_ids = {apartment.id for _, apartment in due}
     old_rows = list((await session.scalars(select(ApartmentInventoryQueue).where(
         ApartmentInventoryQueue.status == 'queued',

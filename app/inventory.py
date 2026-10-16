@@ -842,10 +842,14 @@ class InventoryRepository:
         *,
         now: datetime | None = None,
         eligible_until: datetime | None = None,
+        only_apartment_ids: set[int] | None = None,
+        requested_only: bool = False,
+        reservation_clock: datetime | None = None,
     ) -> ApartmentInventoryQueue | None:
         now = as_utc(now or datetime.now(timezone.utc))
         eligible_until = as_utc(eligible_until or now)
-        stale = now - timedelta(minutes=20)
+        claim_clock = as_utc(reservation_clock or now)
+        stale = claim_clock - timedelta(minutes=20)
         local = now.astimezone(BISHKEK)
         if not publication_window_open(now):
             return None
@@ -901,10 +905,6 @@ class InventoryRepository:
                 return None
             # The same transactional claim serializes normal and promoted
             # cards across the live service and GitHub workers.
-            reserved_promotions = await queue_due_promotions(
-                session, now=now, day_start=day_start,
-                day_end=(day_start_local + timedelta(hours=21)).astimezone(timezone.utc),
-            )
             latest_queue_publication = await session.scalar(
                 select(func.max(ApartmentInventoryQueue.published_at)).where(
                     ApartmentInventoryQueue.status == "published",
@@ -942,6 +942,11 @@ class InventoryRepository:
                 return None
             if published_today >= MAX_PUBLICATIONS_PER_DAY:
                 return None
+            reserved_promotions = await queue_due_promotions(
+                session, now=now, day_start=day_start,
+                day_end=(day_start_local + timedelta(hours=21)).astimezone(timezone.utc),
+                managed_ids=only_apartment_ids if requested_only and only_apartment_ids else (),
+            )
             published_non_owners = sum(row.seller_type == 'realtor' for row in day_publications)
             published_districts = [row.district for row in day_publications]
             published_central = sum(is_central(value) for value in published_districts)
@@ -957,6 +962,8 @@ class InventoryRepository:
                     .join(Apartment)
                     .where(
                         ApartmentInventoryQueue.status == "queued",
+                        Apartment.id.in_(only_apartment_ids) if only_apartment_ids is not None else True,
+                        ApartmentInventoryQueue.window_key.startswith(REQUESTED_WINDOW_PREFIX) if requested_only else True,
                         or_(
                             (ApartmentInventoryQueue.last_error.is_(None)) & (ApartmentInventoryQueue.scheduled_at <= eligible_until),
                             (ApartmentInventoryQueue.last_error.is_not(None)) & (ApartmentInventoryQueue.scheduled_at <= now),
@@ -1012,7 +1019,7 @@ class InventoryRepository:
                         ApartmentInventoryQueue.id == selected_id,
                         ApartmentInventoryQueue.status == "queued",
                     )
-                    .values(status="publishing", claimed_at=now, attempts=ApartmentInventoryQueue.attempts + 1)
+                    .values(status="publishing", claimed_at=claim_clock, attempts=ApartmentInventoryQueue.attempts + 1)
                     .returning(ApartmentInventoryQueue)
                 )
             ).first()

@@ -1,0 +1,188 @@
+import json
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import pytest
+
+from app.inventory import InventoryRepository, as_utc
+from app.managed_cards import PREFIX, ManagedCardUnavailable, refresh_managed_card
+from app.models import ApartmentInventoryQueue, LalafoAutoReplyMeta, RequestedCardPromotion
+from app.promotions import promotion_work
+from scripts.managed_requested_repeats import enroll, reservation_time
+from tests.helpers import make_ad
+
+NOW = datetime(2026, 10, 16, 8, tzinfo=timezone.utc)
+BINDING = {'ad_id': 117338212, 'profile_id': 18194628,
+           'url': 'https://lalafo.kg/bishkek/ads/example-id-117338212', 'enabled': True}
+
+
+def public_ad(**overrides):
+    data = {'id': 117338212, 'user_id': 18194628, 'status_id': 2,
+            'category_id': 2044, 'city_id': 103184, 'currency': 'KGS', 'price': 32000,
+            'description': 'Без мебели. Депозит 10000 сом.',
+            'images': [{'original_url': 'https://img/room'}, {'original_url': 'https://img/kitchen'}],
+            'params': [{'id': 69, 'values': [{'id': 2773, 'selected': True}]},
+                       {'id': 357, 'values': [{'value': 'Филармония', 'selected': True}]},
+                       {'id': 947, 'value': '10000'}]}
+    data.update(overrides)
+    return data
+
+
+@pytest.mark.asyncio
+async def test_public_refresh_preserves_original_verified_contact():
+    client = SimpleNamespace(_get_json=AsyncMock(return_value=public_ad()))
+    original = make_ad(phone='')
+    result = await refresh_managed_card(client, BINDING, original)
+    assert result.phone == original.phone and result.lalafo_id == original.lalafo_id
+    assert result.source_url == original.source_url
+    assert result.price == 32000 and result.deposit == 10000
+    assert result.district == 'Филармония' and result.photo_urls == ['https://img/room', 'https://img/kitchen']
+    assert client._get_json.await_count == 1
+
+
+@pytest.mark.parametrize('changes', [{'status_id': 3}, {'user_id': 2}, {'id': 1},
+                                     {'category_id': 1}, {'city_id': 1}, {'images': []}])
+@pytest.mark.asyncio
+async def test_withdrawn_or_changed_card_cannot_repeat(changes):
+    client = SimpleNamespace(_get_json=AsyncMock(return_value=public_ad(**changes)))
+    with pytest.raises(ManagedCardUnavailable):
+        await refresh_managed_card(client, BINDING, make_ad())
+
+
+@pytest.mark.asyncio
+async def test_enrollment_is_idempotent_and_empty_phone_requires_explicit_binding(repositories):
+    apartments, _, sessions = repositories
+    apartment = await apartments.upsert_discovered(make_ad(phone=''))
+    await apartments.mark_published(apartment.id, chat_id=-1004389602150, message_id=45857,
+                                    acknowledged_at=NOW-timedelta(hours=7))
+    manifest = {'batch': 'reviewed-test', 'cards': [{**BINDING, 'source_id': 12345}]}
+    await enroll(sessions, manifest, now=NOW)
+    await enroll(sessions, manifest, now=NOW+timedelta(hours=12))
+    async with sessions() as session:
+        promotion = await session.get(RequestedCardPromotion, apartment.id)
+        assert as_utc(promotion.expires_at) == NOW+timedelta(days=1)
+        assert not promotion.enabled  # older workers cannot refresh the wrong original
+        due, _ = await promotion_work(session, now=NOW, day_start=NOW-timedelta(hours=9), day_end=NOW+timedelta(hours=12))
+        assert [row[1].id for row in due] == [apartment.id]
+    async with sessions.begin() as session:
+        await session.delete(await session.get(LalafoAutoReplyMeta, PREFIX+str(apartment.id)))
+    async with sessions() as session:
+        assert await promotion_work(session, now=NOW, day_start=NOW-timedelta(hours=9), day_end=NOW+timedelta(hours=12)) == ([], 0)
+
+
+@pytest.mark.asyncio
+async def test_managed_claim_reserves_shared_slot_and_cannot_claim_ordinary_rows(repositories):
+    apartments, _, sessions = repositories
+    apartment = await apartments.upsert_discovered(make_ad())
+    async with sessions.begin() as session:
+        session.add(ApartmentInventoryQueue(apartment_id=apartment.id, scheduled_at=NOW,
+                                            window_key='ordinary', sequence=0, status='queued'))
+    repo = InventoryRepository(sessions)
+    assert await repo.claim_due(now=NOW, only_apartment_ids={apartment.id}, requested_only=True) is None
+    await apartments.mark_published(apartment.id, chat_id=1, message_id=1,
+                                    acknowledged_at=NOW-timedelta(hours=7), promote_requested=True)
+    item = await repo.claim_due(now=NOW+timedelta(minutes=10), only_apartment_ids={apartment.id},
+                               requested_only=True, reservation_clock=NOW)
+    assert item is not None and item.window_key.startswith('requested-card:')
+    assert as_utc(item.claimed_at) == NOW
+    assert await repo.claim_due(now=NOW+timedelta(minutes=11)) is None
+
+
+def test_reservations_respect_daily_cap_clock_and_minimum_gap():
+    assert reservation_time(NOW, 70, None) is None
+    assert reservation_time(NOW.replace(hour=21), 0, None) is None  # 03:00 Bishkek
+    assert reservation_time(NOW, 0, NOW) is None  # gap 17 min exceeds 15 min lookahead
+    assert reservation_time(NOW, 0, NOW-timedelta(minutes=4)) == NOW+timedelta(minutes=13)
+    assert reservation_time(NOW, 0, None) == NOW
+
+@pytest.mark.asyncio
+async def test_public_feed_compact_params_are_supported():
+    data = public_ad(params=[{'id': 69, 'value': '1 комната', 'value_id': 2773},
+                             {'id': 357, 'value': 'Филармония'}, {'id': 947, 'value': '10000'}])
+    client = SimpleNamespace(_get_json=AsyncMock(return_value=data))
+    result = await refresh_managed_card(client, BINDING, make_ad())
+    assert result.rooms == '1' and result.deposit == 10000
+
+
+@pytest.mark.parametrize('public_error', [False, True])
+@pytest.mark.asyncio
+async def test_managed_repeat_checks_current_ad_before_send_preserves_private_original(repositories, monkeypatch, public_error):
+    from app.config import Settings
+    from app.lalafo.client import LalafoAccessError
+    from app.models import RequestedCardPublication
+    from sqlalchemy import select
+    from scripts import publish_inventory
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return NOW.astimezone(tz) if tz else NOW.replace(tzinfo=None)
+    monkeypatch.setattr(publish_inventory, 'datetime', Clock)
+    apartments, _, sessions = repositories
+    original = make_ad(phone='', photo_urls=['https://img/old1', 'https://img/old2'],
+                       source_description='Исходное проверенное описание')
+    apartment = await apartments.upsert_discovered(original)
+    await apartments.mark_published(apartment.id, chat_id=-1004389602150, message_id=45857,
+                                    acknowledged_at=NOW-timedelta(hours=7))
+    await enroll(sessions, {'batch': 'integration', 'cards': [{**BINDING, 'source_id': 12345}]}, now=NOW)
+    inventory = InventoryRepository(sessions)
+    item = await inventory.claim_due(now=NOW, only_apartment_ids={apartment.id}, requested_only=True)
+    assert item is not None
+    json_get = AsyncMock(return_value=public_ad())
+    if public_error:
+        json_get.side_effect = LalafoAccessError('403', status_code=403)
+    class Client:
+        def __init__(self, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        _get_json = json_get
+    publish = AsyncMock(return_value=SimpleNamespace(message_id=45999, date=NOW))
+    monkeypatch.setattr(publish_inventory, 'LalafoClient', Client)
+    monkeypatch.setattr(publish_inventory, 'Bot', lambda **kw: SimpleNamespace(session=SimpleNamespace(close=AsyncMock())))
+    monkeypatch.setattr(publish_inventory, 'TelegramPublisher', lambda *a, **kw: SimpleNamespace(publish=publish))
+    settings = Settings(_env_file=None, telegram_bot_token='123:fake', callback_secret='test-secret-long-enough',
+                        telegram_group_id=-1004389602150)
+    assert await publish_inventory._publish_item(settings, sessions, inventory, apartments, item) == 0
+    stored = await apartments.get(apartment.id)
+    assert stored.source_description == original.source_description
+    assert stored.photo_urls == original.photo_urls and stored.phone == ''
+    if public_error:
+        publish.assert_not_awaited()
+        assert stored.active  # HTTP 403 is not a confirmed withdrawal
+    else:
+        publish.assert_awaited_once()
+        assert publish.await_args.args[1].price == 32000
+        keyboard = publish.await_args.kwargs['reply_markup']
+        assert keyboard.inline_keyboard[0][0].url == BINDING['url']
+        assert 'Получить номер' not in keyboard.model_dump_json()
+        async with sessions() as session:
+            receipts = (await session.scalars(select(RequestedCardPublication))).all()
+            assert len(receipts) == 2 and receipts[-1].telegram_message_id == 45999
+            assert (await session.get(ApartmentInventoryQueue, item.id)).status == 'published'
+
+@pytest.mark.asyncio
+async def test_generic_worker_cannot_expose_managed_queued_rows_to_old_web(repositories):
+    from sqlalchemy import select
+    apartments, _, sessions = repositories
+    originals = []
+    for index in range(2):
+        apartment = await apartments.upsert_discovered(make_ad(lalafo_id=12345+index,
+            phone=f'+99655512345{index}', photo_urls=[f'https://img/{index}/a', f'https://img/{index}/b']))
+        await apartments.mark_published(apartment.id, chat_id=-1004389602150,
+                                        message_id=45857+index, acknowledged_at=NOW-timedelta(hours=7))
+        originals.append(apartment)
+    await enroll(sessions, {'batch': 'two-managed', 'cards': [
+        {**BINDING, 'ad_id': BINDING['ad_id']+index,
+         'url': f"https://lalafo.kg/bishkek/ads/example-id-{BINDING['ad_id']+index}",
+         'source_id': 12345+index} for index in range(2)]}, now=NOW)
+    inventory = InventoryRepository(sessions)
+    assert await inventory.claim_due(now=NOW) is None
+    async with sessions() as session:
+        assert not list(await session.scalars(select(ApartmentInventoryQueue).where(
+            ApartmentInventoryQueue.status == 'queued')))
+    claimed = await inventory.claim_due(now=NOW, requested_only=True, only_apartment_ids={originals[0].id})
+    assert claimed is not None
+    async with sessions() as session:
+        rows = list(await session.scalars(select(ApartmentInventoryQueue)))
+        assert len(rows) == 1 and rows[0].status == 'publishing'
