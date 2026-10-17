@@ -3,6 +3,10 @@ name: Lalafo cloud network check
 on:
   workflow_dispatch:
     inputs:
+      requested_telegram_message_id:
+        description: Read only the public source snapshot for this requested Telegram card
+        type: string
+        default: ''
       link_only_manifest:
         description: Link verified owned ads to existing contact cards without sending or resetting repeats
         type: string
@@ -174,6 +178,7 @@ jobs:
         if: inputs.requested_listing_snapshot
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          REQUESTED_TELEGRAM_MESSAGE_ID: ${{ inputs.requested_telegram_message_id }}
         run: python -m tools.requested_listing_snapshot
       - name: Audit recent publication duplicates without changing the channel
         if: inputs.audit_duplicates
