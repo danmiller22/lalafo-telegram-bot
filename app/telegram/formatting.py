@@ -42,8 +42,9 @@ def is_supported_source(ad: LalafoAd | Apartment) -> bool:
 
 
 def author_label(ad: LalafoAd | Apartment) -> str | None:
-    """Keep seller classifications internal; public cards omit author labels."""
-    del ad
+    """Label confirmed owners; leave realtor and unknown cards unmarked."""
+    if is_confirmed_owner(ad):
+        return "👤 Собственник"
     return None
 
 

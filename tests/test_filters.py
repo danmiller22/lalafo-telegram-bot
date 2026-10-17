@@ -5,6 +5,7 @@ import pytest
 
 from app.config import ADDITIONAL_SEARCH_URLS, DEFAULT_SEARCH_URL, Settings
 from app.lalafo.parser import is_allowed
+from app.listing_policy import listing_policy_eligible
 from app.telegram.formatting import author_label, format_apartment, format_public_apartment
 from app.lalafo.subletting import halve_subletting_candidates
 from scripts.scrape_publish import (
@@ -87,7 +88,7 @@ def test_allowed_and_format_has_no_source_or_description():
     text = format_apartment(ad)
     assert text == (
         "🏠 1-комнатная квартира\n📍 7 мкр\n🏙 Бишкек\n"
-        "💰 35 000 сом\n🔐 Депозит: 20 000 сом"
+        "💰 35 000 сом\n🔐 Депозит: 20 000 сом\n👤 Собственник"
     )
     assert "lalafo" not in text.lower()
     assert ad.phone not in text
@@ -121,7 +122,7 @@ def test_missing_district_uses_labeled_demo_location_and_omits_deposit():
     text = format_apartment(make_ad(district=None, deposit=None, rooms="studio"))
     assert text == (
         "🏠 Студия\n📍 Центр\n"
-        "🏙 Бишкек\n💰 35 000 сом"
+        "🏙 Бишкек\n💰 35 000 сом\n👤 Собственник"
     )
 
 
@@ -133,7 +134,7 @@ def test_expanded_source_keeps_reposts_strictly_limited():
     assert SOURCE_PUBLISH_SPACING_SECONDS == 150
     assert SOURCE_MAX_SEARCH_PAGES == 30
     assert SOURCE_MIN_PRICE == 25_000
-    assert SOURCE_MAX_PRICE == 40_000
+    assert SOURCE_MAX_PRICE == 45_000
     assert SOURCE_MIN_PHOTOS == 1
     assert MAX_REPOSTS_PER_RUN == 18
     assert SOURCE_REPOST_AFTER_HOURS == 48
@@ -143,7 +144,7 @@ def test_expanded_source_keeps_reposts_strictly_limited():
     assert TWO_BEDROOM_MAX_PER_RUN == 2
     assert settings.rooms == "studio,1"
     assert settings.min_price == 23_000
-    assert settings.max_price == 40_000
+    assert settings.max_price == 45_000
     assert settings.max_new_posts_per_run == 18
     assert settings.max_search_pages == 36
     assert settings.allow_no_district is True
@@ -156,22 +157,22 @@ def test_source_urls_follow_the_operator_filters():
     assert "/semeynym/param-bez-detey/studentam/" in DEFAULT_SEARCH_URL
     assert "/bez-podseleniya/mozhno-s-zhivotnymi" in DEFAULT_SEARCH_URL
     assert "bez-zhivotnyh" not in DEFAULT_SEARCH_URL
-    assert "price[from]=25000&price[to]=40000" in DEFAULT_SEARCH_URL
-    assert len(ADDITIONAL_SEARCH_URLS) == 1
-    assert "/studio/1-bedroom/real-estate-agency" in ADDITIONAL_SEARCH_URLS[0]
+    assert "price[from]=25000&price[to]=45000" in DEFAULT_SEARCH_URL
+    assert len(ADDITIONAL_SEARCH_URLS) == 7
+    assert all("/agent/real-estate-agency" in url for url in ADDITIONAL_SEARCH_URLS)
     assert all("bez-podseleniya" not in url for url in ADDITIONAL_SEARCH_URLS)
-    assert all("price[from]=25000&price[to]=40000" in url for url in ADDITIONAL_SEARCH_URLS)
+    assert all("price[from]=25000&price[to]=35000" in url for url in ADDITIONAL_SEARCH_URLS)
 
 
-def test_discovery_pool_reserves_three_quarters_for_owners():
+def test_discovery_pool_is_split_equally_between_seller_categories():
     targets = source_candidate_targets(300, source_count=3, batch_limit=18)
 
-    assert REALTOR_CANDIDATE_RESERVE_SHARE == 0.25
-    assert targets == [112, 225, 300]
-    assert targets[-1] - targets[-2] == 75
+    assert REALTOR_CANDIDATE_RESERVE_SHARE == 0.50
+    assert targets == [75, 150, 300]
+    assert targets[-1] - targets[-2] == 150
 
 
-def test_inventory_sources_reserve_three_quarters_for_owners():
+def test_inventory_sources_split_capacity_between_categories():
     targets = source_candidate_targets(
         240,
         source_count=4,
@@ -179,13 +180,43 @@ def test_inventory_sources_reserve_three_quarters_for_owners():
         owner_source_count=2,
     )
 
-    assert targets == [90, 180, 210, 240]
+    assert targets == [60, 120, 180, 240]
 
 
 def test_supported_room_types_have_twenty_five_thousand_price_floor():
     assert minimum_price_for_rooms("studio") == 25_000
     assert minimum_price_for_rooms("1") == 25_000
     assert minimum_price_for_rooms("2") == 25_000
+
+
+@pytest.mark.parametrize("price", [25_000, 35_000, 45_000])
+def test_confirmed_owners_are_eligible_in_every_district_through_45000(price):
+    assert listing_policy_eligible(make_ad(
+        price=price, district="Арча-Бешик", owner_listing=True,
+        seller_type="owner",
+    ))
+
+
+def test_realtors_must_be_affordable_and_central():
+    assert listing_policy_eligible(make_ad(
+        price=35_000, district="Восток-5", owner_listing=False,
+        seller_type="realtor",
+    ))
+    assert not listing_policy_eligible(make_ad(
+        price=36_000, district="Восток-5", owner_listing=False,
+        seller_type="realtor",
+    ))
+    assert not listing_policy_eligible(make_ad(
+        price=30_000, district="Арча-Бешик", owner_listing=False,
+        seller_type="realtor",
+    ))
+
+
+def test_unclassified_listings_do_not_enter_public_selection():
+    assert not listing_policy_eligible(make_ad(
+        price=30_000, district="ЦУМ", owner_listing=False,
+        seller_type="unknown",
+    ))
 
 
 @pytest.mark.parametrize("term", ["контейнер", "времянка", "вагончик", "барак"])
@@ -360,7 +391,7 @@ def test_mixed_batch_is_split_equally():
         for index in (1, 2)
     ]
     realtors = [
-        make_ad(lalafo_id=index, owner_listing=False, phone=f"+996555{index:06d}")
+        make_ad(lalafo_id=index, owner_listing=False, district="ЦУМ", phone=f"+996555{index:06d}")
         for index in (3, 4, 5)
     ]
 
@@ -723,20 +754,20 @@ def test_publish_batch_caps_reposts_per_run():
 @pytest.mark.parametrize(
     "overrides, expected",
     [
-        ({"phone_source_version": 2}, None),
-        ({"phone_source_version": 0}, None),
-        ({"phone_source_version": 2, "phone": ""}, None),
-        ({"phone_source_version": 2, "source_url": "manual://telegram/123"}, None),
+        ({"phone_source_version": 2}, "👤 Собственник"),
+        ({"phone_source_version": 0}, "👤 Собственник"),
+        ({"phone_source_version": 2, "phone": ""}, "👤 Собственник"),
+        ({"phone_source_version": 2, "source_url": "manual://telegram/123"}, "👤 Собственник"),
         ({"phone_source_version": 2, "owner_listing": False}, None),
         ({"phone_source_version": 2, "seller_type": "unknown"}, None),
     ],
 )
-def test_public_cards_omit_seller_and_verification_labels(overrides, expected):
+def test_public_cards_mark_only_confirmed_owners(overrides, expected):
     ad = make_ad(**overrides)
     assert author_label(ad) == expected
     text = format_public_apartment(ad, bot_username="rentttkg")
     assert "Контакты проверены" not in text
-    assert "Собственник" not in text
+    assert ("Собственник" in text) == (expected is not None)
     assert "Риелтор" not in text
 
 
@@ -757,7 +788,7 @@ def test_owner_price_searches_cover_the_budget_and_agencies_follow_owner_segment
         if '/owner?' in url and not any(f'/{district}/' in url for district in INVENTORY_PRIORITY_DISTRICTS):
             q=parse_qs(urlsplit(url).query)
             owner_ranges.append((int(q['price[from]'][0]),int(q['price[to]'][0])))
-    assert owner_ranges==[(25000,27999),(28000,31999),(32000,35999),(36000,40000)]
+    assert owner_ranges==[(25000,27999),(28000,31999),(32000,35999),(36000,39999),(40000,45000)]
     owner_segment=sum('real-estate-agency' not in url for url in INVENTORY_SEARCH_URLS)
     assert all('real-estate-agency' not in url for url in INVENTORY_SEARCH_URLS[:owner_segment])
     assert all('real-estate-agency' in url for url in INVENTORY_SEARCH_URLS[owner_segment:])
@@ -765,8 +796,7 @@ def test_owner_price_searches_cover_the_budget_and_agencies_follow_owner_segment
     for url in INVENTORY_SEARCH_URLS[owner_segment:]:
         query = parse_qs(urlsplit(url).query)
         agency_ranges.append((int(query['price[from]'][0]), int(query['price[to]'][0])))
-    assert agency_ranges[:3] == [(25000, 29999), (30000, 34999), (35000, 40000)]
-    assert all(value == (25000,40000) for value in agency_ranges[3:])
+    assert all(value == (25000,35000) for value in agency_ranges)
 
 
 def test_source_rotation_covers_all_sources_without_mixing_budget_segments():

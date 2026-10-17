@@ -22,7 +22,7 @@ def test_public_card_omits_description_and_preserves_warning(deep_link):
                  deposit=None)
     text = format_public_apartment(ad, bot_username='arenda312bot', wanted_deep_link=deep_link)
     assert 'Есть лифт и балкон.' not in text
-    assert '35 000 сом\n\n⚠️ Никому не переводите задаток до заселения.\n\n🔎 Ищете квартиру?' in text
+    assert '35 000 сом\n👤 Собственник\n\n⚠️ Никому не переводите задаток до заселения.\n\n🔎 Ищете квартиру?' in text
     assert '123456' not in text and '+996' not in text and 'Телефон' not in text
 
 

@@ -17,6 +17,7 @@ from app.security import TokenSigner
 from app.lalafo.exclusions import is_excluded_agency
 from app.telegram.publisher import TelegramPublishError, TelegramPublisher
 from app.telegram.formatting import is_supported_source
+from app.listing_policy import listing_policy_eligible
 from scripts.scrape_publish import (
     SOURCE_ALLOWED_ROOMS,
     SOURCE_MAX_PRICE,
@@ -56,6 +57,8 @@ def _valid(ad, settings, *, allow_chat_contact=False) -> tuple[bool, str]:
         return False, "shared_housing"
     if is_substandard_structure(ad):
         return False, "substandard_structure"
+    if not listing_policy_eligible(ad):
+        return False, "seller_policy"
     return True, "ok"
 
 
@@ -170,7 +173,9 @@ async def _publish_item(settings, sessions, inventory, apartments, item) -> int 
     valid, reason = _valid(ad, settings, allow_chat_contact=bool(binding))
     # Hand-picked cards may legitimately have a different budget/room count;
     # source, whole-apartment, structure and lodging protections still apply.
-    if is_requested and reason in {"rooms", "min_price", "max_price", "price"}:
+    if is_requested and reason in {
+        "rooms", "min_price", "max_price", "price", "seller_policy"
+    }:
         valid = (is_supported_source(ad) and not is_excluded_agency(ad)
                  and bool(ad.photo_urls) and bool(ad.phone)
                  and ad.price > 0 and ad.no_subletting and not is_substandard_structure(ad))

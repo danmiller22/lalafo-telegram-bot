@@ -28,6 +28,7 @@ from app.lalafo.phone import mask_phone
 from app.models import Apartment
 from app.state import PostedState, ad_fingerprint, normalized_district
 from app.listing_quality import district_priority, mix_prices, rental_value_band
+from app.listing_policy import OWNER_MAX_PRICE, listing_policy_eligible
 from app.telegram.formatting import format_apartment
 from app.telegram.source_filter import is_lodging_offer
 from app.telegram.sources import (
@@ -90,7 +91,7 @@ CENTRAL_DISTRICT_TERMS = (
 # The fallback search includes owners and real-estate agents; detail-level
 # checks still remove shared housing and all public cards omit offerer type.
 SOURCE_MIN_PRICE = 25_000
-SOURCE_MAX_PRICE = 40_000
+SOURCE_MAX_PRICE = OWNER_MAX_PRICE
 SOURCE_ALLOWED_ROOMS = ("studio", "1")
 SOURCE_MIN_PHOTOS = 1
 SOURCE_MAX_POSTS_PER_RUN = 18
@@ -102,7 +103,7 @@ MAX_REPOSTS_PER_RUN = 18
 CENTRAL_BATCH_SHARE = 0.50
 OWNER_OTHER_BATCH_SHARE = 0.50
 MAX_CANDIDATE_POOL = 300
-# Target 25% realtors and 75% owners. A category may fill
+# Target 50% realtors and 50% owners. A category may fill
 # the other category's shortage so Telegram publication does not stop.
 REALTOR_CANDIDATE_RESERVE_SHARE = REALTOR_DAILY_SHARE
 REALTOR_BATCH_SHARE = REALTOR_DAILY_SHARE
@@ -652,8 +653,29 @@ def select_owners_then_realtors(
     candidates: list[LalafoAd],
     limit: int,
 ) -> list[LalafoAd]:
-    """Select all eligible listings without using author type as a filter."""
-    return select_publish_batch_with_reposts(candidates, {}, limit)
+    """Build a 50/50 batch, allowing either known category to fill shortages."""
+    if limit <= 0:
+        return []
+    eligible = deduplicate_candidates(
+        [ad for ad in candidates if listing_policy_eligible(ad)]
+    )
+    owners = [ad for ad in eligible if ad.seller_type == "owner"]
+    realtors = [ad for ad in eligible if ad.seller_type == "realtor"]
+    realtor_target = math.floor(limit * REALTOR_BATCH_SHARE)
+    owner_target = limit - realtor_target
+    selected = select_publish_batch_with_reposts(owners, {}, owner_target)
+    selected.extend(
+        select_publish_batch_with_reposts(realtors, {}, realtor_target)
+    )
+    selected_ids = {ad.lalafo_id for ad in selected}
+    if len(selected) < limit:
+        remainder = [ad for ad in eligible if ad.lalafo_id not in selected_ids]
+        selected.extend(
+            select_publish_batch_with_reposts(
+                remainder, {}, min(limit - len(selected), len(remainder))
+            )
+        )
+    return mix_prices(selected)
 
 
 async def run(
@@ -999,6 +1021,7 @@ async def run(
                     len(telegram_ad.photo_urls) < SOURCE_MIN_PHOTOS
                     or not telegram_ad.no_subletting
                     or is_substandard_structure(telegram_ad)
+                    or not listing_policy_eligible(telegram_ad)
                 ):
                     continue
                 candidates.append(telegram_ad)
@@ -1028,7 +1051,10 @@ async def run(
             allowed, _ = is_allowed(telegram_ad, city=settings.city, max_price=SOURCE_MAX_PRICE, rooms=SOURCE_ALLOWED_ROOMS)
             if not allowed or telegram_ad.price < max(settings.min_price, minimum_price_for_rooms(telegram_ad.rooms)):
                 continue
-            if len(telegram_ad.photo_urls) < SOURCE_MIN_PHOTOS or not telegram_ad.no_subletting or is_substandard_structure(telegram_ad):
+            if (len(telegram_ad.photo_urls) < SOURCE_MIN_PHOTOS
+                    or not telegram_ad.no_subletting
+                    or is_substandard_structure(telegram_ad)
+                    or not listing_policy_eligible(telegram_ad)):
                 continue
             if apartments is not None and telegram_id in await apartments.duplicate_candidate_ids([telegram_ad]):
                 continue
@@ -1244,6 +1270,11 @@ async def run(
                         ad.lalafo_id,
                     )
                     continue
+                if not listing_policy_eligible(ad):
+                    logger.info(
+                        "Skipping ad id=%s reason=seller_policy", ad.lalafo_id
+                    )
+                    continue
                 if state.contains(ad.lalafo_id, ad_fingerprint(ad)) and not is_repost:
                     continue
                 if ad.lalafo_id in duplicate_ids:
@@ -1298,7 +1329,12 @@ async def run(
         assert apartments is not None
         from app.inventory import InventoryRepository
 
-        inventory_candidates = deduplicate_candidates(candidates)[:240]
+        inventory_candidates = [
+            ad for ad in deduplicate_candidates(candidates)
+            if ad.lalafo_id in managed_profile_ids
+            or ad.lalafo_id in curated_ids
+            or listing_policy_eligible(ad)
+        ][:240]
         if discovery_stats is not None:
             discovery_stats["stored"] = len(inventory_candidates)
         if (

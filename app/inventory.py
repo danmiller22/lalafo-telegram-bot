@@ -18,6 +18,7 @@ from app.models import (
 )
 from app.state import normalized_district
 from app.listing_quality import district_priority, price_bucket, mix_prices, rental_value_band, price_mix_rank
+from app.listing_policy import seller_policy_eligible
 from app.telegram.formatting import is_supported_source
 from app.promotions import publications_in_window, queue_due_promotions, REQUESTED_WINDOW_PREFIX
 
@@ -25,13 +26,13 @@ from app.promotions import publications_in_window, queue_due_promotions, REQUEST
 BISHKEK = ZoneInfo("Asia/Bishkek")
 ALLOWED_ROOMS = frozenset({"studio", "1"})
 CENTRAL_DAILY_SHARE = 0.50
-REALTOR_DAILY_SHARE = 0.25
+REALTOR_DAILY_SHARE = 0.50
 MIN_PUBLICATIONS_PER_DAY = 110
 MAX_PUBLICATIONS_PER_DAY = 110
 # The daily target is chosen once per Bishkek date, then split across the two
 # discovery periods so retries cannot increase the day's publication volume.
-# Aim for 25% realtors and 75% owners. Either category fills
-# shortages in the other. Unknown authors can fill remaining slots.
+# Aim for 50% realtors and 50% owners. Either known category fills shortages
+# in the other; unclassified listings do not enter the public queue.
 MIN_NON_OWNERS_PER_DAY = math.ceil(MAX_PUBLICATIONS_PER_DAY * REALTOR_DAILY_SHARE)
 MAX_NON_OWNERS_PER_DAY = MIN_NON_OWNERS_PER_DAY
 TARGET_NON_OWNERS_PER_PERIOD = (MAX_NON_OWNERS_PER_DAY + 1) // 2
@@ -119,7 +120,7 @@ def daily_publication_target(period_start: datetime) -> int:
 
 
 def daily_realtor_target(period_start: datetime) -> int:
-    """Return the 25% daily realtor target, rounded up for indivisible cards."""
+    """Return the 50% daily realtor target, rounded up for indivisible cards."""
     del period_start
     return MAX_NON_OWNERS_PER_DAY
 
@@ -269,7 +270,12 @@ def plan_period(
         for item in apartments
         if item.rooms in ALLOWED_ROOMS
         and is_supported_source(item)
-        and 25_000 <= item.price <= 40_000
+        and seller_policy_eligible(
+            seller_type=item.seller_type,
+            owner_listing=item.owner_listing,
+            price=item.price,
+            district=item.district,
+        )
     ]
     repeat_ids = set(repeat_apartment_ids or ()) if MAX_REPOSTS_PER_PERIOD else set()
     central_pool = sorted(
@@ -431,7 +437,7 @@ class InventoryRepository:
 
     async def reset_publication_history_for_code(self, code_version: str) -> bool:
         """Rebuild the queue once per deployment without erasing repost history."""
-        version = code_version.strip() or "publication-110-75-owners-paced-v12"
+        version = code_version.strip() or "publication-110-balanced-curated-v13"
         key = "apartment_publication_code_version"
         async with self.sessions.begin() as session:
             marker = await session.get(LalafoAutoReplyMeta, key)
@@ -994,7 +1000,7 @@ class InventoryRepository:
                         ),
                         or_(
                             ApartmentInventoryQueue.window_key.startswith(REQUESTED_WINDOW_PREFIX),
-                            Apartment.rooms.in_(ALLOWED_ROOMS) & Apartment.price.between(25_000, 40_000),
+                            Apartment.rooms.in_(ALLOWED_ROOMS) & Apartment.price.between(25_000, 45_000),
                         ),
                         _supported_source_filter(),
                     )
@@ -1005,6 +1011,18 @@ class InventoryRepository:
                     .limit(200)
                 )
             ).all()
+            if not due_rows:
+                return None
+            due_rows = [
+                row for row in due_rows
+                if row[4].startswith(REQUESTED_WINDOW_PREFIX)
+                or seller_policy_eligible(
+                    seller_type=row[2],
+                    owner_listing=row[2] == "owner",
+                    price=row[3],
+                    district=row[1],
+                )
+            ]
             if not due_rows:
                 return None
             # Leave room for repeats that become due later today. They belong

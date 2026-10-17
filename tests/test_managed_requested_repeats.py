@@ -250,7 +250,7 @@ async def test_general_queue_worker_sends_fresh_stock_without_any_managed_campai
         def now(cls, tz=None): return NOW.astimezone(tz) if tz else NOW.replace(tzinfo=None)
     monkeypatch.setattr(worker, 'datetime', Clock)
     apartments, _, sessions = repositories
-    original = await apartments.upsert_discovered(make_ad(owner_listing=False,
+    original = await apartments.upsert_discovered(make_ad(owner_listing=False, district="ЦУМ",
         photo_urls=['https://img/room','https://img/kitchen']))
     engine = SimpleNamespace(dispose=AsyncMock())
     monkeypatch.setattr(worker, 'create_engine_and_session', lambda _: (engine, sessions))
@@ -303,6 +303,7 @@ async def test_cloud_publisher_interleaves_managed_repeats_with_fresh_options(
                                         acknowledged_at=NOW-timedelta(hours=3-index))
     if fresh_stock:
         fresh=await apartments.upsert_discovered(make_ad(lalafo_id=30000,owner_listing=False,
+            district="ЦУМ",
             phone='+996555300000',price=28000,photo_urls=['https://img/new1','https://img/new2']))
     monkeypatch.setattr(worker,'datetime',Clock)
     monkeypatch.setattr(worker,'create_engine_and_session',lambda _: (SimpleNamespace(dispose=AsyncMock()),sessions))
