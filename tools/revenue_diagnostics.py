@@ -3,7 +3,7 @@ import json
 from datetime import datetime,timedelta,timezone
 from zoneinfo import ZoneInfo
 from sqlalchemy import select,func
-from app.models import CustomerFunnelEvent,PaymentRequest,PaymentHistory
+from app.models import CustomerFunnelEvent,PaymentRequest,PaymentHistory,Apartment
 
 async def report(sessions):
  now=datetime.now(timezone.utc);local=now.astimezone(ZoneInfo('Asia/Bishkek'));midnight=local.replace(hour=0,minute=0,second=0,microsecond=0)
@@ -21,3 +21,6 @@ async def report(sessions):
    print('REVENUE_HOUR='+json.dumps({'start':start.isoformat(),'confirmed_payments':paid[0],'revenue_som':paid[1],'events':dict(events)}),flush=True)
   pending=(await s.execute(select(func.count(),func.min(PaymentRequest.payment_claimed_at),func.count().filter(PaymentRequest.admin_message_id.is_(None))).where(PaymentRequest.status=='pending',PaymentRequest.payment_claimed_at.is_not(None)))).one()
   print('PAYMENT_REVIEW_BACKLOG='+json.dumps({'claimed_pending':pending[0],'oldest_claim_at':pending[1].isoformat() if pending[1] else None,'missing_admin_notification':pending[2]}),flush=True)
+
+  cards=(await s.execute(select(Apartment.lalafo_id,Apartment.price,Apartment.district,Apartment.phone != "",Apartment.availability_status,func.count(),func.count(func.distinct(CustomerFunnelEvent.telegram_user_id))).join(CustomerFunnelEvent,CustomerFunnelEvent.apartment_id==Apartment.id).where(CustomerFunnelEvent.event_name=="card_opened",CustomerFunnelEvent.created_at>=midnight.astimezone(timezone.utc)).group_by(Apartment.id).order_by(func.count().desc()).limit(20))).all()
+  print('CARD_FUNNEL_HEALTH='+json.dumps([{'source_id':a,'price':p,'district':d,'has_contact':contact,'availability':status,'opens':n,'visitors':u} for a,p,d,contact,status,n,u in cards],ensure_ascii=False),flush=True)
