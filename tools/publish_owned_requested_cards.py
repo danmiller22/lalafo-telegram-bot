@@ -97,7 +97,6 @@ async def run(manifest_path):
             raise ValueError('Multiple owned ads resolve to the same original apartment')
         for row, apartment, ad in resolved:
             await repo.upsert_discovered(ad, discovery_priority=True)
-        await enroll(sessions, manifest, now=now)
         for row, apartment, ad in resolved:
             key = f"owned_send:{manifest['batch']}:{row['ad_id']}"
             if len(key) > 64:
@@ -112,12 +111,16 @@ async def run(manifest_path):
                 session.add(LalafoAutoReplyMeta(key=key, value='sending'))
             message = await publisher.publish(apartment.id, ad)
             await repo.mark_published(apartment.id, chat_id=settings.telegram_group_id,
-                message_id=message.message_id, acknowledged_at=message.date)
+                message_id=message.message_id, acknowledged_at=message.date,
+                promote_requested=True)
             async with sessions.begin() as session:
                 marker = await session.get(LalafoAutoReplyMeta, key)
                 marker.value = f'published:{message.message_id}'
             print(f"OWNED_CARD_PUBLISHED managed_id={row['ad_id']} source_id={ad.lalafo_id} "
                   f"message_id={message.message_id} photos={len(ad.photo_urls)}", flush=True)
+        # First-time originals have no Telegram receipt until the initial send.
+        # Enroll only after every card has an acknowledged publication.
+        await enroll(sessions, manifest, now=now)
         print(f'OWNED_BATCH_COMPLETED={len(resolved)} repeat_every_hours=3', flush=True)
     finally:
         await bot.session.close()
