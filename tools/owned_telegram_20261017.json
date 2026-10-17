@@ -1,0 +1,221 @@
+{
+  "batch": "rentkg-20261017",
+  "verified_at": "2026-10-17T09:14:38.851201+00:00",
+  "repeat_every_hours": 3,
+  "repeat_while_active": true,
+  "cards": [
+    {
+      "ad_id": 117338201,
+      "profile_id": 18194628,
+      "url": "https://lalafo.kg/bishkek/ads/sdaetsa-1-komnatnaa-kvartira-v-vostok-5-id-117338201",
+      "source_id": 111455613,
+      "snapshot": {
+        "id": 117338201,
+        "user_id": 18194628,
+        "status_id": 2,
+        "price": 35000,
+        "rooms": "1",
+        "district": "Восток-5",
+        "deposit": 15000,
+        "photo_urls": [
+          "https://img5.lalafo.com/i/posters/original/1d/af/76/6038ca907c76f71c77e74187f9.jpeg",
+          "https://img5.lalafo.com/i/posters/original/01/9c/a3/c1627093a2e5ce4fad724cc7ba.jpeg",
+          "https://img5.lalafo.com/i/posters/original/18/10/e1/c3193a3389a4472da065ffc5c3.jpeg",
+          "https://img5.lalafo.com/i/posters/original/c2/b6/3c/002c9a49c4f4a75da3e88bbe2e.jpeg"
+        ],
+        "source_description": "Сдается 1-комнатная квартира в Восток-5 на длительный срок. С мебелью и бытовой техникой. Аренда — 35 000 сом, депозит — 15 000 сом."
+      }
+    },
+    {
+      "ad_id": 117338212,
+      "profile_id": 18194628,
+      "url": "https://lalafo.kg/bishkek/ads/sdaetsa-1-komnatnaa-kvartira-id-117338212",
+      "source_id": 84731829,
+      "snapshot": {
+        "id": 117338212,
+        "user_id": 18194628,
+        "status_id": 2,
+        "price": 40000,
+        "rooms": "1",
+        "district": "Филармония",
+        "deposit": null,
+        "photo_urls": [
+          "https://img5.lalafo.com/i/posters/original/9e/f6/17/b6f62dfc7bd38b4f53b90d7d00.jpeg",
+          "https://img5.lalafo.com/i/posters/original/c7/05/b0/49cc3b10d97b22438e0ca2e27e.jpeg",
+          "https://img5.lalafo.com/i/posters/original/b0/77/0b/67460896fb4e5efb9a7b353524.jpeg",
+          "https://img5.lalafo.com/i/posters/original/f9/a0/c7/bd9c246e69c3d1c24d74d0c9dd.jpeg",
+          "https://img5.lalafo.com/i/posters/original/f8/08/0d/0743e469e84ed40f1f8a9c7ed3.jpeg",
+          "https://img5.lalafo.com/i/posters/original/fe/5e/f5/ec2273986ac99a83c7578f92bf.jpeg",
+          "https://img5.lalafo.com/i/posters/original/6e/55/9c/f4b6f972d4f790352ba73138d9.jpeg",
+          "https://img5.lalafo.com/i/posters/original/c6/26/c6/e4d861cfebdffec29e77f092af.jpeg"
+        ],
+        "source_description": "Сдается 1-комнатная квартира: Боконбаева / Исанова, район Филармонии. После ремонта, с мебелью. Во дворе парковка с воротами. Аренда — 40 000 сом в месяц."
+      }
+    },
+    {
+      "ad_id": 117338213,
+      "profile_id": 18194628,
+      "url": "https://lalafo.kg/bishkek/ads/1-komnata-vefa-tc-rieltor-bez-podselenia-bez-mebeli-id-117338213",
+      "source_id": 113580599,
+      "snapshot": {
+        "id": 117338213,
+        "user_id": 18194628,
+        "status_id": 2,
+        "price": 35000,
+        "rooms": "1",
+        "district": "Восток-5",
+        "deposit": 10000,
+        "photo_urls": [
+          "https://img5.lalafo.com/i/posters/original/14/6c/9a/8272f0d501d67a22efdbeeb18b.jpeg",
+          "https://img5.lalafo.com/i/posters/original/1a/2d/9b/347a12d2165ad3e47f8ccb90a0.jpeg",
+          "https://img5.lalafo.com/i/posters/original/d5/ec/fa/cf7324f0566a604b52bd757a81.jpeg",
+          "https://img5.lalafo.com/i/posters/original/ad/1b/98/baaea9feec10ce8f549b0b9ca2.jpeg"
+        ],
+        "source_description": "Сдается 1-комнатная квартира в районе Вефы, Скрябина / Советская. Без мебели и бытовой техники. На пару месяцев. Аренда — 35 000 сом плюс коммунальные услуги, депозит — 10 000 сом."
+      }
+    },
+    {
+      "ad_id": 117347863,
+      "profile_id": 18194628,
+      "url": "https://lalafo.kg/bishkek/ads/studia-vostok-5-mkr-rieltor-bez-zivotnyh-ot-6-mesacev-ot-1-goda-s-mebelu-casticno-id-117347863",
+      "source_id": 117326942,
+      "snapshot": {
+        "id": 117347863,
+        "user_id": 18194628,
+        "status_id": 2,
+        "price": 26000,
+        "rooms": "1",
+        "district": "Восток-5",
+        "deposit": null,
+        "photo_urls": [
+          "https://img5.lalafo.com/i/posters/original/50/79/88/2dae853fd1420dd1a088d5d611.jpeg",
+          "https://img5.lalafo.com/i/posters/original/6c/a2/5f/cf7876d6de359e589e2a6ff053.jpeg",
+          "https://img5.lalafo.com/i/posters/original/4c/26/87/9b9df6880140f8bcc0ffdf57b2.jpeg",
+          "https://img5.lalafo.com/i/posters/original/67/01/59/bc4c526b694de847c1bed67270.jpeg"
+        ],
+        "source_description": "Сдаётся студия в Восток-5, по улице Чуй. Свежий ремонт, мебель частично. 5-й этаж из 9. Аренда — 26 000 сом в месяц, на срок от 6 месяцев."
+      }
+    },
+    {
+      "ad_id": 117348442,
+      "profile_id": 18194628,
+      "url": "https://lalafo.kg/bishkek/ads/sdaetsa-1-komnatnaa-kvartira-v-id-117348442",
+      "telegram_message_id": 45892,
+      "snapshot": {
+        "id": 117348442,
+        "user_id": 18194628,
+        "status_id": 2,
+        "price": 35000,
+        "rooms": "1",
+        "district": "Восток-5",
+        "deposit": null,
+        "photo_urls": [
+          "https://img5.lalafo.com/i/posters/original/f9/13/7f/3de996fe517a033dc46bca791d.jpeg",
+          "https://img5.lalafo.com/i/posters/original/d9/b9/07/1ada0ffd12210db34be85e2ddb.jpeg",
+          "https://img5.lalafo.com/i/posters/original/97/e7/ce/403bbfa9cb10bcd03e5f2be211.jpeg",
+          "https://img5.lalafo.com/i/posters/original/a4/bb/a9/66a9c5fee5b62fa8ea17c69bba.jpeg"
+        ],
+        "source_description": "Сдаётся 1-комнатная квартира в Восток-5. Аренда — 35 000 сом в месяц. Есть кухня, ванная, стиральная машина и телевизор."
+      }
+    },
+    {
+      "source_id": 114028542,
+      "profile_id": 18194628,
+      "ad_id": 117368404,
+      "url": "https://lalafo.kg/bishkek/ads/vostok-5-mkr-id-117368404",
+      "snapshot": {
+        "id": 117368404,
+        "user_id": 18194628,
+        "status_id": 2,
+        "price": 35000,
+        "rooms": "1",
+        "district": "Восток-5",
+        "deposit": null,
+        "photo_urls": [
+          "https://img5.lalafo.com/i/posters/original/5d/19/4d/b56508566c80ad5ba0f1e0933e.jpeg",
+          "https://img5.lalafo.com/i/posters/original/b0/5f/e0/e3703710155b269346154f6bad.jpeg",
+          "https://img5.lalafo.com/i/posters/original/9f/5a/35/5bb3c03bac194573b9fc17635d.jpeg",
+          "https://img5.lalafo.com/i/posters/original/a8/b9/9d/db19780500e9b94744238514b1.jpeg",
+          "https://img5.lalafo.com/i/posters/original/18/f2/1e/975f3de5984d37e1a3190869ee.jpeg"
+        ],
+        "source_description": "Восток-5 мкр\n\nСдается 1х ом квартира \nЭтаж: 4 из 9\nСерия: 105 \nС ремонтом \nС мебелью полностью \nБалкон \nБытовая техника \nГаз \n\nЦена: 35000"
+      }
+    },
+    {
+      "source_id": 116922177,
+      "profile_id": 18194628,
+      "ad_id": 117368449,
+      "url": "https://lalafo.kg/bishkek/ads/vostok-5-mkr-id-117368449",
+      "snapshot": {
+        "id": 117368449,
+        "user_id": 18194628,
+        "status_id": 2,
+        "price": 30000,
+        "rooms": "1",
+        "district": "Восток-5",
+        "deposit": null,
+        "photo_urls": [
+          "https://img5.lalafo.com/i/posters/original/14/ad/b5/63da85e5bb8d2ae979dde649a6.jpeg",
+          "https://img5.lalafo.com/i/posters/original/2e/b6/d5/7009cf6000e54338400f4e187b.jpeg",
+          "https://img5.lalafo.com/i/posters/original/61/61/a0/f2599f31e4d3fd8f54d70c4ebf.jpeg",
+          "https://img5.lalafo.com/i/posters/original/84/da/10/dd0141744df1718261b0f0e82d.jpeg",
+          "https://img5.lalafo.com/i/posters/original/53/b7/42/cebc341f06768245086d8d2520.jpeg",
+          "https://img5.lalafo.com/i/posters/original/37/ab/25/e89e4b966f6d036a94dfc7b766.jpeg",
+          "https://img5.lalafo.com/i/posters/original/ab/84/c6/656f7a11f349e7466df3bef75a.jpeg",
+          "https://img5.lalafo.com/i/posters/original/27/aa/88/9d9ea00cf59d003cca67d01341.jpeg"
+        ],
+        "source_description": "Восток-5 мкр\nу\nСдается 1х ком квартира \nЭтаж: 3 из 5\nСерия:105 серия\nКосметический ремонт\nС мебелью полностью\nПлита газовая\nБалкон\nДомофон\nИнтернет, Wi-Fi\nПластиковые окна\nРаздельный санузел\nГаз\nГорячая вода\nКанализация\nХолодная вода\nЭлектричество\n\nЦена: 30000"
+      }
+    },
+    {
+      "source_id": 81592455,
+      "profile_id": 18194628,
+      "ad_id": 117368463,
+      "url": "https://lalafo.kg/bishkek/ads/vostok-5-id-117368463",
+      "snapshot": {
+        "id": 117368463,
+        "user_id": 18194628,
+        "status_id": 2,
+        "price": 35000,
+        "rooms": "1",
+        "district": "Восток-5",
+        "deposit": null,
+        "photo_urls": [
+          "https://img5.lalafo.com/i/posters/original/08/c2/3e/cd848c762cb66a7a5ba48d0302.jpeg",
+          "https://img5.lalafo.com/i/posters/original/3d/94/ec/1a7d374a0c3a376bff1db9595d.jpeg",
+          "https://img5.lalafo.com/i/posters/original/60/43/ec/c4932ea3a21574a1ae41f53e49.jpeg",
+          "https://img5.lalafo.com/i/posters/original/61/81/61/ba753e08ffb5d45ef991f966a1.jpeg",
+          "https://img5.lalafo.com/i/posters/original/6e/93/bc/bbec19c4ba5175b78defd6bd10.jpeg",
+          "https://img5.lalafo.com/i/posters/original/28/79/89/5c91b306a7f2816c179172844a.jpeg",
+          "https://img5.lalafo.com/i/posters/original/b3/07/41/f1ec786f7b07b9969a75a3e24a.jpeg",
+          "https://img5.lalafo.com/i/posters/original/57/7f/41/5c234ff36b6bc4d8d60c9d93af.jpeg"
+        ],
+        "source_description": "ВОСТОК-5 \n\nСдается 1ком квартира \nЭтаж: 2\n105 серия \nС мебелью полностью\nСтиральная машина\nХолодильник\nАристон\nПлита газовая \nНа долгий срок\n\nЦена: 35 000сом"
+      }
+    },
+    {
+      "source_id": 115508950,
+      "profile_id": 18194628,
+      "ad_id": 115535235,
+      "url": "https://lalafo.kg/bishkek/ads/filarmonia-id-115535235",
+      "snapshot": {
+        "id": 115535235,
+        "user_id": 18194628,
+        "status_id": 2,
+        "price": 35000,
+        "rooms": "1",
+        "district": "Восток-5",
+        "deposit": null,
+        "photo_urls": [
+          "https://img5.lalafo.com/i/posters/original/8d/4b/b4/e05f8cfdc08c9550a9fa1a179e.jpeg",
+          "https://img5.lalafo.com/i/posters/original/ca/ad/18/cc157e944cd6190e3a3f28af8a.jpeg",
+          "https://img5.lalafo.com/i/posters/original/bf/1d/52/a8b1bca5b083b37aca441a106e.jpeg",
+          "https://img5.lalafo.com/i/posters/original/66/d0/70/16e40af8a9d485eea5b7aa4548.jpeg",
+          "https://img5.lalafo.com/i/posters/original/99/57/47/b20fe4314dfc7f9002e9c08b82.jpeg",
+          "https://img5.lalafo.com/i/posters/original/9a/70/6f/a1634d869a6d9a77c99a9c6f9c.jpeg"
+        ],
+        "source_description": "Филармония \n\nСдается 1х ком квартира \nЭтаж: 5 из 5 \nСерия: 104 \nС мебелью полностью \nДуховка\nПлита электрическая\nПылесос\nТелевизор\nУтюг\nХолодильник\n\nЦена: 35000"
+      }
+    }
+  ]
+}
