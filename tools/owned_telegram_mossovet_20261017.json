@@ -1,0 +1,30 @@
+{
+  "batch": "rentkg-mossovet-20261017",
+  "verified_at": "2026-10-17T09:41:01.453449+00:00",
+  "repeat_every_hours": 3,
+  "repeat_while_active": true,
+  "cards": [
+    {
+      "source_id": 112395133,
+      "profile_id": 18194628,
+      "ad_id": 111336313,
+      "url": "https://lalafo.kg/bishkek/ads/mossovet-id-111336313",
+      "snapshot": {
+        "id": 111336313,
+        "user_id": 18194628,
+        "status_id": 2,
+        "price": 39000,
+        "rooms": "1",
+        "district": "Моссовет",
+        "deposit": null,
+        "photo_urls": [
+          "https://img5.lalafo.com/i/posters/original/45/c4/bb/6b637809b739f6f5a6d2c1b9a5.jpeg",
+          "https://img5.lalafo.com/i/posters/original/6f/2c/31/b0bebb7ab21634beda1060d8c7.jpeg",
+          "https://img5.lalafo.com/i/posters/original/7c/12/16/fa11b63137b58c130e8a3ce1dd.jpeg",
+          "https://img5.lalafo.com/i/posters/original/ba/e8/c2/d8fc7dab993089a9d3a6c38821.jpeg"
+        ],
+        "source_description": "❗️Моссовет \nПолностью с мебелью и техникой (стир.машина, холодильник, микроволновка, кондиционер) + посуда, постельное белье, утюг, глад.доска… Закрытый зеленый двор с воротами, рядом «Глобус». Лоджия смотрит на Советскую. Встроенная кухонная мебель. Желательно одному человеку или семейной паре без детей. \n+ депозит"
+      }
+    }
+  ]
+}
