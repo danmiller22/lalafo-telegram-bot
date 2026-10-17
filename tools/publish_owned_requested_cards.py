@@ -10,7 +10,7 @@ from aiogram import Bot
 
 from app.config import get_settings
 from app.database import create_engine_and_session
-from app.lalafo.models import PHONE_SOURCE_VERSION
+from app.lalafo.models import PHONE_SOURCE_VERSION, LalafoAd
 from app.managed_cards import PREFIX
 from app.models import LalafoAutoReplyMeta
 from app.payments.repository import ApartmentRepository
@@ -31,6 +31,14 @@ async def run(manifest_path):
     cards = manifest['cards']
     if not 1 <= len(cards) <= 10 or len({r['ad_id'] for r in cards}) != len(cards):
         raise ValueError('Expected unique explicitly requested owned ads')
+    if manifest.get('sealed_contacts'):
+        from tools.lalafo_campaign_session import load_session
+        private_contacts = await load_session(manifest['sealed_contacts'],
+                                              key_name=manifest['contact_key_name'])
+    else:
+        private_contacts = []
+    supplied = [LalafoAd.model_validate(row) for row in private_contacts]
+    supplied = {ad.lalafo_id: ad for ad in supplied}
     settings = get_settings()
     if settings.telegram_group_id != -1004389602150:
         raise ValueError('Unexpected Telegram destination')
@@ -56,6 +64,16 @@ async def run(manifest_path):
             else:
                 apartment = await repo.get_by_telegram_message(
                     chat_id=settings.telegram_group_id, message_id=row['telegram_message_id'])
+            if row.get('source_id') in supplied and (apartment is None or not apartment.phone):
+                original = supplied[row['source_id']]
+                if (not original.phone or original.phone_source_version != PHONE_SOURCE_VERSION
+                        or original.source_url != row.get('source_url')
+                        or original.photo_urls != row.get('original_photo_urls')
+                        or not original.source_url.startswith('https://lalafo.kg/')
+                        or original.rooms != snapshot['rooms']
+                        or original.price != snapshot['price']):
+                    raise ValueError('Verified source contact does not match this owned card')
+                apartment = await repo.upsert_discovered(original, discovery_priority=True)
             reviewed_chat_card = False
             if apartment is not None and not apartment.phone and apartment.telegram_message_id:
                 # Preserve the two previously reviewed chat-only cards and
