@@ -11,6 +11,7 @@ from aiogram import Bot
 from app.config import get_settings
 from app.database import create_engine_and_session
 from app.lalafo.models import PHONE_SOURCE_VERSION
+from app.managed_cards import PREFIX
 from app.models import LalafoAutoReplyMeta
 from app.payments.repository import ApartmentRepository
 from app.security import TokenSigner
@@ -55,8 +56,17 @@ async def run(manifest_path):
             else:
                 apartment = await repo.get_by_telegram_message(
                     chat_id=settings.telegram_group_id, message_id=row['telegram_message_id'])
-            if (apartment is None or not apartment.phone
-                    or apartment.phone_source_version != PHONE_SOURCE_VERSION):
+            reviewed_chat_card = False
+            if apartment is not None and not apartment.phone and apartment.telegram_message_id:
+                # Preserve the two previously reviewed chat-only cards and
+                # their existing buttons; this batch must not invent a phone.
+                async with sessions() as session:
+                    prior = await session.get(LalafoAutoReplyMeta, PREFIX + str(apartment.id))
+                    binding = json.loads(prior.value) if prior else {}
+                reviewed_chat_card = (binding.get('profile_id') == row['profile_id']
+                                      and binding.get('ad_id') == row['ad_id'])
+            if (apartment is None or (not reviewed_chat_card and (
+                    not apartment.phone or apartment.phone_source_version != PHONE_SOURCE_VERSION))):
                 raise ValueError(f"Verified original contact missing for managed_id={row['ad_id']}")
             ad = apartment_to_ad(apartment).model_copy(update={
                 'price': snapshot['price'], 'rooms': snapshot['rooms'],
