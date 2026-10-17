@@ -3,6 +3,10 @@ name: Lalafo cloud network check
 on:
   workflow_dispatch:
     inputs:
+      repair_owned_card_metadata:
+        description: Correct the three verified owned card district/room labels while preserving standard buttons
+        type: boolean
+        default: false
       requested_telegram_message_id:
         description: Read only the public source snapshot for this requested Telegram card
         type: string
@@ -100,6 +104,14 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: python -m pip install -r requirements.txt
+      - name: Correct verified owned card labels
+        if: inputs.repair_owned_card_metadata
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_GROUP_ID: '-1004389602150'
+        run: python -m tools.repair_owned_card_labels
       - name: Link verified managed ads without publishing or resetting requests
         if: inputs.link_only_manifest != ''
         env:
