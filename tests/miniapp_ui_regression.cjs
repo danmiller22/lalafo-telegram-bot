@@ -37,6 +37,13 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
 }
 
 (async () => {
+  const unavailable = setup(null, () => Promise.resolve({ok: false, status: 404,
+    json: async () => ({detail: 'Квартира больше недоступна.'})}));
+  await new Promise(setImmediate);
+  assert.equal(unavailable.node('pay-lifetime').hidden, true);
+  assert.equal(unavailable.node('other-apartments').hidden, false);
+  await unavailable.node('pay-lifetime').onclick();
+  assert.deepEqual(unavailable.opened, []);
   let lateCalls = 0;
   const late = setup({status: 'unpaid'}, () => {
     lateCalls++;

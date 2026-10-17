@@ -724,19 +724,20 @@ async def _inventory_queue_status() -> tuple[int, int, datetime | None]:
             from app.promotions import publications_in_window
             from app.inventory import (
                 MAX_PUBLICATIONS_PER_DAY, PUBLICATION_SPACING_MINUTES,
-                publication_day_start, publication_slots_due, publication_window_open,
+                publication_day_start, publication_window_open, next_publication_slot,
             )
             day_start = publication_day_start(now).astimezone(UTC)
-            published = len(
-                await publications_in_window(session, day_start, day_start + timedelta(days=1))
-            )
+            events = await publications_in_window(session, day_start, day_start + timedelta(days=1))
+            published = len(events)
             daily_limit_reached = published >= MAX_PUBLICATIONS_PER_DAY
             quiet_hours = not publication_window_open(now)
-            pace_reached = published >= publication_slots_due(now)
+            latest = max((event.published_at for event in events), default=None)
+            next_slot = next_publication_slot(now, published, latest)
+            pace_reached = now < next_slot
             slot_at = (
                 day_start + timedelta(days=1)
                 if daily_limit_reached or quiet_hours
-                else max(now, day_start + timedelta(minutes=published * PUBLICATION_SPACING_MINUTES))
+                else max(now, next_slot)
             )
             _apartment_scheduler_state.update(
                 daily_published_count=published,
@@ -1593,7 +1594,7 @@ async def miniapp_availability(payload: MiniAppRequest) -> dict[str, Any]:
 async def miniapp_prepare_payment(payload: MiniAppRequest) -> dict[str, Any]:
     settings, runtime, user, apartment_id = _miniapp_context(payload)
     result = await runtime.workflow_data["service"].contact_status(user.id, apartment_id)
-    if result.status == "approved":
+    if result.status in {"approved", "unavailable"}:
         return _miniapp_result_payload(result)
     payments = runtime.workflow_data["payments"]
     try:
@@ -1623,7 +1624,7 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
     service = runtime.workflow_data["service"]
     await _record_funnel(runtime, user.id, "payment_opened", apartment_id=apartment_id)
     result = await service.contact_status(user.id, apartment_id)
-    if result.status == "approved":
+    if result.status in {"approved", "unavailable"}:
         return _miniapp_result_payload(result)
     plan = WEEK_PLAN
     payment_url = _finik_payment_url(settings, plan)

@@ -7,7 +7,7 @@ from app.config import get_settings
 from app.database import create_engine_and_session
 from app.models import Apartment,ApartmentInventoryQueue,RequestedCardPromotion,RequestedCardPublication,ApartmentMatchDelivery,PaymentRequest
 from app.promotions import publications_in_window,promotion_work
-from app.inventory import BISHKEK, publication_day_start, as_utc, daily_realtor_target, publication_slots_due
+from app.inventory import BISHKEK, MAX_PUBLICATIONS_PER_DAY, publication_day_start, as_utc, daily_realtor_target, publication_slots_due
 from app.payments.repository import ApartmentRepository
 from app.state import ListingIndex
 from scripts.scrape_publish import apartment_to_ad
@@ -62,7 +62,7 @@ async def main():
            "unpublished_unique":by_seller([ad for ad in unique if ad.lalafo_id in fresh_ids]),
            "repeat_eligible_unique":by_seller([ad for ad in unique if ad.lalafo_id not in fresh_ids]),
            "total_publishable_unique":by_seller(unique),
-           "daily_targets":{"owner":70-target_realtors,"realtor":target_realtors},
+           "daily_targets":{"owner":MAX_PUBLICATIONS_PER_DAY-target_realtors,"realtor":target_realtors},
            "repeat_after_hours":48,"requires_source_check_at_send":True,
        }}))
    active=(await s.scalars(select(ApartmentInventoryQueue).where(ApartmentInventoryQueue.status=='publishing'))).all()

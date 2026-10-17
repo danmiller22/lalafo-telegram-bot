@@ -45,8 +45,8 @@ def reservation_gap(now, published_count, *, catch_up=False):
 def reservation_time(now, published_count, last_sent, *, catch_up=False):
     if not publication_window_open(now) or published_count >= MAX_PUBLICATIONS_PER_DAY:
         return None
-    start = publication_day_start(now).astimezone(timezone.utc)
-    when = max(now, start + timedelta(minutes=PUBLICATION_SPACING_MINUTES * published_count))
+    from app.inventory import next_publication_slot
+    when = max(now, next_publication_slot(now, published_count, last_sent))
     if last_sent is not None:
         when = max(when, as_utc(last_sent) + timedelta(minutes=reservation_gap(now, published_count, catch_up=catch_up)))
     return when if when - now <= LOOKAHEAD and publication_window_open(when) else None

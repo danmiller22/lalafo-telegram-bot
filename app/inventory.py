@@ -80,6 +80,24 @@ def publication_slots_due(now: datetime) -> int:
     return min(MAX_PUBLICATIONS_PER_DAY, max(0, int(elapsed // (PUBLICATION_SPACING_MINUTES * 60)) + 1))
 
 
+def next_publication_slot(now: datetime, published_count: int, last_sent: datetime | None) -> datetime:
+    """Spread remaining slots after a manual burst without a long blackout."""
+    start = publication_day_start(now).astimezone(timezone.utc)
+    if published_count >= MAX_PUBLICATIONS_PER_DAY:
+        return start + timedelta(days=1)
+    nominal = start + timedelta(minutes=PUBLICATION_SPACING_MINUTES * published_count)
+    if last_sent is None:
+        return nominal
+    last_sent = as_utc(last_sent)
+    if nominal <= last_sent + timedelta(minutes=30):
+        return nominal
+    remaining = MAX_PUBLICATIONS_PER_DAY - published_count
+    final_slot = start + timedelta(hours=21, minutes=-MIN_PUBLICATION_GAP_MINUTES)
+    gap = max(timedelta(minutes=MIN_PUBLICATION_GAP_MINUTES),
+              (final_slot - last_sent) / remaining)
+    return min(nominal, last_sent + gap)
+
+
 def discovery_period_start(now: datetime | None = None) -> datetime:
     local = (now or datetime.now(timezone.utc)).astimezone(BISHKEK)
     if 2 <= local.hour < 5:
@@ -933,7 +951,8 @@ class InventoryRepository:
             # A rebuilt/overdue queue is not proof of a publication deficit.
             # Requested repeats count against the same daily clock: otherwise
             # ordinary catch-up sends can consume all 110 slots before evening.
-            if published_today >= expected_by_now:
+            last_sent = max(publication_times, default=None)
+            if published_today >= expected_by_now and now < next_publication_slot(now, published_today, last_sent):
                 return None
             catch_up = expected_by_now - published_today >= 3
             gap_minutes = 5 if catch_up else MIN_PUBLICATION_GAP_MINUTES

@@ -1152,3 +1152,21 @@ def test_value_selection_prefers_affordable_realtors_without_blocking_fallback()
     picked = _pick_for_window(pool, 3, {}, {}, {}, central=True, seller_remaining={"realtor":3})
     assert picked[0].price == 32000
     assert {card.price for card in picked} == {32000,39000,40000}
+
+
+def test_manual_batch_redistributes_remaining_daily_slots_without_blackout():
+    from app.inventory import next_publication_slot
+    latest = datetime(2026, 10, 17, 15, 41, tzinfo=BISHKEK)
+    now = datetime(2026, 10, 17, 16, 0, tzinfo=BISHKEK)
+    slot = next_publication_slot(now, 66, latest)
+    assert latest + timedelta(minutes=11) <= slot <= latest + timedelta(minutes=15)
+    assert slot < now
+    assert next_publication_slot(now, 110, latest) == datetime(2026, 10, 18, 5, tzinfo=BISHKEK)
+
+
+def test_normal_daily_pacing_is_preserved_without_a_manual_burst():
+    from app.inventory import next_publication_slot
+    start = datetime(2026, 10, 17, 5, tzinfo=BISHKEK)
+    latest = start + timedelta(minutes=PUBLICATION_SPACING_MINUTES * 59)
+    now = latest + timedelta(minutes=5)
+    assert next_publication_slot(now, 60, latest) == start + timedelta(minutes=PUBLICATION_SPACING_MINUTES * 60)
