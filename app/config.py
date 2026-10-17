@@ -123,6 +123,14 @@ INVENTORY_PRIORITY_DISTRICTS = (
     "vostok-5", "filarmoniya", "bishkek-park-trc",
     "vefa-shopping-center", "mossovet", "manasabokonbaeva",
 )
+INVENTORY_OWNER_DISTRICTS = (
+    *INVENTORY_PRIORITY_DISTRICTS,
+    *(
+        slug
+        for slug, _ in LALAFO_DISTRICT_FILTERS
+        if slug not in INVENTORY_PRIORITY_DISTRICTS
+    ),
+)
 # Split both seller categories by price. This exposes affordable ads that can
 # be buried behind newer, more expensive broad-search results.
 INVENTORY_SEARCH_URLS: tuple[str, ...] = (
@@ -131,13 +139,13 @@ INVENTORY_SEARCH_URLS: tuple[str, ...] = (
     f"{_INVENTORY_BASE}owner?price[from]=32000&price[to]=35999",
     f"{_INVENTORY_BASE}owner?price[from]=36000&price[to]=39999",
     f"{_INVENTORY_BASE}owner?price[from]=40000&price[to]=45000",
+    *(f"{_INVENTORY_BASE}{district}/owner?price[from]=25000&price[to]=45000"
+      for district in INVENTORY_OWNER_DISTRICTS),
     # Lalafo authors do not always fill the offerer field. Broad searches keep
     # those fresh cards available; seller classification still happens from
     # the detail page before anything enters the Telegram queue.
     f"{_INVENTORY_BASE}?price[from]=25000&price[to]=29999",
     f"{_INVENTORY_BASE}?price[from]=30000&price[to]=45000",
-    *(f"{_INVENTORY_BASE}{district}/owner?price[from]=25000&price[to]=45000"
-      for district in INVENTORY_PRIORITY_DISTRICTS),
     # The discovery targets reserve their first segment for owner-capable
     # searches; agency-only searches must come after that segment.
     *(f"{_INVENTORY_BASE}{district}/agent/real-estate-agency?price[from]=25000&price[to]=35000"

@@ -103,9 +103,11 @@ MAX_REPOSTS_PER_RUN = 18
 CENTRAL_BATCH_SHARE = 0.50
 OWNER_OTHER_BATCH_SHARE = 0.50
 MAX_CANDIDATE_POOL = 300
-# Target 50% realtors and 50% owners. A category may fill
-# the other category's shortage so Telegram publication does not stop.
-REALTOR_CANDIDATE_RESERVE_SHARE = REALTOR_DAILY_SHARE
+# Owner cards fill the publication batch. A small realtor discovery reserve
+# remains available only when owner stock cannot fill all 110 daily slots.
+# Keep a small discovery slice for shortage recovery without reserving any
+# publication slots for realtors while confirmed owner stock is available.
+REALTOR_CANDIDATE_RESERVE_SHARE = 0.10
 REALTOR_BATCH_SHARE = REALTOR_DAILY_SHARE
 # Retained for historical reporting helpers; two-bedroom cards are no longer
 # eligible for discovery or publication.
@@ -653,7 +655,7 @@ def select_owners_then_realtors(
     candidates: list[LalafoAd],
     limit: int,
 ) -> list[LalafoAd]:
-    """Build a 50/50 batch, allowing either known category to fill shortages."""
+    """Fill with confirmed owners, then use realtors only for a shortage."""
     if limit <= 0:
         return []
     eligible = deduplicate_candidates(

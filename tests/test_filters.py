@@ -164,12 +164,12 @@ def test_source_urls_follow_the_operator_filters():
     assert all("price[from]=25000&price[to]=35000" in url for url in ADDITIONAL_SEARCH_URLS)
 
 
-def test_discovery_pool_is_split_equally_between_seller_categories():
+def test_discovery_pool_reserves_only_a_small_realtor_fallback():
     targets = source_candidate_targets(300, source_count=3, batch_limit=18)
 
-    assert REALTOR_CANDIDATE_RESERVE_SHARE == 0.50
-    assert targets == [75, 150, 300]
-    assert targets[-1] - targets[-2] == 150
+    assert REALTOR_CANDIDATE_RESERVE_SHARE == 0.10
+    assert targets == [135, 270, 300]
+    assert targets[-1] - targets[-2] == 30
 
 
 def test_inventory_sources_split_capacity_between_categories():
@@ -180,7 +180,7 @@ def test_inventory_sources_split_capacity_between_categories():
         owner_source_count=2,
     )
 
-    assert targets == [60, 120, 180, 240]
+    assert targets == [108, 216, 228, 240]
 
 
 def test_supported_room_types_have_twenty_five_thousand_price_floor():
@@ -385,10 +385,10 @@ def test_unknown_author_label_is_stable_and_exact():
     assert all(author_label(ad) == author_label(ad) for ad in ads)
 
 
-def test_mixed_batch_is_split_equally():
+def test_mixed_batch_prefers_all_available_owners():
     owners = [
         make_ad(lalafo_id=index, owner_listing=True, phone=f"+996700{index:06d}")
-        for index in (1, 2)
+        for index in (1, 2, 6, 7, 8)
     ]
     realtors = [
         make_ad(lalafo_id=index, owner_listing=False, district="ЦУМ", phone=f"+996555{index:06d}")
@@ -398,7 +398,8 @@ def test_mixed_batch_is_split_equally():
     selected = select_owners_then_realtors(owners + realtors, limit=4)
 
     assert len(selected) == 4
-    assert sum(ad.owner_listing for ad in selected) == 2
+    assert sum(ad.owner_listing for ad in selected) == 4
+    assert sum(ad.seller_type == "realtor" for ad in selected) == 0
 
 
 def test_permanently_excluded_source_never_enters_a_publish_batch():
@@ -781,14 +782,25 @@ def test_kyrgyz_wanted_ad_still_rejected():
 
 
 def test_owner_price_searches_cover_the_budget_and_agencies_follow_owner_segment():
-    from app.config import INVENTORY_SEARCH_URLS, INVENTORY_PRIORITY_DISTRICTS
+    from app.config import (
+        INVENTORY_OWNER_DISTRICTS,
+        INVENTORY_SEARCH_URLS,
+        LALAFO_DISTRICT_FILTERS,
+    )
     from urllib.parse import parse_qs,urlsplit
     owner_ranges=[]
     for url in INVENTORY_SEARCH_URLS:
-        if '/owner?' in url and not any(f'/{district}/' in url for district in INVENTORY_PRIORITY_DISTRICTS):
+        if urlsplit(url).path.endswith('/studio/1-bedroom/owner'):
             q=parse_qs(urlsplit(url).query)
             owner_ranges.append((int(q['price[from]'][0]),int(q['price[to]'][0])))
     assert owner_ranges==[(25000,27999),(28000,31999),(32000,35999),(36000,39999),(40000,45000)]
+    assert set(INVENTORY_OWNER_DISTRICTS) == {
+        slug for slug, _ in LALAFO_DISTRICT_FILTERS
+    }
+    assert all(
+        any(f'/{district}/owner?' in url for url in INVENTORY_SEARCH_URLS)
+        for district in INVENTORY_OWNER_DISTRICTS
+    )
     owner_segment=sum('real-estate-agency' not in url for url in INVENTORY_SEARCH_URLS)
     assert all('real-estate-agency' not in url for url in INVENTORY_SEARCH_URLS[:owner_segment])
     assert all('real-estate-agency' in url for url in INVENTORY_SEARCH_URLS[owner_segment:])
