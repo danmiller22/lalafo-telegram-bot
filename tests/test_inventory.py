@@ -120,7 +120,7 @@ def _apartments(count: int, *, central: bool, start_id: int, owner: bool = True)
 
 def test_two_periods_plan_one_hundred_ten_cards_from_five_until_two():
     stock = _apartments(220, central=True, start_id=1) + _apartments(
-        100, central=False, start_id=300
+        200, central=False, start_id=300
     )
     for index, item in enumerate(stock):
         item.seller_type = "owner" if index % 2 == 0 else "realtor"
@@ -137,8 +137,8 @@ def test_two_periods_plan_one_hundred_ten_cards_from_five_until_two():
     daily_target = daily_publication_target(first_start)
     assert daily_target == 110
     assert len(all_items) == daily_target
-    assert sum(item.apartment.seller_type == "realtor" for item in all_items) == 55
-    assert sum(item.apartment.seller_type == "owner" for item in all_items) == 55
+    assert sum(item.apartment.seller_type == "realtor" for item in all_items) == 28
+    assert sum(item.apartment.seller_type == "owner" for item in all_items) == 82
     assert sum(
         "золотой" in item.apartment.district.casefold() for item in all_items
     ) == round(daily_target * 0.50)
@@ -213,11 +213,11 @@ def test_central_realtors_can_fill_central_share():
     assert len(planned) == period_count
     assert any(item.apartment.seller_type == "owner" for item in planned)
     # All available realtors are central: seller targets take precedence.
-    assert sum(is_central(item.apartment.district) for item in planned) == 28
+    assert sum(is_central(item.apartment.district) for item in planned) == 14
     assert central_count == 28
 
 
-def test_two_periods_target_fifty_percent_realtors():
+def test_two_periods_target_twenty_five_percent_realtors():
     owners = _apartments(160, central=True, start_id=1)
     realtors = _apartments(80, central=False, start_id=500, owner=False)
     first_start = datetime(2026, 9, 13, 5, tzinfo=timezone(timedelta(hours=6)))
@@ -233,8 +233,8 @@ def test_two_periods_target_fifty_percent_realtors():
 
     assert len(first) == 55
     assert len(second) == 55
-    assert sum(item.apartment.seller_type == "realtor" for item in first) == 28
-    assert sum(item.apartment.seller_type == "realtor" for item in second) == 27
+    assert sum(item.apartment.seller_type == "realtor" for item in first) == 14
+    assert sum(item.apartment.seller_type == "realtor" for item in second) == 14
     assert {item.apartment.seller_type for item in first + second} == {"owner", "realtor"}
 
 
@@ -251,11 +251,11 @@ def test_unknown_authors_fill_remaining_publication_slots():
     assert all(item.apartment.seller_type == "unknown" for item in planned)
 
 
-def test_daily_realtor_target_rounds_fifty_percent_up():
+def test_daily_realtor_target_rounds_twenty_five_percent_up():
     start = datetime(2026, 9, 13, 5, tzinfo=timezone(timedelta(hours=6)))
     assert {
         daily_realtor_target(start + timedelta(days=offset)) for offset in range(4)
-    } == {55}
+    } == {28}
 
 
 def test_period_honors_remaining_daily_realtor_quota():
@@ -889,8 +889,8 @@ async def test_stock_load_reserves_room_for_both_seller_categories(repositories,
         kinds = (await session.scalars(
             select(Apartment.seller_type).join(ApartmentInventoryQueue)
         )).all()
-    assert kinds.count("owner") == 2
-    assert kinds.count("realtor") == 2
+    assert kinds.count("owner") == 3
+    assert kinds.count("realtor") == 1
 
 
 @pytest.mark.asyncio
@@ -1123,7 +1123,7 @@ def test_period_mixes_all_ranges_with_sixty_percent_cheap_when_stock_allows():
     assert {item.apartment.price for item in planned[:5]} == {25_000, 32_000, 39_000}
 
 
-@pytest.mark.parametrize("owner_count,realtor_count,expected_owners", [(110, 110, 55), (10, 110, 10), (110, 5, 105)])
+@pytest.mark.parametrize("owner_count,realtor_count,expected_owners", [(110, 110, 82), (10, 110, 10), (110, 5, 105)])
 def test_one_hundred_ten_card_day_fills_category_shortages(owner_count, realtor_count, expected_owners):
     stock = _apartments(owner_count, central=True, start_id=1) + _apartments(
         realtor_count, central=False, start_id=200, owner=False
