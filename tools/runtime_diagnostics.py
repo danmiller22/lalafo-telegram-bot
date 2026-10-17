@@ -15,6 +15,8 @@ from scripts.publish_inventory import _valid
 async def main():
  engine,sessions=create_engine_and_session(get_settings().database_url)
  now=datetime.now(timezone.utc);start=publication_day_start(now).astimezone(timezone.utc)
+ from tools.revenue_diagnostics import report
+ await report(sessions)
  try:
   async with sessions() as s:
    events=await publications_in_window(s,start,start+timedelta(days=1))
