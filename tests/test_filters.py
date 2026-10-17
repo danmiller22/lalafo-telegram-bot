@@ -750,11 +750,11 @@ def test_kyrgyz_wanted_ad_still_rejected():
 
 
 def test_owner_price_searches_cover_the_budget_and_agencies_follow_owner_segment():
-    from app.config import INVENTORY_SEARCH_URLS
+    from app.config import INVENTORY_SEARCH_URLS, INVENTORY_PRIORITY_DISTRICTS
     from urllib.parse import parse_qs,urlsplit
     owner_ranges=[]
     for url in INVENTORY_SEARCH_URLS:
-        if '/owner?' in url:
+        if '/owner?' in url and not any(f'/{district}/' in url for district in INVENTORY_PRIORITY_DISTRICTS):
             q=parse_qs(urlsplit(url).query)
             owner_ranges.append((int(q['price[from]'][0]),int(q['price[to]'][0])))
     assert owner_ranges==[(25000,27999),(28000,31999),(32000,35999),(36000,40000)]
@@ -765,4 +765,21 @@ def test_owner_price_searches_cover_the_budget_and_agencies_follow_owner_segment
     for url in INVENTORY_SEARCH_URLS[owner_segment:]:
         query = parse_qs(urlsplit(url).query)
         agency_ranges.append((int(query['price[from]'][0]), int(query['price[to]'][0])))
-    assert agency_ranges == [(25000, 29999), (30000, 34999), (35000, 40000)]
+    assert agency_ranges[:3] == [(25000, 29999), (30000, 34999), (35000, 40000)]
+    assert all(value == (25000,40000) for value in agency_ranges[3:])
+
+
+def test_source_rotation_covers_all_sources_without_mixing_budget_segments():
+    from scripts.scrape_publish import rotate_inventory_sources
+    from app.config import INVENTORY_SEARCH_URLS
+    owners = [u for u in INVENTORY_SEARCH_URLS if 'real-estate-agency' not in u]
+    agencies = [u for u in INVENTORY_SEARCH_URLS if 'real-estate-agency' in u]
+    first_owners, first_agencies = set(), set()
+    for cycle in range(max(len(owners), len(agencies))):
+        now = datetime.fromtimestamp(cycle*900, timezone.utc)
+        urls = rotate_inventory_sources(INVENTORY_SEARCH_URLS, now=now)
+        assert set(urls) == set(INVENTORY_SEARCH_URLS)
+        assert all('real-estate-agency' not in u for u in urls[:len(owners)])
+        first_owners.add(urls[0]);first_agencies.add(urls[len(owners)])
+    assert first_owners == set(owners)
+    assert first_agencies == set(agencies)

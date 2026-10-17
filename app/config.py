@@ -97,6 +97,7 @@ TELEGRAM_SOURCE_CHANNELS: tuple[str, ...] = (
     "https://t.me/s/wellcometoKGboard",
     "https://t.me/s/Bishkek_kvartira312",
     "https://t.me/s/rental_property_bishkek",
+    "https://t.me/s/housekg",
 )
 
 # These public channels expose complete photo albums, descriptions and phone
@@ -114,6 +115,10 @@ _INVENTORY_BASE = (
     "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
     "dolgosrochnaya-arenda-kvartir/studio/1-bedroom/"
 )
+INVENTORY_PRIORITY_DISTRICTS = (
+    "vostok-5", "filarmoniya", "bishkek-park-trc",
+    "vefa-shopping-center", "mossovet", "manasabokonbaeva",
+)
 # Split both seller categories by price. This exposes affordable ads that can
 # be buried behind newer, more expensive broad-search results.
 INVENTORY_SEARCH_URLS: tuple[str, ...] = (
@@ -126,11 +131,15 @@ INVENTORY_SEARCH_URLS: tuple[str, ...] = (
     # the detail page before anything enters the Telegram queue.
     f"{_INVENTORY_BASE}?price[from]=25000&price[to]=29999",
     f"{_INVENTORY_BASE}?price[from]=30000&price[to]=40000",
+    *(f"{_INVENTORY_BASE}{district}/owner?price[from]=25000&price[to]=40000"
+      for district in INVENTORY_PRIORITY_DISTRICTS),
     # The discovery targets reserve their first segment for owner-capable
     # searches; agency-only searches must come after that segment.
     f"{_INVENTORY_BASE}agent/real-estate-agency?price[from]=25000&price[to]=29999",
     f"{_INVENTORY_BASE}agent/real-estate-agency?price[from]=30000&price[to]=34999",
     f"{_INVENTORY_BASE}agent/real-estate-agency?price[from]=35000&price[to]=40000",
+    *(f"{_INVENTORY_BASE}{district}/agent/real-estate-agency?price[from]=25000&price[to]=40000"
+      for district in INVENTORY_PRIORITY_DISTRICTS),
 )
 
 APARTMENT_PUBLISH_INTERVAL_MINUTES = 90

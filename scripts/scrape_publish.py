@@ -457,6 +457,20 @@ def insert_randomly(
     return result
 
 
+def rotate_inventory_sources(urls, *, now=None):
+    """Visit different sources each cycle while preserving the owner budget."""
+    current = now or datetime.now(timezone.utc)
+    cycle = int(current.timestamp() // (15 * 60))
+    groups = ([url for url in urls if 'real-estate-agency' not in url],
+              [url for url in urls if 'real-estate-agency' in url])
+    ordered = []
+    for group in groups:
+        if group:
+            offset = cycle % len(group)
+            ordered.extend(group[offset:] + group[:offset])
+    return tuple(ordered)
+
+
 def source_candidate_targets(
     pool_limit: int,
     source_count: int,
@@ -1025,7 +1039,7 @@ async def run(
         # profile immediately. Once their source IDs are durable, later cycles
         # skip them and resume the full automatic catalogue search.
         if discovery_only:
-            search_urls = INVENTORY_SEARCH_URLS
+            search_urls = rotate_inventory_sources(INVENTORY_SEARCH_URLS)
         elif direct_priority_count or managed_profile_ids:
             candidate_pool_limit = len(candidates)
             search_urls = (DEFAULT_SEARCH_URL,)

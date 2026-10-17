@@ -322,3 +322,15 @@ async def test_slow_browser_falls_back_to_matching_api_without_repeating_browser
             assert ad.lalafo_id==77701377
         client._get_text.assert_awaited_once()
         assert client._get_json.await_count==2
+
+
+def test_district_inventory_sources_apply_distinct_geographic_filters():
+    from app.config import INVENTORY_PRIORITY_DISTRICTS
+    for district in INVENTORY_PRIORITY_DISTRICTS:
+        sources = [url for url in INVENTORY_SEARCH_URLS if f'/{district}/' in url]
+        assert len(sources) == 2
+        for url in sources:
+            params = dict(LalafoClient._search_params(url, 1))
+            assert len([k for k in params if k.startswith('parameters[357]')]) == 1
+            assert params['price[from]'] == '25000'
+            assert params['price[to]'] == '40000'
