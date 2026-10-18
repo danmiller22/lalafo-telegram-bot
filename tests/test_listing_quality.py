@@ -13,6 +13,11 @@ def test_requested_good_areas_outrank_unpreferred_outskirts(district):
     assert district_priority(district) > district_priority("Арча-Бешик")
 
 
+def test_confirmed_revenue_districts_lead_generic_central_areas():
+    assert district_priority("Восток-5") > district_priority("Центр")
+    assert district_priority("Центр") > district_priority("Золотой квадрат")
+
+
 def test_lower_rent_wins_when_area_and_photo_quality_match():
     low = make_ad(price=25_000, district="ЦУМ")
     middle = make_ad(price=33_000, district="ЦУМ")

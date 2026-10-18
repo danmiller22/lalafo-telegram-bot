@@ -22,8 +22,18 @@ def rental_value_band(price: int, rooms: str, description: str | None = None) ->
 
 def district_priority(district: str | None) -> int:
     text = re.sub(r"[-–—]", " ", (district or "").casefold().replace("ё", "е"))
-    if "филармони" in text or re.search(r"восток\s*5(?!\d)", text):
-        return 3
+    # Confirmed-payment leaders from both comparison weeks. District mixing
+    # still limits repetition while these cards win equivalent price bands.
+    if re.search(r"восток\s*5(?!\d)", text):
+        return 6
+    if any(term in text for term in (
+        "центр", "филармони", "бишкек парк", "азия молл",
+    )):
+        return 5
+    if any(term in text for term in (
+        "цум", "гум", "политех", "дордой плаза", "аламедин 1",
+    )):
+        return 4
     central = (
         "центр", "золотой квадрат", "моссовет", "филармони", "эркиндик",
         "цум", "гум", "восток 5", "бишкек парк", "дордой плаза",

@@ -11,7 +11,11 @@ from app.config import get_settings
 from app.database import create_engine_and_session, init_db
 from app.inventory import InventoryRepository
 from scripts.inventory_cycle import discovery_outcome
-from scripts.scrape_publish import run as discover
+from scripts.scrape_publish import (
+    DISCOVERY_CANDIDATE_TARGET,
+    DISCOVERY_COLLECTION_BUDGET_SECONDS,
+    run as discover,
+)
 from scripts.select_lalafo_proxy import find_working_proxies
 
 logger = logging.getLogger(__name__)
@@ -46,10 +50,10 @@ async def collect(settings, inventory, *, force: bool = False) -> dict:
         async with asyncio.timeout(300):
             code = await discover(
                 discovery_only=True,
-                candidate_pool_limit_override=96,
+                candidate_pool_limit_override=DISCOVERY_CANDIDATE_TARGET,
                 include_telegram_sources=False,
                 discovery_stats=stats,
-                collection_budget_seconds=180,
+                collection_budget_seconds=DISCOVERY_COLLECTION_BUDGET_SECONDS,
             )
         if code == 0 and stats["search_pages"] == 0:
             code = 2

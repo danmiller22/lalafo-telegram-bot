@@ -11,7 +11,11 @@ from app.database import create_engine_and_session, init_db
 from app.inventory import InventoryRepository, DISCOVERY_PERIOD_TARGET
 from app.payments.repository import ApartmentRepository
 from scripts.publish_inventory import run as publish_one_due
-from scripts.scrape_publish import run as discover
+from scripts.scrape_publish import (
+    DISCOVERY_CANDIDATE_TARGET,
+    DISCOVERY_COLLECTION_BUDGET_SECONDS,
+    run as discover,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -116,8 +120,10 @@ async def run(*, force_discovery: bool | None = None) -> int:
             async with asyncio.timeout(300):
                 code = await discover(
                     discovery_only=True,
-                    candidate_pool_limit_override=96 if settings.run_bot else None,
-                    collection_budget_seconds=180,
+                    candidate_pool_limit_override=(
+                        DISCOVERY_CANDIDATE_TARGET if settings.run_bot else None
+                    ),
+                    collection_budget_seconds=DISCOVERY_COLLECTION_BUDGET_SECONDS,
                 )
         except Exception as exc:
             raised_error = type(exc).__name__

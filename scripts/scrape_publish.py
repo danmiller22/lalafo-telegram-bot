@@ -103,6 +103,10 @@ MAX_REPOSTS_PER_RUN = 18
 CENTRAL_BATCH_SHARE = 0.50
 OWNER_OTHER_BATCH_SHARE = 0.50
 MAX_CANDIDATE_POOL = 300
+# Discovery must retain enough unique stock for the 110-card daily schedule
+# and its 48-hour no-repeat window.
+DISCOVERY_CANDIDATE_TARGET = 220
+DISCOVERY_COLLECTION_BUDGET_SECONDS = 300
 # Owner cards still fill the publication batch first. Reserve enough crawl time
 # for inexpensive central agency stock to keep the 110-card schedule full when
 # the owner catalogue is thin; this does not reserve publication slots.
