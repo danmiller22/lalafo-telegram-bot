@@ -2,6 +2,7 @@
 import asyncio,json
 from collections import Counter
 from datetime import datetime,timedelta,timezone
+from pathlib import Path
 from sqlalchemy import select,func
 from app.config import get_settings
 from app.database import create_engine_and_session
@@ -69,6 +70,19 @@ async def main():
    previously_managed=set((await s.scalars(select(
        DailyFeaturedPublication.source_lalafo_id
    ))).all())
+   def source_ids(value):
+    if isinstance(value,dict):
+     for key,item in value.items():
+      if key=="source_id" and isinstance(item,int):yield item
+      else:yield from source_ids(item)
+    elif isinstance(value,list):
+     for item in value:yield from source_ids(item)
+   history_patterns=("lalafo_requested*.json","managed_requested*.json",
+                     "owned_telegram*.json","requested_card_promotions*.json")
+   for pattern in history_patterns:
+    for history_file in Path("tools").glob(pattern):
+     try:previously_managed.update(source_ids(json.loads(history_file.read_text())))
+     except (OSError,json.JSONDecodeError):pass
    tomorrow_stock=list((await s.scalars(select(Apartment).where(
        Apartment.active.is_(True),
        Apartment.availability_status!="unavailable",
@@ -80,6 +94,7 @@ async def main():
    ))).all())
    tomorrow_stock=[item for item in tomorrow_stock
                    if item.lalafo_id not in previously_managed
+                   and "codex_force_repost" not in item.source_url
                    and item.seller_type in {"owner","realtor"}
                    and len(item.photo_urls or [])>=4]
    tomorrow_stock.sort(key=lambda item:(
