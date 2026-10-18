@@ -41,6 +41,7 @@ async def run_requested_campaign_cutoff():
     jobs = [_run_plan(PLAN_PATH, cutoff_state)]
     for filename, state_key in (
         ("lalafo_campaigns_20261015_three.json", "requested_three_20261015"),
+        ("lalafo_campaigns_20261018_card47341.json", "requested_card_47341_20261018"),
     ):
         path = PLAN_PATH.with_name(filename)
         if path.exists():

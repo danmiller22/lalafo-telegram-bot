@@ -113,6 +113,7 @@ async def rewrap_for_hosted():
         "requested_campaign_expiry_key_20261015_three",
         "requested_campaign_expiry_key_20261015_new997_one",
         "requested_campaign_expiry_key_20261015_new997_three",
+        "requested_campaign_expiry_key_20261018_card47341",
     }:
         raise RuntimeError("Hosted transfer is limited to these five requested campaigns")
     key = await private_key()
