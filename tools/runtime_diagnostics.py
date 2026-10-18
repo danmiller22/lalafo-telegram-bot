@@ -77,7 +77,7 @@ async def main():
       else:yield from source_ids(item)
     elif isinstance(value,list):
      for item in value:yield from source_ids(item)
-   history_patterns=("lalafo_requested*.json","managed_requested*.json",
+   history_patterns=("lalafo_requested*.json","lalafo_source_history.json","managed_requested*.json",
                      "owned_telegram*.json","requested_card_promotions*.json")
    for pattern in history_patterns:
     for history_file in Path("tools").glob(pattern):
@@ -95,13 +95,18 @@ async def main():
        Apartment.last_seen_at>=now-timedelta(hours=48),
        Apartment.source_url.like("https://%lalafo.kg/%"),
    ))).all())
+   def target_district(item):
+    text=f"{item.district or ''} {item.source_description or ''}".casefold().replace("ё","е")
+    text=" ".join(text.replace("-"," ").split())
+    return bool(re.search(r"\bвосток\s*5\b|\bцум\b|\bгум\b",text))
    tomorrow_stock=[item for item in tomorrow_stock
                    if item.lalafo_id not in previously_managed
                    and item.fingerprint not in managed_fingerprints
                    and "codex_force_repost" not in item.source_url
                    and item.seller_type in {"owner","realtor"}
                    and len(item.photo_urls or [])>=4
-                   and not is_substandard_structure(apartment_to_ad(item))]
+                   and not is_substandard_structure(apartment_to_ad(item))
+                   and target_district(item)]
    tomorrow_stock.sort(key=lambda item:(
        rental_value_band(item.price,item.rooms,item.source_description),
        -district_priority(item.district),item.price,
