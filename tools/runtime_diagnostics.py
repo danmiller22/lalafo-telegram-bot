@@ -5,9 +5,10 @@ from datetime import datetime,timedelta,timezone
 from sqlalchemy import select,func
 from app.config import get_settings
 from app.database import create_engine_and_session
-from app.models import Apartment,ApartmentInventoryQueue,RequestedCardPromotion,RequestedCardPublication,ApartmentMatchDelivery,PaymentRequest
+from app.models import Apartment,ApartmentInventoryQueue,RequestedCardPromotion,RequestedCardPublication,ApartmentMatchDelivery,PaymentRequest,DailyFeaturedPublication
 from app.promotions import publications_in_window,promotion_work
 from app.inventory import BISHKEK, MAX_PUBLICATIONS_PER_DAY, publication_day_start, as_utc, daily_realtor_target, publication_slots_due
+from app.listing_quality import district_priority,rental_value_band
 from app.payments.repository import ApartmentRepository
 from app.state import ListingIndex
 from scripts.scrape_publish import apartment_to_ad
@@ -65,6 +66,46 @@ async def main():
            "daily_targets":{"owner":MAX_PUBLICATIONS_PER_DAY-target_realtors,"realtor":target_realtors},
            "repeat_after_hours":48,"requires_source_check_at_send":True,
        }}))
+   previously_managed=set((await s.scalars(select(
+       DailyFeaturedPublication.source_lalafo_id
+   ))).all())
+   tomorrow_stock=list((await s.scalars(select(Apartment).where(
+       Apartment.active.is_(True),
+       Apartment.availability_status!="unavailable",
+       Apartment.rooms=="1",
+       Apartment.price.between(25_000,35_000),
+       Apartment.phone!="",
+       Apartment.last_seen_at>=now-timedelta(hours=48),
+       Apartment.source_url.like("https://%lalafo.kg/%"),
+   ))).all())
+   tomorrow_stock=[item for item in tomorrow_stock
+                   if item.lalafo_id not in previously_managed
+                   and item.seller_type in {"owner","realtor"}
+                   and len(item.photo_urls or [])>=4]
+   tomorrow_stock.sort(key=lambda item:(
+       rental_value_band(item.price,item.rooms,item.source_description),
+       -district_priority(item.district),item.price,
+       -len(item.photo_urls or []),
+       -as_utc(item.last_seen_at or item.updated_at).timestamp(),
+   ))
+   selected=[];selected_ids=set();districts=set();seller_counts={"owner":0,"realtor":0}
+   for unique_districts in (True,False):
+    for item in tomorrow_stock:
+     if item.id in selected_ids or len(selected)>=8:continue
+     district=(item.district or "").casefold().replace("ё","е")
+     if unique_districts and district in districts:continue
+     if seller_counts[item.seller_type]>=4:continue
+     selected.append(item);selected_ids.add(item.id);districts.add(district);seller_counts[item.seller_type]+=1
+   for item in tomorrow_stock:
+    if len(selected)>=8:break
+    if item.id in selected_ids:continue
+    selected.append(item);selected_ids.add(item.id);seller_counts[item.seller_type]+=1
+   print('TOMORROW_LALAFO_CANDIDATES='+json.dumps([{
+       "source_id":item.lalafo_id,"source_url":item.source_url,
+       "district":item.district,"price":item.price,"seller_type":item.seller_type,
+       "photos":len(item.photo_urls or []),
+       "last_seen_at":as_utc(item.last_seen_at or item.updated_at).isoformat(),
+   } for item in selected],ensure_ascii=False))
    active=(await s.scalars(select(ApartmentInventoryQueue).where(ApartmentInventoryQueue.status=='publishing'))).all()
    print('RUNTIME_DIAGNOSTICS='+json.dumps({'active_queue_claims':len(active),'claims':[{'item_id':q.id,'claimed_at':q.claimed_at.isoformat() if q.claimed_at else None} for q in active]}))
  finally:await engine.dispose()
