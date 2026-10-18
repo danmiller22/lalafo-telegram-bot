@@ -267,6 +267,18 @@ def test_people_looking_for_housing_are_rejected_in_russian_and_kyrgyz():
     assert is_substandard_structure(ad)
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Ищем одну девушку для совместного проживания",
+        "Ищу парня для совместного проживания",
+        "Совместное проживание в квартире",
+    ],
+)
+def test_people_seeking_flatmates_are_rejected(text):
+    assert is_substandard_structure(make_ad(source_title=text))
+
+
 def test_single_floor_temporary_style_unit_is_rejected():
     ad = make_ad(
         source_params=[

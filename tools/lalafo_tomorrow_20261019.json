@@ -3,77 +3,36 @@
   "status": "prepared_not_published",
   "publish_now": false,
   "promotion_now": false,
+  "target_districts": ["Восток-5", "ЦУМ", "ГУМ"],
   "requirements": {
     "recheck_public_availability_before_publish": true,
     "reject_if_duplicate_in_managed_accounts": true,
-    "reject_lodging_and_short_stay": true,
+    "reject_lodging_short_stay_and_shared_housing": true,
     "description": "telegram_card_text_only",
     "contact_mode": "lalafo_chat_only"
   },
   "primary": [
     {
-      "source_id": 117398766,
-      "source_url": "https://lalafo.kg/bishkek/ads/1-komnata-sobstvennik-bez-zivotnyh-ot-3-mesacev-bez-mebeli-id-117398766",
-      "district": "Центр",
-      "price_kgs": 25000,
-      "seller_type": "realtor",
-      "photos": 5
-    },
-    {
-      "source_id": 115404926,
-      "source_url": "https://lalafo.kg/bishkek/ads/1-komnata-azia-moll-rieltor-bez-zivotnyh-ot-1-mesaca-s-mebelu-polnostu-id-115404926",
-      "district": "Азия Молл",
-      "price_kgs": 28000,
-      "seller_type": "realtor",
-      "photos": 5
-    },
-    {
-      "source_id": 117323339,
-      "source_url": "https://lalafo.kg/bishkek/ads/sdautsa-odnokomnatnye-kvartiry-v-id-117323339",
-      "district": "Арча-Бешик",
-      "price_kgs": 30000,
-      "seller_type": "owner",
+      "source_id": 112885288,
+      "source_url": "https://lalafo.kg/bishkek/ads/vostok-5-mkr-id-112885288",
+      "district": "Восток-5 мкр",
+      "price_kgs": 35000,
       "photos": 8
-    },
-    {
-      "source_id": 117372643,
-      "source_url": "https://lalafo.kg/bishkek/ads/1-komnata-sobstvennik-bez-zivotnyh-s-mebelu-casticno-id-117372643",
-      "district": "Центр",
-      "price_kgs": 35000,
-      "seller_type": "owner",
-      "photos": 6
     }
   ],
-  "reserve": [
-    {
-      "source_id": 117400960,
-      "source_url": "https://lalafo.kg/bishkek/ads/1-komnata-alamedin-1-mkr-agentstvo-nedvizimosti-bez-zivotnyh-ot-1-mesaca-ot-3-mesacev-ot-6-mesacev-s-mebelu-polnostu-id-117400960",
-      "district": "Аламедин-1",
-      "price_kgs": 30000,
-      "seller_type": "realtor",
-      "photos": 7
-    },
-    {
-      "source_id": 115303800,
-      "source_url": "https://lalafo.kg/bishkek/ads/1-komnata-12-mkr-sobstvennik-bez-zivotnyh-s-mebelu-polnostu-id-115303800",
-      "district": "12 мкр",
-      "price_kgs": 35000,
-      "seller_type": "owner",
-      "photos": 5
-    },
-    {
-      "source_id": 81211044,
-      "source_url": "https://lalafo.kg/bishkek/ads/1-komnata-sobstvennik-bez-podselenia-bez-mebeli-id-81211044",
-      "district": "Арча-Бешик",
-      "price_kgs": 30000,
-      "seller_type": "owner",
-      "photos": 7
-    }
-  ],
+  "reserve": [],
   "excluded": [
     {
       "source_id": 114862425,
       "reason": "previously_requested_for_old_profile"
+    },
+    {
+      "source_id": 115084530,
+      "reason": "previously_requested_for_old_profile"
+    },
+    {
+      "source_id": 91824890,
+      "reason": "shared_housing_flatmate_search"
     }
   ]
 }
