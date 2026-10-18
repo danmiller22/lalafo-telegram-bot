@@ -5,8 +5,6 @@ on:
       verify_only:
         type: boolean
         default: true
-  schedule:
-    - cron: '20,25,30,35,40,45,50,55 23 15 10 *'
 permissions:
   contents: read
 concurrency:

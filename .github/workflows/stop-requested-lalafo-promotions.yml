@@ -7,10 +7,6 @@ on:
         description: Verify account and exact campaign ownership without stopping promotions
         type: boolean
         default: true
-  schedule:
-    # Starts 14 minutes before the authorized stop to absorb runner setup delays.
-    - cron: "5 23 13 10 *"
-
 permissions:
   contents: read
 

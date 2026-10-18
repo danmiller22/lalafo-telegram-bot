@@ -7,10 +7,6 @@ on:
         description: Verify account and exact campaign ownership without stopping promotions
         type: boolean
         default: true
-  schedule:
-    # Starts early with retries; confirmed completion prevents later account access.
-    - cron: "0,5,10,15,20,25,30,35,40,45,50,55 23 14 10 *"
-
 permissions:
   contents: read
 

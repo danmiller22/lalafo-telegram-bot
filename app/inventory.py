@@ -18,7 +18,7 @@ from app.models import (
 )
 from app.state import normalized_district
 from app.listing_quality import district_priority, price_bucket, mix_prices, rental_value_band, price_mix_rank
-from app.listing_policy import seller_policy_eligible
+from app.listing_policy import OWNER_MAX_PRICE, seller_policy_eligible
 from app.telegram.formatting import is_supported_source
 from app.promotions import publications_in_window, queue_due_promotions, REQUESTED_WINDOW_PREFIX
 
@@ -748,7 +748,7 @@ class InventoryRepository:
                     _supported_source_filter(),
                     Apartment.id.not_in(active_queue_ids),
                     Apartment.fingerprint.not_in(queued_fingerprints),
-                    Apartment.price.between(25_000, 40_000),
+                    Apartment.price.between(25_000, OWNER_MAX_PRICE),
                     Apartment.rooms.in_(ALLOWED_ROOMS),
                     Apartment.last_seen_at >= now - timedelta(days=2),
                 )
@@ -768,7 +768,7 @@ class InventoryRepository:
                     _supported_source_filter(),
                     Apartment.id.not_in(active_queue_ids),
                     Apartment.fingerprint.not_in(queued_fingerprints),
-                    Apartment.price.between(25_000, 40_000),
+                    Apartment.price.between(25_000, OWNER_MAX_PRICE),
                     Apartment.rooms.in_(ALLOWED_ROOMS),
                     Apartment.last_seen_at >= now - timedelta(days=2),
                 )
@@ -908,7 +908,7 @@ class InventoryRepository:
             )
             ineligible_apartment_ids = select(Apartment.id).where(
                 (Apartment.price < 25_000)
-                | (Apartment.price > 40_000)
+                | (Apartment.price > OWNER_MAX_PRICE)
                 | Apartment.rooms.not_in(ALLOWED_ROOMS)
             )
             await session.execute(
@@ -1000,7 +1000,7 @@ class InventoryRepository:
                         ),
                         or_(
                             ApartmentInventoryQueue.window_key.startswith(REQUESTED_WINDOW_PREFIX),
-                            Apartment.rooms.in_(ALLOWED_ROOMS) & Apartment.price.between(25_000, 45_000),
+                            Apartment.rooms.in_(ALLOWED_ROOMS) & Apartment.price.between(25_000, OWNER_MAX_PRICE),
                         ),
                         _supported_source_filter(),
                     )

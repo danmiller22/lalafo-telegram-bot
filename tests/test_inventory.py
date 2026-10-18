@@ -646,6 +646,22 @@ async def test_schedule_repeats_only_after_forty_eight_hours(repositories):
 
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("publication_clock")
+async def test_owner_at_maximum_price_is_scheduled_and_claimable(repositories):
+    apartments, _, sessions = repositories
+    now = datetime.now(timezone.utc)
+    apartment = await apartments.upsert_discovered(
+        make_ad(lalafo_id=32_004, price=45_000, seller_type="owner", owner_listing=True)
+    )
+
+    assert await InventoryRepository(sessions).schedule_period(now=now) == 1
+    claimed = await InventoryRepository(sessions).claim_due(now=now)
+
+    assert claimed is not None
+    assert claimed.apartment_id == apartment.id
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("publication_clock")
 async def test_claim_due_skips_old_unsupported_source_even_if_owner(repositories):
     apartments, _, sessions = repositories
     now = datetime.now(timezone.utc)
