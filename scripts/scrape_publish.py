@@ -106,7 +106,7 @@ MAX_CANDIDATE_POOL = 300
 # Owner cards still fill the publication batch first. Reserve enough crawl time
 # for inexpensive central agency stock to keep the 110-card schedule full when
 # the owner catalogue is thin; this does not reserve publication slots.
-REALTOR_CANDIDATE_RESERVE_SHARE = 0.20
+REALTOR_CANDIDATE_RESERVE_SHARE = 0.50
 REALTOR_BATCH_SHARE = REALTOR_DAILY_SHARE
 # Retained for historical reporting helpers; two-bedroom cards are no longer
 # eligible for discovery or publication.
@@ -462,7 +462,10 @@ def insert_randomly(
 def rotate_inventory_sources(urls, *, now=None):
     """Always read 30–35k owners, then rotate the remaining source groups."""
     current = now or datetime.now(timezone.utc)
-    cycle = int(current.timestamp() // (15 * 60))
+    # Thin owner inventory retries after three minutes. Rotate on that same
+    # clock so retries inspect a new district slice instead of repeating the
+    # identical sources five times before the old 15-minute offset changed.
+    cycle = int(current.timestamp() // (3 * 60))
     owners = [url for url in urls if 'real-estate-agency' not in url]
     agencies = [url for url in urls if 'real-estate-agency' in url]
     hot_owners = [

@@ -167,9 +167,9 @@ def test_source_urls_follow_the_operator_filters():
 def test_discovery_pool_reserves_enough_time_for_realtor_fallback():
     targets = source_candidate_targets(300, source_count=3, batch_limit=18)
 
-    assert REALTOR_CANDIDATE_RESERVE_SHARE == 0.20
-    assert targets == [120, 240, 300]
-    assert targets[-1] - targets[-2] == 60
+    assert REALTOR_CANDIDATE_RESERVE_SHARE == 0.50
+    assert targets == [75, 150, 300]
+    assert targets[-1] - targets[-2] == 150
 
 
 def test_inventory_sources_split_capacity_between_categories():
@@ -180,7 +180,7 @@ def test_inventory_sources_split_capacity_between_categories():
         owner_source_count=2,
     )
 
-    assert targets == [96, 192, 216, 240]
+    assert targets == [60, 120, 180, 240]
 
 
 def test_supported_room_types_have_twenty_five_thousand_price_floor():
@@ -385,7 +385,7 @@ def test_unknown_author_label_is_stable_and_exact():
     assert all(author_label(ad) == author_label(ad) for ad in ads)
 
 
-def test_mixed_batch_prefers_all_available_owners():
+def test_mixed_batch_balances_owners_and_realtors():
     owners = [
         make_ad(lalafo_id=index, owner_listing=True, phone=f"+996700{index:06d}")
         for index in (1, 2, 6, 7, 8)
@@ -398,8 +398,8 @@ def test_mixed_batch_prefers_all_available_owners():
     selected = select_owners_then_realtors(owners + realtors, limit=4)
 
     assert len(selected) == 4
-    assert sum(ad.owner_listing for ad in selected) == 4
-    assert sum(ad.seller_type == "realtor" for ad in selected) == 0
+    assert sum(ad.owner_listing for ad in selected) == 2
+    assert sum(ad.seller_type == "realtor" for ad in selected) == 2
 
 
 def test_permanently_excluded_source_never_enters_a_publish_batch():
@@ -820,7 +820,7 @@ def test_source_rotation_covers_all_sources_without_mixing_budget_segments():
     rotating_owners = [u for u in owners if u != hot]
     second_owners, first_agencies = set(), set()
     for cycle in range(max(len(owners), len(agencies))):
-        now = datetime.fromtimestamp(cycle*900, timezone.utc)
+        now = datetime.fromtimestamp(cycle*180, timezone.utc)
         urls = rotate_inventory_sources(INVENTORY_SEARCH_URLS, now=now)
         assert set(urls) == set(INVENTORY_SEARCH_URLS)
         assert all('real-estate-agency' not in u for u in urls[:len(owners)])

@@ -26,13 +26,14 @@ from app.promotions import publications_in_window, queue_due_promotions, REQUEST
 BISHKEK = ZoneInfo("Asia/Bishkek")
 ALLOWED_ROOMS = frozenset({"studio", "1"})
 CENTRAL_DAILY_SHARE = 0.50
-REALTOR_DAILY_SHARE = 0.0
+REALTOR_DAILY_SHARE = 0.50
 MIN_PUBLICATIONS_PER_DAY = 110
 MAX_PUBLICATIONS_PER_DAY = 110
 # The daily target is chosen once per Bishkek date, then split across the two
 # discovery periods so retries cannot increase the day's publication volume.
-# Fill the day with confirmed owners first. Realtors are only a shortage
-# fallback; unclassified listings do not enter the public queue.
+# Split the day evenly between confirmed owners and inexpensive central
+# realtors. Either known category fills shortages in the other; unclassified
+# listings do not enter the public queue.
 MIN_NON_OWNERS_PER_DAY = math.ceil(MAX_PUBLICATIONS_PER_DAY * REALTOR_DAILY_SHARE)
 MAX_NON_OWNERS_PER_DAY = MIN_NON_OWNERS_PER_DAY
 TARGET_NON_OWNERS_PER_PERIOD = (MAX_NON_OWNERS_PER_DAY + 1) // 2
@@ -362,7 +363,7 @@ def plan_period(
             district_counts, price_counts, central=False,
             seller_remaining=seller_remaining,
         ))
-    selected = mix_prices(selected, rng=rng)
+    selected = mix_sellers(mix_prices(selected, rng=rng))
     schedule = randomized_period_times(
         period_start,
         count=len(selected),
@@ -381,6 +382,22 @@ def plan_period(
         )
     ]
     return planned
+
+
+def mix_sellers(items: list[Apartment]) -> list[Apartment]:
+    """Alternate owners and realtors so expensive owner cards are diluted."""
+    queues = {
+        "owner": [item for item in items if _seller_type(item) == "owner"],
+        "realtor": [item for item in items if _seller_type(item) == "realtor"],
+    }
+    result: list[Apartment] = []
+    turn = "owner" if len(queues["owner"]) > len(queues["realtor"]) else "realtor"
+    while queues["owner"] and queues["realtor"]:
+        result.append(queues[turn].pop(0))
+        turn = "realtor" if turn == "owner" else "owner"
+    result.extend(queues["owner"])
+    result.extend(queues["realtor"])
+    return result
 
 
 async def _balanced_stock(session: AsyncSession, statement) -> list[Apartment]:
