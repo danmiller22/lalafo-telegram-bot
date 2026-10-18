@@ -375,7 +375,7 @@ def is_substandard_structure(ad: LalafoAd) -> bool:
     text = re.sub(
         r"[^\w]+",
         " ",
-        f"{ad.source_title} {ad.source_description}".casefold().replace("ё", "е"),
+        f"{ad.source_title} {ad.source_description} {ad.source_url}".casefold().replace("ё", "е"),
     )
     blocked_terms = (
         "ищу квартиру",
@@ -396,6 +396,9 @@ def is_substandard_structure(ad: LalafoAd) -> bool:
         "ищем парня",
         "для совместного проживания",
         "совместное проживание",
+        "isem odnu devusku",
+        "isem devusku",
+        "sovmestnogo",
         "контейнер",
         "времянка",
         "вагончик",

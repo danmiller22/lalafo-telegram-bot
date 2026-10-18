@@ -279,6 +279,12 @@ def test_people_seeking_flatmates_are_rejected(text):
     assert is_substandard_structure(make_ad(source_title=text))
 
 
+def test_flatmate_search_is_rejected_when_only_the_source_url_keeps_the_title():
+    ad = make_ad(source_title="", source_description="")
+    ad.source_url = "https://lalafo.kg/bishkek/ads/isem-odnu-devusku-dla-sovmestnogo-id-91824890"
+    assert is_substandard_structure(ad)
+
+
 def test_single_floor_temporary_style_unit_is_rejected():
     ad = make_ad(
         source_params=[
