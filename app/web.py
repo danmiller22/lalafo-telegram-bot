@@ -1692,6 +1692,9 @@ async def miniapp_issue_access(payload: MiniAppRequest) -> dict[str, Any]:
     request = await payments.mark_payment_claimed(user_id=user.id, apartment_id=apartment_id)
     if request is None:
         raise HTTPException(status_code=409, detail="Сначала откройте оплату.")
+    await _record_funnel(
+        runtime, user.id, "payment_claimed", apartment_id=apartment_id
+    )
     from app.payments.review import notify_payment_admin
     try:
         await notify_payment_admin(runtime.bot, payments, settings,

@@ -125,6 +125,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     <div id="payment-step" class="step"><span>1</span>Оплата</div>
     <button id="reopen-payment" class="secondary hidden">Открыть Finik</button>
     <div class="step receipt-step"><span>2</span>Получение номера</div>
+    <p class="caption">После оплаты вернитесь сюда и нажмите «Я оплатил(а)». Администратор проверит поступление и откроет доступ.</p>
     <button id="access" class="primary hidden">Я оплатил(а)</button>
   </section>
   <div id="apartment" class="hidden">

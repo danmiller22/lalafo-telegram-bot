@@ -11,7 +11,7 @@ from app.bot.callbacks import PAID_PREFIX
 from app.config import Settings
 from app.models import PaymentHistory, PaymentRequest
 from app.payment_plans import WEEK_PLAN
-from app.payments.worker import process_payment_reviews
+from app.payments.worker import process_checkout_recoveries, process_payment_reviews
 from app.security import TokenSigner
 from tests.helpers import make_ad
 
@@ -93,3 +93,87 @@ async def test_notifications_scan_skips_already_notified_pending_rows(repositori
     assert await process_payment_reviews(runtime) == 0
     assert runtime.bot.send_message.await_count == 55
     assert (await service.contact_status(121, apartment.id)).status == "pending"
+
+
+@pytest.mark.asyncio
+async def test_abandoned_checkout_gets_one_recovery_message_per_customer(
+    repositories, service
+):
+    apartments, payments, sessions = repositories
+    first = await apartments.upsert_discovered(make_ad(lalafo_id=13131))
+    second = await apartments.upsert_discovered(make_ad(lalafo_id=13132))
+    for apartment in (first, second):
+        await service.begin_payment(
+            user_id=313,
+            apartment_id=apartment.id,
+            username="buyer",
+            first_name="Buyer",
+            plan=WEEK_PLAN,
+        )
+    overdue = datetime.now(timezone.utc) - timedelta(minutes=20)
+    async with sessions.begin() as session:
+        await session.execute(
+            update(PaymentRequest)
+            .where(PaymentRequest.telegram_user_id == 313)
+            .values(created_at=overdue)
+        )
+
+    bot = SimpleNamespace(
+        send_message=AsyncMock(return_value=SimpleNamespace(message_id=900))
+    )
+    runtime = SimpleNamespace(
+        bot=bot,
+        workflow_data={
+            "payments": payments,
+            "settings": Settings(telegram_bot_username="arenda312bot"),
+            "signer": TokenSigner("checkout-recovery-test-secret"),
+        },
+    )
+
+    assert await process_checkout_recoveries(runtime) == 1
+    assert await process_checkout_recoveries(runtime) == 0
+    bot.send_message.assert_awaited_once()
+    assert bot.send_message.await_args.args[0] == 313
+    assert "499 сом" in bot.send_message.await_args.args[1]
+    async with sessions() as session:
+        rows = list(
+            (
+                await session.scalars(
+                    select(PaymentRequest).where(
+                        PaymentRequest.telegram_user_id == 313
+                    )
+                )
+            ).all()
+        )
+    assert len(rows) == 2
+    assert all(row.payment_reminder_sent_at is not None for row in rows)
+
+
+@pytest.mark.asyncio
+async def test_payment_claim_stops_checkout_recovery(repositories, service):
+    apartments, payments, sessions = repositories
+    apartment = await apartments.upsert_discovered(make_ad(lalafo_id=14141))
+    await service.begin_payment(
+        user_id=414,
+        apartment_id=apartment.id,
+        username=None,
+        first_name="Buyer",
+        plan=WEEK_PLAN,
+    )
+    await payments.mark_payment_claimed(user_id=414, apartment_id=apartment.id)
+    async with sessions.begin() as session:
+        await session.execute(
+            update(PaymentRequest)
+            .where(PaymentRequest.telegram_user_id == 414)
+            .values(created_at=datetime.now(timezone.utc) - timedelta(minutes=20))
+        )
+    runtime = SimpleNamespace(
+        bot=SimpleNamespace(send_message=AsyncMock()),
+        workflow_data={
+            "payments": payments,
+            "settings": Settings(),
+            "signer": TokenSigner("checkout-recovery-test-secret"),
+        },
+    )
+    assert await process_checkout_recoveries(runtime) == 0
+    runtime.bot.send_message.assert_not_awaited()

@@ -275,6 +275,12 @@ class PaymentRequest(Base):
         Index("ix_payment_status_created", "status", "created_at"),
         Index("ix_payment_provider_id", "provider_payment_id", unique=True),
         Index("ix_payment_claim_due", "status", "payment_claimed_at"),
+        Index(
+            "ix_payment_reminder_due",
+            "status",
+            "payment_reminder_sent_at",
+            "created_at",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -303,6 +309,8 @@ class PaymentRequest(Base):
     payment_claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     admin_notification_token: Mapped[str | None] = mapped_column(String(64))
     admin_notification_claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    payment_reminder_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    payment_reminder_claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     apartment: Mapped[Apartment] = relationship(back_populates="payments")
 

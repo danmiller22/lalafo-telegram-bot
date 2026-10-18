@@ -98,6 +98,9 @@ TELEGRAM_SOURCE_CHANNELS: tuple[str, ...] = (
     "https://t.me/s/Bishkek_kvartira312",
     "https://t.me/s/rental_property_bishkek",
     "https://t.me/s/housekg",
+    # Active public long-term rental feed found outside the older source set.
+    # It exposes full text, photos and direct contact numbers in the web preview.
+    "https://t.me/s/renthousebish",
 )
 
 # These public channels expose complete photo albums, descriptions and phone

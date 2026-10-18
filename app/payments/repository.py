@@ -840,6 +840,8 @@ class PaymentRepository:
                 request.admin_message_id = None
                 request.admin_notification_token = None
                 request.admin_notification_claimed_at = None
+                request.payment_reminder_sent_at = None
+                request.payment_reminder_claimed_at = None
                 request.provider_payment_id = None
                 request.provider_payment_url = None
                 request.provider_status = None
@@ -1016,6 +1018,86 @@ class PaymentRepository:
                 .order_by(PaymentRequest.created_at.asc())
                 .limit(limit)
             )).all())
+
+    async def claim_payment_reminders(
+        self,
+        *,
+        now: datetime | None = None,
+        delay: timedelta = timedelta(minutes=12),
+        limit: int = 25,
+    ) -> list[PaymentRequest]:
+        """Reserve one recovery message per customer with an abandoned checkout."""
+        current = now or datetime.now(timezone.utc)
+        stale_claim = current - timedelta(minutes=5)
+        recent_cutoff = current - timedelta(days=2)
+        due = (
+            select(func.min(PaymentRequest.id).label("id"))
+            .where(
+                PaymentRequest.status == "awaiting_receipt",
+                PaymentRequest.created_at <= current - delay,
+                PaymentRequest.created_at >= recent_cutoff,
+                PaymentRequest.payment_reminder_sent_at.is_(None),
+                or_(
+                    PaymentRequest.payment_reminder_claimed_at.is_(None),
+                    PaymentRequest.payment_reminder_claimed_at <= stale_claim,
+                ),
+            )
+            .group_by(PaymentRequest.telegram_user_id)
+        )
+        async with self.sessions.begin() as session:
+            requests = list(
+                (
+                    await session.scalars(
+                        select(PaymentRequest)
+                        .options(selectinload(PaymentRequest.apartment))
+                        .where(PaymentRequest.id.in_(due))
+                        .order_by(PaymentRequest.created_at.asc())
+                        .limit(limit)
+                        .with_for_update(skip_locked=True)
+                    )
+                ).all()
+            )
+            for request in requests:
+                request.payment_reminder_claimed_at = current
+            return requests
+
+    async def finish_payment_reminder(
+        self, request_id: int, *, sent_at: datetime | None = None
+    ) -> None:
+        """Mark all current checkouts for this customer as already recovered."""
+        current = sent_at or datetime.now(timezone.utc)
+        async with self.sessions.begin() as session:
+            user_id = await session.scalar(
+                select(PaymentRequest.telegram_user_id).where(
+                    PaymentRequest.id == request_id
+                )
+            )
+            if user_id is None:
+                return
+            await session.execute(
+                update(PaymentRequest)
+                .where(
+                    PaymentRequest.telegram_user_id == user_id,
+                    PaymentRequest.status == "awaiting_receipt",
+                    PaymentRequest.payment_reminder_sent_at.is_(None),
+                )
+                .values(
+                    payment_reminder_sent_at=current,
+                    payment_reminder_claimed_at=None,
+                )
+            )
+
+    async def release_payment_reminder(self, request_id: int) -> None:
+        """Make a transiently failed recovery message eligible for another try."""
+        async with self.sessions.begin() as session:
+            await session.execute(
+                update(PaymentRequest)
+                .where(
+                    PaymentRequest.id == request_id,
+                    PaymentRequest.payment_reminder_sent_at.is_(None),
+                )
+                .values(payment_reminder_claimed_at=None)
+            )
 
     async def prepare_provider_payment(
         self,

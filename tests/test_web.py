@@ -167,7 +167,7 @@ async def test_health_and_authentication() -> None:
                                    "seller_mix": {"owner": 1.0, "realtor": 0.0},
                                    "single_photo_duplicate_guard": True,
                 "requested_cards": {"total_publications": 3, "duration_hours": 24, "minimum_gap_hours": 6, "included_in_daily_target": True},
-                                   "telegram_source_channels": 12},
+                                   "telegram_source_channels": 13},
             "apartment_scheduler": "disabled",
         }
         assert (await client.post("/run")).status_code == 401
