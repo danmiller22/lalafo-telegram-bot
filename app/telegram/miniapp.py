@@ -115,9 +115,8 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
   <div id="status" class="status hidden" role="status" aria-live="polite"></div>
   <a id="other-apartments" class="button secondary hidden" href="https://t.me/rentkg312">Смотреть актуальные квартиры</a>
   <div id="tariff-description" class="intro">
-    Недельный доступ ко всем контактам квартир — {WEEK_PRICE} сом
+    Доступ к контактам собственников — {WEEK_PRICE} сом в неделю
   </div>
-  <p id="tariff-value" class="caption">Одна оплата открывает номера всех актуальных квартир на 7 дней.</p>
   <p id="agreement-caption" class="agreement-caption">Оплачивая доступ, вы подтверждаете, что ознакомились с <a id="terms-link" class="terms-link" href="#agreement">пользовательским договором</a> и соглашаетесь с его условиями.</p>
   <button id="pay-lifetime" class="primary tariff-button"{'' if payment_urls else ' disabled'}>Оплатить {WEEK_PRICE} сом</button>
   <a id="privacy" class="privacy hidden">Политика конфиденциальности</a>
@@ -239,7 +238,6 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     show("phone", approved);
     const canPay = !approved && !waiting && !apartmentUnavailable;
     show("tariff-description", canPay);
-    show("tariff-value", canPay);
     show("checkout", waiting);
     show("privacy", !approved);
     show("agreement-caption", !approved && !apartmentUnavailable);
