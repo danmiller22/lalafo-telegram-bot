@@ -3,36 +3,61 @@
   "status": "prepared_not_published",
   "publish_now": false,
   "promotion_now": false,
-  "target_districts": ["Восток-5", "ЦУМ", "ГУМ"],
   "requirements": {
+    "rooms": "1",
+    "studios_allowed": false,
     "recheck_public_availability_before_publish": true,
-    "reject_if_duplicate_in_managed_accounts": true,
+    "reject_if_duplicate_in_current_managed_account": true,
     "reject_lodging_short_stay_and_shared_housing": true,
     "description": "telegram_card_text_only",
     "contact_mode": "lalafo_chat_only"
   },
-  "primary": [
+  "cards": [
     {
+      "slot": 1,
       "source_id": 112885288,
       "source_url": "https://lalafo.kg/bishkek/ads/vostok-5-mkr-id-112885288",
       "district": "Восток-5 мкр",
       "price_kgs": 35000,
-      "photos": 8
-    }
-  ],
-  "reserve": [],
-  "excluded": [
-    {
-      "source_id": 114862425,
-      "reason": "previously_requested_for_old_profile"
+      "photos": 8,
+      "description": "🏠 1-комнатная квартира\n📍 Восток-5\n🏙 Бишкек\n💵 35 000 сом"
     },
     {
+      "slot": 2,
+      "source_id": 117402130,
+      "source_url": "https://lalafo.kg/bishkek/ads/1-komnata-vostok-5-mkr-sobstvennik-semejnym-ot-6-mesacev-s-mebelu-polnostu-id-117402130",
+      "district": "Восток-5 мкр",
+      "price_kgs": 37000,
+      "photos": 6,
+      "description": "🏠 1-комнатная квартира\n📍 Восток-5\n🏙 Бишкек\n💵 37 000 сом"
+    },
+    {
+      "slot": 3,
       "source_id": 115084530,
-      "reason": "previously_requested_for_old_profile"
+      "source_url": "https://lalafo.kg/bishkek/ads/1-komnata-vostok-5-mkr-agentstvo-nedvizimosti-mozno-s-zivotnymi-s-mebelu-polnostu-id-115084530",
+      "district": "Восток-5 мкр",
+      "price_kgs": 34000,
+      "photos": 9,
+      "requires_old_profile_duplicate_check": true,
+      "description": "🏠 1-комнатная квартира\n📍 Восток-5\n🏙 Бишкек\n💵 34 000 сом"
     },
     {
-      "source_id": 91824890,
-      "reason": "shared_housing_flatmate_search"
+      "slot": 4,
+      "source_id": 117398766,
+      "source_url": "https://lalafo.kg/bishkek/ads/1-komnata-sobstvennik-bez-zivotnyh-ot-3-mesacev-bez-mebeli-id-117398766",
+      "district": "Центр",
+      "price_kgs": 25000,
+      "photos": 5,
+      "description": "🏠 1-комнатная квартира\n📍 Центр\n🏙 Бишкек\n💵 25 000 сом"
+    },
+    {
+      "slot": 5,
+      "source_id": 93262505,
+      "source_url": "https://lalafo.kg/bishkek/ads/1-komnata-sobstvennik-bez-podselenia-s-mebelu-casticno-id-93262505",
+      "district": "Центр",
+      "price_kgs": 25000,
+      "photos": 5,
+      "description": "🏠 1-комнатная квартира\n📍 Центр\n🏙 Бишкек\n💵 25 000 сом"
     }
   ]
 }
