@@ -59,6 +59,18 @@ async def _revenue_segments(session, start, end):
                    for district,count,amount in district_rows],
  }
 
+
+async def _funnel_sources(session, start, end):
+ rows=(await session.execute(select(
+  CustomerFunnelEvent.source,CustomerFunnelEvent.event_name,func.count(),
+  func.count(func.distinct(CustomerFunnelEvent.telegram_user_id)),
+ ).where(CustomerFunnelEvent.created_at>=start,CustomerFunnelEvent.created_at<end)
+  .group_by(CustomerFunnelEvent.source,CustomerFunnelEvent.event_name))).all()
+ result={}
+ for source,event_name,count,users in rows:
+  result.setdefault(source or 'unknown',{})[event_name]={'events':count,'users':users}
+ return result
+
 async def report(sessions):
  now=datetime.now(timezone.utc);local=now.astimezone(ZoneInfo('Asia/Bishkek'));midnight=local.replace(hour=0,minute=0,second=0,microsecond=0)
  async with sessions() as s:
@@ -80,6 +92,10 @@ async def report(sessions):
    await _revenue_segments(s,current_start,now),ensure_ascii=False),flush=True)
   print('REVENUE_SEGMENTS_PREVIOUS='+json.dumps(
    await _revenue_segments(s,prior_start,prior_same_end),ensure_ascii=False),flush=True)
+  print('FUNNEL_SOURCE_COMPARISON='+json.dumps({
+   'current_week':await _funnel_sources(s,current_start,now),
+   'previous_week_same_elapsed':await _funnel_sources(s,prior_start,prior_same_end),
+  },ensure_ascii=False),flush=True)
   for days in range(14):
    day_start=(midnight-timedelta(days=days)).astimezone(timezone.utc)
    day_end=day_start+timedelta(days=1)
