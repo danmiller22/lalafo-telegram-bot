@@ -90,15 +90,19 @@ async def main():
        Apartment.active.is_(True),
        Apartment.availability_status!="unavailable",
        Apartment.rooms=="1",
-       Apartment.price.between(25_000,35_000),
+       Apartment.price.between(25_000,45_000),
        Apartment.phone!="",
        Apartment.last_seen_at>=now-timedelta(hours=48),
        Apartment.source_url.like("https://%lalafo.kg/%"),
    ))).all())
-   def target_district(item):
+   def target_group(item):
     text=f"{item.district or ''} {item.source_description or ''}".casefold().replace("ё","е")
     text=" ".join(text.replace("-"," ").split())
-    return bool(re.search(r"\bвосток\s*5\b|\bцум\b|\bгум\b",text))
+    if re.search(r"\bвосток\s*5\b",text):return "east5"
+    central=("центр","цум","гум","филармони","бишкек парк","вефа","юг 2",
+             "моссовет","манаса","золотой квадрат","азия молл","дордой плаза",
+             "1000 мелочей","политех")
+    return "central" if any(term in text for term in central) else None
    tomorrow_stock=[item for item in tomorrow_stock
                    if item.lalafo_id not in previously_managed
                    and item.fingerprint not in managed_fingerprints
@@ -106,28 +110,23 @@ async def main():
                    and item.seller_type in {"owner","realtor"}
                    and len(item.photo_urls or [])>=4
                    and not is_substandard_structure(apartment_to_ad(item))
-                   and target_district(item)]
+                   and target_group(item)]
    tomorrow_stock.sort(key=lambda item:(
        rental_value_band(item.price,item.rooms,item.source_description),
        -district_priority(item.district),item.price,
        -len(item.photo_urls or []),
        -as_utc(item.last_seen_at or item.updated_at).timestamp(),
    ))
-   selected=[];selected_ids=set();districts=set();seller_counts={"owner":0,"realtor":0}
-   for unique_districts in (True,False):
+   selected=[];selected_ids=set()
+   for group,limit in (("east5",3),("central",2)):
     for item in tomorrow_stock:
-     if item.id in selected_ids or len(selected)>=8:continue
-     district=(item.district or "").casefold().replace("ё","е")
-     if unique_districts and district in districts:continue
-     if seller_counts[item.seller_type]>=4:continue
-     selected.append(item);selected_ids.add(item.id);districts.add(district);seller_counts[item.seller_type]+=1
-   for item in tomorrow_stock:
-    if len(selected)>=8:break
-    if item.id in selected_ids:continue
-    selected.append(item);selected_ids.add(item.id);seller_counts[item.seller_type]+=1
+     if len([chosen for chosen in selected if target_group(chosen)==group])>=limit:break
+     if item.id in selected_ids or target_group(item)!=group:continue
+     selected.append(item);selected_ids.add(item.id)
    print('TOMORROW_LALAFO_CANDIDATES='+json.dumps([{
        "source_id":item.lalafo_id,"source_url":item.source_url,
-       "district":item.district,"price":item.price,"seller_type":item.seller_type,
+       "district":item.district,"target_group":target_group(item),
+       "price":item.price,"seller_type":item.seller_type,
        "photos":len(item.photo_urls or []),
        "last_seen_at":as_utc(item.last_seen_at or item.updated_at).isoformat(),
    } for item in selected],ensure_ascii=False))
