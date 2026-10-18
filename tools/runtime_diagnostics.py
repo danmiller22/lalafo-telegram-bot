@@ -83,6 +83,9 @@ async def main():
     for history_file in Path("tools").glob(pattern):
      try:previously_managed.update(source_ids(json.loads(history_file.read_text())))
      except (OSError,json.JSONDecodeError):pass
+   managed_fingerprints=set((await s.scalars(select(Apartment.fingerprint).where(
+       Apartment.lalafo_id.in_(previously_managed)
+   ))).all()) if previously_managed else set()
    tomorrow_stock=list((await s.scalars(select(Apartment).where(
        Apartment.active.is_(True),
        Apartment.availability_status!="unavailable",
@@ -94,6 +97,7 @@ async def main():
    ))).all())
    tomorrow_stock=[item for item in tomorrow_stock
                    if item.lalafo_id not in previously_managed
+                   and item.fingerprint not in managed_fingerprints
                    and "codex_force_repost" not in item.source_url
                    and item.seller_type in {"owner","realtor"}
                    and len(item.photo_urls or [])>=4]
