@@ -36,18 +36,20 @@ async def _period_summary(session, start, end):
 
 
 async def _revenue_segments(session, start, end):
+ seller=func.coalesce(Apartment.seller_type,'unknown')
  seller_rows=(await session.execute(select(
-  func.coalesce(Apartment.seller_type,'unknown'),func.count(),
+  seller,func.count(),
   func.coalesce(func.sum(PaymentHistory.amount),0),
  ).select_from(PaymentHistory).outerjoin(Apartment,Apartment.id==PaymentHistory.apartment_id)
   .where(PaymentHistory.paid_at>=start,PaymentHistory.paid_at<end)
-  .group_by(func.coalesce(Apartment.seller_type,'unknown')))).all()
+  .group_by(seller))).all()
+ district=func.coalesce(Apartment.district,'unknown')
  district_rows=(await session.execute(select(
-  func.coalesce(Apartment.district,'unknown'),func.count(),
+  district,func.count(),
   func.coalesce(func.sum(PaymentHistory.amount),0),
  ).select_from(PaymentHistory).outerjoin(Apartment,Apartment.id==PaymentHistory.apartment_id)
   .where(PaymentHistory.paid_at>=start,PaymentHistory.paid_at<end)
-  .group_by(func.coalesce(Apartment.district,'unknown'))
+  .group_by(district)
   .order_by(func.sum(PaymentHistory.amount).desc()).limit(15))).all()
  return {
   'start':start.isoformat(),'end':end.isoformat(),
