@@ -69,6 +69,36 @@ async def test_repeated_checkout_cannot_reset_approved_access(repositories, serv
 
 
 @pytest.mark.asyncio
+async def test_one_weekly_approval_closes_parallel_claims_without_duplicate_revenue(
+    repositories, service
+):
+    apartments, payments, sessions = repositories
+    first = await apartments.upsert_discovered(make_ad(lalafo_id=99011))
+    second = await apartments.upsert_discovered(make_ad(lalafo_id=99012))
+    first_checkout = await service.begin_payment(
+        user_id=993, apartment_id=first.id, username="buyer",
+        first_name="Buyer", plan=WEEK_PLAN,
+    )
+    second_checkout = await service.begin_payment(
+        user_id=993, apartment_id=second.id, username="buyer",
+        first_name="Buyer", plan=WEEK_PLAN,
+    )
+    await payments.mark_payment_claimed(user_id=993, apartment_id=first.id)
+    await payments.mark_payment_claimed(user_id=993, apartment_id=second.id)
+
+    assert await service.decide(
+        first_checkout.request.id, approve=True, actor_id=999
+    ) == "approved"
+    assert (await payments.get_request(second_checkout.request.id)).status == "approved"
+    assert await service.decide(
+        second_checkout.request.id, approve=True, actor_id=999
+    ) == "already_approved"
+    assert (await service.contact_status(993, second.id)).status == "approved"
+    async with sessions() as session:
+        assert await session.scalar(select(func.count(PaymentHistory.id))) == 1
+
+
+@pytest.mark.asyncio
 async def test_existing_paid_week_survives_checkout_reset_but_not_rejection(repositories, service):
     apartments, payments, sessions = repositories
     first = await apartments.upsert_discovered(make_ad(lalafo_id=99003))

@@ -76,7 +76,7 @@ async def test_access_error_retains_http_status_for_collector_report(method):
 
 
 def test_supplementary_search_uses_central_realtor_pool():
-    assert len(ADDITIONAL_SEARCH_URLS) == 7
+    assert len(ADDITIONAL_SEARCH_URLS) == 14
     for url in ADDITIONAL_SEARCH_URLS:
         params = dict(LalafoClient._search_params(url, 1))
         assert set(

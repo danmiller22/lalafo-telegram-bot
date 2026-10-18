@@ -158,18 +158,18 @@ def test_source_urls_follow_the_operator_filters():
     assert "/bez-podseleniya/mozhno-s-zhivotnymi" in DEFAULT_SEARCH_URL
     assert "bez-zhivotnyh" not in DEFAULT_SEARCH_URL
     assert "price[from]=25000&price[to]=45000" in DEFAULT_SEARCH_URL
-    assert len(ADDITIONAL_SEARCH_URLS) == 7
+    assert len(ADDITIONAL_SEARCH_URLS) == 14
     assert all("/agent/real-estate-agency" in url for url in ADDITIONAL_SEARCH_URLS)
     assert all("bez-podseleniya" not in url for url in ADDITIONAL_SEARCH_URLS)
     assert all("price[from]=25000&price[to]=35000" in url for url in ADDITIONAL_SEARCH_URLS)
 
 
-def test_discovery_pool_reserves_only_a_small_realtor_fallback():
+def test_discovery_pool_reserves_enough_time_for_realtor_fallback():
     targets = source_candidate_targets(300, source_count=3, batch_limit=18)
 
-    assert REALTOR_CANDIDATE_RESERVE_SHARE == 0.10
-    assert targets == [135, 270, 300]
-    assert targets[-1] - targets[-2] == 30
+    assert REALTOR_CANDIDATE_RESERVE_SHARE == 0.35
+    assert targets == [97, 195, 300]
+    assert targets[-1] - targets[-2] == 105
 
 
 def test_inventory_sources_split_capacity_between_categories():
@@ -180,7 +180,7 @@ def test_inventory_sources_split_capacity_between_categories():
         owner_source_count=2,
     )
 
-    assert targets == [108, 216, 228, 240]
+    assert targets == [78, 156, 198, 240]
 
 
 def test_supported_room_types_have_twenty_five_thousand_price_floor():

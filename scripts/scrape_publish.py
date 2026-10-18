@@ -103,11 +103,10 @@ MAX_REPOSTS_PER_RUN = 18
 CENTRAL_BATCH_SHARE = 0.50
 OWNER_OTHER_BATCH_SHARE = 0.50
 MAX_CANDIDATE_POOL = 300
-# Owner cards fill the publication batch. A small realtor discovery reserve
-# remains available only when owner stock cannot fill all 110 daily slots.
-# Keep a small discovery slice for shortage recovery without reserving any
-# publication slots for realtors while confirmed owner stock is available.
-REALTOR_CANDIDATE_RESERVE_SHARE = 0.10
+# Owner cards still fill the publication batch first. Reserve enough crawl time
+# for inexpensive central agency stock to keep the 110-card schedule full when
+# the owner catalogue is thin; this does not reserve publication slots.
+REALTOR_CANDIDATE_RESERVE_SHARE = 0.35
 REALTOR_BATCH_SHARE = REALTOR_DAILY_SHARE
 # Retained for historical reporting helpers; two-bedroom cards are no longer
 # eligible for discovery or publication.

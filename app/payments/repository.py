@@ -950,6 +950,30 @@ class PaymentRepository:
                 return f"already_{current.status}"
             if approve:
                 self._approve_request(session, current, now=now, admin_id=admin_id)
+                # One weekly purchase unlocks every apartment. A customer may
+                # open several cards and submit several claims before the
+                # administrator reviews the first one. Close those sibling
+                # claims under the same grant so later button clicks cannot be
+                # counted as additional payments or extend access repeatedly.
+                await session.execute(
+                    update(PaymentRequest)
+                    .where(
+                        PaymentRequest.telegram_user_id == current.telegram_user_id,
+                        PaymentRequest.id != current.id,
+                        PaymentRequest.plan == current.plan,
+                        PaymentRequest.status.in_(("prepared", "awaiting_receipt", "pending")),
+                    )
+                    .values(
+                        status="approved",
+                        approved_at=now,
+                        approved_by=admin_id,
+                        access_expires_at=current.access_expires_at,
+                        rejected_at=None,
+                        rejected_by=None,
+                        admin_notification_token=None,
+                        admin_notification_claimed_at=None,
+                    )
+                )
                 return "approved"
             current.status = "rejected"
             current.rejected_at = now

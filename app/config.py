@@ -112,6 +112,8 @@ ADDITIONAL_SEARCH_URLS: tuple[str, ...] = (
       for district in (
           "vostok-5", "filarmoniya", "bishkek-park-trc",
           "vefa-shopping-center", "mossovet", "tsum", "manasabokonbaeva",
+          "azija-moll", "politekh", "alamedin-1", "yug-2",
+          "dordoi-plaza-shopping-center", "zolotoj-kvadrat", "7-mkr",
       )),
 )
 
@@ -121,7 +123,9 @@ _INVENTORY_BASE = (
 )
 INVENTORY_PRIORITY_DISTRICTS = (
     "vostok-5", "filarmoniya", "bishkek-park-trc",
-    "vefa-shopping-center", "mossovet", "manasabokonbaeva",
+    "vefa-shopping-center", "mossovet", "manasabokonbaeva", "tsum",
+    "azija-moll", "politekh", "alamedin-1", "yug-2",
+    "dordoi-plaza-shopping-center", "zolotoj-kvadrat", "7-mkr",
 )
 INVENTORY_OWNER_DISTRICTS = (
     *INVENTORY_PRIORITY_DISTRICTS,

@@ -41,7 +41,9 @@ async def notify_payment_admin(
                 f"Клиент: {request.first_name or ''} {username}\n"
                 f"Telegram ID: {request.telegram_user_id}\n"
                 f"Тариф: {plan_label(request.plan)} — {plan_price(request.plan)} сом\n"
-                "Клиент нажал «Я оплатил(а)». Проверьте поступление оплаты.")
+                "Клиент нажал «Я оплатил(а)».\n\n"
+                "⚠️ Одобрите только после отдельного поступления 499 сом в Finik. "
+                "Несколько заявок одного клиента не являются несколькими оплатами.")
         markup = payment_review_keyboard(request.id, signer)
         sent = await bot.send_message(settings.admin_user_id, text, reply_markup=markup)
         return await payments.finish_admin_notification(request.id, sent.message_id, token=token)
