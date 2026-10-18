@@ -167,9 +167,9 @@ def test_source_urls_follow_the_operator_filters():
 def test_discovery_pool_reserves_enough_time_for_realtor_fallback():
     targets = source_candidate_targets(300, source_count=3, batch_limit=18)
 
-    assert REALTOR_CANDIDATE_RESERVE_SHARE == 0.35
-    assert targets == [97, 195, 300]
-    assert targets[-1] - targets[-2] == 105
+    assert REALTOR_CANDIDATE_RESERVE_SHARE == 0.20
+    assert targets == [120, 240, 300]
+    assert targets[-1] - targets[-2] == 60
 
 
 def test_inventory_sources_split_capacity_between_categories():
@@ -180,7 +180,7 @@ def test_inventory_sources_split_capacity_between_categories():
         owner_source_count=2,
     )
 
-    assert targets == [78, 156, 198, 240]
+    assert targets == [96, 192, 216, 240]
 
 
 def test_supported_room_types_have_twenty_five_thousand_price_floor():
@@ -793,7 +793,7 @@ def test_owner_price_searches_cover_the_budget_and_agencies_follow_owner_segment
         if urlsplit(url).path.endswith('/studio/1-bedroom/owner'):
             q=parse_qs(urlsplit(url).query)
             owner_ranges.append((int(q['price[from]'][0]),int(q['price[to]'][0])))
-    assert owner_ranges==[(25000,27999),(28000,31999),(32000,35999),(36000,39999),(40000,45000)]
+    assert owner_ranges==[(30000,35000),(25000,27999),(28000,31999),(32000,35999),(36000,39999),(40000,45000)]
     assert set(INVENTORY_OWNER_DISTRICTS) == {
         slug for slug, _ in LALAFO_DISTRICT_FILTERS
     }
@@ -816,12 +816,15 @@ def test_source_rotation_covers_all_sources_without_mixing_budget_segments():
     from app.config import INVENTORY_SEARCH_URLS
     owners = [u for u in INVENTORY_SEARCH_URLS if 'real-estate-agency' not in u]
     agencies = [u for u in INVENTORY_SEARCH_URLS if 'real-estate-agency' in u]
-    first_owners, first_agencies = set(), set()
+    hot = next(u for u in owners if 'price[from]=30000' in u and 'price[to]=35000' in u)
+    rotating_owners = [u for u in owners if u != hot]
+    second_owners, first_agencies = set(), set()
     for cycle in range(max(len(owners), len(agencies))):
         now = datetime.fromtimestamp(cycle*900, timezone.utc)
         urls = rotate_inventory_sources(INVENTORY_SEARCH_URLS, now=now)
         assert set(urls) == set(INVENTORY_SEARCH_URLS)
         assert all('real-estate-agency' not in u for u in urls[:len(owners)])
-        first_owners.add(urls[0]);first_agencies.add(urls[len(owners)])
-    assert first_owners == set(owners)
+        assert urls[0] == hot
+        second_owners.add(urls[1]);first_agencies.add(urls[len(owners)])
+    assert second_owners == set(rotating_owners)
     assert first_agencies == set(agencies)

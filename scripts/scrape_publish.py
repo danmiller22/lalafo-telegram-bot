@@ -106,7 +106,7 @@ MAX_CANDIDATE_POOL = 300
 # Owner cards still fill the publication batch first. Reserve enough crawl time
 # for inexpensive central agency stock to keep the 110-card schedule full when
 # the owner catalogue is thin; this does not reserve publication slots.
-REALTOR_CANDIDATE_RESERVE_SHARE = 0.35
+REALTOR_CANDIDATE_RESERVE_SHARE = 0.20
 REALTOR_BATCH_SHARE = REALTOR_DAILY_SHARE
 # Retained for historical reporting helpers; two-bedroom cards are no longer
 # eligible for discovery or publication.
@@ -460,13 +460,20 @@ def insert_randomly(
 
 
 def rotate_inventory_sources(urls, *, now=None):
-    """Visit different sources each cycle while preserving the owner budget."""
+    """Always read 30–35k owners, then rotate the remaining source groups."""
     current = now or datetime.now(timezone.utc)
     cycle = int(current.timestamp() // (15 * 60))
-    groups = ([url for url in urls if 'real-estate-agency' not in url],
-              [url for url in urls if 'real-estate-agency' in url])
-    ordered = []
-    for group in groups:
+    owners = [url for url in urls if 'real-estate-agency' not in url]
+    agencies = [url for url in urls if 'real-estate-agency' in url]
+    hot_owners = [
+        url for url in owners
+        if '/owner?' in url
+        and 'price[from]=30000' in url
+        and 'price[to]=35000' in url
+    ]
+    rotating_owners = [url for url in owners if url not in hot_owners]
+    ordered = list(hot_owners)
+    for group in (rotating_owners, agencies):
         if group:
             offset = cycle % len(group)
             ordered.extend(group[offset:] + group[:offset])

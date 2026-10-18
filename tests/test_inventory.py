@@ -1118,8 +1118,8 @@ async def test_late_day_catchup_can_use_future_reserved_stock(repositories):
 
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("publication_clock")
-@pytest.mark.parametrize('previous_sends,expected_prices', [(1, {25_000}), (2, {33_000,39_000})])
-async def test_claim_mixes_prices_with_more_cheap_cards(repositories, previous_sends, expected_prices):
+@pytest.mark.parametrize('previous_sends,expected_prices', [(1, {33_000}), (2, {33_000})])
+async def test_claim_prioritizes_thirty_to_thirty_five_thousand(repositories, previous_sends, expected_prices):
     apartments, _, sessions = repositories
     now = datetime.now(timezone.utc)
     previous = await apartments.upsert_discovered(make_ad(lalafo_id=280000, price=25_000, district="ЦУМ", phone="+996555280000"))
@@ -1141,7 +1141,7 @@ async def test_claim_mixes_prices_with_more_cheap_cards(repositories, previous_s
     assert claimed.apartment.price in expected_prices
 
 
-def test_period_mixes_all_ranges_with_sixty_percent_cheap_when_stock_allows():
+def test_period_mixes_all_ranges_with_half_at_thirty_to_thirty_five_when_stock_allows():
     from collections import Counter
     stock = _apartments(300, central=True, start_id=300000)
     for index, item in enumerate(stock):
@@ -1151,7 +1151,7 @@ def test_period_mixes_all_ranges_with_sixty_percent_cheap_when_stock_allows():
     start = datetime(2026, 10, 16, 5, tzinfo=timezone(timedelta(hours=6)))
     planned = plan_period(stock, period_start=start, rng=random.Random(42))
     counts = Counter(item.apartment.price for item in planned)
-    assert counts == {25_000: 33, 32_000: 11, 39_000: 11}
+    assert counts == {25_000: 18, 32_000: 28, 39_000: 9}
     assert {item.apartment.price for item in planned[:5]} == {25_000, 32_000, 39_000}
 
 

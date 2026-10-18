@@ -39,19 +39,23 @@ def district_priority(district: str | None) -> int:
 
 
 def price_bucket(price: int) -> int:
-    return min(2, max(0, (price - 25_000) // 5_000))
+    if price < 30_000:
+        return 0
+    if price <= 35_000:
+        return 1
+    return 2
 
 
-PRICE_MIX_WEIGHTS = {0: 3, 1: 1, 2: 1}
+PRICE_MIX_WEIGHTS = {0: 2, 1: 3, 2: 1}
 
 
 def price_mix_rank(bucket: int, counts: dict[int, int]) -> float:
-    """Target a 60/20/20 mix when all ranges are available; never block fallback."""
+    """Prefer 30–35k, retain cheaper cards, and never block fallback stock."""
     return (counts.get(bucket, 0) + 1) / PRICE_MIX_WEIGHTS[bucket]
 
 
 def mix_prices(items: list, *, rng=None) -> list:
-    """Interleave every price range, with three inexpensive cards per five."""
+    """Interleave every range, led by owner-friendly 30–35k stock."""
     rng = rng or random.SystemRandom()
     buckets: dict[int, list] = {}
     for item in items:

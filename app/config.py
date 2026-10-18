@@ -141,6 +141,10 @@ INVENTORY_OWNER_DISTRICTS = (
 # Split both seller categories by price. This exposes affordable ads that can
 # be buried behind newer, more expensive broad-search results.
 INVENTORY_SEARCH_URLS: tuple[str, ...] = (
+    # Read the strongest owner price band on every cycle. Rotating dozens of
+    # district searches used to leave this broad 30–35k query untouched for
+    # hours whenever the cloud collection budget expired early.
+    f"{_INVENTORY_BASE}owner?price[from]=30000&price[to]=35000",
     f"{_INVENTORY_BASE}owner?price[from]=25000&price[to]=27999",
     f"{_INVENTORY_BASE}owner?price[from]=28000&price[to]=31999",
     f"{_INVENTORY_BASE}owner?price[from]=32000&price[to]=35999",

@@ -20,14 +20,14 @@ def test_lower_rent_wins_when_area_and_photo_quality_match():
     assert candidate_quality(low) > candidate_quality(make_ad(price=33_000, district="Арча-Бешик"))
 
 
-def test_mixed_prices_do_not_form_cheap_then_expensive_blocks():
+def test_mixed_prices_prioritize_thirty_to_thirty_five_thousand():
     cards = [make_ad(lalafo_id=i, price=price) for i, price in enumerate([25_000]*12+[32_000]*12+[39_000]*12)]
     for seed in range(20):
         result = mix_prices(cards, rng=random.Random(seed))
         buckets = [price_bucket(card.price) for card in result]
         assert {card.lalafo_id for card in result} == {card.lalafo_id for card in cards}
-        assert Counter(buckets[:5]) == {0: 3, 1: 1, 2: 1}
-        assert Counter(buckets[5:10]) == {0: 3, 1: 1, 2: 1}
+        assert Counter(buckets[:6]) == {0: 2, 1: 3, 2: 1}
+        assert Counter(buckets[6:12]) == {0: 2, 1: 3, 2: 1}
 
 
 def test_price_mix_keeps_all_stock_when_one_range_is_short():
