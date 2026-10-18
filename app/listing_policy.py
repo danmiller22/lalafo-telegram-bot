@@ -9,6 +9,7 @@ OWNER_MIN_PRICE = 25_000
 OWNER_MAX_PRICE = 45_000
 REALTOR_MIN_PRICE = 25_000
 REALTOR_MAX_PRICE = 35_000
+REALTOR_ANY_DISTRICT_MAX_PRICE = 30_000
 
 CENTRAL_REALTOR_TERMS = (
     "центр",
@@ -53,7 +54,10 @@ def seller_policy_eligible(
     if seller_type == "realtor":
         return (
             REALTOR_MIN_PRICE <= price <= REALTOR_MAX_PRICE
-            and is_central_realtor_area(district)
+            and (
+                price <= REALTOR_ANY_DISTRICT_MAX_PRICE
+                or is_central_realtor_area(district)
+            )
         )
     return False
 

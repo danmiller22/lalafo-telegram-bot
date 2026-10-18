@@ -206,8 +206,12 @@ def test_realtors_must_be_affordable_and_central():
         price=36_000, district="Восток-5", owner_listing=False,
         seller_type="realtor",
     ))
-    assert not listing_policy_eligible(make_ad(
+    assert listing_policy_eligible(make_ad(
         price=30_000, district="Арча-Бешик", owner_listing=False,
+        seller_type="realtor",
+    ))
+    assert not listing_policy_eligible(make_ad(
+        price=31_000, district="Арча-Бешик", owner_listing=False,
         seller_type="realtor",
     ))
 
