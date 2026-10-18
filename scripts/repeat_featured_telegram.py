@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -29,9 +30,11 @@ MIN_GLOBAL_REPEAT_GAP = timedelta(hours=1, minutes=30)
 REPEAT_HOURS = frozenset(range(0, 24, 2))
 
 
-def is_repeat_window(now: datetime, last_repeat_at: datetime | None) -> bool:
+def is_repeat_window(
+    now: datetime, last_repeat_at: datetime | None, *, force: bool = False
+) -> bool:
     local_now = now.astimezone(BISHKEK)
-    if local_now.hour not in REPEAT_HOURS:
+    if not force and local_now.hour not in REPEAT_HOURS:
         return False
     if last_repeat_at is None:
         return True
@@ -108,7 +111,10 @@ async def run() -> int:
             default=None,
             key=lambda value: value or datetime.min.replace(tzinfo=timezone.utc),
         )
-        if not is_repeat_window(now, latest):
+        force = os.getenv("FORCE_FEATURED_REPEAT", "").strip().casefold() in {
+            "1", "true", "yes", "on",
+        }
+        if not is_repeat_window(now, latest, force=force):
             logger.info("Managed repeat is not due; no-op")
             return 0
 

@@ -2,6 +2,11 @@ name: Repeat daily featured Telegram cards
 
 on:
   workflow_dispatch:
+    inputs:
+      force_repeat:
+        description: Send one verified managed card now while preserving the global gap
+        type: boolean
+        default: false
   schedule:
     - cron: "35 */2 * * *"
 
@@ -22,6 +27,7 @@ jobs:
       CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       FEATURED_LALAFO_ENABLED: ${{ vars.FEATURED_LALAFO_ENABLED || 'false' }}
+      FORCE_FEATURED_REPEAT: ${{ inputs.force_repeat && 'true' || 'false' }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7

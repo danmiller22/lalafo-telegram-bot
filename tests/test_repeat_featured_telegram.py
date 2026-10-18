@@ -14,3 +14,9 @@ def test_managed_repeat_requires_global_gap() -> None:
     now = datetime(2026, 9, 13, 6, 35, tzinfo=timezone.utc)
     assert not is_repeat_window(now, now - timedelta(hours=1))
     assert is_repeat_window(now, now - timedelta(hours=2))
+
+
+def test_manual_repeat_can_bypass_hour_but_not_global_gap() -> None:
+    now = datetime(2026, 9, 13, 5, 35, tzinfo=timezone.utc)
+    assert is_repeat_window(now, now - timedelta(hours=2), force=True)
+    assert not is_repeat_window(now, now - timedelta(minutes=30), force=True)
