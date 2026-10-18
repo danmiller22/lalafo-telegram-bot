@@ -127,7 +127,11 @@ def test_rejects_search_posts_shared_housing_and_old_cards() -> None:
 
 @pytest.mark.parametrize(
     "lodging",
-    ["гостиница", "отель", "мотель", "хостел", "апарт-отель", "гостевой дом"],
+    [
+        "гостиница", "отель", "мотель", "хостел", "апарт-отель", "гостевой дом",
+        "посуточно", "почасовая аренда", "на сутки", "на ночь", "ночлег",
+        "сдаётся номер", "номер со всеми удобствами", "квартирное бюро",
+    ],
 )
 def test_rejects_lodging_business_posts(lodging: str) -> None:
     html = _post(

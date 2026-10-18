@@ -12,7 +12,7 @@ from app.inventory import BISHKEK, MAX_PUBLICATIONS_PER_DAY, publication_day_sta
 from app.listing_quality import district_priority,rental_value_band
 from app.payments.repository import ApartmentRepository
 from app.state import ListingIndex
-from scripts.scrape_publish import apartment_to_ad
+from scripts.scrape_publish import apartment_to_ad,is_substandard_structure
 from scripts.publish_inventory import _valid
 async def main():
  engine,sessions=create_engine_and_session(get_settings().database_url)
@@ -100,7 +100,8 @@ async def main():
                    and item.fingerprint not in managed_fingerprints
                    and "codex_force_repost" not in item.source_url
                    and item.seller_type in {"owner","realtor"}
-                   and len(item.photo_urls or [])>=4]
+                   and len(item.photo_urls or [])>=4
+                   and not is_substandard_structure(apartment_to_ad(item))]
    tomorrow_stock.sort(key=lambda item:(
        rental_value_band(item.price,item.rooms,item.source_description),
        -district_priority(item.district),item.price,

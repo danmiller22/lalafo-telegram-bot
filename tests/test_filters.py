@@ -237,6 +237,14 @@ def test_substandard_housing_terms_are_rejected(term):
         "hotel",
         "motel",
         "hostel",
+        "посуточно",
+        "почасовая аренда",
+        "на сутки",
+        "на ночь",
+        "ночлег",
+        "сдаётся номер",
+        "номер со всеми удобствами",
+        "квартирное бюро",
     ],
 )
 def test_lodging_businesses_are_rejected(term):
