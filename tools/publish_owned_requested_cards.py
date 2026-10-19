@@ -54,8 +54,13 @@ async def run(manifest_path):
         # substitute the operator's phone, or turn the buttons into chat links.
         for row in cards:
             snapshot = row['snapshot']
+            # The operator explicitly uses owner-visible payment-waiting cards
+            # in Telegram while deciding which Lalafo promotion to fund.  They
+            # are safe here because the snapshot comes from the authenticated
+            # owner account and the verified original supplies the contact.
             if (row['profile_id'] != 18194628 or snapshot['user_id'] != 18194628
-                    or snapshot['id'] != row['ad_id'] or snapshot['status_id'] != 2
+                    or snapshot['id'] != row['ad_id']
+                    or snapshot['status_id'] not in (2, 11)
                     or snapshot['rooms'] not in ('1', 'studio')
                     or snapshot['price'] <= 0 or not snapshot['photo_urls']):
                 raise ValueError('Expected a currently active owned snapshot')

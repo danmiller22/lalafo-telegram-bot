@@ -4,6 +4,7 @@ from urllib.parse import urlsplit
 
 from sqlalchemy import select
 
+from app.lalafo.client import LalafoNotFound
 from app.models import LalafoAutoReplyMeta
 
 PREFIX = 'managed_requested_card:'
@@ -37,8 +38,24 @@ class ManagedCardUnavailable(ValueError):
 async def refresh_managed_card(client, binding, stored):
     """Read public terms only. Hidden telephone fields are never accessed."""
     binding = validate_binding(binding)
-    data = await client._get_json(
-        f"https://lalafo.kg/api/search/v3/feed/details/{binding['ad_id']}?expand=url")
+    try:
+        data = await client._get_json(
+            f"https://lalafo.kg/api/search/v3/feed/details/{binding['ad_id']}?expand=url")
+    except LalafoNotFound:
+        snapshot = binding.get('payment_waiting_snapshot')
+        if not snapshot or snapshot.get('status_id') != 11:
+            raise
+        # Payment-waiting ads are deliberately absent from the public detail
+        # endpoint.  Reuse the owner-verified snapshot for this one-day repeat
+        # batch; no private contact data is stored in the binding.
+        return stored.model_copy(update={
+            'price': int(snapshot['price']),
+            'rooms': snapshot['rooms'],
+            'district': snapshot.get('district') or stored.district,
+            'deposit': snapshot.get('deposit'),
+            'photo_urls': list(snapshot['photo_urls']),
+            'source_description': str(snapshot.get('source_description') or ''),
+        })
     required = ('id', 'user_id', 'status_id', 'category_id', 'city_id', 'currency', 'price')
     if any(data.get(key) is None for key in required):
         raise ValueError('managed_ad_public_data_unknown')

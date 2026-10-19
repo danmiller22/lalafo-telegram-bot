@@ -67,6 +67,27 @@ async def test_public_refresh_preserves_original_verified_contact():
     assert client._get_json.await_count == 1
 
 
+@pytest.mark.asyncio
+async def test_one_day_payment_waiting_repeat_uses_owner_verified_snapshot():
+    from app.lalafo.client import LalafoNotFound
+
+    snapshot = {
+        'status_id': 11, 'price': 35000, 'rooms': '1',
+        'district': 'Восток-5', 'deposit': None,
+        'photo_urls': ['https://img/new-room', 'https://img/new-kitchen'],
+        'source_description': 'Карточка из кабинета владельца',
+    }
+    binding = {**BINDING, 'payment_waiting_snapshot': snapshot}
+    client = SimpleNamespace(
+        _get_json=AsyncMock(side_effect=LalafoNotFound('not public')),
+    )
+    original = make_ad(phone='+996555123456')
+    result = await refresh_managed_card(client, binding, original)
+    assert result.phone == original.phone
+    assert result.price == 35000 and result.district == 'Восток-5'
+    assert result.photo_urls == snapshot['photo_urls']
+
+
 @pytest.mark.parametrize('changes', [{'status_id': 3}, {'user_id': 2}, {'id': 1},
                                      {'category_id': 1}, {'city_id': 1}])
 @pytest.mark.asyncio

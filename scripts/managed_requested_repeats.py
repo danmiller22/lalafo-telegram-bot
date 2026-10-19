@@ -100,6 +100,8 @@ async def enroll(sessions, manifest, *, now):
             ).values(status='skipped', last_error='managed_enrollment'))
             binding = {k: row[k] for k in ('profile_id', 'ad_id', 'url')}
             binding['enabled'] = True
+            if row.get('snapshot', {}).get('status_id') == 11:
+                binding['payment_waiting_snapshot'] = row['snapshot']
             if cadence is not None:
                 binding['repeat_every_hours'] = cadence
                 binding['repeat_while_active'] = manifest.get('repeat_while_active') is True
