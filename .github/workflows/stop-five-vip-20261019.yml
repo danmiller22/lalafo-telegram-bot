@@ -1,0 +1,44 @@
+name: Stop five requested VIP campaigns
+
+on:
+  workflow_dispatch:
+    inputs:
+      verify_only:
+        description: Verify the exact account, ads and campaigns without stopping
+        type: boolean
+        default: true
+  schedule:
+    # Starts shortly before the one-day cutoff and waits until the exact time.
+    - cron: "55 23 19 10 *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stop-five-vip-20261019
+  cancel-in-progress: false
+
+jobs:
+  stop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      LALAFO_LOGIN: ${{ secrets.LALAFO_LOGIN }}
+      LALAFO_PASSWORD: ${{ secrets.LALAFO_PASSWORD }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --disable-pip-version-check --quiet -r requirements.txt
+      - name: Verify or stop only the five authorized campaigns
+        env:
+          VERIFY_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_only }}
+        run: |
+          if [ "$VERIFY_ONLY" = "true" ]; then
+            python -m tools.stop_lalafo_campaigns --plan tools/lalafo_campaigns_20261019.json --verify-only
+          else
+            python -m tools.stop_lalafo_campaigns --plan tools/lalafo_campaigns_20261019.json
+          fi

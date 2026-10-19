@@ -175,14 +175,13 @@ def callbacks() -> tuple[AsyncMock, AsyncMock, list[str], list[bool]]:
     return sent, changed, halted, offline
 
 
-def test_fixed_text_exactly_matches_requested_one_line_reply() -> None:
+def test_fixed_text_exactly_matches_requested_greeting() -> None:
     assert AUTO_REPLY_TEXT == (
-        "Здравствуйте! 👋 Свежие квартиры уже в Telegram: "
-        "https://t.me/arenda312bot?start=lalafo "
-        "Бот сразу покажет 2 новых варианта с фото и ценой. Под подходящей "
-        "квартирой нажмите «Получить номер». Доступ ко всем контактам на 7 дней — 499 сом."
+        "Здравствуйте, да 👋\n"
+        "Подробнее про эту квартиру, а также наши услуги вы можете узнать по ссылке:\n\n"
+        "https://t.me/rentkg312"
     )
-    assert "\n" not in AUTO_REPLY_TEXT
+    assert AUTO_REPLY_TEXT.count("\n") == 3
 
 
 @pytest.mark.parametrize(
@@ -263,14 +262,15 @@ async def test_store_deduplicates_each_inbound_message_id(store: AutoReplyStore)
 
 
 @pytest.mark.asyncio
-async def test_store_allows_a_new_reply_after_twenty_four_hours(
+async def test_store_never_replies_twice_to_the_same_chat(
     store: AutoReplyStore,
 ) -> None:
     chat = chat_ref()
     assert await store.enqueue(chat.chat_key, message("first"), "live", 1_000)
-    await store.mark_sent("missing", 1_000)
+    first = (await store.list_jobs())[0]
+    await store.mark_sent(first.inbound_key, 1_000)
     later = 1_000 + 24 * 60 * 60 * 1_000 + 1
-    assert await store.enqueue(chat.chat_key, message("later"), "live", later)
+    assert not await store.enqueue(chat.chat_key, message("later"), "live", later)
 
 
 @pytest.mark.asyncio

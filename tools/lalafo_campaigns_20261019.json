@@ -1,0 +1,11 @@
+{
+  "owner_profile_id": 18194628,
+  "stop_at": "2026-10-19T23:59:39+00:00",
+  "campaigns": [
+    {"ad_id": 117368516, "campaign_id": 44888582},
+    {"ad_id": 117368528, "campaign_id": 44888583},
+    {"ad_id": 110291249, "campaign_id": 44888584},
+    {"ad_id": 117412582, "campaign_id": 44888586},
+    {"ad_id": 117412583, "campaign_id": 44888588}
+  ]
+}
