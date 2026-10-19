@@ -618,7 +618,9 @@ class LalafoChatClient:
             body={
                 "feedType": chat.feed_type,
                 "feedId": _wire_feed_id(chat.feed_id),
-                "startId": _wire_id(start_id) if start_id else 0,
+                # Lalafo v4 now rejects numeric zero with HTTP 490. The first
+                # page is requested with JSON null; later pages use a wire id.
+                "startId": _wire_id(start_id) if start_id else None,
                 "count": MESSAGE_PAGE_SIZE,
                 "direction": "up",
                 "ref": "Retrieve",
