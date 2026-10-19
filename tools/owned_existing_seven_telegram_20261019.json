@@ -1,0 +1,175 @@
+{
+  "batch": "rentkg-all-existing-seven-20261019",
+  "verified_at": "2026-10-19T23:50:17.758634+00:00",
+  "repeat_every_hours": 3,
+  "repeat_while_active": true,
+  "cards": [
+    {
+      "ad_id": 110291249,
+      "profile_id": 18194628,
+      "url": "https://lalafo.kg/bishkek/ads/managed-id-110291249",
+      "snapshot": {
+        "id": 110291249,
+        "user_id": 18194628,
+        "status_id": 2,
+        "price": 40000,
+        "rooms": "1",
+        "district": "Восток-5",
+        "deposit": null,
+        "photo_urls": [
+          "https://img5.lalafo.com/i/posters/original/95/e0/78/16e0c4153daf760607eeee7651.jpeg",
+          "https://img5.lalafo.com/i/posters/original/94/5c/49/00926813273597c37039dcae02.jpeg",
+          "https://img5.lalafo.com/i/posters/original/51/49/f0/89e4acea69d8a97454e62e3c1e.jpeg",
+          "https://img5.lalafo.com/i/posters/original/f1/54/52/59308a81b8b4638c561c36796b.jpeg"
+        ],
+        "source_description": "🏠 1-комнатная квартира\n📍 Восток-5\n🏙 Бишкек\n💵 40 000 сом..............."
+      },
+      "source_id": 117340054
+    },
+    {
+      "ad_id": 117412583,
+      "profile_id": 18194628,
+      "url": "https://lalafo.kg/bishkek/ads/managed-id-117412583",
+      "snapshot": {
+        "id": 117412583,
+        "user_id": 18194628,
+        "status_id": 2,
+        "price": 32000,
+        "rooms": "1",
+        "district": "Филармония",
+        "deposit": null,
+        "photo_urls": [
+          "https://img5.lalafo.com/i/posters/original/8d/72/32/c199792f2128a0bc15bf398c6f.jpeg",
+          "https://img5.lalafo.com/i/posters/original/ea/08/5d/00d7f509f693505d189b84a9a6.jpeg",
+          "https://img5.lalafo.com/i/posters/original/0e/38/ce/0a34d6513c0ea184de3f011040.jpeg",
+          "https://img5.lalafo.com/i/posters/original/0e/66/17/9d4c4467e60e27ab5b87f1844f.jpeg"
+        ],
+        "source_description": "🏠 1-комнатная квартира\n📍 Филармония\n🏙 Бишкек\n💵 32 000 сом............."
+      },
+      "source_id": 115547992
+    },
+    {
+      "ad_id": 117368516,
+      "profile_id": 18194628,
+      "url": "https://lalafo.kg/bishkek/ads/managed-id-117368516",
+      "snapshot": {
+        "id": 117368516,
+        "user_id": 18194628,
+        "status_id": 2,
+        "price": 35000,
+        "rooms": "1",
+        "district": "Восток-5",
+        "deposit": null,
+        "photo_urls": [
+          "https://img5.lalafo.com/i/posters/original/72/73/a2/fb88356efdce7d08020347b02f.jpeg",
+          "https://img5.lalafo.com/i/posters/original/ff/9b/84/91a4ab4a79044196254f58a747.jpeg",
+          "https://img5.lalafo.com/i/posters/original/27/0c/c2/c3f17e0b5bb71b92283e89ccab.jpeg",
+          "https://img5.lalafo.com/i/posters/original/b1/70/7e/544554f4401d325e63618c1e97.jpeg",
+          "https://img5.lalafo.com/i/posters/original/57/2d/97/98e264577592377dce597672bd.jpeg",
+          "https://img5.lalafo.com/i/posters/original/89/13/90/8c794500d54638df2c34f0c16d.jpeg",
+          "https://img5.lalafo.com/i/posters/original/5f/6c/92/5c58b81b7862cc6b3ddf243314.jpeg",
+          "https://img5.lalafo.com/i/posters/original/97/74/8e/29ba18d9f85214af18381508e6.jpeg"
+        ],
+        "source_description": "🏠 1-комнатная квартира\n📍 Восток-5\n🏙 Бишкек\n💵 35 000 сом..............."
+      },
+      "source_id": 112885288
+    },
+    {
+      "ad_id": 117368528,
+      "profile_id": 18194628,
+      "url": "https://lalafo.kg/bishkek/ads/managed-id-117368528",
+      "snapshot": {
+        "id": 117368528,
+        "user_id": 18194628,
+        "status_id": 2,
+        "price": 34000,
+        "rooms": "1",
+        "district": "Восток-5",
+        "deposit": null,
+        "photo_urls": [
+          "https://img5.lalafo.com/i/posters/original/2d/e5/d2/028e52b265c811eb66d9bf66de.jpeg",
+          "https://img5.lalafo.com/i/posters/original/0d/29/d0/2a71e01840e8382ca39006cee3.jpeg",
+          "https://img5.lalafo.com/i/posters/original/6c/65/b8/f2af83b3f1ef85d2fbce4c2db0.jpeg",
+          "https://img5.lalafo.com/i/posters/original/0d/10/d1/5d307191775d673c2a7fd3c932.jpeg",
+          "https://img5.lalafo.com/i/posters/original/70/8d/4a/f91ddc127fe708c83eccfb5015.jpeg",
+          "https://img5.lalafo.com/i/posters/original/5a/b1/f8/6450d7947aa9672b41a0374585.jpeg",
+          "https://img5.lalafo.com/i/posters/original/df/43/b8/2fd1ce04ebc25c64d3b4a41a40.jpeg",
+          "https://img5.lalafo.com/i/posters/original/a2/eb/14/db01a6dd391e710a3535681abf.jpeg",
+          "https://img5.lalafo.com/i/posters/original/70/88/e1/7745be16bc4fe8c9ed24b7e389.jpeg"
+        ],
+        "source_description": "🏠 1-комнатная квартира\n📍 Восток-5\n🏙 Бишкек\n💵 34 000 сом..............."
+      },
+      "source_id": 115084530
+    },
+    {
+      "ad_id": 117348442,
+      "profile_id": 18194628,
+      "url": "https://lalafo.kg/bishkek/ads/managed-id-117348442",
+      "snapshot": {
+        "id": 117348442,
+        "user_id": 18194628,
+        "status_id": 2,
+        "price": 35000,
+        "rooms": "1",
+        "district": "Восток-5",
+        "deposit": null,
+        "photo_urls": [
+          "https://img5.lalafo.com/i/posters/original/f9/13/7f/3de996fe517a033dc46bca791d.jpeg",
+          "https://img5.lalafo.com/i/posters/original/d9/b9/07/1ada0ffd12210db34be85e2ddb.jpeg",
+          "https://img5.lalafo.com/i/posters/original/97/e7/ce/403bbfa9cb10bcd03e5f2be211.jpeg",
+          "https://img5.lalafo.com/i/posters/original/a4/bb/a9/66a9c5fee5b62fa8ea17c69bba.jpeg"
+        ],
+        "source_description": "🏠 1-комнатная квартира\n      \n📍 Восток-5\n      \n🏙 Бишкек\n      \n💰 35 000 сом"
+      },
+      "telegram_message_id": 45892
+    },
+    {
+      "ad_id": 117412582,
+      "profile_id": 18194628,
+      "url": "https://lalafo.kg/bishkek/ads/managed-id-117412582",
+      "snapshot": {
+        "id": 117412582,
+        "user_id": 18194628,
+        "status_id": 2,
+        "price": 30000,
+        "rooms": "1",
+        "district": "Восток-5",
+        "deposit": null,
+        "photo_urls": [
+          "https://img5.lalafo.com/i/posters/original/c6/95/99/e9611ebb6d5b8acf82f9ecb859.jpeg",
+          "https://img5.lalafo.com/i/posters/original/18/0f/f4/70de9c1039b349e319af7a260b.jpeg",
+          "https://img5.lalafo.com/i/posters/original/4e/2e/e9/bafa9c4372288737301e844f93.jpeg",
+          "https://img5.lalafo.com/i/posters/original/f4/82/68/03880753378ba803cbd8b26e86.jpeg",
+          "https://img5.lalafo.com/i/posters/original/04/34/31/f7b3a83f8d179942fa8d89231f.jpeg",
+          "https://img5.lalafo.com/i/posters/original/3f/53/48/873305661de20037dc2df68cd0.jpeg",
+          "https://img5.lalafo.com/i/posters/original/73/6f/d1/213a20039d13b0d4dad5b75569.jpeg",
+          "https://img5.lalafo.com/i/posters/original/a5/2b/4d/46b3ffbe933d23973abba41ec6.jpeg"
+        ],
+        "source_description": "🏠 1-комнатная квартира\n            \n📍 Восток-5\n            \n🏙 Бишкек\n            \n💰 30 000 сом"
+      },
+      "source_id": 116922177
+    },
+    {
+      "ad_id": 117347863,
+      "profile_id": 18194628,
+      "url": "https://lalafo.kg/bishkek/ads/managed-id-117347863",
+      "snapshot": {
+        "id": 117347863,
+        "user_id": 18194628,
+        "status_id": 2,
+        "price": 26000,
+        "rooms": "studio",
+        "district": "Восток-5",
+        "deposit": null,
+        "photo_urls": [
+          "https://img5.lalafo.com/i/posters/original/50/79/88/2dae853fd1420dd1a088d5d611.jpeg",
+          "https://img5.lalafo.com/i/posters/original/6c/a2/5f/cf7876d6de359e589e2a6ff053.jpeg",
+          "https://img5.lalafo.com/i/posters/original/4c/26/87/9b9df6880140f8bcc0ffdf57b2.jpeg",
+          "https://img5.lalafo.com/i/posters/original/67/01/59/bc4c526b694de847c1bed67270.jpeg"
+        ],
+        "source_description": "🏠 Студия\n            \n📍 Восток-5\n            \n🏙 Бишкек\n            \n💰 26 000 сом"
+      },
+      "source_id": 117326942
+    }
+  ]
+}
