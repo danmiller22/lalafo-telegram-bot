@@ -76,7 +76,7 @@ async def test_only_admin_decision_unlocks_contacts(repositories, service, revie
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("bad", ["actor", "signature", "stale", "action"])
+@pytest.mark.parametrize("bad", ["actor", "signature", "action"])
 async def test_review_buttons_cannot_bypass_admin_or_checkout_identity(repositories, service, review_context, bad):
     settings, signer, bot = review_context
     apartment, request = await pending_checkout(repositories, service)
@@ -86,8 +86,6 @@ async def test_review_buttons_cannot_bypass_admin_or_checkout_identity(repositor
         callback.from_user.id = 101
     elif bad == "signature":
         callback.data += "tampered"
-    elif bad == "stale":
-        callback.message.message_id = 514
     else:
         callback.data = callback.data.replace("payment:a:", "payment:r:")
     await payment_review_callback(callback, settings, service, signer, bot)
@@ -96,6 +94,23 @@ async def test_review_buttons_cannot_bypass_admin_or_checkout_identity(repositor
     callback.message.edit_reply_markup.assert_not_awaited()
     async with repositories[2]() as session:
         assert await session.scalar(select(func.count(PaymentHistory.id))) == 0
+
+
+@pytest.mark.asyncio
+async def test_older_signed_admin_message_can_approve_pending_request(
+    repositories, service, review_context, monkeypatch
+):
+    settings, signer, bot = review_context
+    apartment, request = await pending_checkout(repositories, service)
+    await notify_payment_admin(bot, repositories[1], settings, signer, request)
+    callback = callback_for(request.id, signer, message_id=514)
+    delivery = AsyncMock()
+    monkeypatch.setattr("app.bot.admin.send_private_contact", delivery)
+
+    await payment_review_callback(callback, settings, service, signer, bot)
+
+    assert (await service.contact_status(101, apartment.id)).status == "approved"
+    delivery.assert_awaited_once()
 
 
 @pytest.mark.asyncio

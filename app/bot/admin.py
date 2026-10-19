@@ -154,6 +154,17 @@ async def payment_review_callback(
         actor_id=callback.from_user.id,
         expected_admin_message_id=callback.message.message_id,
     )
+    if outcome == "stale":
+        # Telegram can leave an older signed review message visible after a
+        # notification retry.  The request id is signed and the actor is still
+        # checked above, so accept that button while the request itself remains
+        # pending.  Repository status locking continues to prevent a second
+        # grant or a conflicting decision.
+        outcome = await service.decide(
+            request_id,
+            approve=approve,
+            actor_id=callback.from_user.id,
+        )
     if outcome not in {"approved", "rejected"}:
         await callback.answer("Эта заявка уже обработана или кнопка устарела.", show_alert=True)
         return
