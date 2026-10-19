@@ -225,7 +225,7 @@ async def test_health_fails_when_enabled_bot_is_not_running(
 
 
 @pytest.mark.asyncio
-async def test_health_keeps_main_service_live_when_auto_reply_is_stale(
+async def test_health_keeps_web_auto_reply_disabled_when_legacy_env_enables_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("LALAFO_AUTO_REPLY_ENABLED", "true")
@@ -240,7 +240,7 @@ async def test_health_keeps_main_service_live_when_auto_reply_is_stale(
         response = await client.get("/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
-    assert response.json()["lalafo_auto_reply"] == {"state": "recovering"}
+    assert response.json()["lalafo_auto_reply"] == "disabled"
 
 
 @pytest.mark.asyncio
