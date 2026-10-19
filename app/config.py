@@ -280,6 +280,14 @@ class Settings(BaseSettings):
         del value
         return APARTMENT_PUBLISH_INTERVAL_MINUTES
 
+    @field_validator("lalafo_auto_reply_web_enabled", mode="before")
+    @classmethod
+    def keep_lalafo_reply_out_of_web_service(cls, value: object) -> bool:
+        # The shared Koyeb egress cannot keep Lalafo chat authenticated. The
+        # hourly responder runs in its dedicated worker environment instead.
+        del value
+        return False
+
     @field_validator("telegram_bot_username", "admin_username", mode="before")
     @classmethod
     def strip_at(cls, value: object) -> object:
