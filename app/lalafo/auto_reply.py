@@ -195,6 +195,17 @@ class AutoReplySynchronizer:
                 )
                 if compare_message_position(chat.bottom, cursor_message) <= 0:
                     continue
+            if (
+                cursor is None
+                and chat.bottom is not None
+                and chat.bottom.created_at < baseline_time
+            ):
+                # On first hourly startup, establish cursors for historical
+                # conversations without retrieving or greeting old messages.
+                await self._store.advance_cursor(
+                    chat.chat_key, chat.bottom, _now_ms()
+                )
+                continue
             cutoff = cursor.message_time if cursor else baseline_time
             messages = await self._retrieve_since(
                 chat, cursor.message_id if cursor else None, cutoff
@@ -453,6 +464,7 @@ class LalafoAutoResponder:
         client: LalafoChatClient | None = None,
         socket: socketio.AsyncClient | None = None,
         store: AutoReplyStore | None = None,
+        socket_transports: list[str] | None = None,
     ) -> None:
         del poll_seconds
         self._login = login
@@ -468,6 +480,7 @@ class LalafoAutoResponder:
             logger=False,
             engineio_logger=False,
         )
+        self._socket_transports = socket_transports or ["websocket"]
         self._socket.on("message", self._on_socket_message)
         self._socket.on("SocketConnection", self._on_socket_connection)
         self._socket.on("MessageReceived", self._on_message_received)
@@ -610,7 +623,7 @@ class LalafoAutoResponder:
                 await self._socket.connect(
                     f"{LALAFO_SOCKET_ORIGIN}?{query}",
                     socketio_path=LALAFO_SOCKET_PATH,
-                    transports=["websocket"],
+                    transports=self._socket_transports,
                     wait_timeout=20,
                 )
                 await asyncio.wait_for(
