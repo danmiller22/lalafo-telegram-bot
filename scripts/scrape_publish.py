@@ -110,7 +110,7 @@ DISCOVERY_COLLECTION_BUDGET_SECONDS = 300
 # Owner cards still fill the publication batch first. Reserve enough crawl time
 # for inexpensive central agency stock to keep the 110-card schedule full when
 # the owner catalogue is thin; this does not reserve publication slots.
-REALTOR_CANDIDATE_RESERVE_SHARE = 0.50
+REALTOR_CANDIDATE_RESERVE_SHARE = 0.25
 REALTOR_BATCH_SHARE = REALTOR_DAILY_SHARE
 # Retained for historical reporting helpers; two-bedroom cards are no longer
 # eligible for discovery or publication.

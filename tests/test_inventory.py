@@ -137,12 +137,8 @@ def test_two_periods_plan_one_hundred_ten_cards_from_five_until_two():
     daily_target = daily_publication_target(first_start)
     assert daily_target == 110
     assert len(all_items) == daily_target
-    assert sum(item.apartment.seller_type == "realtor" for item in all_items) == 55
-    assert sum(item.apartment.seller_type == "owner" for item in all_items) == 55
-    assert all(
-        left.apartment.seller_type != right.apartment.seller_type
-        for left, right in zip(first, first[1:])
-    )
+    assert sum(item.apartment.seller_type == "realtor" for item in all_items) == 28
+    assert sum(item.apartment.seller_type == "owner" for item in all_items) == 82
     # Balanced seller selection still preserves the requested central-area mix.
     assert sum(
         "золотой" in item.apartment.district.casefold() for item in all_items
@@ -168,7 +164,7 @@ def test_period_rotates_confirmed_owners_across_available_districts():
     assert {"Асанбай", "Джал", "Тунгуч"}.issubset(
         {item.apartment.district for item in planned}
     )
-    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 28
+    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 14
 
 
 def test_period_balances_low_middle_and_high_price_buckets():
@@ -218,12 +214,12 @@ def test_balanced_sellers_preserve_central_realtor_share():
     period_count, central_count = period_publication_targets(period_start)
     assert len(planned) == period_count
     assert any(item.apartment.seller_type == "owner" for item in planned)
-    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 28
-    assert sum(is_central(item.apartment.district) for item in planned) == 28
+    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 14
+    assert sum(is_central(item.apartment.district) for item in planned) == 14
     assert central_count == 28
 
 
-def test_two_periods_mix_owners_and_realtors_evenly():
+def test_two_periods_publish_three_quarters_owners():
     owners = _apartments(160, central=True, start_id=1)
     realtors = _apartments(80, central=True, start_id=500, owner=False)
     first_start = datetime(2026, 9, 13, 5, tzinfo=timezone(timedelta(hours=6)))
@@ -239,12 +235,9 @@ def test_two_periods_mix_owners_and_realtors_evenly():
 
     assert len(first) == 55
     assert len(second) == 55
-    assert sum(item.apartment.seller_type == "realtor" for item in first) == 28
-    assert sum(item.apartment.seller_type == "realtor" for item in second) == 27
-    assert all(
-        left.apartment.seller_type != right.apartment.seller_type
-        for left, right in zip(first, first[1:])
-    )
+    assert sum(item.apartment.seller_type == "realtor" for item in first) == 14
+    assert sum(item.apartment.seller_type == "realtor" for item in second) == 14
+    assert sum(item.apartment.seller_type == "owner" for item in first + second) == 82
 
 
 def test_unknown_authors_do_not_enter_publication_slots():
@@ -259,11 +252,11 @@ def test_unknown_authors_do_not_enter_publication_slots():
     assert planned == []
 
 
-def test_daily_realtor_target_is_half_of_daily_plan():
+def test_daily_realtor_target_is_one_quarter_of_daily_plan():
     start = datetime(2026, 9, 13, 5, tzinfo=timezone(timedelta(hours=6)))
     assert {
         daily_realtor_target(start + timedelta(days=offset)) for offset in range(4)
-    } == {55}
+    } == {28}
 
 
 def test_period_honors_remaining_daily_realtor_quota():
@@ -605,7 +598,7 @@ async def test_schedule_uses_available_realtors_toward_equal_mix(repositories):
             )
             or 0
         )
-    assert daily_realtor_target(now) == 55
+    assert daily_realtor_target(now) == 28
     assert realtor_count == 10
     assert unknown_count == 0
 
@@ -907,7 +900,7 @@ async def test_seller_policy_rebuilds_queue_without_git_environment(repositories
 
 
 @pytest.mark.asyncio
-async def test_stock_load_reserves_equal_seller_capacity(repositories, monkeypatch):
+async def test_stock_load_reserves_three_quarters_for_owners(repositories, monkeypatch):
     monkeypatch.setattr("app.inventory.MAX_FRESH_STOCK_LOAD", 4)
     apartments, _, sessions = repositories
     for index in range(10):
@@ -922,8 +915,8 @@ async def test_stock_load_reserves_equal_seller_capacity(repositories, monkeypat
         kinds = (await session.scalars(
             select(Apartment.seller_type).join(ApartmentInventoryQueue)
         )).all()
-    assert kinds.count("owner") == 2
-    assert kinds.count("realtor") == 2
+    assert kinds.count("owner") == 3
+    assert kinds.count("realtor") == 1
 
 
 @pytest.mark.asyncio
@@ -1162,7 +1155,7 @@ def test_period_mixes_all_ranges_with_half_at_thirty_to_thirty_five_when_stock_a
     assert {item.apartment.price for item in planned[:5]} == {25_000, 32_000, 39_000}
 
 
-@pytest.mark.parametrize("owner_count,realtor_count,expected_owners", [(110, 110, 55), (10, 110, 10), (110, 5, 105)])
+@pytest.mark.parametrize("owner_count,realtor_count,expected_owners", [(110, 110, 82), (10, 110, 10), (110, 5, 105)])
 def test_one_hundred_ten_card_day_fills_category_shortages(owner_count, realtor_count, expected_owners):
     stock = _apartments(owner_count, central=True, start_id=1) + _apartments(
         realtor_count, central=True, start_id=200, owner=False

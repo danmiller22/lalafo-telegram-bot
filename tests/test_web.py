@@ -164,7 +164,7 @@ async def test_health_and_authentication() -> None:
             "personal_matching": "disabled",
             "lalafo_auto_reply": "disabled",
             "publication_policy": {"daily_target": 110, "start": "05:00", "end": "02:00", "timezone": "Asia/Bishkek", "spacing_minutes": 11.45, "watermark_check": False,
-                                   "seller_mix": {"owner": 0.5, "realtor": 0.5},
+                                   "seller_mix": {"owner": 0.75, "realtor": 0.25},
                                    "single_photo_duplicate_guard": True,
                 "requested_cards": {"total_publications": 3, "duration_hours": 24, "minimum_gap_hours": 6, "included_in_daily_target": True},
                                    "telegram_source_channels": 13},

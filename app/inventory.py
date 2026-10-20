@@ -26,14 +26,14 @@ from app.promotions import publications_in_window, queue_due_promotions, REQUEST
 BISHKEK = ZoneInfo("Asia/Bishkek")
 ALLOWED_ROOMS = frozenset({"studio", "1"})
 CENTRAL_DAILY_SHARE = 0.50
-REALTOR_DAILY_SHARE = 0.50
+REALTOR_DAILY_SHARE = 0.25
 MIN_PUBLICATIONS_PER_DAY = 110
 MAX_PUBLICATIONS_PER_DAY = 110
 # The daily target is chosen once per Bishkek date, then split across the two
 # discovery periods so retries cannot increase the day's publication volume.
-# Split the day evenly between confirmed owners and inexpensive central
-# realtors. Either known category fills shortages in the other; unclassified
-# listings do not enter the public queue.
+# Prefer confirmed owners for three quarters of the daily plan and retain one
+# quarter for inexpensive central realtors. Either known category fills
+# shortages in the other; unclassified listings do not enter the public queue.
 MIN_NON_OWNERS_PER_DAY = math.ceil(MAX_PUBLICATIONS_PER_DAY * REALTOR_DAILY_SHARE)
 MAX_NON_OWNERS_PER_DAY = MIN_NON_OWNERS_PER_DAY
 TARGET_NON_OWNERS_PER_PERIOD = (MAX_NON_OWNERS_PER_DAY + 1) // 2
