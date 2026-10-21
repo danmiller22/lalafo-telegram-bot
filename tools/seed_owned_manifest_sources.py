@@ -20,6 +20,9 @@ async def run(manifest_path: str) -> None:
     if os.environ.get("CONFIRM_OWNED_SOURCE_SEED") != "true":
         raise ValueError("Explicit owned-source seed confirmation required")
     manifest = json.loads(Path(manifest_path).read_text())
+    if manifest.get("sealed_contacts"):
+        print("OWNED_MANIFEST_SOURCES_USE_SEALED_CONTACTS", flush=True)
+        return
     cards = manifest.get("cards") or []
     if not 1 <= len(cards) <= 10:
         raise ValueError("Expected one to ten explicitly requested cards")

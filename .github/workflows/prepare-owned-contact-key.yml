@@ -1,0 +1,33 @@
+name: Prepare requested owned-contact transfer key
+
+on:
+  workflow_dispatch:
+    inputs:
+      key_name:
+        description: Scoped database key name beginning with owned_contact_
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
+      CAMPAIGN_SESSION_KEY_NAME: ${{ inputs.key_name }}
+    steps:
+      - name: Validate scoped key name
+        shell: bash
+        run: '[[ "$CAMPAIGN_SESSION_KEY_NAME" =~ ^owned_contact_[a-z0-9_]{1,40}$ ]]'
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Prepare encrypted transfer key
+        run: python -m tools.lalafo_campaign_session --prepare-key
