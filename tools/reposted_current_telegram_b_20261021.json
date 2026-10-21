@@ -1,0 +1,30 @@
+{
+  "batch": "rentkg-reposted-current-b-20261021",
+  "verified_at": "2026-10-21T23:34:21.764071+00:00",
+  "repeat_every_hours": 3,
+  "repeat_while_active": true,
+  "cards": [
+    {
+      "profile_id": 18194628,
+      "ad_id": 110911071,
+      "url": "https://lalafo.kg/bishkek/ads/kvartira-id-110911071",
+      "telegram_message_id": 45892,
+      "snapshot": {
+        "id": 110911071,
+        "user_id": 18194628,
+        "status_id": 2,
+        "price": 35000,
+        "rooms": "1",
+        "district": "Восток-5 мкр",
+        "deposit": null,
+        "photo_urls": [
+          "https://img5.lalafo.com/i/posters/original/86/a6/c7/d8d59c80486574bb63249d500e.jpeg",
+          "https://img5.lalafo.com/i/posters/original/f7/4f/7d/b39af98897010d750a2f102b10.jpeg",
+          "https://img5.lalafo.com/i/posters/original/64/53/4d/4ebcf58cf1ac54914a0f2093c5.jpeg",
+          "https://img5.lalafo.com/i/posters/original/58/f1/b3/cb70f2e82b6ab81f09c2d73d5d.jpeg"
+        ],
+        "source_description": "🏠 1-комнатная квартира\n      \n📍 Восток-5\n      \n🏙 Бишкек\n      \n💰 35 000 сом"
+      }
+    }
+  ]
+}
