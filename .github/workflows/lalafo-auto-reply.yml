@@ -26,6 +26,7 @@ jobs:
       LALAFO_LOGIN: ${{ secrets.LALAFO_LOGIN }}
       LALAFO_PASSWORD: ${{ secrets.LALAFO_PASSWORD }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
       # Connect briefly once per hour, sync every new message, greet only chats
       # without a previous greeting, then leave the durable cursors in Postgres.
       LALAFO_WORKER_SECONDS: "420"
