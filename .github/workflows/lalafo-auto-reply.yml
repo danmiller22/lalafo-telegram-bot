@@ -29,6 +29,7 @@ jobs:
       # Connect briefly once per hour, sync every new message, greet only chats
       # without a previous greeting, then leave the durable cursors in Postgres.
       LALAFO_WORKER_SECONDS: "420"
+      LALAFO_SESSION_ENVELOPE: "tools/lalafo_hourly_session_20261021.json"
       LOG_LEVEL: INFO
     steps:
       - uses: actions/checkout@v7
