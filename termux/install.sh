@@ -6,7 +6,7 @@ REPO_RAW="https://raw.githubusercontent.com/danmiller22/lalafo-telegram-bot/main
 
 echo "Installing the lightweight Lalafo responder..."
 pkg install -y python curl
-python -m pip install --no-cache-dir --disable-pip-version-check requests websocket-client
+python -m pip install --no-cache-dir --disable-pip-version-check --no-deps websocket-client
 mkdir -p "$ROOT" "$HOME/.termux/boot"
 curl -fsSL "$REPO_RAW/termux/lalafo_autoreply.py" -o "$ROOT/worker.py"
 chmod 700 "$ROOT" "$ROOT/worker.py"

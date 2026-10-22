@@ -15,11 +15,13 @@ import signal
 import threading
 import time
 import uuid
+from http.cookiejar import CookieJar
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
+from urllib.error import HTTPError
+from urllib.request import HTTPCookieProcessor, Request, build_opener
 
-import requests
 import websocket
 
 
@@ -148,7 +150,8 @@ class Lalafo:
         self.password = password
         self.fingerprint = fingerprint
         self.anonymous_hash = str(uuid.uuid4())
-        self.http = requests.Session()
+        self.cookies = CookieJar()
+        self.opener = build_opener(HTTPCookieProcessor(self.cookies))
         self.owner: str | None = None
         self.rest_token: str | None = None
         self.access_token: str | None = None
@@ -183,22 +186,29 @@ class Lalafo:
         return result
 
     def login_once(self) -> None:
-        self.http.get(f"{HTTP_ORIGIN}/login", headers=self.headers(authenticated=False, mutation=False), timeout=20)
+        try:
+            self._request(
+                "GET",
+                "/login",
+                headers=self.headers(authenticated=False, mutation=False),
+            )
+        except RuntimeError:
+            pass
         key = "email" if "@" in self.login else "mobile"
-        response = self.http.post(
-            f"{HTTP_ORIGIN}/api/auth/login",
+        status, payload = self._request(
+            "POST",
+            "/api/auth/login",
             headers=self.headers(
                 authenticated=False,
                 mutation=True,
                 extra={"referer": f"{HTTP_ORIGIN}/login"},
             ),
-            json={key: self.login, "password": self.password},
-            timeout=20,
+            body={key: self.login, "password": self.password},
         )
-        payload = response.json() if response.content else {}
-        if response.status_code == 403:
+        if status == 403:
             raise SecurityChallenge("Lalafo requested a security check")
-        response.raise_for_status()
+        if status >= 400:
+            raise RuntimeError(f"Lalafo login failed: HTTP {status}")
         self.rest_token = find_string(payload, ("token", "auth_token"))
         self.access_token = find_string(payload, ("access_token", "accessToken")) or self.rest_token
         self.user_hash = find_string(payload, ("user_hash", "userHash", "hash")) or self.anonymous_hash
@@ -209,25 +219,54 @@ class Lalafo:
     def post(self, path: str, body: object, *, extra: dict[str, str] | None = None) -> object:
         if not self.rest_token:
             self.login_once()
-        response = self.http.post(
-            HTTP_ORIGIN + path,
+        status, payload = self._request(
+            "POST",
+            path,
             headers=self.headers(authenticated=True, mutation=True, extra=extra),
-            json=body,
-            timeout=25,
+            body=body,
         )
-        if response.status_code == 403:
+        if status == 403:
             raise SecurityChallenge("Lalafo requested a security check")
-        if response.status_code in (401, 422):
+        if status in (401, 422):
             self.rest_token = self.access_token = self.owner = None
             self.login_once()
-            response = self.http.post(
-                HTTP_ORIGIN + path,
+            status, payload = self._request(
+                "POST",
+                path,
                 headers=self.headers(authenticated=True, mutation=True, extra=extra),
-                json=body,
-                timeout=25,
+                body=body,
             )
-        response.raise_for_status()
-        return response.json() if response.content else {}
+        if status >= 400:
+            raise RuntimeError(f"Lalafo request failed: HTTP {status}")
+        return payload
+
+    def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        headers: dict[str, str],
+        body: object | None = None,
+    ) -> tuple[int, object]:
+        content = None if body is None else json.dumps(body).encode("utf-8")
+        request = Request(
+            HTTP_ORIGIN + path,
+            data=content,
+            headers=headers,
+            method=method,
+        )
+        try:
+            response = self.opener.open(request, timeout=25)
+            status = response.status
+            raw = response.read()
+        except HTTPError as exc:
+            status = exc.code
+            raw = exc.read()
+        try:
+            payload: object = json.loads(raw) if raw else {}
+        except (ValueError, UnicodeDecodeError):
+            payload = {}
+        return status, payload
 
     def start_socket(self) -> None:
         if not self.access_token:
@@ -251,7 +290,7 @@ class Lalafo:
                 url,
                 origin=HTTP_ORIGIN,
                 timeout=45,
-                cookie="; ".join(f"{c.name}={c.value}" for c in self.http.cookies),
+                cookie="; ".join(f"{c.name}={c.value}" for c in self.cookies),
             )
             while not self.stop.is_set():
                 packet = self.ws.recv()
