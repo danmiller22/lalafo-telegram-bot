@@ -33,7 +33,6 @@ unset LALAFO_LOGIN LALAFO_PASSWORD
 cat > "$ROOT/start.sh" <<'SH'
 #!/data/data/com.termux/files/usr/bin/bash
 ROOT="$HOME/.lalafo-autoreply"
-termux-wake-lock 2>/dev/null || true
 if [ -f "$ROOT/worker.pid" ] && kill -0 "$(cat "$ROOT/worker.pid")" 2>/dev/null; then
   exit 0
 fi
