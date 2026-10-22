@@ -8,10 +8,15 @@ the residential connection of the Android device and keeps its state locally.
 from __future__ import annotations
 
 import argparse
+import base64
+import hashlib
 import json
 import logging
 import os
 import signal
+import socket
+import ssl
+import struct
 import threading
 import time
 import uuid
@@ -21,8 +26,6 @@ from typing import Any
 from urllib.parse import quote
 from urllib.error import HTTPError
 from urllib.request import HTTPCookieProcessor, Request, build_opener
-
-import websocket
 
 
 HTTP_ORIGIN = "https://lalafo.kg"
@@ -44,6 +47,109 @@ MEDIA_MESSAGE = 2
 
 class SecurityChallenge(RuntimeError):
     pass
+
+
+class TinyWebSocket:
+    """Minimal RFC 6455 client sufficient for Socket.IO text traffic."""
+
+    def __init__(self, url_path: str, *, cookie: str = "") -> None:
+        raw = socket.create_connection(("websocket.lalafo.com", 443), timeout=20)
+        self.sock = ssl.create_default_context().wrap_socket(
+            raw, server_hostname="websocket.lalafo.com"
+        )
+        self.sock.settimeout(45)
+        key = base64.b64encode(os.urandom(16)).decode("ascii")
+        request = (
+            f"GET {url_path} HTTP/1.1\r\n"
+            "Host: websocket.lalafo.com\r\n"
+            "Upgrade: websocket\r\n"
+            "Connection: Upgrade\r\n"
+            f"Sec-WebSocket-Key: {key}\r\n"
+            "Sec-WebSocket-Version: 13\r\n"
+            f"Origin: {HTTP_ORIGIN}\r\n"
+            f"User-Agent: {USER_AGENT}\r\n"
+            + (f"Cookie: {cookie}\r\n" if cookie else "")
+            + "\r\n"
+        )
+        self.sock.sendall(request.encode("ascii"))
+        response = b""
+        while b"\r\n\r\n" not in response and len(response) < 32_768:
+            chunk = self.sock.recv(4096)
+            if not chunk:
+                break
+            response += chunk
+        headers, _, remainder = response.partition(b"\r\n\r\n")
+        self.buffer = bytearray(remainder)
+        first_line = headers.split(b"\r\n", 1)[0]
+        if b" 101 " not in first_line:
+            self.close()
+            raise RuntimeError("WebSocket upgrade was rejected")
+        expected = base64.b64encode(
+            hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest()
+        )
+        if b"sec-websocket-accept: " + expected.lower() not in headers.lower():
+            self.close()
+            raise RuntimeError("WebSocket handshake is invalid")
+
+    def _read_exact(self, count: int) -> bytes:
+        result = bytes(self.buffer[:count])
+        del self.buffer[: len(result)]
+        while len(result) < count:
+            chunk = self.sock.recv(count - len(result))
+            if not chunk:
+                raise ConnectionError("WebSocket closed")
+            result += chunk
+        return result
+
+    def send_frame(self, opcode: int, payload: bytes) -> None:
+        mask = os.urandom(4)
+        length = len(payload)
+        if length < 126:
+            header = bytes((0x80 | opcode, 0x80 | length))
+        elif length < 65_536:
+            header = bytes((0x80 | opcode, 0xFE)) + struct.pack("!H", length)
+        else:
+            header = bytes((0x80 | opcode, 0xFF)) + struct.pack("!Q", length)
+        masked = bytes(value ^ mask[index % 4] for index, value in enumerate(payload))
+        self.sock.sendall(header + mask + masked)
+
+    def send(self, text_value: str) -> None:
+        self.send_frame(1, text_value.encode("utf-8"))
+
+    def recv(self) -> str | None:
+        fragments = bytearray()
+        while True:
+            first_byte, second_byte = self._read_exact(2)
+            fin = bool(first_byte & 0x80)
+            opcode = first_byte & 0x0F
+            length = second_byte & 0x7F
+            if length == 126:
+                length = struct.unpack("!H", self._read_exact(2))[0]
+            elif length == 127:
+                length = struct.unpack("!Q", self._read_exact(8))[0]
+            mask = self._read_exact(4) if second_byte & 0x80 else b""
+            payload = self._read_exact(length)
+            if mask:
+                payload = bytes(value ^ mask[index % 4] for index, value in enumerate(payload))
+            if opcode == 8:
+                raise ConnectionError("WebSocket closed")
+            if opcode == 9:
+                self.send_frame(10, payload)
+                continue
+            if opcode in (1, 0):
+                fragments.extend(payload)
+                if fin:
+                    return fragments.decode("utf-8", errors="replace")
+
+    def close(self) -> None:
+        try:
+            self.send_frame(8, b"")
+        except Exception:
+            pass
+        try:
+            self.sock.close()
+        except Exception:
+            pass
 
 
 def obj(value: object) -> dict[str, Any]:
@@ -157,7 +263,7 @@ class Lalafo:
         self.access_token: str | None = None
         self.user_hash: str | None = None
         self.socket_id: str | None = None
-        self.ws: websocket.WebSocket | None = None
+        self.ws: TinyWebSocket | None = None
         self.ws_thread: threading.Thread | None = None
         self.stop = threading.Event()
 
@@ -284,12 +390,10 @@ class Lalafo:
             raise RuntimeError("Lalafo chat socket did not become ready")
 
     def _socket_loop(self) -> None:
-        url = f"{SOCKET_URL}?token={quote(self.access_token or '')}&EIO=4&transport=websocket"
+        path = "/chat-ws/socket.io/?token=" + quote(self.access_token or "") + "&EIO=4&transport=websocket"
         try:
-            self.ws = websocket.create_connection(
-                url,
-                origin=HTTP_ORIGIN,
-                timeout=45,
+            self.ws = TinyWebSocket(
+                path,
                 cookie="; ".join(f"{c.name}={c.value}" for c in self.cookies),
             )
             while not self.stop.is_set():
