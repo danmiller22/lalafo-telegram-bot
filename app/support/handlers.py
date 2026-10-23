@@ -6,7 +6,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from app.config import Settings
-from app.support.faq import FAQ_BY_KEY, fallback_answer, faq_for_text
+from app.support.faq import FAQ_BY_KEY
 from app.support.keyboards import support_back_keyboard, support_menu_keyboard
 from app.support.states import SupportConversation
 from app.wanted.keyboards import main_menu_keyboard
@@ -15,6 +15,9 @@ router = Router(name="support")
 
 SUPPORT_MENU_TEXT = (
     "🛟 Помощь\n\nВыберите нужный вопрос кнопкой ниже."
+)
+SUPPORT_BUTTONS_ONLY_TEXT = (
+    "Ничего писать не нужно. Выберите нужный раздел кнопкой ниже."
 )
 
 
@@ -86,6 +89,7 @@ async def support_close(
 
 @router.message(StateFilter(SupportConversation.active), F.text)
 async def support_question(message: Message) -> None:
-    item = faq_for_text((message.text or "").strip())
-    answer = item.answer if item is not None else fallback_answer(message.text or "")
-    await message.answer(answer, reply_markup=support_back_keyboard())
+    await message.answer(
+        SUPPORT_BUTTONS_ONLY_TEXT,
+        reply_markup=support_menu_keyboard(),
+    )

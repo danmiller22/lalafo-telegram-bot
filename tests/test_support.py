@@ -9,6 +9,7 @@ from app.config import Settings
 from app.security import TokenSigner
 from app.support.faq import FAQ_BY_KEY, fallback_answer, faq_for_text
 from app.support.handlers import (
+    SUPPORT_BUTTONS_ONLY_TEXT,
     SUPPORT_MENU_TEXT,
     support_back,
     support_faq_callback,
@@ -105,16 +106,16 @@ async def test_support_ticket_lifecycle(repositories):
 
 
 @pytest.mark.asyncio
-async def test_common_question_is_answered_directly():
+async def test_typed_support_message_redirects_to_buttons():
     message = SimpleNamespace(
         text="Как оплатить доступ?",
         answer=AsyncMock(),
     )
     await support_question(message)
 
-    assert "Я оплатил(а)" in message.answer.await_args.args[0]
+    assert message.answer.await_args.args[0] == SUPPORT_BUTTONS_ONLY_TEXT
     keyboard = message.answer.await_args.kwargs["reply_markup"]
-    assert keyboard.inline_keyboard[0][0].callback_data == "support:back"
+    assert keyboard.inline_keyboard[0][0].callback_data.startswith("support:faq:")
 
 
 @pytest.mark.asyncio
@@ -148,7 +149,7 @@ async def test_back_button_replaces_answer_with_full_menu():
 
 
 @pytest.mark.asyncio
-async def test_unknown_question_gets_self_service_answer_without_handoff():
+async def test_unknown_question_also_redirects_to_buttons():
     message = SimpleNamespace(
         text="У меня необычная проблема с конкретной квартирой",
         answer=AsyncMock(),
@@ -156,8 +157,15 @@ async def test_unknown_question_gets_self_service_answer_without_handoff():
     await support_question(message)
 
     answer = message.answer.await_args.args[0]
-    assert answer == fallback_answer(message.text)
-    assert "администратор" not in answer.casefold()
+    assert answer == SUPPORT_BUTTONS_ONLY_TEXT
+    assert "писать не нужно" in answer
+
+
+def test_payment_review_never_asks_customer_to_type_payment_details():
+    answer = FAQ_BY_KEY["review"].answer.casefold()
+    assert "напишите" not in answer
+    assert "писать" in answer
+    assert "не требуется" in answer
 
 
 def test_typed_commands_are_redirected_to_buttons():
