@@ -120,6 +120,31 @@ def payment_keyboard(
     )
 
 
+def payment_reminder_keyboard(
+    apartment_id: int,
+    *,
+    signer: TokenSigner,
+    payment_url: str,
+    support_url: str,
+    price: int = WEEK_PRICE,
+    apartments_url: str = "https://t.me/rentkg312",
+) -> InlineKeyboardMarkup:
+    """Recovery controls that remain useful outside the Mini App window."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=f"💳 Оплатить {price} сом", url=payment_url)],
+            [
+                InlineKeyboardButton(
+                    text="✅ Я оплатил(а)",
+                    callback_data=f"paid:{signer.sign_id('paid', apartment_id)}",
+                )
+            ],
+            [InlineKeyboardButton(text="🏠 Смотреть актуальные квартиры", url=apartments_url)],
+            _support_row(support_url),
+        ]
+    )
+
+
 def private_payment_keyboard(
     apartment_id: int,
     *,

@@ -125,7 +125,9 @@ async def test_abandoned_checkout_gets_one_recovery_message_per_customer(
         bot=bot,
         workflow_data={
             "payments": payments,
-            "settings": Settings(telegram_bot_username="arenda312bot"),
+            "settings": Settings(
+                telegram_bot_username="arenda312bot", admin_user_id=999
+            ),
             "signer": TokenSigner("checkout-recovery-test-secret"),
         },
     )
@@ -135,6 +137,36 @@ async def test_abandoned_checkout_gets_one_recovery_message_per_customer(
     bot.send_message.assert_awaited_once()
     assert bot.send_message.await_args.args[0] == 313
     assert "499 сом" in bot.send_message.await_args.args[1]
+    assert "Доступ к контактам собственников — 499 сом в неделю." in (
+        bot.send_message.await_args.args[1]
+    )
+    markup = bot.send_message.await_args.kwargs["reply_markup"]
+    assert markup.inline_keyboard[0][0].text == "💳 Оплатить 499 сом"
+    assert markup.inline_keyboard[0][0].url == runtime.workflow_data[
+        "settings"
+    ].weekly_finik_payment_url
+    assert markup.inline_keyboard[1][0].text == "✅ Я оплатил(а)"
+    assert markup.inline_keyboard[1][0].callback_data.startswith(PAID_PREFIX)
+    assert markup.inline_keyboard[2][0].url == "https://t.me/rentkg312"
+
+    callback = SimpleNamespace(
+        data=markup.inline_keyboard[1][0].callback_data,
+        from_user=SimpleNamespace(id=313),
+        message=None,
+        answer=AsyncMock(),
+    )
+    await paid_handler(
+        callback,
+        service,
+        payments,
+        runtime.workflow_data["signer"],
+        runtime.workflow_data["settings"],
+        bot,
+    )
+    callback.answer.assert_awaited_once_with(
+        "Оплата отправлена на проверку. Ожидайте подтверждения.", show_alert=True
+    )
+    assert (await payments.get_access(313, first.id)).status == "pending"
     async with sessions() as session:
         rows = list(
             (

@@ -5,10 +5,11 @@ import asyncio
 import logging
 
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from app.payments.review import notify_payment_admin
 from app.listing_lifecycle import listing_expired
+from app.payment_plans import WEEK_PLAN, plan_label, plan_price
+from app.telegram.keyboards import payment_reminder_keyboard
 
 logger = logging.getLogger(__name__)
 
@@ -42,22 +43,36 @@ async def process_checkout_recoveries(runtime) -> int:
         ):
             await payments.finish_payment_reminder(request.id)
             continue
-        token = signer.sign_start_id("miniapp-apartment", request.apartment_id)
-        checkout_url = (
-            f"https://t.me/{settings.telegram_bot_username.lstrip('@')}"
-            f"/access?startapp={token}"
+        try:
+            from app.web import _finik_checkout_url
+
+            checkout_url = await _finik_checkout_url(
+                settings,
+                payments,
+                request,
+                apartment_id=request.apartment_id,
+                plan=request.plan,
+            )
+        except Exception:
+            await payments.release_payment_reminder(request.id)
+            logger.exception(
+                "Could not prepare checkout recovery for request %s", request.id
+            )
+            continue
+        price = plan_price(request.plan)
+        markup = payment_reminder_keyboard(
+            request.apartment_id,
+            signer=signer,
+            payment_url=checkout_url,
+            support_url=settings.support_bot_url,
+            price=price,
         )
-        markup = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(text="Продолжить оплату", url=checkout_url)],
-                [InlineKeyboardButton(text="Смотреть актуальные квартиры", url="https://t.me/rentkg312")],
-            ]
-        )
+        period = "в неделю" if request.plan == WEEK_PLAN else plan_label(request.plan).lower()
         text = (
             "Вы открывали оплату контактов квартиры.\n\n"
-            "Одна оплата 499 сом открывает номера всех актуальных квартир на 7 дней. "
-            "Если уже оплатили, вернитесь и нажмите «Я оплатил(а)» — "
-            "администратор проверит поступление."
+            f"Доступ к контактам собственников — {price} сом {period}.\n\n"
+            "Если уже оплатили, нажмите «Я оплатил(а)» — администратор "
+            "проверит поступление."
         )
         try:
             await runtime.bot.send_message(
