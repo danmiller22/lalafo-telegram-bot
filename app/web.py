@@ -233,6 +233,23 @@ def _authorize(authorization: str | None) -> None:
         )
 
 
+def _authorize_callback_or_run(authorization: str | None) -> None:
+    scheme, _, supplied = (authorization or "").partition(" ")
+    settings = get_settings()
+    accepted = (
+        settings.require_run_trigger_secret(),
+        settings.require_callback_secret(),
+    )
+    if scheme.lower() != "bearer" or not any(
+        secrets.compare_digest(supplied, expected) for expected in accepted
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unauthorized",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
 async def _configure_main_bot_once() -> None:
     """Apply the webhook/profile with a deadline outside startup."""
     settings = get_settings()
@@ -1852,7 +1869,7 @@ async def lalafo_auto_reply_preflight(
     authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
     """Test the hosted Lalafo inbox route without sending any messages."""
-    _authorize(authorization)
+    _authorize_callback_or_run(authorization)
     from scripts.lalafo_reply_unanswered_once import preflight_once
 
     try:
