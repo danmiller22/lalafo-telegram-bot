@@ -35,7 +35,7 @@ jobs:
           jq -n '[
             {key: "LALAFO_AUTO_REPLY_ENABLED", value: "false"},
             {key: "LALAFO_AUTO_REPLY_WEB_ENABLED", value: "false"},
-            {key: "LALAFO_HOURLY_REPLY_ENABLED", value: "false"},
+            {key: "LALAFO_HOURLY_REPLY_ENABLED", value: "true"},
             {key: "LALAFO_SESSION_ENVELOPE", value: "tools/lalafo_hourly_session_20261024.json"},
             {key: "LALAFO_EXPECTED_OWNER_ID", value: "18209276"},
             {key: "DATABASE_URL", value: env.DATABASE_URL},
