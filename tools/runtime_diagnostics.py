@@ -103,9 +103,7 @@ async def main():
              "1000 мелочей","политех")
     return "central" if any(term in text for term in central) else None
    tomorrow_stock=[item for item in tomorrow_stock
-                   if item.lalafo_id not in previously_managed
-                   and item.fingerprint not in managed_fingerprints
-                   and "codex_force_repost" not in item.source_url
+                   if "codex_force_repost" not in item.source_url
                    and item.seller_type in {"owner","realtor"}
                    and len(item.photo_urls or [])>=4
                    and not is_substandard_structure(apartment_to_ad(item))
@@ -116,16 +114,26 @@ async def main():
        -len(item.photo_urls or []),
        -as_utc(item.last_seen_at or item.updated_at).timestamp(),
    ))
+   fresh_stock=[item for item in tomorrow_stock
+                if item.lalafo_id not in previously_managed
+                and item.fingerprint not in managed_fingerprints]
    selected=[];selected_ids=set()
    for group,limit in (("east5",3),("central",4)):
-    for item in tomorrow_stock:
+    for item in fresh_stock:
      if len([chosen for chosen in selected if target_group(chosen)==group])>=limit:break
      if item.id in selected_ids or target_group(item)!=group:continue
      selected.append(item);selected_ids.add(item.id)
+   # If the never-managed pool is short, keep reviewed older cards as explicit
+   # backups. Publication still performs its normal duplicate/source checks.
+   for item in tomorrow_stock:
+    if len(selected)>=7:break
+    if item.id in selected_ids:continue
+    selected.append(item);selected_ids.add(item.id)
    print('TOMORROW_LALAFO_CANDIDATES='+json.dumps([{
        "source_id":item.lalafo_id,"source_url":item.source_url,
        "district":item.district,"target_group":target_group(item),
        "price":item.price,"seller_type":item.seller_type,
+       "previously_managed":item.lalafo_id in previously_managed or item.fingerprint in managed_fingerprints,
        "photos":len(item.photo_urls or []),
        "last_seen_at":as_utc(item.last_seen_at or item.updated_at).isoformat(),
    } for item in selected],ensure_ascii=False))
