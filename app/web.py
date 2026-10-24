@@ -480,7 +480,7 @@ async def _run_hourly_lalafo_reply() -> None:
             _lalafo_hourly_state.update(
                 state="waiting",
                 last_check_at=_now(),
-                last_error=type(exc).__name__,
+                last_error=getattr(exc, "kind", type(exc).__name__),
             )
             logger.exception("Hourly Lalafo reply pass failed")
         await asyncio.sleep(3600)
