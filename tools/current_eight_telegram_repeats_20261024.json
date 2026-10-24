@@ -1,0 +1,55 @@
+{
+  "batch": "current-18209276-eight-20261024",
+  "repeat_every_hours": 3,
+  "repeat_while_active": true,
+  "cards": [
+    {
+      "source_id": 117538219,
+      "profile_id": 18209276,
+      "ad_id": 117557469,
+      "url": "https://lalafo.kg/bishkek/ads/1-komnata-vostok-5-mkr-agentstvo-nedvizimosti-mozno-s-zivotnymi-ot-1-mesaca-ot-3-mesacev-ot-6-mesacev-s-mebelu-polnostu-id-117557469"
+    },
+    {
+      "source_id": 115726927,
+      "profile_id": 18209276,
+      "ad_id": 115730863,
+      "url": "https://lalafo.kg/bishkek/ads/1-komnata-biskek-park-trc-agentstvo-nedvizimosti-mozno-s-zivotnymi-ot-1-mesaca-ot-3-mesacev-ot-6-mesacev-s-mebelu-polnostu-id-115730863"
+    },
+    {
+      "source_id": 60684794,
+      "profile_id": 18209276,
+      "ad_id": 117557470,
+      "url": "https://lalafo.kg/bishkek/ads/1-komnata-vefa-tc-agentstvo-nedvizimosti-mozno-s-zivotnymi-ot-1-mesaca-ot-3-mesacev-ot-6-mesacev-s-mebelu-polnostu-id-117557470"
+    },
+    {
+      "source_id": 114071190,
+      "profile_id": 18209276,
+      "ad_id": 117557472,
+      "url": "https://lalafo.kg/bishkek/ads/1-komnata-politeh-agentstvo-nedvizimosti-mozno-s-zivotnymi-ot-1-mesaca-ot-3-mesacev-ot-6-mesacev-s-mebelu-polnostu-id-117557472"
+    },
+    {
+      "source_id": 117553227,
+      "profile_id": 18209276,
+      "ad_id": 117557474,
+      "url": "https://lalafo.kg/bishkek/ads/1-komnata-vostok-5-mkr-agentstvo-nedvizimosti-mozno-s-zivotnymi-ot-1-mesaca-ot-3-mesacev-ot-6-mesacev-s-mebelu-polnostu-id-117557474"
+    },
+    {
+      "source_id": 114761885,
+      "profile_id": 18209276,
+      "ad_id": 117557475,
+      "url": "https://lalafo.kg/bishkek/ads/1-komnata-zolotoj-kvadrat-agentstvo-nedvizimosti-mozno-s-zivotnymi-ot-1-mesaca-ot-3-mesacev-ot-6-mesacev-s-mebelu-polnostu-id-117557475"
+    },
+    {
+      "source_id": 117256018,
+      "profile_id": 18209276,
+      "ad_id": 117557476,
+      "url": "https://lalafo.kg/bishkek/ads/1-komnata-politeh-agentstvo-nedvizimosti-mozno-s-zivotnymi-ot-1-mesaca-ot-3-mesacev-ot-6-mesacev-s-mebelu-polnostu-id-117557476"
+    },
+    {
+      "source_id": 115681407,
+      "profile_id": 18209276,
+      "ad_id": 117557477,
+      "url": "https://lalafo.kg/bishkek/ads/1-komnata-vefa-tc-agentstvo-nedvizimosti-mozno-s-zivotnymi-ot-1-mesaca-ot-3-mesacev-ot-6-mesacev-s-mebelu-polnostu-id-117557477"
+    }
+  ]
+}
