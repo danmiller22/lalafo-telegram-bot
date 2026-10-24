@@ -56,7 +56,7 @@ async def all_messages(client: LalafoChatClient, chat) -> list:
     return sorted(collected.values(), key=lambda item: (item.created_at, item.id))
 
 
-async def main() -> None:
+async def run_once() -> dict[str, int | bool]:
     envelope = json.loads(Path(required("LALAFO_SESSION_ENVELOPE")).read_text())
     session = await load_session(
         envelope["sealed_session"], key_name=envelope["key_name"]
@@ -173,17 +173,19 @@ async def main() -> None:
         await socket_http.close()
         await client.close()
 
+    return {
+        "owner_verified": True,
+        "chats_scanned": scanned,
+        "new_conversations": candidates,
+        "sent": sent,
+        "verified": verified,
+    }
+
+
+async def main() -> None:
     print(
         json.dumps(
-            {
-                "owner_verified": True,
-                "chats_scanned": scanned,
-                "new_conversations": candidates,
-                "sent": sent,
-                "verified": verified,
-            },
-            ensure_ascii=False,
-            separators=(",", ":"),
+            await run_once(), ensure_ascii=False, separators=(",", ":")
         ),
         flush=True,
     )

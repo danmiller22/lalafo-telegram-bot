@@ -65,6 +65,7 @@ _legacy_featured_cleanup_task: asyncio.Task[None] | None = None
 _keyboard_sync_task: asyncio.Task[None] | None = None
 _lalafo_auto_responder: LalafoAutoResponder | None = None
 _lalafo_watchdog_task: asyncio.Task[None] | None = None
+_lalafo_hourly_task: asyncio.Task[None] | None = None
 _lalafo_restart_lock = asyncio.Lock()
 _apartment_scheduler_task: asyncio.Task[None] | None = None
 _telegram_inventory_state: dict[str, Any] = {"state": "pending", "last_check_at": None, "last_exit_code": None, "last_error": None}
@@ -118,6 +119,12 @@ _background_watchdog_state: dict[str, Any] = {
     "last_check_at": None,
     "last_error": None,
     "restart_count": 0,
+}
+_lalafo_hourly_state: dict[str, Any] = {
+    "state": "disabled",
+    "last_check_at": None,
+    "last_result": None,
+    "last_error": None,
 }
 class MiniAppRequest(BaseModel):
     init_data: str
@@ -451,6 +458,32 @@ async def _watch_lalafo_auto_responder() -> None:
         except Exception:
             # The watchdog itself must survive a failed restart and try again.
             logger.exception("Lalafo auto-reply watchdog cycle failed")
+
+
+async def _run_hourly_lalafo_reply() -> None:
+    """Run one sealed-session inbox pass each hour on the selected web host."""
+    from scripts.lalafo_reply_unanswered_once import run_once
+
+    while True:
+        try:
+            _lalafo_hourly_state.update(state="checking", last_error=None)
+            result = await run_once()
+            _lalafo_hourly_state.update(
+                state="waiting",
+                last_check_at=_now(),
+                last_result=result,
+                last_error=None,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            _lalafo_hourly_state.update(
+                state="waiting",
+                last_check_at=_now(),
+                last_error=type(exc).__name__,
+            )
+            logger.exception("Hourly Lalafo reply pass failed")
+        await asyncio.sleep(3600)
 
 
 async def _select_hosted_lalafo_proxies() -> None:
@@ -892,7 +925,7 @@ def _task_error_name(task: asyncio.Task[None] | None) -> str | None:
 
 async def _repair_background_tasks_once() -> int:
     """Restart only stopped workers; never replace the payment runtime."""
-    global _bot_setup_task, _lalafo_bot_setup_task, _lalafo_watchdog_task
+    global _bot_setup_task, _lalafo_bot_setup_task, _lalafo_watchdog_task, _lalafo_hourly_task
     global _apartment_scheduler_task, _service_keepalive_task, _matching_worker_task
     global _payment_review_worker_task
     settings = get_settings()
@@ -974,6 +1007,16 @@ async def _repair_background_tasks_once() -> int:
         )
         restarted += 1
 
+    if settings.lalafo_hourly_reply_enabled and _task_stopped(_lalafo_hourly_task):
+        logger.error(
+            "Restarting hourly Lalafo inbox after %s",
+            _task_error_name(_lalafo_hourly_task) or "stop",
+        )
+        _lalafo_hourly_task = asyncio.create_task(
+            _run_hourly_lalafo_reply(), name="lalafo-hourly-reply"
+        )
+        restarted += 1
+
     if (
         settings.run_bot
         and settings.service_keepalive_enabled
@@ -1023,7 +1066,7 @@ async def startup() -> None:
     global _bot_runtime, _lalafo_bot_runtime, _bot_setup_task, _lalafo_bot_setup_task
     global _legacy_featured_cleanup_task
     global _keyboard_sync_task, _lalafo_auto_responder
-    global _lalafo_watchdog_task, _apartment_scheduler_task
+    global _lalafo_watchdog_task, _lalafo_hourly_task, _apartment_scheduler_task
     global _service_keepalive_task, _background_watchdog_task, _matching_worker_task, _payment_review_worker_task
     global _shutting_down
     global _lalafo_mcp_context
@@ -1099,6 +1142,12 @@ async def startup() -> None:
             _watch_lalafo_auto_responder(), name="lalafo-auto-reply-watchdog"
         )
         logger.info("Lalafo cloud auto-reply supervisor enabled")
+    if settings.lalafo_hourly_reply_enabled:
+        _lalafo_hourly_state.update(state="starting", last_error=None)
+        _lalafo_hourly_task = asyncio.create_task(
+            _run_hourly_lalafo_reply(), name="lalafo-hourly-reply"
+        )
+        logger.info("Hourly sealed-session Lalafo reply enabled")
     # One harmless cleanup call disconnects the old advertising bot.  No
     # advertising runtime, route, scheduler, or publisher is started anymore.
     _legacy_featured_cleanup_task = asyncio.create_task(
@@ -1115,7 +1164,7 @@ async def shutdown() -> None:
     global _bot_runtime, _lalafo_bot_runtime, _bot_setup_task, _lalafo_bot_setup_task
     global _legacy_featured_cleanup_task
     global _keyboard_sync_task, _lalafo_auto_responder
-    global _lalafo_watchdog_task, _apartment_scheduler_task
+    global _lalafo_watchdog_task, _lalafo_hourly_task, _apartment_scheduler_task
     global _service_keepalive_task, _background_watchdog_task, _matching_worker_task, _payment_review_worker_task
     global _shutting_down
     global _lalafo_mcp_context
@@ -1128,6 +1177,11 @@ async def shutdown() -> None:
         with suppress(asyncio.CancelledError):
             await _background_watchdog_task
     _background_watchdog_task = None
+    if _lalafo_hourly_task is not None and not _lalafo_hourly_task.done():
+        _lalafo_hourly_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await _lalafo_hourly_task
+    _lalafo_hourly_task = None
     if _payment_review_worker_task is not None and not _payment_review_worker_task.done():
         _payment_review_worker_task.cancel()
         with suppress(asyncio.CancelledError):
@@ -1315,6 +1369,8 @@ async def health() -> JSONResponse:
         and not _apartment_scheduler_task.done()
     )
     auto_reply: dict[str, Any] | str = "disabled"
+    if settings.lalafo_hourly_reply_enabled:
+        auto_reply = dict(_lalafo_hourly_state)
     if settings.lalafo_auto_reply_enabled and settings.lalafo_auto_reply_web_enabled:
         responder = _lalafo_auto_responder
         auto_reply = (

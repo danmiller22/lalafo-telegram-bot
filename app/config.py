@@ -211,6 +211,9 @@ class Settings(BaseSettings):
     lalafo_auto_reply_poll_seconds: float = 10.0
     lalafo_auto_reply_watchdog_seconds: float = 30.0
     lalafo_auto_reply_stale_seconds: float = 180.0
+    # A stateless, sealed-session check for web hosts. It only greets unread
+    # conversations that have never received an owner response.
+    lalafo_hourly_reply_enabled: bool = False
     hosted_apartment_scheduler_enabled: bool = True
     # On the paid eSmall instance keep serialized collection running locally;
     # GitHub schedules are a fallback and can be delayed for hours.
