@@ -163,12 +163,6 @@ async def test_health_and_authentication() -> None:
             },
             "personal_matching": "disabled",
             "lalafo_auto_reply": "disabled",
-            "lalafo_auto_reply_preflight": {
-                "state": "not_requested",
-                "checked_at": None,
-                "result": None,
-                "error": None,
-            },
             "publication_policy": {"daily_target": 110, "start": "05:00", "end": "02:00", "timezone": "Asia/Bishkek", "spacing_minutes": 11.45, "watermark_check": False,
                                    "seller_mix": {"owner": 0.75, "realtor": 0.25},
                                    "single_photo_duplicate_guard": True,

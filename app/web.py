@@ -66,7 +66,6 @@ _keyboard_sync_task: asyncio.Task[None] | None = None
 _lalafo_auto_responder: LalafoAutoResponder | None = None
 _lalafo_watchdog_task: asyncio.Task[None] | None = None
 _lalafo_hourly_task: asyncio.Task[None] | None = None
-_lalafo_preflight_task: asyncio.Task[None] | None = None
 _lalafo_restart_lock = asyncio.Lock()
 _apartment_scheduler_task: asyncio.Task[None] | None = None
 _telegram_inventory_state: dict[str, Any] = {"state": "pending", "last_check_at": None, "last_exit_code": None, "last_error": None}
@@ -126,12 +125,6 @@ _lalafo_hourly_state: dict[str, Any] = {
     "last_check_at": None,
     "last_result": None,
     "last_error": None,
-}
-_lalafo_preflight_state: dict[str, Any] = {
-    "state": "not_requested",
-    "checked_at": None,
-    "result": None,
-    "error": None,
 }
 class MiniAppRequest(BaseModel):
     init_data: str
@@ -508,28 +501,6 @@ async def _run_hourly_lalafo_reply() -> None:
             )
             logger.exception("Hourly Lalafo reply pass failed")
         await asyncio.sleep(3600)
-
-
-async def _run_koyeb_lalafo_preflight_once() -> None:
-    """Record one read-only inbox/socket check for this Koyeb deployment."""
-    from scripts.lalafo_reply_unanswered_once import preflight_once
-
-    _lalafo_preflight_state.update(
-        state="checking", checked_at=None, result=None, error=None
-    )
-    try:
-        result = await preflight_once()
-        _lalafo_preflight_state.update(
-            state="ready", checked_at=_now(), result=result, error=None
-        )
-    except Exception as exc:
-        _lalafo_preflight_state.update(
-            state="blocked",
-            checked_at=_now(),
-            result=None,
-            error=getattr(exc, "kind", type(exc).__name__),
-        )
-        logger.warning("Koyeb Lalafo preflight failed: %s", type(exc).__name__)
 
 
 async def _select_hosted_lalafo_proxies() -> None:
@@ -1112,7 +1083,7 @@ async def startup() -> None:
     global _bot_runtime, _lalafo_bot_runtime, _bot_setup_task, _lalafo_bot_setup_task
     global _legacy_featured_cleanup_task
     global _keyboard_sync_task, _lalafo_auto_responder
-    global _lalafo_watchdog_task, _lalafo_hourly_task, _lalafo_preflight_task, _apartment_scheduler_task
+    global _lalafo_watchdog_task, _lalafo_hourly_task, _apartment_scheduler_task
     global _service_keepalive_task, _background_watchdog_task, _matching_worker_task, _payment_review_worker_task
     global _shutting_down
     global _lalafo_mcp_context
@@ -1194,11 +1165,6 @@ async def startup() -> None:
             _run_hourly_lalafo_reply(), name="lalafo-hourly-reply"
         )
         logger.info("Hourly sealed-session Lalafo reply enabled")
-    if os.getenv("KOYEB_GIT_SHA"):
-        _lalafo_preflight_task = asyncio.create_task(
-            _run_koyeb_lalafo_preflight_once(), name="koyeb-lalafo-preflight"
-        )
-        logger.info("Koyeb read-only Lalafo preflight scheduled")
     # One harmless cleanup call disconnects the old advertising bot.  No
     # advertising runtime, route, scheduler, or publisher is started anymore.
     _legacy_featured_cleanup_task = asyncio.create_task(
@@ -1481,7 +1447,6 @@ async def health() -> JSONResponse:
                 else "recovering" if settings.run_bot else "disabled"
             ),
             "lalafo_auto_reply": auto_reply,
-            "lalafo_auto_reply_preflight": dict(_lalafo_preflight_state),
             "publication_policy": {
                 "daily_target": MAX_PUBLICATIONS_PER_DAY, "start": "05:00", "end": "02:00",
                 "timezone": "Asia/Bishkek", "spacing_minutes": PUBLICATION_SPACING_MINUTES, "watermark_check": False,
