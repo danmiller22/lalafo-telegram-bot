@@ -202,6 +202,9 @@ class Settings(BaseSettings):
     callback_secret: str = "change-me-in-production"
 
     lalafo_proxy_url: str = ""
+    # A single sticky residential route for authenticated Lalafo chat traffic.
+    # Keep this separate from the rotating public inventory proxy pool.
+    lalafo_chat_proxy_url: str = ""
     lalafo_auto_reply_enabled: bool = False
     # Koyeb's shared egress is rejected by Lalafo. The realtime responder runs
     # in its dedicated cloud workflow unless a web host explicitly opts in.

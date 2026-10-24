@@ -16,6 +16,7 @@ from urllib.parse import urlencode
 
 import aiohttp
 import socketio
+from aiohttp_socks import ProxyConnector
 
 from app.lalafo.chat_protocol import (
     AUTO_REPLY_TEXT,
@@ -28,7 +29,17 @@ from app.lalafo.chat_protocol import (
     is_eligible_incoming,
     socket_connection_id,
 )
-from tools.lalafo_campaign_session import load_session
+from tools.lalafo_campaign_session import load_runtime_session, save_runtime_session
+
+
+def chat_proxy_url() -> str:
+    return os.environ.get("LALAFO_CHAT_PROXY_URL", "").strip()
+
+
+def socket_http_session(proxy_url: str) -> aiohttp.ClientSession:
+    if proxy_url:
+        return aiohttp.ClientSession(connector=ProxyConnector.from_url(proxy_url))
+    return aiohttp.ClientSession(trust_env=True)
 
 
 def required(name: str) -> str:
@@ -60,10 +71,11 @@ async def preflight_once(
     *,
     envelope_path: str = "tools/lalafo_hourly_session_20261024.json",
     expected_owner: str = "18209276",
+    proxy_url: str | None = None,
 ) -> dict[str, int | bool]:
     """Verify Koyeb's read and socket routes without sending a message."""
     envelope = json.loads(Path(envelope_path).read_text())
-    session = await load_session(
+    session = await load_runtime_session(
         envelope["sealed_session"], key_name=envelope["key_name"]
     )
     if str(session.get("owner_id")) != expected_owner:
@@ -74,6 +86,7 @@ async def preflight_once(
         password="sealed-session",
         fingerprint=f"preflight-{expected_owner}",
         timeout=25,
+        proxy_url=proxy_url if proxy_url is not None else chat_proxy_url(),
     )
     client._session = LalafoSession(
         owner_id=expected_owner,
@@ -81,7 +94,8 @@ async def preflight_once(
         access_token=str(session["access_token"]),
         user_hash=str(session["user_hash"]),
     )
-    socket_http = aiohttp.ClientSession(trust_env=True)
+    selected_proxy = proxy_url if proxy_url is not None else chat_proxy_url()
+    socket_http = socket_http_session(selected_proxy)
     socket = socketio.AsyncClient(
         http_session=socket_http,
         reconnection=False,
@@ -132,7 +146,7 @@ async def preflight_once(
 
 async def run_once() -> dict[str, int | bool]:
     envelope = json.loads(Path(required("LALAFO_SESSION_ENVELOPE")).read_text())
-    session = await load_session(
+    session = await load_runtime_session(
         envelope["sealed_session"], key_name=envelope["key_name"]
     )
     expected_owner = required("LALAFO_EXPECTED_OWNER_ID")
@@ -144,6 +158,7 @@ async def run_once() -> dict[str, int | bool]:
         password="sealed-session",
         fingerprint=f"hourly-{expected_owner}",
         timeout=25,
+        proxy_url=chat_proxy_url(),
     )
     client._session = LalafoSession(
         owner_id=expected_owner,
@@ -151,7 +166,18 @@ async def run_once() -> dict[str, int | bool]:
         access_token=str(session["access_token"]),
         user_hash=str(session["user_hash"]),
     )
-    socket_http = aiohttp.ClientSession(trust_env=True)
+    if session.get("refresh_token"):
+        renewed, rotated_refresh = await client.renew_session(
+            str(session["refresh_token"])
+        )
+        session.update(
+            rest_token=renewed.rest_token,
+            access_token=renewed.access_token,
+            user_hash=renewed.user_hash,
+            refresh_token=rotated_refresh,
+        )
+        await save_runtime_session(session, key_name=envelope["key_name"])
+    socket_http = socket_http_session(chat_proxy_url())
     socket = socketio.AsyncClient(
         http_session=socket_http,
         reconnection=False,

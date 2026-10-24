@@ -80,6 +80,42 @@ async def load_session(envelope, *, key_name=None):
     return open_session(await private_key(key_name=key_name), envelope)
 
 
+async def load_runtime_session(envelope, *, key_name):
+    """Load the latest rotating session, falling back to the sealed seed."""
+    settings = get_settings()
+    engine, sessions = create_engine_and_session(settings.database_url)
+    try:
+        async with sessions() as session:
+            row = await session.get(LalafoAutoReplyMeta, key_name + "_runtime")
+            if row is not None and row.value.startswith("db-v1:"):
+                payload = hosted_storage_cipher(settings).decrypt(row.value[6:].encode())
+                return json.loads(payload)
+    finally:
+        await engine.dispose()
+    return await load_session(envelope, key_name=key_name)
+
+
+async def save_runtime_session(value, *, key_name):
+    """Persist rotated tokens encrypted with the private database credential."""
+    settings = get_settings()
+    payload = json.dumps(value, separators=(",", ":")).encode()
+    encrypted = "db-v1:" + hosted_storage_cipher(settings).encrypt(payload).decode()
+    engine, sessions = create_engine_and_session(settings.database_url)
+    try:
+        async with sessions.begin() as session:
+            row = await session.get(
+                LalafoAutoReplyMeta, key_name + "_runtime", with_for_update=True
+            )
+            if row is None:
+                session.add(
+                    LalafoAutoReplyMeta(key=key_name + "_runtime", value=encrypted)
+                )
+            else:
+                row.value = encrypted
+    finally:
+        await engine.dispose()
+
+
 async def cutoff_completed(*, key_name=None):
     chosen_key = key_name or KEY_NAME
     engine, sessions = create_engine_and_session(get_settings().database_url)
