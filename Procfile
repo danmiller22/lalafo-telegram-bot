@@ -1,2 +1,2 @@
-web: alembic upgrade head && uvicorn app.web:app --host 0.0.0.0 --port ${PORT:-8000}
+web: bash scripts/start_koyeb.sh
 lalafo_bot: python -m app.bot.lalafo_only
