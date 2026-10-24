@@ -2,6 +2,15 @@ name: Prepare hourly auto-reply key
 
 on:
   workflow_dispatch:
+    inputs:
+      action:
+        description: Key operation
+        required: true
+        default: prepare
+        type: choice
+        options:
+          - prepare
+          - rewrap-for-hosted
 
 permissions:
   contents: read
@@ -22,4 +31,9 @@ jobs:
           cache: pip
       - run: python -m pip install --disable-pip-version-check --quiet -r requirements.txt
       - name: Prepare scoped key
-        run: python -m tools.lalafo_campaign_session --prepare-key
+        run: |
+          if [ "${{ inputs.action }}" = "rewrap-for-hosted" ]; then
+            python -m tools.lalafo_campaign_session --rewrap-for-hosted
+          else
+            python -m tools.lalafo_campaign_session --prepare-key
+          fi
