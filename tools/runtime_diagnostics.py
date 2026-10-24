@@ -90,10 +90,9 @@ async def main():
        Apartment.active.is_(True),
        Apartment.availability_status!="unavailable",
        Apartment.rooms=="1",
-       Apartment.price.between(25_000,45_000),
+       Apartment.price.between(25_000,35_000),
        Apartment.phone!="",
        Apartment.last_seen_at>=now-timedelta(hours=48),
-       Apartment.source_url.like("https://%lalafo.kg/%"),
    ))).all())
    def target_group(item):
     text=f"{item.district or ''} {item.source_description or ''}".casefold().replace("ё","е")
@@ -118,7 +117,7 @@ async def main():
        -as_utc(item.last_seen_at or item.updated_at).timestamp(),
    ))
    selected=[];selected_ids=set()
-   for group,limit in (("east5",3),("central",2)):
+   for group,limit in (("east5",3),("central",4)):
     for item in tomorrow_stock:
      if len([chosen for chosen in selected if target_group(chosen)==group])>=limit:break
      if item.id in selected_ids or target_group(item)!=group:continue
