@@ -39,6 +39,7 @@ jobs:
             {key: "LALAFO_SESSION_ENVELOPE", value: "tools/lalafo_hourly_session_20261024.json"},
             {key: "LALAFO_EXPECTED_OWNER_ID", value: "18209276"},
             {key: "DATABASE_URL", value: env.DATABASE_URL},
+            {key: "CALLBACK_SECRET", value: env.RUN_TRIGGER_SECRET},
             {key: "RUN_TRIGGER_SECRET", value: env.RUN_TRIGGER_SECRET},
             {key: "RUN_BOT", value: "false"},
             {key: "HOSTED_APARTMENT_SCHEDULER_ENABLED", value: "false"},
