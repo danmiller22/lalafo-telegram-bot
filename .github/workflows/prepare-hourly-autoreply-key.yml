@@ -1,0 +1,25 @@
+name: Prepare hourly auto-reply key
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
+      CAMPAIGN_SESSION_KEY_NAME: hourly_autoreply_18209276_20261024
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --disable-pip-version-check --quiet -r requirements.txt
+      - name: Prepare scoped key
+        run: python -m tools.lalafo_campaign_session --prepare-key

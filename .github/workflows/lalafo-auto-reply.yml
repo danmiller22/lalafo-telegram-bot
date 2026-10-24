@@ -1,12 +1,6 @@
 name: Hourly Lalafo greeting
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/lalafo-auto-reply.yml"
-      - "app/lalafo/**"
-      - "scripts/lalafo_auto_reply_worker.py"
   workflow_dispatch:
   schedule:
     - cron: "7 * * * *"
@@ -23,14 +17,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     env:
-      LALAFO_LOGIN: ${{ secrets.LALAFO_LOGIN }}
-      LALAFO_PASSWORD: ${{ secrets.LALAFO_PASSWORD }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
-      # Connect briefly once per hour, sync every new message, greet only chats
-      # without a previous greeting, then leave the durable cursors in Postgres.
-      LALAFO_WORKER_SECONDS: "420"
-      LALAFO_SESSION_ENVELOPE: "tools/lalafo_hourly_session_20261021.json"
+      LALAFO_EXPECTED_OWNER_ID: "18209276"
+      LALAFO_SESSION_ENVELOPE: "tools/lalafo_hourly_session_20261024.json"
       LOG_LEVEL: INFO
     steps:
       - uses: actions/checkout@v7
@@ -39,6 +29,5 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: python -m pip install --disable-pip-version-check --quiet -r requirements.txt
-      - run: alembic upgrade head
-      - name: Read chats and greet new conversations
-        run: python -m scripts.lalafo_auto_reply_worker
+      - name: Reply once to new conversations
+        run: python -m scripts.lalafo_reply_unanswered_once
