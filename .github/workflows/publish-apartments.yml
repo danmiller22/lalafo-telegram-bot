@@ -42,6 +42,7 @@ jobs:
       MAX_NEW_POSTS_PER_RUN: "50"
       ALLOW_NO_DISTRICT: "false"
       FORCE_PUBLISH: ${{ github.event_name == 'workflow_dispatch' && inputs.force_publish }}
+      FORCE_DISCOVERY: ${{ github.event_name == 'workflow_dispatch' && inputs.force_publish }}
       PUBLISH_RECENT_WINDOW_MINUTES: "180"
       PUBLISH_MAX_ATTEMPTS: "3"
       LOG_LEVEL: INFO
