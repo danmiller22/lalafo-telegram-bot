@@ -1,0 +1,34 @@
+name: Check Koyeb Lalafo auto-reply route
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      RUN_TRIGGER_SECRET: ${{ secrets.CALLBACK_SECRET }}
+      PREFLIGHT_URL: https://statutory-mallissa-2danmiller-f1c1b08d.koyeb.app/internal/lalafo/auto-reply-preflight
+    steps:
+      - name: Wait for the Koyeb deployment and run a read-only preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 24); do
+            code=$(curl --silent --show-error --output /tmp/preflight.json \
+              --write-out '%{http_code}' --request POST \
+              --header "Authorization: Bearer ${RUN_TRIGGER_SECRET}" \
+              --max-time 55 "$PREFLIGHT_URL" || true)
+            if [ "$code" = 200 ]; then
+              jq '{status,error,owner_verified,chats_readable,unread_chats,socket_ready}' /tmp/preflight.json
+              test "$(jq -r '.status' /tmp/preflight.json)" = ready
+              exit 0
+            fi
+            sleep 15
+          done
+          echo 'Koyeb preflight endpoint did not become available in time' >&2
+          exit 1

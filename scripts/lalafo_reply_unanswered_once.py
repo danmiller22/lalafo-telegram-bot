@@ -56,6 +56,80 @@ async def all_messages(client: LalafoChatClient, chat) -> list:
     return sorted(collected.values(), key=lambda item: (item.created_at, item.id))
 
 
+async def preflight_once(
+    *,
+    envelope_path: str = "tools/lalafo_hourly_session_20261024.json",
+    expected_owner: str = "18209276",
+) -> dict[str, int | bool]:
+    """Verify Koyeb's read and socket routes without sending a message."""
+    envelope = json.loads(Path(envelope_path).read_text())
+    session = await load_session(
+        envelope["sealed_session"], key_name=envelope["key_name"]
+    )
+    if str(session.get("owner_id")) != expected_owner:
+        raise RuntimeError("Encrypted Lalafo session belongs to an unexpected profile")
+
+    client = LalafoChatClient(
+        login="sealed-session",
+        password="sealed-session",
+        fingerprint=f"preflight-{expected_owner}",
+        timeout=25,
+    )
+    client._session = LalafoSession(
+        owner_id=expected_owner,
+        rest_token=str(session["rest_token"]),
+        access_token=str(session["access_token"]),
+        user_hash=str(session["user_hash"]),
+    )
+    socket_http = aiohttp.ClientSession(trust_env=True)
+    socket = socketio.AsyncClient(
+        http_session=socket_http,
+        reconnection=False,
+        logger=False,
+        engineio_logger=False,
+    )
+    socket_ready = asyncio.Event()
+
+    async def accept_socket(payload: object) -> None:
+        socket_id = socket_connection_id(payload)
+        if socket_id:
+            client.set_socket_id(socket_id)
+            socket_ready.set()
+
+    @socket.on("message")
+    async def on_message(payload: object, *_: object) -> None:
+        await accept_socket(payload)
+
+    @socket.on("SocketConnection")
+    async def on_connection(data: object, *_: object) -> None:
+        payload = {**(data if isinstance(data, dict) else {}), "ref": "SocketConnection"}
+        await accept_socket(payload)
+
+    try:
+        chats = await client.list_chats()
+        unread = sum(chat.unread_count > 0 for chat in chats)
+        current = await client.get_session()
+        query = urlencode({"token": current.access_token})
+        await socket.connect(
+            f"{LALAFO_SOCKET_ORIGIN}?{query}",
+            socketio_path=LALAFO_SOCKET_PATH,
+            transports=["polling"],
+            wait_timeout=20,
+        )
+        await asyncio.wait_for(socket_ready.wait(), timeout=20)
+        return {
+            "owner_verified": True,
+            "chats_readable": len(chats),
+            "unread_chats": unread,
+            "socket_ready": True,
+        }
+    finally:
+        if socket.connected:
+            await socket.disconnect()
+        await socket_http.close()
+        await client.close()
+
+
 async def run_once() -> dict[str, int | bool]:
     envelope = json.loads(Path(required("LALAFO_SESSION_ENVELOPE")).read_text())
     session = await load_session(

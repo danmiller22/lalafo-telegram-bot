@@ -1847,5 +1847,23 @@ async def trigger_scraper(authorization: str | None = Header(default=None)) -> d
     return {"status": "completed", "exit_code": exit_code}
 
 
+@app.post("/internal/lalafo/auto-reply-preflight")
+async def lalafo_auto_reply_preflight(
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    """Test the hosted Lalafo inbox route without sending any messages."""
+    _authorize(authorization)
+    from scripts.lalafo_reply_unanswered_once import preflight_once
+
+    try:
+        return {"status": "ready", **await preflight_once()}
+    except Exception as exc:
+        logger.warning("Koyeb Lalafo preflight failed: %s", type(exc).__name__)
+        return {
+            "status": "blocked",
+            "error": getattr(exc, "kind", type(exc).__name__),
+        }
+
+
 # Keep this catch-all mount last so the existing Telegram and service routes win.
 app.mount("/", lalafo_mcp_app)
