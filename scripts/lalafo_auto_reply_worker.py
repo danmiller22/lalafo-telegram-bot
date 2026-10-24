@@ -34,10 +34,7 @@ async def main() -> None:
         store = AutoReplyStore(sessions)
         fingerprint = await store.initialize(int(time.time() * 1000))
         client = LalafoChatClient(
-            login="session",
-            password="session",
-            fingerprint=fingerprint,
-            proxy_url=os.environ.get("LALAFO_CHAT_PROXY_URL", "").strip(),
+            login="session", password="session", fingerprint=fingerprint
         )
         client._session = LalafoSession(
             owner_id=str(session["owner_id"]),

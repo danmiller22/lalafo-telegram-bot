@@ -1,7 +1,6 @@
 aiogram>=3.22,<4
 alembic>=1.16,<2
 aiosqlite>=0.21,<1
-aiohttp-socks>=0.10,<1
 asyncpg>=0.30,<1
 beautifulsoup4>=4.13,<5
 cryptography>=45,<47

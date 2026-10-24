@@ -501,7 +501,6 @@ class LalafoChatClient:
         password: str,
         fingerprint: str,
         timeout: float = 15.0,
-        proxy_url: str = "",
         http: httpx.AsyncClient | None = None,
     ) -> None:
         self._login = login
@@ -512,7 +511,6 @@ class LalafoChatClient:
             base_url=LALAFO_HTTP_ORIGIN,
             follow_redirects=True,
             timeout=httpx.Timeout(timeout),
-            proxy=proxy_url or None,
         )
         self._owns_http = http is None
         self._session: LalafoSession | None = None
@@ -581,28 +579,6 @@ class LalafoChatClient:
 
     async def get_owner_id(self) -> str:
         return (await self.get_session()).owner_id
-
-    async def renew_session(self, refresh_token: str) -> tuple[LalafoSession, str]:
-        current = await self.get_session()
-        payload = await self._raw_request(
-            "/api/auth/renew-session",
-            body={"refresh_token": refresh_token},
-            authenticated=True,
-            session=current,
-            mutation=True,
-        )
-        rest_token = _find_string(payload, ("token", "auth_token"))
-        access_token = _find_string(payload, ("access_token", "accessToken"))
-        rotated_refresh = _find_string(payload, ("refresh_token", "refreshToken"))
-        owner_id = _owner_id(payload) or current.owner_id
-        user_hash = _find_string(payload, ("user_hash", "userHash", "hash")) or current.user_hash
-        if not rest_token or not access_token or not rotated_refresh:
-            raise LalafoGatewayError("protocol")
-        if owner_id != current.owner_id:
-            raise LalafoGatewayError("auth")
-        renewed = LalafoSession(owner_id, rest_token, access_token, user_hash)
-        self._session = renewed
-        return renewed, rotated_refresh
 
     async def list_chats(self) -> list[ChatSnapshot]:
         owner_id = await self.get_owner_id()

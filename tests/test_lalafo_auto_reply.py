@@ -29,7 +29,6 @@ from app.lalafo.chat_protocol import (
     FeedId,
     LalafoChatClient,
     LalafoGatewayError,
-    LalafoSession,
     MessageMeta,
     is_eligible_incoming,
     make_chat_key,
@@ -623,41 +622,3 @@ async def test_client_reauthenticates_once_after_401() -> None:
     await http.aclose()
     assert calls["/api/auth/login"] == 2
     assert calls["/api/chat/v4/chat-update/get-paginated"] == 2
-
-
-@pytest.mark.asyncio
-async def test_client_renews_rotating_session_without_exposing_credentials() -> None:
-    requests: list[httpx.Request] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        requests.append(request)
-        return httpx.Response(
-            200,
-            json={
-                "id": 1000,
-                "token": "new-rest",
-                "access_token": "new-socket",
-                "refresh_token": "new-refresh",
-                "user_hash": "new-hash",
-            },
-        )
-
-    http = httpx.AsyncClient(
-        base_url="https://lalafo.kg", transport=httpx.MockTransport(handler)
-    )
-    client = LalafoChatClient(
-        login="session", password="session", fingerprint="f" * 32, http=http
-    )
-    client._session = LalafoSession(  # noqa: SLF001 - sealed-session fixture
-        owner_id="1000",
-        rest_token="old-rest",
-        access_token="old-socket",
-        user_hash="old-hash",
-    )
-    renewed, refresh = await client.renew_session("old-refresh")
-    await http.aclose()
-
-    assert renewed == LalafoSession("1000", "new-rest", "new-socket", "new-hash")
-    assert refresh == "new-refresh"
-    assert requests[0].url.path == "/api/auth/renew-session"
-    assert requests[0].headers["authorization"] == "Bearer old-rest"

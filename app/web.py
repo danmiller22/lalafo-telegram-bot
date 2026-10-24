@@ -494,19 +494,12 @@ async def _run_hourly_lalafo_reply() -> None:
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            error_kind = getattr(exc, "kind", type(exc).__name__)
             _lalafo_hourly_state.update(
-                state=(
-                    "halted"
-                    if error_kind in {"auth", "blocked", "security_challenge"}
-                    else "waiting"
-                ),
+                state="waiting",
                 last_check_at=_now(),
-                last_error=error_kind,
+                last_error=getattr(exc, "kind", type(exc).__name__),
             )
             logger.exception("Hourly Lalafo reply pass failed")
-            if error_kind in {"auth", "blocked", "security_challenge"}:
-                return
         await asyncio.sleep(3600)
 
 
@@ -1166,10 +1159,7 @@ async def startup() -> None:
             _watch_lalafo_auto_responder(), name="lalafo-auto-reply-watchdog"
         )
         logger.info("Lalafo cloud auto-reply supervisor enabled")
-    koyeb_residential_reply = bool(
-        os.getenv("KOYEB_GIT_SHA") and settings.lalafo_chat_proxy_url.strip()
-    )
-    if settings.lalafo_hourly_reply_enabled or koyeb_residential_reply:
+    if settings.lalafo_hourly_reply_enabled:
         _lalafo_hourly_state.update(state="starting", last_error=None)
         _lalafo_hourly_task = asyncio.create_task(
             _run_hourly_lalafo_reply(), name="lalafo-hourly-reply"
@@ -1396,7 +1386,7 @@ async def health() -> JSONResponse:
         and not _apartment_scheduler_task.done()
     )
     auto_reply: dict[str, Any] | str = "disabled"
-    if _lalafo_hourly_task is not None:
+    if settings.lalafo_hourly_reply_enabled:
         auto_reply = dict(_lalafo_hourly_state)
     if settings.lalafo_auto_reply_enabled and settings.lalafo_auto_reply_web_enabled:
         responder = _lalafo_auto_responder
