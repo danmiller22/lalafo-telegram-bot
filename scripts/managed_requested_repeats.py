@@ -24,6 +24,7 @@ from scripts.publish_inventory import _publish_item, run as publish_next_due
 from scripts.scrape_publish import apartment_to_ad
 
 LOOKAHEAD = timedelta(minutes=15)
+SUPPORTED_MANAGED_PROFILE_IDS = {18194628, 18209276}
 
 
 async def latest_delivery_time(session, events):
@@ -70,7 +71,7 @@ async def enroll(sessions, manifest, *, now):
     # Resolve actual existing contact cards; never synthesize a telephone.
     for row in manifest['cards']:
         validate_binding(row)
-        if row['profile_id'] != 18194628:
+        if row['profile_id'] not in SUPPORTED_MANAGED_PROFILE_IDS:
             raise ValueError('Unexpected managed account')
         if row.get('source_id'):
             apartment = await repo.get_by_lalafo(row['source_id'])

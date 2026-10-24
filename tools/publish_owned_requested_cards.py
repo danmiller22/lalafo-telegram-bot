@@ -19,6 +19,8 @@ from app.telegram.publisher import TelegramPublisher
 from scripts.managed_requested_repeats import enroll
 from scripts.scrape_publish import apartment_to_ad
 
+SUPPORTED_MANAGED_PROFILE_IDS = {18194628, 18209276}
+
 
 async def run(manifest_path):
     if os.environ.get('CONFIRM_OWNED_PUBLIC_SEND') != 'true':
@@ -58,7 +60,8 @@ async def run(manifest_path):
             # in Telegram while deciding which Lalafo promotion to fund.  They
             # are safe here because the snapshot comes from the authenticated
             # owner account and the verified original supplies the contact.
-            if (row['profile_id'] != 18194628 or snapshot['user_id'] != 18194628
+            if (row['profile_id'] not in SUPPORTED_MANAGED_PROFILE_IDS
+                    or snapshot['user_id'] != row['profile_id']
                     or snapshot['id'] != row['ad_id']
                     or snapshot['status_id'] not in (2, 11)
                     or snapshot['rooms'] not in ('1', 'studio')

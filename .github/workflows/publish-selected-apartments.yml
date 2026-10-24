@@ -12,6 +12,11 @@ on:
         required: true
         type: boolean
         default: false
+      managed_ids:
+        description: Optional managed Lalafo ad IDs separated by whitespace
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -31,6 +36,7 @@ jobs:
       CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SELECTED_LALAFO_URLS: ${{ inputs.urls }}
+      SELECTED_MANAGED_LALAFO_AD_IDS: ${{ inputs.managed_ids }}
       CONFIRM_SELECTED_PUBLIC_SEND: "true"
       DRY_RUN: "false"
       MAX_PHOTOS_PER_APARTMENT: "5"

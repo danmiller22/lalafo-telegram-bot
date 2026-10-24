@@ -15,6 +15,8 @@ from app.lalafo.models import PHONE_SOURCE_VERSION
 from app.payments.repository import ApartmentRepository
 from app.telegram.source_filter import is_lodging_offer
 
+SUPPORTED_MANAGED_PROFILE_IDS = {18194628, 18209276}
+
 
 async def run(manifest_path: str) -> None:
     if os.environ.get("CONFIRM_OWNED_SOURCE_SEED") != "true":
@@ -28,7 +30,10 @@ async def run(manifest_path: str) -> None:
         raise ValueError("Expected one to ten explicitly requested cards")
     if len({int(row["source_id"]) for row in cards}) != len(cards):
         raise ValueError("Owned batch contains duplicate source ids")
-    if any(int(row.get("profile_id") or 0) != 18194628 for row in cards):
+    if any(
+        int(row.get("profile_id") or 0) not in SUPPORTED_MANAGED_PROFILE_IDS
+        for row in cards
+    ):
         raise ValueError("Unexpected managed account")
 
     settings = get_settings()
