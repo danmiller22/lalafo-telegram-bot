@@ -124,7 +124,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     <div id="payment-step" class="step"><span>1</span>Оплата</div>
     <button id="reopen-payment" class="secondary hidden">Открыть Finik</button>
     <div class="step receipt-step"><span>2</span>Получение номера</div>
-    <p id="checkout-caption" class="caption">После оплаты вернитесь сюда. Мы проверим её автоматически и откроем доступ после подтверждения.</p>
+    <p class="caption">После оплаты вернитесь сюда и нажмите «Проверить оплату». Ничего писать в чат не нужно.</p>
     <button id="access" class="primary hidden">Проверить оплату</button>
   </section>
   <div id="apartment" class="hidden">
@@ -152,7 +152,6 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
   let sessionReady = false;
   let sessionLoading = false;
   let selectedPlan = "week";
-  let automaticPayment = false;
   const paymentUrls = {checkout_json};
   let preparedUntil = Infinity;
   let checkoutPreparation = null;
@@ -166,7 +165,6 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     checkoutPreparation = api("/miniapp/api/prepare", {{}}).then(data => {{
       if (data.status === "approved" || data.status === "unavailable") {{ render(data); return; }}
       paymentUrls.week = data.payment_url;
-      automaticPayment = Boolean(data.automatic_payment);
       preparedUntil = data.expires_at_ms;
       el("pay-lifetime").disabled = !paymentUrls.week;
       el("reopen-payment").disabled = false;
@@ -228,7 +226,6 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     // A response sent before access was granted must not undo the success screen.
     if (accessApproved && data.status !== "approved") return;
     const approved = data.status === "approved";
-    if (typeof data.automatic_payment === "boolean") automaticPayment = data.automatic_payment;
     apartmentUnavailable = data.status === "unavailable";
     show("other-apartments", apartmentUnavailable);
     const waiting = data.plan === "week" && (data.status === "awaiting_receipt" || data.status === "pending");
@@ -279,13 +276,10 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     }} else if (apartmentUnavailable) {{
       message("Контакт этой квартиры сейчас недоступен. Выберите другой актуальный вариант.");
     }} else if (waiting && data.status === "pending") {{
-      message("Оплата получена и отправлена на проверку. Ничего отправлять не нужно.");
+      message("Заявка отправлена на проверку. Ожидайте подтверждения.");
       startPaymentPolling();
     }} else if (waiting) {{
-      message(automaticPayment
-        ? "После оплаты вернитесь сюда — проверка начнётся автоматически."
-        : "После оплаты нажмите «Проверить оплату»."
-      );
+      message("После оплаты нажмите «Проверить оплату». Ничего писать не нужно.");
     }} else {{
       message("");
       show("status", false);

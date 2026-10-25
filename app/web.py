@@ -152,15 +152,11 @@ def _finik_payment_url(settings: Any, plan: str) -> str:
 
 
 def _uses_dynamic_finik(settings: Any, plan: str) -> bool:
-    # Prefer an individual checkout whenever the acquiring API is available.
-    # A shared QR cannot identify the customer, so it forces an extra manual
-    # "I paid" step and loses customers who close Finik after paying.  Static
-    # links remain a fallback for deployments without API credentials.
-    if plan == LIFETIME_PLAN and getattr(settings, "lifetime_finik_payment_url", ""):
+    if plan == WEEK_PLAN and settings.weekly_finik_payment_url:
         return False
-    return plan in {LIFETIME_PLAN, WEEK_PLAN, MONTH_PLAN} and bool(
-        getattr(settings, "finik_auto_enabled", False)
-    )
+    if plan == LIFETIME_PLAN and settings.lifetime_finik_payment_url:
+        return False
+    return plan in {LIFETIME_PLAN, WEEK_PLAN, MONTH_PLAN} and settings.finik_auto_enabled
 
 
 async def _finik_checkout_url(
@@ -1408,11 +1404,7 @@ async def health() -> JSONResponse:
             "status": "ok",
             "bot": "running" if settings.run_bot else "disabled",
             "finik_auto_payment": "ready" if settings.finik_auto_enabled else "disabled",
-            "payment_access_mode": (
-                "automatic_claim_manual_approval"
-                if settings.finik_auto_enabled
-                else "manual"
-            ),
+            "payment_access_mode": "manual",
             "payment_review_worker": (
                 "running" if settings.run_bot and not _task_stopped(_payment_review_worker_task)
                 else "stopped" if settings.run_bot else "disabled"
@@ -1595,13 +1587,8 @@ async def _record_funnel(
 @app.get("/miniapp", response_class=HTMLResponse, include_in_schema=False)
 async def telegram_mini_app() -> HTMLResponse:
     settings = get_settings()
-    weekly_url = (
-        ""
-        if _uses_dynamic_finik(settings, WEEK_PLAN)
-        else _finik_payment_url(settings, WEEK_PLAN)
-    )
     return HTMLResponse(
-        mini_app_html(payment_urls={WEEK_PLAN: weekly_url} if weekly_url else None),
+        mini_app_html(payment_urls={WEEK_PLAN: _finik_payment_url(settings, WEEK_PLAN)}),
         headers={
             "Cache-Control": "no-store",
             "Content-Security-Policy": (
@@ -1626,7 +1613,6 @@ async def miniapp_session(payload: MiniAppRequest, background_tasks: BackgroundT
         )
     response = _miniapp_result_payload(result)
     response["monthly_available"] = False
-    response["automatic_payment"] = _uses_dynamic_finik(settings, WEEK_PLAN)
     bot_url = f"https://t.me/{settings.telegram_bot_username.lstrip('@')}"
     response["privacy_url"] = f"{bot_url}?start=privacy"
     background_tasks.add_task(_record_miniapp_open, runtime, user.id, apartment_id)
@@ -1687,11 +1673,7 @@ async def miniapp_prepare_payment(payload: MiniAppRequest) -> dict[str, Any]:
     created = prepared.created_at if _uses_dynamic_finik(settings, WEEK_PLAN) else datetime.now(UTC)
     if created.tzinfo is None:
         created = created.replace(tzinfo=UTC)
-    return {
-        "payment_url": url,
-        "expires_at_ms": int(created.timestamp() * 1000) + 300_000,
-        "automatic_payment": _uses_dynamic_finik(settings, WEEK_PLAN),
-    }
+    return {"payment_url": url, "expires_at_ms": int(created.timestamp() * 1000) + 300_000}
 
 
 @app.post("/miniapp/api/start", include_in_schema=False)
@@ -1703,9 +1685,7 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
     if result.status in {"approved", "unavailable"}:
         return _miniapp_result_payload(result)
     plan = WEEK_PLAN
-    payment_url = (
-        "" if _uses_dynamic_finik(settings, plan) else _finik_payment_url(settings, plan)
-    )
+    payment_url = _finik_payment_url(settings, plan)
     if not payment_url and not _uses_dynamic_finik(settings, plan):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -1837,29 +1817,6 @@ async def finik_webhook(request: Request) -> dict[str, str]:
     if outcome == "amount_mismatch":
         logger.error("Finik amount mismatch for payment request %s", payment_request.id)
         raise HTTPException(status_code=status.HTTP_409_CONFLICT)
-    if outcome == "pending" and payment_request is not None:
-        try:
-            await _record_funnel(
-                runtime,
-                payment_request.telegram_user_id,
-                "payment_claimed",
-                apartment_id=payment_request.apartment_id,
-            )
-        except Exception:
-            logger.exception("Could not record automatic Finik payment claim")
-        from app.payments.review import notify_payment_admin
-        try:
-            await notify_payment_admin(
-                runtime.bot,
-                runtime.workflow_data["payments"],
-                settings,
-                TokenSigner(settings.require_callback_secret()),
-                payment_request,
-            )
-        except Exception:
-            # The payment-review worker retries pending rows, so a temporary
-            # Telegram failure must not make Finik retry or lose the payment.
-            logger.exception("Could not notify administrator about automatic Finik payment")
     return {"status": outcome}
 
 

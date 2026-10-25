@@ -20,8 +20,9 @@ async def test_lifetime_grant_covers_other_and_future_apartments(repositories, s
         assert outcome == "amount_mismatch"
         assert (await service.contact_status(880, first.id)).status != "approved"
         outcome, _ = await payments.apply_provider_result("lifetime-test", succeeded=True, amount=LIFETIME_PRICE)
-        assert outcome == "pending"
-        assert (await service.contact_status(880, first.id)).status == "pending"
+        assert outcome == "awaiting_confirmation"
+        assert (await service.contact_status(880, first.id)).status == "awaiting_receipt"
+        await payments.mark_payment_claimed(user_id=880, apartment_id=first.id)
         outcome, _ = await payments.apply_provider_result("lifetime-test", succeeded=True, amount=LIFETIME_PRICE)
         assert outcome == "pending"
     else:

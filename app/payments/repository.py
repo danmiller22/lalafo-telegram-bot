@@ -1206,12 +1206,6 @@ class PaymentRepository:
                 current.provider_status = "failed"
                 return "failed", current
             current.provider_status = "succeeded"
-            # A signed Finik callback with the exact amount is stronger than
-            # the customer's manual claim. Queue it for the same administrator
-            # review without requiring the customer to return and click again.
-            if current.status in {"prepared", "awaiting_receipt"}:
-                current.status = "pending"
-                current.payment_claimed_at = datetime.now(timezone.utc)
             return ("pending" if current.status == "pending" else "awaiting_confirmation"), current
 
     async def pending(self, limit: int = 20) -> list[PaymentRequest]:
