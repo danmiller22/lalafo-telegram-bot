@@ -1023,7 +1023,7 @@ class PaymentRepository:
         self,
         *,
         now: datetime | None = None,
-        delay: timedelta = timedelta(minutes=12),
+        delay: timedelta = timedelta(minutes=6),
         limit: int = 25,
     ) -> list[PaymentRequest]:
         """Reserve one recovery message per customer with an abandoned checkout."""

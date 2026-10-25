@@ -1408,7 +1408,11 @@ async def health() -> JSONResponse:
             "status": "ok",
             "bot": "running" if settings.run_bot else "disabled",
             "finik_auto_payment": "ready" if settings.finik_auto_enabled else "disabled",
-            "payment_access_mode": "manual",
+            "payment_access_mode": (
+                "automatic_claim_manual_approval"
+                if settings.finik_auto_enabled
+                else "manual"
+            ),
             "payment_review_worker": (
                 "running" if settings.run_bot and not _task_stopped(_payment_review_worker_task)
                 else "stopped" if settings.run_bot else "disabled"
