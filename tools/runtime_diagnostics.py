@@ -90,7 +90,7 @@ async def main():
        Apartment.active.is_(True),
        Apartment.availability_status!="unavailable",
        Apartment.rooms=="1",
-       Apartment.price.between(25_000,35_000),
+       Apartment.price.between(30_000,35_000),
        Apartment.phone!="",
        Apartment.last_seen_at>=now-timedelta(hours=48),
    ))).all())
