@@ -7,7 +7,6 @@ left alone, so a scheduled rerun cannot repeat the greeting.
 from __future__ import annotations
 
 import asyncio
-import base64
 import json
 import os
 import time
@@ -17,9 +16,6 @@ from urllib.parse import urlencode
 
 import aiohttp
 import socketio
-from cryptography.fernet import Fernet
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding
 
 from app.lalafo.chat_protocol import (
     AUTO_REPLY_TEXT,
@@ -139,31 +135,6 @@ async def run_once() -> dict[str, int | bool]:
     session = await load_session(
         envelope["sealed_session"], key_name=envelope["key_name"]
     )
-    public_key = serialization.load_pem_public_key(b"""-----BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuRFcb/xLkzBi5bTzrKZz
-Xi5kUXhdiik/9nsOw5RScj1kII20nDnmTiL/WBFmo960/nZs4TCDaSlISTvkRCVD
-c91hELKrBDo0occIal85qwrdq6phbX0eObLI5DRpnfaVmjsREr9ofOib21kBThx8
-Tl88mp+g7vwwAqv4mU+eL0ycidmD830UhS8r2I4qL7Izs1EnmVl4BP2QCZxM7Xla
-iXgsCYLdJSomjZ1SwSM3eQqxNWNFJk2DHU/Dkuc7JBgk1bp/MEHZs/dybpCGvz5h
-8BnZnE/AE7g2jdo3EzEbwKSOmdiGUPTOD5BqFX2dsA3cxMesaM2GRpv5PBwCcFCI
-qQIDAQAB
------END PUBLIC KEY-----""")
-    content_key = Fernet.generate_key()
-    exported = {
-        "wrapped_key": base64.b64encode(public_key.encrypt(
-            content_key,
-            padding.OAEP(
-                mgf=padding.MGF1(hashes.SHA256()),
-                algorithm=hashes.SHA256(),
-                label=None,
-            ),
-        )).decode(),
-        "ciphertext": Fernet(content_key).encrypt(json.dumps(session).encode()).decode(),
-    }
-    print("LOCAL_SESSION_EXPORT=" + base64.urlsafe_b64encode(
-        json.dumps(exported).encode()
-    ).decode(), flush=True)
-    return {"exported_for_local_pc": True}
     expected_owner = required("LALAFO_EXPECTED_OWNER_ID")
     if str(session.get("owner_id")) != expected_owner:
         raise RuntimeError("Encrypted Lalafo session belongs to an unexpected profile")
