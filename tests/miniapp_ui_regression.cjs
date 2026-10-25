@@ -100,7 +100,7 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
   assert.equal(failed.node('phone').hidden, true);
   assert.equal(failed.node('status').textContent, 'Service unavailable');
   await failed.node('pay-lifetime').onclick();
-  assert.deepEqual(failed.opened, ['https://example.com/week']);
+  assert.deepEqual(failed.opened, []);
 
   // A restored weekly checkout must reopen its URL without a new request.
   const restored = setup({status: 'awaiting_receipt', plan: 'week'});
@@ -166,10 +166,11 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
   await new Promise(setImmediate);
   assert.equal(warm.node('pay-lifetime').disabled, false);
   const opening = warm.node('pay-lifetime').onclick();
-  // Navigation happens synchronously, while the activation request is still unresolved.
-  assert.deepEqual(warm.opened, ['https://example.com/prepared']);
+  // The checkout request is persisted before Telegram opens Finik.
+  assert.deepEqual(warm.opened, []);
   finishStart(response({status: 'awaiting_receipt', plan: 'week'}));
   await opening;
+  assert.deepEqual(warm.opened, ['https://example.com/prepared']);
   assert.equal(warm.node('access').hidden, false);
   console.log('Mini App UI regression checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

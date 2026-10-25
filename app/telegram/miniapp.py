@@ -121,11 +121,9 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
   <button id="pay-lifetime" class="primary tariff-button"{'' if payment_urls else ' disabled'}>Оплатить {WEEK_PRICE} сом</button>
   <a id="privacy" class="privacy hidden">Политика конфиденциальности</a>
   <section id="checkout" class="checkout hidden">
-    <div id="payment-step" class="step"><span>1</span>Оплата</div>
-    <button id="reopen-payment" class="secondary hidden">Открыть Finik</button>
-    <div class="step receipt-step"><span>2</span>Получение номера</div>
-    <p class="caption">После оплаты вернитесь сюда и нажмите «Проверить оплату». Ничего писать в чат не нужно.</p>
+    <p class="caption">Оплатили 499 сом? Нажмите кнопку — заявка сразу придёт администратору. Ничего писать не нужно.</p>
     <button id="access" class="primary hidden">Проверить оплату</button>
+    <button id="reopen-payment" class="secondary hidden" style="margin-top:10px">Открыть Finik ещё раз</button>
   </section>
   <div id="apartment" class="hidden">
     <div id="photos" class="photos"></div>
@@ -241,7 +239,6 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     show("checkout", waiting);
     show("privacy", !approved);
     show("agreement-caption", !approved && !apartmentUnavailable);
-    show("payment-step", data.status === "awaiting_receipt");
     show("pay-lifetime", canPay);
     show("access", waiting && data.status === "awaiting_receipt");
     show("reopen-payment", waiting && data.status === "awaiting_receipt");
@@ -315,26 +312,24 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     const button = el(buttonId);
     const originalText = button.textContent;
     button.disabled = true;
+    button.textContent = "Открываем Finik…";
     try {{
       if (!paymentUrls[plan] || preparedUntil <= Date.now()) {{
         paymentUrls[plan] = "";
         await prepareCheckout();
       }}
       const readyUrl = paymentUrls[plan];
-      // Start recording the request, but do not delay a ready checkout link.
+      // Persist the checkout before leaving Telegram. Opening Finik first can
+      // suspend the WebView and lose the request, leaving no verification
+      // button when the customer returns.
       paymentStart = api("/miniapp/api/start", {{plan}});
-      if (readyUrl) {{
-        const current = telegramContext();
-        if (current) current.openLink(readyUrl); else location.href = readyUrl;
-      }}
       const data = await paymentStart;
       render(data);
       if (data.status === "approved") return;
       startPaymentPolling();
-      if (!readyUrl) {{
-        const current = telegramContext();
-        if (current) current.openLink(data.payment_url); else location.href = data.payment_url;
-      }}
+      const targetUrl = readyUrl || data.payment_url;
+      const current = telegramContext();
+      if (current) current.openLink(targetUrl); else location.href = targetUrl;
     }} catch (error) {{ message(error.message); }}
     finally {{
       button.disabled = false;

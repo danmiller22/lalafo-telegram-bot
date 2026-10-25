@@ -1626,6 +1626,36 @@ async def _record_miniapp_open(runtime: Any, user_id: int, apartment_id: int) ->
         logger.exception("Could not record Mini App open")
 
 
+async def _record_payment_funnel_safely(
+    runtime: Any, user_id: int, event_name: str, apartment_id: int
+) -> None:
+    try:
+        await _record_funnel(
+            runtime, user_id, event_name, apartment_id=apartment_id
+        )
+    except Exception:
+        logger.exception("Could not record payment funnel event %s", event_name)
+
+
+async def _notify_payment_admin_safely(
+    runtime: Any, settings: Any, payments: Any, request: Any
+) -> None:
+    from app.payments.review import notify_payment_admin
+
+    try:
+        await notify_payment_admin(
+            runtime.bot,
+            payments,
+            settings,
+            TokenSigner(settings.require_callback_secret()),
+            request,
+        )
+    except Exception:
+        # The persistent review worker retries the pending row. The customer
+        # should still see an accepted claim instead of a misleading error.
+        logger.exception("Could not notify payment administrator")
+
+
 @app.post("/miniapp/api/consent", include_in_schema=False)
 async def miniapp_consent(payload: MiniAppRequest) -> dict[str, Any]:
     settings, runtime, user, apartment_id = _miniapp_context(payload)
@@ -1677,10 +1707,11 @@ async def miniapp_prepare_payment(payload: MiniAppRequest) -> dict[str, Any]:
 
 
 @app.post("/miniapp/api/start", include_in_schema=False)
-async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
+async def miniapp_start_payment(
+    payload: MiniAppRequest, background_tasks: BackgroundTasks
+) -> dict[str, Any]:
     settings, runtime, user, apartment_id = _miniapp_context(payload)
     service = runtime.workflow_data["service"]
-    await _record_funnel(runtime, user.id, "payment_opened", apartment_id=apartment_id)
     result = await service.contact_status(user.id, apartment_id)
     if result.status in {"approved", "unavailable"}:
         return _miniapp_result_payload(result)
@@ -1732,11 +1763,20 @@ async def miniapp_start_payment(payload: MiniAppRequest) -> dict[str, Any]:
     response["payment_url"] = payment_url
     response["automatic_payment"] = _uses_dynamic_finik(settings, plan)
     response["monthly_available"] = False
+    background_tasks.add_task(
+        _record_payment_funnel_safely,
+        runtime,
+        user.id,
+        "payment_opened",
+        apartment_id,
+    )
     return response
 
 
 @app.post("/miniapp/api/access", include_in_schema=False)
-async def miniapp_issue_access(payload: MiniAppRequest) -> dict[str, Any]:
+async def miniapp_issue_access(
+    payload: MiniAppRequest, background_tasks: BackgroundTasks
+) -> dict[str, Any]:
     settings, runtime, user, apartment_id = _miniapp_context(payload)
     service = runtime.workflow_data["service"]
     current = await service.contact_status(user.id, apartment_id)
@@ -1750,16 +1790,16 @@ async def miniapp_issue_access(payload: MiniAppRequest) -> dict[str, Any]:
     request = await payments.mark_payment_claimed(user_id=user.id, apartment_id=apartment_id)
     if request is None:
         raise HTTPException(status_code=409, detail="Сначала откройте оплату.")
-    await _record_funnel(
-        runtime, user.id, "payment_claimed", apartment_id=apartment_id
+    background_tasks.add_task(
+        _record_payment_funnel_safely,
+        runtime,
+        user.id,
+        "payment_claimed",
+        apartment_id,
     )
-    from app.payments.review import notify_payment_admin
-    try:
-        await notify_payment_admin(runtime.bot, payments, settings,
-            TokenSigner(settings.require_callback_secret()), request)
-    except Exception as exc:
-        logger.exception("Could not notify payment administrator")
-        raise HTTPException(status_code=503, detail="Не удалось отправить заявку. Нажмите «Я оплатил(а)» ещё раз.") from exc
+    background_tasks.add_task(
+        _notify_payment_admin_safely, runtime, settings, payments, request
+    )
     return _miniapp_result_payload(await service.contact_status(user.id, apartment_id))
 
 

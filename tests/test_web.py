@@ -1163,6 +1163,7 @@ def test_paid_host_keeps_inventory_collection_enabled_without_github_cron(monkey
 @pytest.mark.asyncio
 @pytest.mark.parametrize('handler', ['miniapp_prepare_payment', 'miniapp_start_payment'])
 async def test_unavailable_contact_never_creates_a_checkout(monkeypatch, handler):
+    from fastapi import BackgroundTasks
     unavailable = SimpleNamespace(status='unavailable', apartment=SimpleNamespace(id=42), plan=None)
     payments = SimpleNamespace(submit=AsyncMock())
     service = SimpleNamespace(contact_status=AsyncMock(return_value=unavailable), begin_payment=AsyncMock())
@@ -1170,7 +1171,10 @@ async def test_unavailable_contact_never_creates_a_checkout(monkeypatch, handler
     monkeypatch.setattr(web, '_miniapp_context', lambda _: (
         SimpleNamespace(), runtime, SimpleNamespace(id=123), 42))
     monkeypatch.setattr(web, '_record_funnel', AsyncMock())
-    result = await getattr(web, handler)(web.MiniAppRequest(init_data='test', start_param='test'))
+    args = [web.MiniAppRequest(init_data='test', start_param='test')]
+    if handler == 'miniapp_start_payment':
+        args.append(BackgroundTasks())
+    result = await getattr(web, handler)(*args)
     assert result['status'] == 'unavailable'
     assert 'payment_url' not in result
     payments.submit.assert_not_awaited()

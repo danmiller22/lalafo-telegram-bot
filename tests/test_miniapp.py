@@ -77,7 +77,7 @@ def test_mini_app_page_has_only_weekly_tariff_and_privacy_link():
     assert 'id="apartment"' in html
     assert 'id="photos"' in html
     assert 'id="details"' in html
-    assert "current.openLink(data.payment_url)" in html
+    assert "current.openLink(targetUrl)" in html
     assert '<script id="telegram-sdk" async src="https://telegram.org/js/telegram-web-app.js"></script>' in html
     assert 'query.get("tgWebAppData")' in html
     assert "prepareTelegramContext" in html
@@ -85,7 +85,7 @@ def test_mini_app_page_has_only_weekly_tariff_and_privacy_link():
     assert "Выберите доступ:" not in html
     assert "Проверить оплату" in html
     assert "Оплата через Finik" not in html
-    assert '<span>1</span>Оплата</div>' in html
+    assert "Оплатили 499 сом?" in html
     assert "Я оплатил(а) — открыть номер" not in html
     assert 'id="receipt-file"' not in html
     assert "receipt_data" not in html
@@ -116,11 +116,12 @@ def test_mini_app_page_has_only_weekly_tariff_and_privacy_link():
     assert "команды /start" not in html
 
 
-def test_ready_checkout_opens_before_waiting_for_payment_request():
+def test_ready_checkout_is_recorded_before_opening_finik():
     html = mini_app_html(payment_urls={"week": "https://example.com/pay?x=1"})
     assert '"week": "https://example.com/pay?x=1"' in html
-    assert html.index("current.openLink(readyUrl)") < html.index("const data = await paymentStart")
+    assert html.index("const data = await paymentStart") < html.index("current.openLink(targetUrl)")
     assert "if (paymentStart) await paymentStart" in html
+    assert 'button.textContent = "Открываем Finik…"' in html
     assert "setInterval" not in html
     assert "setTimeout(poll, 5000)" in html
 

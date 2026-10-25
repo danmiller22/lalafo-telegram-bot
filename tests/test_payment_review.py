@@ -181,7 +181,8 @@ async def test_miniapp_claim_retries_notification_failure_without_exposing_phone
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=web.app), base_url="http://test") as client:
             bot.send_message.side_effect = RuntimeError("Telegram unavailable")
             failed = await client.post("/miniapp/api/access", json=payload)
-            assert failed.status_code == 503
+            assert failed.status_code == 200
+            assert failed.json()["status"] == "pending"
             assert "phone" not in failed.json()
             assert (await service.contact_status(101, apartment.id)).status == "pending"
             bot.send_message.side_effect = None

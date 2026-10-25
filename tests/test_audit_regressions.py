@@ -184,13 +184,17 @@ async def test_matching_claim_skips_invalid_queued_card_and_finds_next(repositor
 
 @pytest.mark.asyncio
 async def test_paid_start_does_not_require_working_checkout_settings(monkeypatch):
+    from fastapi import BackgroundTasks
     apartment = SimpleNamespace(phone="+996555123456", rooms="1", district="Центр", city="Бишкек",
         price=30_000, deposit=None, source_description="", photo_urls=[])
     approved = SimpleNamespace(status="approved", apartment=apartment, plan=WEEK_PLAN, access_expires_at=None)
     runtime = SimpleNamespace(workflow_data={"service": SimpleNamespace(contact_status=AsyncMock(return_value=approved))})
     monkeypatch.setattr(web, "_miniapp_context", lambda _: (SimpleNamespace(), runtime,
         TelegramMiniAppUser(1, "User"), 42))
-    response = await web.miniapp_start_payment(web.MiniAppRequest(init_data="test", start_param="test"))
+    response = await web.miniapp_start_payment(
+        web.MiniAppRequest(init_data="test", start_param="test"),
+        BackgroundTasks(),
+    )
     assert response["status"] == "approved" and response["phone"]
 
 
