@@ -98,7 +98,7 @@ async def main():
     text=f"{item.district or ''} {item.source_description or ''}".casefold().replace("ё","е")
     text=" ".join(text.replace("-"," ").split())
     if re.search(r"\bвосток\s*5\b",text):return "east5"
-    central=("центр","цум","гум","филармони","бишкек парк","вефа","юг 2",
+    central=("цум","гум","филармони","бишкек парк","вефа","юг 2",
              "моссовет","манаса","золотой квадрат","азия молл","дордой плаза",
              "1000 мелочей","политех")
     return "central" if any(term in text for term in central) else None
@@ -106,6 +106,8 @@ async def main():
                    if "codex_force_repost" not in item.source_url
                    and item.seller_type in {"owner","realtor"}
                    and len(item.photo_urls or [])>=4
+                   and "студи" not in f"{item.source_title or ''} {item.source_description or ''}".casefold()
+                   and "гостини" not in f"{item.source_title or ''} {item.source_description or ''}".casefold()
                    and not is_substandard_structure(apartment_to_ad(item))
                    and target_group(item)]
    tomorrow_stock.sort(key=lambda item:(
