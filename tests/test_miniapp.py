@@ -83,7 +83,7 @@ def test_mini_app_page_has_only_weekly_tariff_and_privacy_link():
     assert "prepareTelegramContext" in html
     assert "Выберите банк" not in html
     assert "Выберите доступ:" not in html
-    assert "Я оплатил(а)" in html
+    assert "Проверить оплату" in html
     assert "Оплата через Finik" not in html
     assert '<span>1</span>Оплата</div>' in html
     assert "Я оплатил(а) — открыть номер" not in html

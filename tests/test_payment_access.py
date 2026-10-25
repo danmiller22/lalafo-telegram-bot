@@ -153,8 +153,7 @@ async def test_verified_finik_payment_alone_does_not_grant_access(
     approved_outcome, _ = await payments.apply_provider_result(
         "payment-9191", succeeded=True, amount=499
     )
-    assert approved_outcome == "awaiting_confirmation"
-    await payments.mark_payment_claimed(user_id=9191, apartment_id=apartment.id)
+    assert approved_outcome == "pending"
     assert (await service.contact_status(9191, apartment.id)).status == "pending"
     assert await service.decide(submission.request.id, approve=True, actor_id=999) == "approved"
     approved = await service.contact_status(9191, apartment.id)

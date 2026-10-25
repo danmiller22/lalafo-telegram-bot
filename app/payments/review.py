@@ -37,11 +37,16 @@ async def notify_payment_admin(
         return False
     try:
         username = f"@{request.username}" if request.username else "без username"
+        payment_evidence = (
+            "Finik подтвердил оплату."
+            if getattr(request, "provider_status", None) == "succeeded"
+            else "Клиент нажал «Я оплатил(а)»."
+        )
         text = (f"Проверка оплаты #{request.id}\n"
                 f"Клиент: {request.first_name or ''} {username}\n"
                 f"Telegram ID: {request.telegram_user_id}\n"
                 f"Тариф: {plan_label(request.plan)} — {plan_price(request.plan)} сом\n"
-                "Клиент нажал «Я оплатил(а)».\n\n"
+                f"{payment_evidence}\n\n"
                 "⚠️ Одобрите только после отдельного поступления 499 сом в Finik. "
                 "Несколько заявок одного клиента не являются несколькими оплатами.")
         markup = payment_review_keyboard(request.id, signer)

@@ -571,7 +571,7 @@ def test_miniapp_does_not_show_an_old_rejection_on_open() -> None:
     page = mini_app_html(payment_urls={"week": "https://qr.finik.kg/weekly"})
 
     assert "Оплата не подтверждена" not in page
-    assert "Оплата отправлена на проверку" in page
+    assert "Оплата получена и отправлена на проверку" in page
 
 
 @pytest.mark.asyncio
@@ -636,7 +636,7 @@ async def test_miniapp_page_is_public_but_session_requires_telegram_auth(
     service.contact_status.assert_awaited_once_with(778899, 42)
 
 
-def test_shared_weekly_checkout_is_preserved_when_finik_api_is_configured(
+def test_individual_weekly_checkout_is_preferred_when_finik_api_is_configured(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("WEEKLY_FINIK_PAYMENT_URL", "https://qr.finik.kg/weekly")
@@ -649,7 +649,7 @@ def test_shared_weekly_checkout_is_preserved_when_finik_api_is_configured(
     settings = get_settings()
 
     assert settings.finik_auto_enabled
-    assert not web._uses_dynamic_finik(settings, WEEK_PLAN)
+    assert web._uses_dynamic_finik(settings, WEEK_PLAN)
     assert web._uses_dynamic_finik(settings, MONTH_PLAN)
     assert web._finik_payment_url(settings, WEEK_PLAN).endswith("/weekly")
     assert web._finik_payment_url(settings, MONTH_PLAN).endswith("/monthly")
@@ -716,7 +716,7 @@ async def test_miniapp_starts_a_checkout_bound_to_the_selected_apartment(
 
 
 @pytest.mark.asyncio
-async def test_miniapp_uses_configured_payment_url_without_waiting_for_finik(
+async def test_miniapp_prefers_individual_checkout_over_configured_shared_url(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     bot_token = "123456:telegram-test-token"
@@ -759,10 +759,10 @@ async def test_miniapp_uses_configured_payment_url_without_waiting_for_finik(
         )
 
     assert response.status_code == 200
-    assert response.json()["payment_url"] == "https://qr.finik.kg/weekly"
-    assert response.json()["automatic_payment"] is False
+    assert response.json()["payment_url"] == "https://qr.finik.kg/request-73"
+    assert response.json()["automatic_payment"] is True
     service.begin_payment.assert_awaited_once()
-    checkout.assert_not_awaited()
+    checkout.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -856,21 +856,33 @@ async def test_successful_finik_webhook_does_not_deliver_contact(
     monkeypatch.setenv("FINIK_ACCOUNT_ID", "corporate")
     monkeypatch.setenv("FINIK_PRIVATE_KEY_PEM", "configured")
     monkeypatch.setenv("TELEGRAM_WEBHOOK_URL", "https://example.test/telegram/webhook")
+    monkeypatch.setenv("CALLBACK_SECRET", "c" * 32)
+    monkeypatch.setenv("ADMIN_USER_ID", "999")
     get_settings.cache_clear()
     apartment = SimpleNamespace(id=42)
     payment_request = SimpleNamespace(
         id=73,
         telegram_user_id=778899,
+        apartment_id=42,
+        username="mini_user",
+        first_name="Test",
+        plan=WEEK_PLAN,
+        status="pending",
+        provider_status="succeeded",
         apartment=apartment,
     )
     payments = SimpleNamespace(
-        apply_provider_result=AsyncMock(return_value=("awaiting_confirmation", payment_request))
+        apply_provider_result=AsyncMock(return_value=("pending", payment_request)),
+        claim_admin_notification=AsyncMock(return_value=True),
+        finish_admin_notification=AsyncMock(return_value=True),
+        release_admin_notification=AsyncMock(),
     )
-    bot = object()
+    bot = SimpleNamespace(send_message=AsyncMock(return_value=SimpleNamespace(message_id=515)))
+    matching = SimpleNamespace(profile=AsyncMock(return_value=None), event=AsyncMock())
     monkeypatch.setattr(
         web,
         "_bot_runtime",
-        SimpleNamespace(bot=bot, workflow_data={"payments": payments}),
+        SimpleNamespace(bot=bot, workflow_data={"payments": payments, "matching": matching}),
     )
     monkeypatch.setattr(web, "verify_request", lambda *_args, **_kwargs: True)
     delivery = AsyncMock()
@@ -891,11 +903,13 @@ async def test_successful_finik_webhook_does_not_deliver_contact(
         )
 
     assert response.status_code == 200
-    assert response.json() == {"status": "awaiting_confirmation"}
+    assert response.json() == {"status": "pending"}
     payments.apply_provider_result.assert_awaited_once_with(
         "arenda-73", succeeded=True, amount=499
     )
     delivery.assert_not_awaited()
+    bot.send_message.assert_awaited_once()
+    assert "Finik подтвердил оплату" in bot.send_message.await_args.args[1]
 
 
 @pytest.mark.asyncio

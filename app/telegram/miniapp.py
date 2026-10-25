@@ -124,8 +124,8 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     <div id="payment-step" class="step"><span>1</span>Оплата</div>
     <button id="reopen-payment" class="secondary hidden">Открыть Finik</button>
     <div class="step receipt-step"><span>2</span>Получение номера</div>
-    <p class="caption">После оплаты вернитесь сюда и нажмите «Я оплатил(а)». Администратор проверит поступление и откроет доступ.</p>
-    <button id="access" class="primary hidden">Я оплатил(а)</button>
+    <p id="checkout-caption" class="caption">После оплаты вернитесь сюда. Мы проверим её автоматически и откроем доступ после подтверждения.</p>
+    <button id="access" class="primary hidden">Проверить оплату</button>
   </section>
   <div id="apartment" class="hidden">
     <div id="photos" class="photos"></div>
@@ -152,6 +152,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
   let sessionReady = false;
   let sessionLoading = false;
   let selectedPlan = "week";
+  let automaticPayment = false;
   const paymentUrls = {checkout_json};
   let preparedUntil = Infinity;
   let checkoutPreparation = null;
@@ -165,6 +166,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     checkoutPreparation = api("/miniapp/api/prepare", {{}}).then(data => {{
       if (data.status === "approved" || data.status === "unavailable") {{ render(data); return; }}
       paymentUrls.week = data.payment_url;
+      automaticPayment = Boolean(data.automatic_payment);
       preparedUntil = data.expires_at_ms;
       el("pay-lifetime").disabled = !paymentUrls.week;
       el("reopen-payment").disabled = false;
@@ -226,6 +228,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     // A response sent before access was granted must not undo the success screen.
     if (accessApproved && data.status !== "approved") return;
     const approved = data.status === "approved";
+    if (typeof data.automatic_payment === "boolean") automaticPayment = data.automatic_payment;
     apartmentUnavailable = data.status === "unavailable";
     show("other-apartments", apartmentUnavailable);
     const waiting = data.plan === "week" && (data.status === "awaiting_receipt" || data.status === "pending");
@@ -243,7 +246,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     show("agreement-caption", !approved && !apartmentUnavailable);
     show("payment-step", data.status === "awaiting_receipt");
     show("pay-lifetime", canPay);
-    show("access", waiting);
+    show("access", waiting && data.status === "awaiting_receipt");
     show("reopen-payment", waiting && data.status === "awaiting_receipt");
     if (!approved) {{
       el("privacy").href = data.privacy_url || "#";
@@ -276,10 +279,13 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     }} else if (apartmentUnavailable) {{
       message("Контакт этой квартиры сейчас недоступен. Выберите другой актуальный вариант.");
     }} else if (waiting && data.status === "pending") {{
-      message("Оплата отправлена на проверку. Ожидайте подтверждения.");
+      message("Оплата получена и отправлена на проверку. Ничего отправлять не нужно.");
       startPaymentPolling();
     }} else if (waiting) {{
-      message("");
+      message(automaticPayment
+        ? "После оплаты вернитесь сюда — проверка начнётся автоматически."
+        : "После оплаты нажмите «Проверить оплату»."
+      );
     }} else {{
       message("");
       show("status", false);

@@ -59,13 +59,13 @@ async def test_checkout_response_does_not_erase_provider_success(repositories, s
         username=None, first_name=None, plan=WEEK_PLAN)
     request_id = submission.request.id
     await payments.prepare_provider_payment(request_id, "paid", configuration_id="merchant")
-    assert (await payments.apply_provider_result("paid", succeeded=True, amount=499))[0] == "awaiting_confirmation"
+    assert (await payments.apply_provider_result("paid", succeeded=True, amount=499))[0] == "pending"
     assert not await payments.set_provider_payment_url(request_id, "https://qr.finik.kg/late",
         configuration_id="merchant", payment_id="paid")
     preserved = await payments.prepare_provider_payment(request_id, "unused", configuration_id="merchant")
     assert preserved.provider_status == "succeeded"
     assert preserved.provider_payment_id == "paid"
-    assert (await service.contact_status(1, apartment.id)).status == "awaiting_receipt"
+    assert (await service.contact_status(1, apartment.id)).status == "pending"
 
 
 @pytest.mark.asyncio
@@ -96,7 +96,7 @@ async def test_late_mismatched_callback_preserves_acknowledged_payment(repositor
     outcome, request = await payments.apply_provider_result("payment", succeeded=True, amount=498)
     assert outcome == "amount_mismatch"
     assert request.provider_status == "succeeded"
-    assert request.status == ("approved" if approved else "awaiting_receipt")
+    assert request.status == ("approved" if approved else "pending")
 
 
 @pytest.mark.asyncio
