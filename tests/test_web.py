@@ -16,6 +16,7 @@ import pytest
 from app.config import get_settings
 from app.payment_plans import LIFETIME_PLAN, MONTH_PLAN, WEEK_PLAN
 from app.security import TokenSigner
+from app.telegram.miniapp import mini_app_html
 from app import web
 
 
@@ -564,6 +565,13 @@ async def test_miniapp_status_does_not_wait_for_or_fail_on_open_analytics(monkey
     assert len(tasks.tasks) == 1
     await tasks()
     analytics.assert_awaited_once_with(runtime, 778899, "card_opened", apartment_id=42)
+
+
+def test_miniapp_does_not_show_an_old_rejection_on_open() -> None:
+    page = mini_app_html(payment_urls={"week": "https://qr.finik.kg/weekly"})
+
+    assert "Оплата не подтверждена" not in page
+    assert "Оплата отправлена на проверку" in page
 
 
 @pytest.mark.asyncio

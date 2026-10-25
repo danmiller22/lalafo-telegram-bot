@@ -280,8 +280,6 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
       startPaymentPolling();
     }} else if (waiting) {{
       message("");
-    }} else if (data.status === "rejected") {{
-      message("Оплата не подтверждена. Проверьте перевод или обратитесь в поддержку.");
     }} else {{
       message("");
       show("status", false);
