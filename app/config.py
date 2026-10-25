@@ -101,9 +101,6 @@ TELEGRAM_SOURCE_CHANNELS: tuple[str, ...] = (
     # Active public long-term rental feed found outside the older source set.
     # It exposes full text, photos and direct contact numbers in the web preview.
     "https://t.me/s/renthousebish",
-    # House.kg's public sale feed also carries fresh direct-owner rentals with
-    # complete albums and phone numbers that are absent from its rental feed.
-    "https://t.me/s/house_kg",
     # Large public Bishkek rental channel. It posts less often, but keeping it
     # in the rotation captures new direct listings as soon as they appear.
     "https://t.me/s/kvartira_bishkek",
