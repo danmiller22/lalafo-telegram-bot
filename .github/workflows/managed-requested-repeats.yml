@@ -1,5 +1,8 @@
 name: Publish Telegram queue and managed apartment repeats
 on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/managed-requested-repeats.yml']
   schedule:
     - cron: '*/5 * * * *'
   workflow_dispatch:
@@ -38,10 +41,10 @@ jobs:
       CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
       LALAFO_PROXY_URL: ${{ secrets.LALAFO_PROXY_URL }}
       TELEGRAM_GROUP_ID: '-1004389602150'
-      QUEUE_RESERVATION_ALL_CARDS: ${{ inputs.managed_only && 'false' || 'true' }}
+      QUEUE_RESERVATION_ALL_CARDS: ${{ github.event_name == 'push' && 'false' || (inputs.managed_only && 'false' || 'true') }}
       MANAGED_REPEAT_MANIFEST: ${{ inputs.manifest }}
       CONFIRM_MANAGED_REPEATS: ${{ inputs.confirm_enrollment && 'true' || 'false' }}
-      MANAGED_BATCH_SIZE: ${{ inputs.managed_only && inputs.managed_batch_size || '1' }}
+      MANAGED_BATCH_SIZE: ${{ github.event_name == 'push' && '2' || (inputs.managed_only && inputs.managed_batch_size || '1') }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
