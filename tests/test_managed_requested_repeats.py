@@ -190,7 +190,10 @@ async def test_managed_repeat_checks_current_ad_before_send_preserves_private_or
     monkeypatch.setattr(publish_inventory, 'TelegramPublisher', lambda *a, **kw: SimpleNamespace(publish=publish))
     settings = Settings(_env_file=None, telegram_bot_token='123:fake', callback_secret='test-secret-long-enough',
                         telegram_group_id=-1004389602150)
-    assert await publish_inventory._publish_item(settings, sessions, inventory, apartments, item) == 0
+    result = await publish_inventory._publish_item(
+        settings, sessions, inventory, apartments, item
+    )
+    assert result is (None if public_error else 0)
     stored = await apartments.get(apartment.id)
     assert stored.source_description == original.source_description
     assert stored.photo_urls == original.photo_urls and stored.phone == ''

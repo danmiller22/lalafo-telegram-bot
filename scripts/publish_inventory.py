@@ -127,7 +127,7 @@ async def _publish_item(settings, sessions, inventory, apartments, item) -> int 
             return await _skip(inventory, item.id, 'managed_ad_unavailable')
         except (LalafoError, ValueError, TimeoutError):
             await inventory.finish_item(item.id, status='skipped', error='managed_public_check_unknown')
-            return 0
+            return None
     elif apartment.source_url.startswith("https://t.me/"):
         source_updated = as_utc(apartment.source_updated_at or apartment.updated_at)
         if not is_requested and source_updated < datetime.now(timezone.utc) - timedelta(hours=168):
@@ -141,7 +141,7 @@ async def _publish_item(settings, sessions, inventory, apartments, item) -> int 
                 return await _skip(inventory, item.id, source_reason)
             if status != "active":
                 await inventory.retry_item(item.id, error=source_reason)
-                return 0
+                return None
         ad = stored
     else:
         try:
@@ -238,14 +238,17 @@ async def _publish_item(settings, sessions, inventory, apartments, item) -> int 
             await inventory.finish_item(item.id, status='skipped', error=type(exc).__name__)
         else:
             await inventory.retry_item(item.id, error=type(exc).__name__)
-        return 0
+        # A retryable card must not consume the whole scheduler tick. Its
+        # claim has already been safely rescheduled, so continue with another
+        # due apartment from the durable queue.
+        return None
     except Exception as exc:
         logger.exception("Queued publication failed safely")
         if binding:
             await inventory.finish_item(item.id, status='skipped', error=type(exc).__name__)
         else:
             await inventory.retry_item(item.id, error=type(exc).__name__)
-        return 1
+        return None
     finally:
         await bot.session.close()
 
