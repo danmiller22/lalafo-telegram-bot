@@ -1111,7 +1111,7 @@ class InventoryRepository:
     async def retry_item(self, queue_id: int, *, error: str, delay_minutes: int = 10) -> None:
         async with self.sessions.begin() as session:
             row = await session.get(ApartmentInventoryQueue, queue_id, with_for_update=True)
-            if row is None:
+            if row is None or row.status in {"published", "skipped"}:
                 return
             quarantined = error == "TelegramPublishError" and row.attempts >= 3
             await session.execute(

@@ -89,7 +89,14 @@ async def run(
             item = await inventory.claim_due(eligible_until=eligible_until)
             if item is None:
                 return 0
-            result = await _publish_item(settings, sessions, inventory, apartments, item)
+            try:
+                result = await _publish_item(settings, sessions, inventory, apartments, item)
+            except asyncio.CancelledError:
+                # The hosted dispatch deadline cancels this task. Release its
+                # global publication claim before the next scheduler tick.
+                # retry_item preserves terminal acknowledgements.
+                await inventory.retry_item(item.id, error="DispatchCancelled")
+                raise
             if result is not None:
                 return result
         return 0
