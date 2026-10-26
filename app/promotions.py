@@ -105,7 +105,7 @@ async def promotion_work(session, *, now, day_start, day_end):
     due = []
     reserved = 0
     for promotion, apartment in rows:
-        if (not apartment.phone and apartment.id not in bindings) or not apartment.photo_urls or not is_supported_source(apartment):
+        if (not apartment.phone and apartment.id not in bindings) or not is_supported_source(apartment):
             continue
         recent, count, campaign_count = stats.get(apartment.id, (None, 0, 0))
         latest = max([utc(v) for v in (recent, apartment.published_at) if v is not None], default=utc(promotion.requested_at))

@@ -308,7 +308,7 @@ async def _publish_forwarded_batch(
         apartments=apartments,
         signer=signer,
     )
-    if apartment is None or not apartment.photo_urls:
+    if apartment is None:
         await reply_to.answer(
             "⚠️ Не удалось распознать исходную карточку. "
             "Перешлите вместе фотографии и текст карточки одним действием."

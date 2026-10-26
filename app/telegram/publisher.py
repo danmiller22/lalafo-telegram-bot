@@ -101,8 +101,6 @@ class TelegramPublisher:
         # A compact single album gives renters enough context and keeps one
         # listing from blocking the publication queue.
         urls = list(dict.fromkeys(ad.photo_urls))[: self.max_photos]
-        if not urls:
-            raise TelegramPublishError("Apartment has no photos")
         album_messages: list[Message] = []
         for offset in range(0, len(urls), TELEGRAM_ALBUM_LIMIT):
             chunk = urls[offset : offset + TELEGRAM_ALBUM_LIMIT]
@@ -133,10 +131,11 @@ class TelegramPublisher:
                 # Manually supplied Telegram file IDs are already hosted by
                 # Telegram and cannot be downloaded as public URLs.
                 if not all(url.startswith(("http://", "https://")) for url in chunk):
-                    await self._delete_messages(album_messages)
-                    raise TelegramPublishError(
-                        "Telegram could not publish the supplied photo file IDs"
-                    ) from direct_error
+                    logger.warning(
+                        "Telegram rejected apartment photo file IDs; publishing text: %s",
+                        type(direct_error).__name__,
+                    )
+                    break
                 logger.warning(
                     "Direct Telegram photo batch failed; trying photos individually: %s",
                     type(direct_error).__name__,
@@ -161,10 +160,11 @@ class TelegramPublisher:
                     except Exception as exc:
                         last_error = exc
                 if not sent:
-                    await self._delete_messages(album_messages)
-                    raise TelegramPublishError(
-                        "Telegram could not publish at least one apartment photo"
-                    ) from last_error
+                    logger.warning(
+                        "Telegram could not publish apartment photos; publishing text: %s",
+                        type(last_error).__name__,
+                    )
+                    break
             album_messages.extend(sent)
         try:
             return await self._retry(

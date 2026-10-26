@@ -23,7 +23,7 @@ async def publish_card(data, sessions, bot, settings):
     ad = LalafoAd.model_validate(data['ad'])
     if ad.lalafo_id >= 0 or ad.source_url != f'manual://telegram/{abs(ad.lalafo_id)}':
         raise ValueError('Expected a uniquely identified manual card')
-    if ad.rooms not in {'1', 'studio'} or not ad.phone or not ad.photo_urls:
+    if ad.rooms not in {'1', 'studio'} or not ad.phone:
         raise ValueError('Incomplete manual card')
     apartments = ApartmentRepository(sessions)
     apartment = await apartments.upsert_discovered(ad, discovery_priority=True)

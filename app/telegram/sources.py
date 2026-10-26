@@ -330,10 +330,6 @@ def parse_telegram_apartments(
             match = PHOTO_URL_RE.search(str(photo.get("style") or ""))
             if match is not None and match.group(1) not in photo_urls:
                 photo_urls.append(match.group(1))
-        if not photo_urls:
-            note("missing_photos")
-            continue
-
         data_post = str(message.get("data-post"))
         owner = is_owner_offer(text)
         seller_type = (

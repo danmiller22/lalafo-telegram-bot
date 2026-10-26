@@ -249,7 +249,7 @@ class Settings(BaseSettings):
     # Telegram accepts at most ten photos per media group. Publishers split
     # longer listings into adjacent groups so no Lalafo photo is dropped.
     max_photos_per_apartment: int = 10
-    only_with_photos: bool = True
+    only_with_photos: bool = False
     allow_no_deposit: bool = True
     allow_no_district: bool = True
     dry_run: bool = False

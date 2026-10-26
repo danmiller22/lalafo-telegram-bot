@@ -103,7 +103,6 @@ async def run() -> int:
             for row, apartment in rows
             if apartment.phone
             and apartment.phone_source_version == PHONE_SOURCE_VERSION
-            and len(apartment.photo_urls) >= 2
         ]
         if not verified:
             logger.info("No verified active managed originals; no-op")

@@ -238,13 +238,23 @@ async def test_generic_worker_cannot_expose_managed_queued_rows_to_old_web(repos
 
 
 @pytest.mark.parametrize('response', [{}, {'code': 451, 'message': 'not available'},
-                                     public_ad(status_id=None), public_ad(images=[])])
+                                     public_ad(status_id=None)])
 @pytest.mark.asyncio
 async def test_incomplete_or_error_payload_is_unknown_not_withdrawn(response):
     client = SimpleNamespace(_get_json=AsyncMock(return_value=response))
     with pytest.raises(ValueError) as error:
         await refresh_managed_card(client, BINDING, make_ad())
     assert not isinstance(error.value, ManagedCardUnavailable)
+
+
+@pytest.mark.asyncio
+async def test_public_managed_ad_without_photos_keeps_the_stored_photo_state():
+    stored = make_ad(photo_urls=[])
+    client = SimpleNamespace(_get_json=AsyncMock(return_value=public_ad(images=[])))
+
+    refreshed = await refresh_managed_card(client, BINDING, stored)
+
+    assert refreshed.photo_urls == []
 
 
 @pytest.mark.asyncio

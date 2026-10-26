@@ -72,7 +72,7 @@ async def test_public_album_uses_fast_direct_telegram_urls() -> None:
 
 
 @pytest.mark.asyncio
-async def test_stalled_telegram_photos_never_publish_a_text_only_card(monkeypatch) -> None:
+async def test_stalled_telegram_photos_fall_back_to_text_card(monkeypatch) -> None:
     import asyncio
     import app.telegram.publisher as publisher_module
 
@@ -94,11 +94,11 @@ async def test_stalled_telegram_photos_never_publish_a_text_only_card(monkeypatc
     )
     monkeypatch.setattr(publisher_module, 'TELEGRAM_REQUEST_TIMEOUT_SECONDS', 0.001)
 
-    with pytest.raises(TelegramPublishError, match="at least one apartment photo"):
-        await publisher.publish(77, make_ad())
+    result = await publisher.publish(77, make_ad())
+    assert result.message_id == 3
     bot.send_media_group.assert_awaited_once()
     assert bot.send_photo.await_count == 2
-    bot.send_message.assert_not_awaited()
+    bot.send_message.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -186,11 +186,11 @@ async def test_all_author_types_are_published(seller_type, owner_listing) -> Non
 
 
 @pytest.mark.asyncio
-async def test_empty_album_acknowledgement_cannot_create_a_text_only_card() -> None:
+async def test_empty_album_acknowledgement_falls_back_to_text_card() -> None:
     bot = SimpleNamespace(
         send_media_group=AsyncMock(return_value=[]),
         send_photo=AsyncMock(return_value=None),
-        send_message=AsyncMock(),
+        send_message=AsyncMock(return_value=SimpleNamespace(message_id=3)),
         delete_message=AsyncMock(),
     )
     publisher = TelegramPublisher(
@@ -201,16 +201,16 @@ async def test_empty_album_acknowledgement_cannot_create_a_text_only_card() -> N
         support_url="https://t.me/support",
     )
 
-    with pytest.raises(TelegramPublishError, match="at least one apartment photo"):
-        await publisher.publish(77, make_ad())
-    bot.send_message.assert_not_awaited()
+    result = await publisher.publish(77, make_ad())
+    assert result.message_id == 3
+    bot.send_message.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_manual_file_id_publish_error_does_not_retry_as_url() -> None:
+async def test_manual_file_id_publish_error_falls_back_to_text() -> None:
     bot = SimpleNamespace(
         send_media_group=AsyncMock(side_effect=RuntimeError("Telegram rejected file ID")),
-        send_message=AsyncMock(),
+        send_message=AsyncMock(return_value=SimpleNamespace(message_id=3)),
         send_photo=AsyncMock(),
         delete_message=AsyncMock(),
     )
@@ -223,11 +223,11 @@ async def test_manual_file_id_publish_error_does_not_retry_as_url() -> None:
         support_url="https://t.me/support",
     )
 
-    with pytest.raises(TelegramPublishError, match="photo file IDs"):
-        await publisher.publish(77, ad)
+    result = await publisher.publish(77, ad)
+    assert result.message_id == 3
 
     bot.send_media_group.assert_awaited_once()
-    bot.send_message.assert_not_awaited()
+    bot.send_message.assert_awaited_once()
 
 
 @pytest.mark.asyncio

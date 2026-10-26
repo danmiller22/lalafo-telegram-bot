@@ -65,7 +65,7 @@ async def run(manifest_path):
                     or snapshot['id'] != row['ad_id']
                     or snapshot['status_id'] not in (2, 11)
                     or snapshot['rooms'] not in ('1', 'studio')
-                    or snapshot['price'] <= 0 or not snapshot['photo_urls']):
+                    or snapshot['price'] <= 0):
                 raise ValueError('Expected a currently active owned snapshot')
             if row.get('source_id'):
                 apartment = await repo.get_by_lalafo(row['source_id'])
@@ -76,7 +76,6 @@ async def run(manifest_path):
                 original = supplied[row['source_id']]
                 if (not original.phone or original.phone_source_version != PHONE_SOURCE_VERSION
                         or original.source_url != row.get('source_url')
-                        or original.photo_urls != row.get('original_photo_urls')
                         or not original.source_url.startswith('https://lalafo.kg/')
                         or original.rooms != snapshot['rooms']
                         or original.price != snapshot['price']):

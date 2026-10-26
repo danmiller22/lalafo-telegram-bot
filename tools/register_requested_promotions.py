@@ -20,7 +20,7 @@ async def run(apply=False):
         async with sessions.begin() as session:
             for card in manifest['cards']:
                 apartment = await session.scalar(select(Apartment).where(Apartment.lalafo_id == card['source_id']))
-                if apartment is None or not apartment.active or not apartment.phone or not apartment.photo_urls:
+                if apartment is None or not apartment.active or not apartment.phone:
                     raise RuntimeError(f"Requested apartment {card['source_id']} is missing or unavailable")
                 receipts = [(r['message_id'], datetime.fromisoformat(r['published_at'].replace('Z', '+00:00'))) for r in card['receipts']]
                 latest = max(date for _, date in receipts)

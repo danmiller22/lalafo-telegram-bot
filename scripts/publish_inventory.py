@@ -200,7 +200,7 @@ async def _publish_item(settings, sessions, inventory, apartments, item) -> int 
         "rooms", "min_price", "max_price", "price", "seller_policy"
     }:
         valid = (is_supported_source(ad) and not is_excluded_agency(ad)
-                 and bool(ad.photo_urls) and bool(ad.phone)
+                 and bool(ad.phone)
                  and ad.price > 0 and ad.no_subletting and not is_substandard_structure(ad))
     if not valid:
         return await _skip(inventory, item.id, reason)

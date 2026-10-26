@@ -93,7 +93,7 @@ CENTRAL_DISTRICT_TERMS = (
 SOURCE_MIN_PRICE = 25_000
 SOURCE_MAX_PRICE = OWNER_MAX_PRICE
 SOURCE_ALLOWED_ROOMS = ("studio", "1")
-SOURCE_MIN_PHOTOS = 1
+SOURCE_MIN_PHOTOS = 0
 SOURCE_MAX_POSTS_PER_RUN = 18
 SOURCE_PUBLISH_SPACING_SECONDS = 150
 SOURCE_MAX_SEARCH_PAGES = 30
@@ -1228,8 +1228,6 @@ async def run(
                     <= search_ad.price
                     <= SOURCE_MAX_PRICE
                 ):
-                    continue
-                if settings.only_with_photos and not search_ad.photo_urls:
                     continue
                 detail_search_ads.append(search_ad)
 

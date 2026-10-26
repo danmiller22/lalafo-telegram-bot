@@ -46,7 +46,7 @@ async def duplicate_apartment_callback(
         await callback.answer("Недействительная подпись.", show_alert=True)
         return
     apartment = await apartments.get(apartment_id)
-    if apartment is None or not apartment.photo_urls:
+    if apartment is None:
         await callback.answer("Квартира больше недоступна.", show_alert=True)
         return
     try:

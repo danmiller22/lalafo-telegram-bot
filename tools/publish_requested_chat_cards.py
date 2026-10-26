@@ -19,7 +19,7 @@ def reviewed_card(row):
     ad = LalafoAd.model_validate(row['ad'])
     target = urlsplit(row['chat_url'])
     source = urlsplit(ad.source_url)
-    if (ad.phone or ad.rooms not in {'1', 'studio'} or not ad.photo_urls
+    if (ad.phone or ad.rooms not in {'1', 'studio'}
             or source.scheme != 'https' or source.hostname != 'lalafo.kg'
             or target.scheme != 'https' or target.hostname != 'lalafo.kg'
             or target.query or target.fragment

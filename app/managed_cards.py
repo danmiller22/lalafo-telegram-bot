@@ -82,7 +82,7 @@ async def refresh_managed_card(client, binding, stored):
         raise ManagedCardUnavailable('managed_ad_room_type_changed')
     photos = [im['original_url'] for im in data.get('images', []) if im.get('original_url')]
     if not photos:
-        raise ValueError('managed_ad_photos_unknown')
+        photos = list(stored.photo_urls)
     deposit = params.get(947, {}).get('value')
     deposit = int(deposit) if str(deposit or '').isdigit() and int(deposit) > 1 else None
     return stored.model_copy(update={

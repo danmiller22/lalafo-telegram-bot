@@ -54,7 +54,6 @@ from tests.helpers import make_ad
         ({"currency": "USD"}, "wrong_currency"),
         ({"rooms": "3"}, "rooms"),
         ({"city": "Ош"}, "wrong_city"),
-        ({"photo_urls": []}, "photos"),
         ({"category_id": 1}, "wrong_category"),
     ],
 )
@@ -135,7 +134,7 @@ def test_expanded_source_keeps_reposts_strictly_limited():
     assert SOURCE_MAX_SEARCH_PAGES == 30
     assert SOURCE_MIN_PRICE == 25_000
     assert SOURCE_MAX_PRICE == 45_000
-    assert SOURCE_MIN_PHOTOS == 1
+    assert SOURCE_MIN_PHOTOS == 0
     assert MAX_REPOSTS_PER_RUN == 18
     assert SOURCE_REPOST_AFTER_HOURS == 48
     assert TWO_BEDROOM_MIN_PRICE == 25_000
