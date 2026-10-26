@@ -72,7 +72,7 @@ async def test_public_album_uses_fast_direct_telegram_urls() -> None:
 
 
 @pytest.mark.asyncio
-async def test_stalled_telegram_photo_request_falls_back_to_text_card(monkeypatch) -> None:
+async def test_stalled_telegram_photos_never_publish_a_text_only_card(monkeypatch) -> None:
     import asyncio
     import app.telegram.publisher as publisher_module
 
@@ -82,7 +82,7 @@ async def test_stalled_telegram_photo_request_falls_back_to_text_card(monkeypatc
     bot = SimpleNamespace(
         send_media_group=AsyncMock(side_effect=stalled),
         send_message=AsyncMock(return_value=SimpleNamespace(message_id=3)),
-        send_photo=AsyncMock(),
+        send_photo=AsyncMock(side_effect=stalled),
         delete_message=AsyncMock(),
     )
     publisher = TelegramPublisher(
@@ -94,11 +94,34 @@ async def test_stalled_telegram_photo_request_falls_back_to_text_card(monkeypatc
     )
     monkeypatch.setattr(publisher_module, 'TELEGRAM_REQUEST_TIMEOUT_SECONDS', 0.001)
 
-    result = await publisher.publish(77, make_ad())
-    assert result.message_id == 3
-    assert bot.send_media_group.await_count == 2
+    with pytest.raises(TelegramPublishError, match="at least one apartment photo"):
+        await publisher.publish(77, make_ad())
+    bot.send_media_group.assert_awaited_once()
+    assert bot.send_photo.await_count == 2
+    bot.send_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_failed_album_uses_the_first_working_individual_photo() -> None:
+    card = SimpleNamespace(message_id=3)
+    photo = SimpleNamespace(message_id=2)
+    bot = SimpleNamespace(
+        send_media_group=AsyncMock(side_effect=RuntimeError("bad album photo")),
+        send_message=AsyncMock(return_value=card),
+        send_photo=AsyncMock(side_effect=[RuntimeError("bad first photo"), photo]),
+        delete_message=AsyncMock(),
+    )
+    publisher = TelegramPublisher(
+        bot,
+        chat_id=-1001,
+        signer=TokenSigner("s" * 32),
+        bot_username="testbot",
+        support_url="https://t.me/support",
+    )
+
+    assert await publisher.publish(77, make_ad()) is card
+    assert bot.send_photo.await_count == 2
     bot.send_message.assert_awaited_once()
-    assert bot.send_message.await_args.kwargs['reply_markup'] is not None
 
 
 @pytest.mark.asyncio
