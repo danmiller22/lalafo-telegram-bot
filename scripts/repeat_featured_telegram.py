@@ -33,8 +33,12 @@ REPEAT_HOURS = frozenset(range(0, 24, 2))
 def is_repeat_window(
     now: datetime, last_repeat_at: datetime | None, *, force: bool = False
 ) -> bool:
+    # A force run is an explicit operator request. Scheduled runs retain the
+    # global anti-spam gap below, while a manual rerun can be delivered now.
+    if force:
+        return True
     local_now = now.astimezone(BISHKEK)
-    if not force and local_now.hour not in REPEAT_HOURS:
+    if local_now.hour not in REPEAT_HOURS:
         return False
     if last_repeat_at is None:
         return True

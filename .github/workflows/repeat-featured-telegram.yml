@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       force_repeat:
-        description: Send one verified managed card now while preserving the global gap
+        description: Send one verified managed card now
         type: boolean
         default: false
   schedule:
