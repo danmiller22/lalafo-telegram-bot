@@ -5,7 +5,7 @@ import logging
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramNetworkError, TelegramRetryAfter, TelegramServerError
-from aiogram.types import InlineKeyboardMarkup, InputMediaPhoto, Message, URLInputFile
+from aiogram.types import InlineKeyboardMarkup, InputMediaPhoto, Message
 
 from app.lalafo.models import LalafoAd
 from app.security import TokenSigner
@@ -121,32 +121,24 @@ class TelegramPublisher:
                         "Telegram could not publish the supplied photo file IDs"
                     ) from direct_error
                 logger.warning(
-                    "Direct Telegram photo batch failed; retrying all photos via streaming: %s",
+                    "Direct Telegram photo batch failed; trying photos individually: %s",
                     type(direct_error).__name__,
                 )
-                try:
-                    if len(chunk) == 1:
+                sent = []
+                last_error: Exception = direct_error
+                for url in chunk:
+                    try:
                         sent = [
                             await self._retry(
                                 self.bot.send_photo,
                                 chat_id=self.chat_id,
-                                photo=URLInputFile(chunk[0], timeout=25),
+                                photo=url,
                             )
                         ]
-                    else:
-                        sent = list(
-                            await self._retry(
-                                self.bot.send_media_group,
-                                chat_id=self.chat_id,
-                                media=[
-                                    InputMediaPhoto(
-                                        media=URLInputFile(url, timeout=25)
-                                    )
-                                    for url in chunk
-                                ],
-                            )
-                        )
-                except Exception as exc:
+                        break
+                    except Exception as exc:
+                        last_error = exc
+                if not sent:
                     for message in album_messages:
                         try:
                             await self.bot.delete_message(
@@ -154,12 +146,9 @@ class TelegramPublisher:
                             )
                         except Exception:
                             pass
-                    album_messages.clear()
-                    logger.warning(
-                        "Telegram could not fetch apartment photos; publishing the card without media: %s",
-                        type(exc).__name__,
-                    )
-                    break
+                    raise TelegramPublishError(
+                        "Telegram could not publish at least one apartment photo"
+                    ) from last_error
             album_messages.extend(sent)
         try:
             return await self._retry(
