@@ -6,15 +6,12 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from aiogram import Bot
-from aiogram.types import InputMediaPhoto
-
 from app.config import get_settings
 from app.database import create_engine_and_session
 from app.lalafo.models import LalafoAd
 from app.models import LalafoAutoReplyMeta
 from app.payments.repository import ApartmentRepository
-from app.telegram.formatting import format_public_apartment
-from app.telegram.keyboards import apartment_keyboard
+from app.telegram.publisher import TelegramPublisher
 from app.security import TokenSigner
 
 
@@ -49,19 +46,15 @@ async def publish_card(row, *, sessions, bot, settings):
         raise RuntimeError('Preserve verified contact; use the normal publisher')
     apartment = await repo.upsert_discovered(ad, discovery_priority=True)
     # Persist sending before Telegram. Never retry an ambiguous send blindly.
-    for start in range(0, len(ad.photo_urls), 10):
-        chunk = ad.photo_urls[start:start + 10]
-        if len(chunk) == 1:
-            await bot.send_photo(chat_id=settings.telegram_group_id, photo=chunk[0])
-        else:
-            await bot.send_media_group(chat_id=settings.telegram_group_id,
-                                       media=[InputMediaPhoto(media=url) for url in chunk])
-    text = format_public_apartment(ad, bot_username=settings.telegram_bot_username)
-    message = await bot.send_message(
-        chat_id=settings.telegram_group_id, text=text, parse_mode='HTML',
-        reply_markup=apartment_keyboard(apartment.id,
-            signer=TokenSigner(settings.require_callback_secret()),
-            bot_username=settings.telegram_bot_username, support_url=settings.support_bot_url))
+    # The shared publisher requires an acknowledged photo before the text card.
+    publisher = TelegramPublisher(
+        bot,
+        chat_id=settings.telegram_group_id,
+        signer=TokenSigner(settings.require_callback_secret()),
+        bot_username=settings.telegram_bot_username,
+        support_url=settings.support_bot_url,
+    )
+    message = await publisher.publish(apartment.id, ad)
     await repo.mark_published(apartment.id, chat_id=settings.telegram_group_id,
                               message_id=message.message_id, acknowledged_at=message.date)
     async with sessions.begin() as session:

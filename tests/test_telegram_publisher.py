@@ -168,7 +168,12 @@ async def test_manual_telegram_file_ids_form_album_with_working_card_keyboard() 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("seller_type,owner_listing", [("unknown", False), ("realtor", False), ("owner", False)])
 async def test_all_author_types_are_published(seller_type, owner_listing) -> None:
-    bot = SimpleNamespace(send_media_group=AsyncMock(), send_message=AsyncMock())
+    bot = SimpleNamespace(
+        send_media_group=AsyncMock(
+            return_value=[SimpleNamespace(message_id=1), SimpleNamespace(message_id=2)]
+        ),
+        send_message=AsyncMock(return_value=SimpleNamespace(message_id=3)),
+    )
     publisher = TelegramPublisher(
         bot, chat_id=-1001, signer=TokenSigner("s" * 32),
         bot_username="testbot", support_url="https://t.me/support",
@@ -178,6 +183,27 @@ async def test_all_author_types_are_published(seller_type, owner_listing) -> Non
     await publisher.publish(77, ad)
     bot.send_media_group.assert_awaited_once()
     bot.send_message.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_empty_album_acknowledgement_cannot_create_a_text_only_card() -> None:
+    bot = SimpleNamespace(
+        send_media_group=AsyncMock(return_value=[]),
+        send_photo=AsyncMock(return_value=None),
+        send_message=AsyncMock(),
+        delete_message=AsyncMock(),
+    )
+    publisher = TelegramPublisher(
+        bot,
+        chat_id=-1001,
+        signer=TokenSigner("s" * 32),
+        bot_username="testbot",
+        support_url="https://t.me/support",
+    )
+
+    with pytest.raises(TelegramPublishError, match="at least one apartment photo"):
+        await publisher.publish(77, make_ad())
+    bot.send_message.assert_not_awaited()
 
 
 @pytest.mark.asyncio

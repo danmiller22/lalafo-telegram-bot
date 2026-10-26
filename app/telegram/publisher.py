@@ -73,6 +73,23 @@ class TelegramPublisher:
                 await asyncio.sleep(min(8.0, 2**attempt + attempt * 0.25))
         raise TelegramPublishError("Telegram retry loop ended unexpectedly")
 
+    async def _delete_messages(self, messages: list[Message]) -> None:
+        for message in messages:
+            message_id = getattr(message, "message_id", None)
+            if message_id is None:
+                continue
+            try:
+                async with asyncio.timeout(3.0):
+                    await self.bot.delete_message(self.chat_id, message_id)
+            except Exception:
+                pass
+
+    @staticmethod
+    def _photos_acknowledged(messages: list[Message]) -> bool:
+        return bool(messages) and all(
+            getattr(message, "message_id", None) is not None for message in messages
+        )
+
     async def publish(self, apartment_id: int, ad: LalafoAd, *, reply_markup: InlineKeyboardMarkup | None = None) -> Message:
         if not is_supported_source(ad):
             raise TelegramPublishError("Unsupported apartment source")
@@ -108,15 +125,15 @@ class TelegramPublisher:
                             media=[InputMediaPhoto(media=url) for url in chunk],
                         )
                     )
+                if not self._photos_acknowledged(sent):
+                    raise TelegramPublishError(
+                        "Telegram did not acknowledge the apartment photos"
+                    )
             except Exception as direct_error:
                 # Manually supplied Telegram file IDs are already hosted by
                 # Telegram and cannot be downloaded as public URLs.
                 if not all(url.startswith(("http://", "https://")) for url in chunk):
-                    for message in album_messages:
-                        try:
-                            await self.bot.delete_message(self.chat_id, message.message_id)
-                        except Exception:
-                            pass
+                    await self._delete_messages(album_messages)
                     raise TelegramPublishError(
                         "Telegram could not publish the supplied photo file IDs"
                     ) from direct_error
@@ -135,17 +152,16 @@ class TelegramPublisher:
                                 photo=url,
                             )
                         ]
-                        break
+                        if self._photos_acknowledged(sent):
+                            break
+                        sent = []
+                        last_error = TelegramPublishError(
+                            "Telegram did not acknowledge the apartment photo"
+                        )
                     except Exception as exc:
                         last_error = exc
                 if not sent:
-                    for message in album_messages:
-                        try:
-                            await self.bot.delete_message(
-                                self.chat_id, message.message_id
-                            )
-                        except Exception:
-                            pass
+                    await self._delete_messages(album_messages)
                     raise TelegramPublishError(
                         "Telegram could not publish at least one apartment photo"
                     ) from last_error
@@ -168,10 +184,9 @@ class TelegramPublisher:
                     include_duplicate=self.include_duplicate,
                 ),
             )
+        except asyncio.CancelledError:
+            await self._delete_messages(album_messages)
+            raise
         except Exception as exc:
-            for message in album_messages:
-                try:
-                    await self.bot.delete_message(self.chat_id, message.message_id)
-                except Exception:
-                    pass
+            await self._delete_messages(album_messages)
             raise TelegramPublishError("Telegram apartment card failed") from exc

@@ -20,8 +20,14 @@ def card():
 @pytest.mark.asyncio
 async def test_reviewed_delivery_keeps_standard_buttons_and_is_idempotent(repositories):
     _, _, sessions = repositories
-    bot = SimpleNamespace(send_media_group=AsyncMock(), send_message=AsyncMock(
-        return_value=SimpleNamespace(message_id=45899, date=datetime.now(timezone.utc))))
+    bot = SimpleNamespace(
+        send_media_group=AsyncMock(return_value=[
+            SimpleNamespace(message_id=45897), SimpleNamespace(message_id=45898)
+        ]),
+        send_message=AsyncMock(return_value=SimpleNamespace(
+            message_id=45899, date=datetime.now(timezone.utc))),
+        delete_message=AsyncMock(),
+    )
     settings = SimpleNamespace(telegram_group_id=-100123, telegram_bot_username='arenda312bot',
                                support_bot_url='https://t.me/arenda312bot?start=support',
                                require_callback_secret=lambda: 'test-secret-long-enough')
@@ -39,11 +45,19 @@ async def test_reviewed_delivery_keeps_standard_buttons_and_is_idempotent(reposi
 @pytest.mark.asyncio
 async def test_ambiguous_delivery_requires_reconciliation_before_retry(repositories):
     _, _, sessions = repositories
-    bot = SimpleNamespace(send_media_group=AsyncMock(), send_message=AsyncMock(side_effect=TimeoutError))
+    bot = SimpleNamespace(
+        send_media_group=AsyncMock(return_value=[
+            SimpleNamespace(message_id=45897), SimpleNamespace(message_id=45898)
+        ]),
+        send_message=AsyncMock(side_effect=TimeoutError),
+        delete_message=AsyncMock(),
+    )
     settings = SimpleNamespace(telegram_group_id=-100123, telegram_bot_username='arenda312bot',
                                support_bot_url='https://t.me/arenda312bot?start=support',
                                require_callback_secret=lambda: 'test-secret-long-enough')
-    with pytest.raises(TimeoutError):
+    from app.telegram.publisher import TelegramPublishError
+
+    with pytest.raises(TelegramPublishError):
         await publish_card(card(), sessions=sessions, bot=bot, settings=settings)
     with pytest.raises(RuntimeError, match='reconcile'):
         await publish_card(card(), sessions=sessions, bot=bot, settings=settings)
