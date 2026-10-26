@@ -29,8 +29,10 @@ from scripts.scrape_publish import (
 
 
 logger = logging.getLogger(__name__)
-PUBLIC_DETAIL_REFRESH_SECONDS = 45.0
-MAX_TERMINAL_SKIPS_PER_RUN = 100
+PUBLIC_DETAIL_REFRESH_SECONDS = 10.0
+# Bound one hosted tick so a run cannot spend many minutes walking stale
+# Lalafo rows. The next minute resumes from the durable queue.
+MAX_TERMINAL_SKIPS_PER_RUN = 12
 STORED_FALLBACK_MAX_AGE_HOURS = 48
 
 
