@@ -465,6 +465,35 @@ async def test_hosted_queue_dispatcher_publishes_without_proxy_discovery(
 
 
 @pytest.mark.asyncio
+async def test_hosted_queue_dispatcher_recovers_from_stalled_send(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import scripts.publish_if_due
+    import scripts.publish_inventory
+
+    async def stalled_publish(**_kwargs) -> int:
+        await asyncio.sleep(10)
+        return 0
+
+    real_timeout = asyncio.timeout
+    monkeypatch.setattr(scripts.publish_inventory, "run", stalled_publish)
+    monkeypatch.setattr(
+        scripts.publish_if_due,
+        "publication_window_status",
+        AsyncMock(return_value=(7, datetime(2026, 9, 23, 9, tzinfo=UTC))),
+    )
+    monkeypatch.setattr(
+        web.asyncio,
+        "timeout",
+        lambda _seconds: real_timeout(0.001),
+    )
+
+    assert await web._execute_queue_dispatch() == 124
+    assert web._apartment_scheduler_state["running_cycle"] is False
+    assert web._apartment_scheduler_state["last_error"] == "QueueDispatchTimeout"
+
+
+@pytest.mark.asyncio
 async def test_hosted_scheduler_refills_an_empty_queue(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

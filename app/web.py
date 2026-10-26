@@ -719,7 +719,23 @@ async def _execute_queue_dispatch() -> int:
     # The publisher skips invalid rows within one pool and sends at most one
     # card. A no-op must not repeat the same claim and schema check four times.
     eligible_until = datetime.now(UTC) + timedelta(minutes=10)
-    exit_code = await publish_one_due(eligible_until=eligible_until, **pool_options)
+    try:
+        # A single stalled Telegram request must not freeze the in-process
+        # dispatcher for the rest of the day.  The inventory publisher owns
+        # its claim reconciliation, so cancellation is safe and the next
+        # scheduler tick can continue with the durable queue.
+        async with asyncio.timeout(120):
+            exit_code = await publish_one_due(
+                eligible_until=eligible_until, **pool_options
+            )
+    except TimeoutError:
+        _apartment_scheduler_state.update(
+            running_cycle=False,
+            last_exit_code=124,
+            last_error="QueueDispatchTimeout",
+        )
+        logger.error("Hosted queue dispatch exceeded 120 seconds")
+        return 124
     recent_count, latest_published_at = await publication_window_status(
         window_minutes=180, **pool_options
     )
