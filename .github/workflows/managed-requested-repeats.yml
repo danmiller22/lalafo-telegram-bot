@@ -11,7 +11,7 @@ on:
       managed_batch_size:
         description: Number of due managed cards to send in this manual run
         type: choice
-        options: ['1', '5']
+        options: ['1', '2', '5']
         default: '1'
       manifest:
         type: string
