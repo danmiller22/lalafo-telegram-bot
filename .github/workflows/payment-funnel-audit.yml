@@ -1,6 +1,9 @@
 name: Audit aggregate payment funnel
 
 on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/payment-funnel-audit.yml']
   workflow_dispatch:
 
 permissions:
