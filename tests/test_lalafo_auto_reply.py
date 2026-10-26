@@ -177,12 +177,11 @@ def callbacks() -> tuple[AsyncMock, AsyncMock, list[str], list[bool]]:
 
 def test_fixed_text_exactly_matches_requested_greeting() -> None:
     assert AUTO_REPLY_TEXT == (
-        "Здравствуйте👋\n"
-        "Подробнее про эту квартиру, а также наши услуги вы можете узнать по ссылке "
-        "в нашем телеграм:\n\n\n"
-        "https://t.me/bishkekarendakg"
+        "Здравствуйте, да 👋\n"
+        "Подробнее про эту квартиру, а также наши услуги вы можете узнать по ссылке:\n\n"
+        "https://t.me/rentkg312"
     )
-    assert AUTO_REPLY_TEXT.count("\n") == 4
+    assert AUTO_REPLY_TEXT.count("\n") == 3
 
 
 @pytest.mark.parametrize(
