@@ -152,14 +152,11 @@ async def test_manual_file_id_publish_error_does_not_retry_as_url() -> None:
 
 
 @pytest.mark.asyncio
-async def test_public_card_sends_every_photo_across_multiple_albums() -> None:
+async def test_public_card_caps_photos_to_one_fast_album() -> None:
     card = SimpleNamespace(message_id=30)
     bot = SimpleNamespace(
         send_media_group=AsyncMock(
-            side_effect=[
-                [SimpleNamespace(message_id=index) for index in range(1, 11)],
-                [SimpleNamespace(message_id=11), SimpleNamespace(message_id=12)],
-            ]
+            return_value=[SimpleNamespace(message_id=index) for index in range(1, 6)]
         ),
         send_message=AsyncMock(return_value=card),
         send_photo=AsyncMock(),
@@ -184,13 +181,13 @@ async def test_public_card_sends_every_photo_across_multiple_albums() -> None:
     result = await publisher.publish(77, ad)
 
     assert result is card
-    assert bot.send_media_group.await_count == 2
+    assert bot.send_media_group.await_count == 1
     sent_urls = [
         item.media
         for call in bot.send_media_group.await_args_list
         for item in call.kwargs["media"]
     ]
-    assert sent_urls == ad.photo_urls
+    assert sent_urls == ad.photo_urls[:5]
     bot.send_photo.assert_not_awaited()
 
 

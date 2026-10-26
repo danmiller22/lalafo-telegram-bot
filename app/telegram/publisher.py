@@ -39,10 +39,7 @@ class TelegramPublisher:
         self.signer = signer
         self.bot_username = bot_username
         self.support_url = support_url
-        # Kept in the constructor for backwards compatibility with existing
-        # deployments. Public apartment cards now always use every photo that
-        # Lalafo returned; Telegram albums are split into groups of ten.
-        self.max_photos = max_photos
+        self.max_photos = max(1, min(max_photos, TELEGRAM_ALBUM_LIMIT))
         self.include_duplicate = include_duplicate
         self._retry_not_before = 0.0
         self._rate_limit_lock = asyncio.Lock()
@@ -81,7 +78,10 @@ class TelegramPublisher:
             raise TelegramPublishError("Excluded agency source")
         if ad.rooms not in ("studio", "1"):
             raise TelegramPublishError("Only studios and one-room apartments are allowed")
-        urls = list(dict.fromkeys(ad.photo_urls))
+        # A bad remote image can hold Telegram's media fetch open for minutes.
+        # A compact single album gives renters enough context and keeps one
+        # listing from blocking the publication queue.
+        urls = list(dict.fromkeys(ad.photo_urls))[: self.max_photos]
         if not urls:
             raise TelegramPublishError("Apartment has no photos")
         album_messages: list[Message] = []
