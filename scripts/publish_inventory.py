@@ -30,6 +30,7 @@ from scripts.scrape_publish import (
 
 logger = logging.getLogger(__name__)
 PUBLIC_DETAIL_REFRESH_SECONDS = 10.0
+ITEM_PUBLISH_TIMEOUT_SECONDS = 45.0
 # Bound one hosted tick so a run cannot spend many minutes walking stale
 # Lalafo rows. The next minute resumes from the durable queue.
 MAX_TERMINAL_SKIPS_PER_RUN = 12
@@ -90,7 +91,20 @@ async def run(
             if item is None:
                 return 0
             try:
-                result = await _publish_item(settings, sessions, inventory, apartments, item)
+                # One apartment must never consume the whole hosted dispatch
+                # window. Quarantine it briefly and try the next due row in
+                # this same tick.
+                async with asyncio.timeout(ITEM_PUBLISH_TIMEOUT_SECONDS):
+                    result = await _publish_item(
+                        settings, sessions, inventory, apartments, item
+                    )
+            except TimeoutError:
+                await inventory.retry_item(item.id, error="ItemPublishTimeout")
+                logger.warning(
+                    "Queued apartment exceeded %.0f seconds; checking the next due card",
+                    ITEM_PUBLISH_TIMEOUT_SECONDS,
+                )
+                continue
             except asyncio.CancelledError:
                 # The hosted dispatch deadline cancels this task. Release its
                 # global publication claim before the next scheduler tick.

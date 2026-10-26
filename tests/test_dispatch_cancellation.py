@@ -62,3 +62,34 @@ async def test_cancelled_dispatch_does_not_block_next_apartment(monkeypatch, rep
     following = await inventory.claim_due(now=now)
     assert following is not None
     assert following.id != first.id
+
+
+@pytest.mark.asyncio
+async def test_timed_out_apartment_does_not_consume_the_dispatch_tick(monkeypatch):
+    first = SimpleNamespace(id=17)
+    second = SimpleNamespace(id=18)
+    inventory = SimpleNamespace(
+        claim_due=AsyncMock(side_effect=[first, second]),
+        retry_item=AsyncMock(),
+    )
+    calls = 0
+
+    async def publish(*_args):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            await asyncio.sleep(10)
+        return 0
+
+    real_timeout = asyncio.timeout
+    monkeypatch.setattr(publish_inventory, 'get_settings', lambda: SimpleNamespace())
+    monkeypatch.setattr(publish_inventory, 'InventoryRepository', lambda _: inventory)
+    monkeypatch.setattr(publish_inventory, 'ApartmentRepository', lambda _: object())
+    monkeypatch.setattr(publish_inventory, '_publish_item', publish)
+    monkeypatch.setattr(
+        publish_inventory.asyncio, 'timeout', lambda _seconds: real_timeout(0.001)
+    )
+
+    assert await publish_inventory.run(sessions=object()) == 0
+    inventory.retry_item.assert_awaited_once_with(17, error='ItemPublishTimeout')
+    assert calls == 2
