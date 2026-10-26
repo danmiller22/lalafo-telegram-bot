@@ -154,9 +154,12 @@ class TelegramPublisher:
                             )
                         except Exception:
                             pass
-                    raise TelegramPublishError(
-                        "Telegram could not publish every apartment photo"
-                    ) from exc
+                    album_messages.clear()
+                    logger.warning(
+                        "Telegram could not fetch apartment photos; publishing the card without media: %s",
+                        type(exc).__name__,
+                    )
+                    break
             album_messages.extend(sent)
         try:
             return await self._retry(

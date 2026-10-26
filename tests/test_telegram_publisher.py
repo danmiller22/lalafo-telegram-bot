@@ -72,7 +72,7 @@ async def test_public_album_uses_fast_direct_telegram_urls() -> None:
 
 
 @pytest.mark.asyncio
-async def test_stalled_telegram_photo_request_is_bounded(monkeypatch) -> None:
+async def test_stalled_telegram_photo_request_falls_back_to_text_card(monkeypatch) -> None:
     import asyncio
     import app.telegram.publisher as publisher_module
 
@@ -81,7 +81,7 @@ async def test_stalled_telegram_photo_request_is_bounded(monkeypatch) -> None:
 
     bot = SimpleNamespace(
         send_media_group=AsyncMock(side_effect=stalled),
-        send_message=AsyncMock(),
+        send_message=AsyncMock(return_value=SimpleNamespace(message_id=3)),
         send_photo=AsyncMock(),
         delete_message=AsyncMock(),
     )
@@ -94,10 +94,11 @@ async def test_stalled_telegram_photo_request_is_bounded(monkeypatch) -> None:
     )
     monkeypatch.setattr(publisher_module, 'TELEGRAM_REQUEST_TIMEOUT_SECONDS', 0.001)
 
-    with pytest.raises(TelegramPublishError, match="every apartment photo"):
-        await publisher.publish(77, make_ad())
+    result = await publisher.publish(77, make_ad())
+    assert result.message_id == 3
     assert bot.send_media_group.await_count == 2
-    bot.send_message.assert_not_awaited()
+    bot.send_message.assert_awaited_once()
+    assert bot.send_message.await_args.kwargs['reply_markup'] is not None
 
 
 @pytest.mark.asyncio
