@@ -16,6 +16,7 @@ from app.lalafo.exclusions import is_excluded_agency
 
 logger = logging.getLogger(__name__)
 TELEGRAM_ALBUM_LIMIT = 10
+TELEGRAM_REQUEST_TIMEOUT_SECONDS = 7.0
 
 
 class TelegramPublishError(RuntimeError):
@@ -39,7 +40,7 @@ class TelegramPublisher:
         self.signer = signer
         self.bot_username = bot_username
         self.support_url = support_url
-        self.max_photos = max(1, min(max_photos, TELEGRAM_ALBUM_LIMIT))
+        self.max_photos = max(1, min(max_photos, 5))
         self.include_duplicate = include_duplicate
         self._retry_not_before = 0.0
         self._rate_limit_lock = asyncio.Lock()
@@ -60,7 +61,8 @@ class TelegramPublisher:
         for attempt in range(5):
             await self._wait_for_shared_rate_limit()
             try:
-                return await method(*args, **kwargs)
+                async with asyncio.timeout(TELEGRAM_REQUEST_TIMEOUT_SECONDS):
+                    return await method(*args, **kwargs)
             except TelegramRetryAfter as exc:
                 if attempt == 4:
                     raise

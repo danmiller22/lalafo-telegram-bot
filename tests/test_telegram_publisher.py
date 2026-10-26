@@ -45,7 +45,7 @@ async def test_public_album_uses_fast_direct_telegram_urls() -> None:
         signer=TokenSigner("s" * 32),
         bot_username="testbot",
         support_url="https://t.me/support",
-        max_photos=5,
+        max_photos=10,
     )
 
     result = await publisher.publish(77, make_ad())
@@ -69,6 +69,35 @@ async def test_public_album_uses_fast_direct_telegram_urls() -> None:
         "https://img.example/2.jpg",
     ]
     bot.send_photo.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_stalled_telegram_photo_request_is_bounded(monkeypatch) -> None:
+    import asyncio
+    import app.telegram.publisher as publisher_module
+
+    async def stalled(*_args, **_kwargs):
+        await asyncio.sleep(10)
+
+    bot = SimpleNamespace(
+        send_media_group=AsyncMock(side_effect=stalled),
+        send_message=AsyncMock(),
+        send_photo=AsyncMock(),
+        delete_message=AsyncMock(),
+    )
+    publisher = TelegramPublisher(
+        bot,
+        chat_id=-1001,
+        signer=TokenSigner("s" * 32),
+        bot_username="testbot",
+        support_url="https://t.me/support",
+    )
+    monkeypatch.setattr(publisher_module, 'TELEGRAM_REQUEST_TIMEOUT_SECONDS', 0.001)
+
+    with pytest.raises(TelegramPublishError, match="every apartment photo"):
+        await publisher.publish(77, make_ad())
+    assert bot.send_media_group.await_count == 2
+    bot.send_message.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -175,7 +204,7 @@ async def test_public_card_caps_photos_to_one_fast_album() -> None:
         signer=TokenSigner("s" * 32),
         bot_username="testbot",
         support_url="https://t.me/support",
-        max_photos=5,
+        max_photos=10,
     )
 
     result = await publisher.publish(77, ad)
