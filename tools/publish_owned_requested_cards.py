@@ -16,6 +16,7 @@ from app.lalafo.models import PHONE_SOURCE_VERSION, LalafoAd
 from app.managed_cards import PREFIX
 from app.models import LalafoAutoReplyMeta, RequestedCardPromotion, ApartmentInventoryQueue
 from app.payments.repository import ApartmentRepository
+from app.promotions import external_repeat_receipt_key
 from app.security import TokenSigner
 from app.telegram.publisher import TelegramPublisher
 from app.telegram.formatting import format_public_apartment
@@ -228,6 +229,10 @@ async def run(manifest_path):
             async with sessions.begin() as session:
                 marker = await session.get(LalafoAutoReplyMeta, key)
                 marker.value = f'published:{message.message_id}'
+                if external:
+                    receipt_key = external_repeat_receipt_key(settings.telegram_group_id, message.message_id)
+                    if await session.get(LalafoAutoReplyMeta, receipt_key) is None:
+                        session.add(LalafoAutoReplyMeta(key=receipt_key, value='2h'))
             print(f"OWNED_CARD_PUBLISHED managed_id={row['ad_id']} source_id={ad.lalafo_id} "
                   f"message_id={message.message_id} photos={len(ad.photo_urls)}", flush=True)
         # First-time originals have no Telegram receipt until the initial send.

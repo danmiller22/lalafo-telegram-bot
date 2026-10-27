@@ -1,21 +1,41 @@
 """Durable, explicitly requested card promotion and acknowledged-send accounting."""
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, or_, select, union_all
+from sqlalchemy import String, cast, func, or_, select, union_all
 
 from app.telegram.formatting import is_supported_source
-from app.models import Apartment, ApartmentInventoryQueue, RequestedCardPromotion, RequestedCardPublication
+from app.models import Apartment, ApartmentInventoryQueue, LalafoAutoReplyMeta, RequestedCardPromotion, RequestedCardPublication
 
 DAILY_REQUESTED_CARD_LIMIT = 3
 REQUESTED_CARD_GAP = timedelta(hours=6)
 REQUESTED_WINDOW_PREFIX = 'requested-card:'
+EXTERNAL_REPEAT_RECEIPT_PREFIX = 'external_2h:'
+
+
+def external_repeat_receipt_key(chat_id, message_id):
+    return f'{EXTERNAL_REPEAT_RECEIPT_PREFIX}{chat_id}:{message_id}'
+
+
+def _external_repeat_receipt():
+    receipt = RequestedCardPublication
+    # Exact acknowledged messages only: the same apartment's ordinary initial
+    # publication must still consume a daily slot. Retain compatibility with
+    # existing two-hour batch markers without rewriting publication history.
+    return select(LalafoAutoReplyMeta.key).where(or_(
+        LalafoAutoReplyMeta.key == (
+            EXTERNAL_REPEAT_RECEIPT_PREFIX + cast(receipt.telegram_chat_id, String)
+            + ':' + cast(receipt.telegram_message_id, String)),
+        (LalafoAutoReplyMeta.key.startswith('owned_send:all18209276-2h-'))
+        & (LalafoAutoReplyMeta.value == 'published:' + cast(receipt.telegram_message_id, String))
+        & (receipt.telegram_chat_id == -1004389602150),
+    )).correlate(receipt).exists()
 
 
 def utc(value):
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
 
 
-def publication_window(start, end):
+def publication_window(start, end, *, include_external_repeats=True):
     events = select(RequestedCardPublication.apartment_id).where(
         RequestedCardPublication.published_at >= start,
         RequestedCardPublication.published_at < end,
@@ -31,12 +51,13 @@ def publication_window(start, end):
                RequestedCardPublication.published_at).where(
             RequestedCardPublication.published_at >= start,
             RequestedCardPublication.published_at < end,
+            True if include_external_repeats else ~_external_repeat_receipt(),
         ),
     ).subquery()
 
 
-async def publications_in_window(session, start, end):
-    records = publication_window(start, end)
+async def publications_in_window(session, start, end, *, include_external_repeats=True):
+    records = publication_window(start, end, include_external_repeats=include_external_repeats)
     return list((await session.execute(select(records).order_by(records.c.published_at.desc()))).all())
 
 

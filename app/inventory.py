@@ -968,12 +968,13 @@ class InventoryRepository:
                 )
                 if value is not None
             ]
-            day_publications = await publications_in_window(session, day_start, day_end)
+            day_publications = await publications_in_window(
+                session, day_start, day_end, include_external_repeats=False)
             published_today = len(day_publications)
             expected_by_now = publication_slots_due(now)
             # A rebuilt/overdue queue is not proof of a publication deficit.
-            # Requested repeats count against the same daily clock: otherwise
-            # ordinary catch-up sends can consume all 110 slots before evening.
+            # Ordinary requested promotions share this clock. Explicit two-hour
+            # Lalafo repeats have their own schedule and cannot exhaust it.
             last_sent = max(publication_times, default=None)
             if published_today >= expected_by_now and now < next_publication_slot(now, published_today, last_sent):
                 return None

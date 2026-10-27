@@ -792,7 +792,9 @@ async def _inventory_queue_status() -> tuple[int, int, datetime | None]:
             )
             day_start = publication_day_start(now).astimezone(UTC)
             events = await publications_in_window(session, day_start, day_start + timedelta(days=1))
-            published = len(events)
+            scheduled_events = await publications_in_window(
+                session, day_start, day_start + timedelta(days=1), include_external_repeats=False)
+            published = len(scheduled_events)
             daily_limit_reached = published >= MAX_PUBLICATIONS_PER_DAY
             quiet_hours = not publication_window_open(now)
             latest = max((event.published_at for event in events), default=None)
@@ -805,6 +807,8 @@ async def _inventory_queue_status() -> tuple[int, int, datetime | None]:
             )
             _apartment_scheduler_state.update(
                 daily_published_count=published,
+                daily_total_with_external_repeats=len(events),
+                daily_external_repeat_count=len(events) - published,
                 daily_remaining_count=max(0, MAX_PUBLICATIONS_PER_DAY - published),
                 dispatch_pause_reason=(
                     "daily_limit_reached" if daily_limit_reached else

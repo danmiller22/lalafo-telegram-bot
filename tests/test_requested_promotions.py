@@ -105,6 +105,42 @@ async def test_day_limit_counts_repeat_receipts_before_claim(repositories):
         session.add(ApartmentInventoryQueue(apartment_id=other.id, scheduled_at=START, window_key='ordinary', sequence=1, status='queued'))
     assert await InventoryRepository(sessions).claim_due(now=START+timedelta(hours=4)) is None
 
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('legacy_marker', [False, True])
+async def test_two_hour_repeats_do_not_exhaust_fresh_queue_quota(repositories, legacy_marker):
+    from app.inventory import InventoryRepository
+    from app.models import ApartmentInventoryQueue, LalafoAutoReplyMeta
+    from app.promotions import external_repeat_receipt_key, record_delivery
+    apartments, _, sessions = repositories
+    repeated = await apartments.upsert_discovered(make_ad(lalafo_id=29001))
+    fresh = await apartments.upsert_discovered(make_ad(lalafo_id=29002))
+    chat_id = -1004389602150
+    # An ordinary initial post of this same apartment still counts. Only the
+    # exact two-hour repeat receipts are outside the ordinary daily plan.
+    await apartments.mark_published(repeated.id, chat_id=chat_id, message_id=1,
+                                    acknowledged_at=START, promote_requested=True)
+    async with sessions.begin() as session:
+        promotion = await session.get(RequestedCardPromotion, repeated.id)
+        promotion.enabled = False
+        for i in range(120):
+            mid = 100 + i
+            await record_delivery(session, repeated, chat_id=chat_id, message_id=mid,
+                                  published_at=START + timedelta(minutes=10))
+            key = (f'owned_send:all18209276-2h-{i}:29001' if legacy_marker
+                   else external_repeat_receipt_key(chat_id, mid))
+            session.add(LalafoAutoReplyMeta(key=key, value=f'published:{mid}' if legacy_marker else '2h'))
+        session.add(ApartmentInventoryQueue(apartment_id=fresh.id, scheduled_at=START,
+                                            window_key='ordinary', sequence=1, status='queued'))
+    async with sessions() as session:
+        assert len(await publications_in_window(session, START, START+timedelta(days=1))) == 121
+        counted = await publications_in_window(session, START, START+timedelta(days=1),
+                                               include_external_repeats=False)
+        assert len(counted) == 1
+        assert counted[0].apartment_id == repeated.id
+    claim = await InventoryRepository(sessions).claim_due(now=START+timedelta(hours=4))
+    assert claim is not None and claim.apartment_id == fresh.id
+
 @pytest.mark.asyncio
 async def test_fresh_stock_cannot_consume_reserved_repeat_slots(repositories):
     from app.inventory import InventoryRepository

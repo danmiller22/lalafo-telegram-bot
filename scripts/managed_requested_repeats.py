@@ -150,7 +150,8 @@ async def run():
                 print('MANAGED_REPEATS_EXPIRED', flush=True)
                 return 0
             start = publication_day_start(now).astimezone(timezone.utc)
-            events = await publications_in_window(session, start, start + timedelta(days=1))
+            events = await publications_in_window(
+                session, start, start + timedelta(days=1), include_external_repeats=False)
             latest = await latest_delivery_time(session, events)
         when = reservation_time(now, len(events), latest, catch_up=True)
         if when is None:
@@ -209,7 +210,8 @@ async def run():
         # Manual deliveries could have arrived while a slot was reserved.
         async with sessions() as session:
             start = publication_day_start(datetime.now(timezone.utc)).astimezone(timezone.utc)
-            current = await publications_in_window(session, start, start + timedelta(days=1))
+            current = await publications_in_window(
+                session, start, start + timedelta(days=1), include_external_repeats=False)
             latest = await latest_delivery_time(session, current)
         gap = reservation_gap(datetime.now(timezone.utc), len(current), catch_up=True)
         if len(current) >= MAX_PUBLICATIONS_PER_DAY or (latest and datetime.now(timezone.utc) - latest < timedelta(minutes=gap)):
