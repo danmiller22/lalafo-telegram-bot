@@ -121,8 +121,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
   <button id="pay-lifetime" class="primary tariff-button"{'' if payment_urls else ' disabled'}>Оплатить {WEEK_PRICE} сом</button>
   <a id="privacy" class="privacy hidden">Политика конфиденциальности</a>
   <section id="checkout" class="checkout hidden">
-    <p class="caption">Оплатили 499 сом? Нажмите кнопку — заявка сразу придёт администратору. Ничего писать не нужно.</p>
-    <button id="access" class="primary hidden">Проверить оплату</button>
+    <button id="access" class="primary hidden">Я оплатил(а)</button>
     <button id="reopen-payment" class="secondary hidden" style="margin-top:10px">Открыть Finik ещё раз</button>
   </section>
   <div id="apartment" class="hidden">
@@ -276,7 +275,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
       message("Заявка отправлена на проверку. Ожидайте подтверждения.");
       startPaymentPolling();
     }} else if (waiting) {{
-      message("После оплаты нажмите «Проверить оплату». Ничего писать не нужно.");
+      message("После оплаты нажмите «Я оплатил(а)».");
     }} else {{
       message("");
       show("status", false);
