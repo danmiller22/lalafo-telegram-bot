@@ -28,6 +28,7 @@ from app.lalafo.chat_protocol import (
     is_eligible_incoming,
     socket_connection_id,
 )
+from app.lalafo.cloud_reply_schedule import cloud_reply_allowed
 from tools.lalafo_campaign_session import load_session
 
 
@@ -130,7 +131,11 @@ async def preflight_once(
         await client.close()
 
 
-async def run_once() -> dict[str, int | bool]:
+async def run_once() -> dict[str, int | bool | str]:
+    # This guard precedes credentials, session renewal and all Lalafo requests.
+    if not cloud_reply_allowed():
+        return {'status': 'skipped', 'reason': 'pc_auto_reply_window',
+                'sent': 0, 'verified': 0}
     envelope = json.loads(Path(required("LALAFO_SESSION_ENVELOPE")).read_text())
     session = await load_session(
         envelope["sealed_session"], key_name=envelope["key_name"]
@@ -212,6 +217,8 @@ async def run_once() -> dict[str, int | bool]:
             await asyncio.wait_for(socket_ready.wait(), timeout=20)
 
         for chat, inbound in pending:
+            if not cloud_reply_allowed():
+                break
             timestamp = int(time.time() * 1000)
             job = AutoReplyJob(
                 inbound_key=f"{chat.chat_key}:{inbound.id}",
