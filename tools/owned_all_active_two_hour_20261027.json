@@ -109,7 +109,16 @@
         ],
         "source_description": "🏠 1-комнатная квартира\n📍 БГУ\n🏙 Бишкек\n💰 33 000 сом...................."
       },
-      "publicly_confirmed_message_id": 53072
+      "publicly_confirmed_message_id": 53072,
+      "repair_existing_media": true,
+      "append_recovery_gallery": false,
+      "delete_verified_wrong_photo_ids": [
+        53080,
+        53081,
+        53082,
+        53083,
+        53084
+      ]
     },
     {
       "source_id": 114142485,
@@ -142,7 +151,8 @@
           "https://img5.lalafo.com/i/posters/original/12/87/5f/2c49a2ffdac324150c28482c65.jpeg"
         ],
         "source_description": "🏠 1-комнатная квартира\n📍 Советская/Скрябина\n🏙 Бишкек\n💰 35 000 сом....."
-      }
+      },
+      "confirmed_not_sent": true
     },
     {
       "source_id": 89497619,

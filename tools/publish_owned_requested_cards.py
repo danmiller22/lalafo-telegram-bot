@@ -26,7 +26,8 @@ from scripts.scrape_publish import apartment_to_ad
 SUPPORTED_MANAGED_PROFILE_IDS = {18194628, 18209276}
 
 
-async def recover_confirmed_card(bot, publisher, apartment_id, ad, message_id):
+async def recover_confirmed_card(bot, publisher, apartment_id, ad, message_id,
+                                 *, append_remaining_photos=True, delete_photo_message_ids=()):
     """Restore photos to a publicly confirmed timed-out card without a second caption."""
     urls = list(dict.fromkeys(ad.photo_urls))
     if not urls or message_id <= 0:
@@ -38,7 +39,12 @@ async def recover_confirmed_card(bot, publisher, apartment_id, ad, message_id):
         reply_markup=apartment_keyboard(apartment_id, signer=publisher.signer,
             bot_username=publisher.bot_username, support_url=publisher.support_url,
             include_duplicate=publisher.include_duplicate))
-    if len(urls) > 1:
+    if delete_photo_message_ids:
+        if message_id in delete_photo_message_ids:
+            raise ValueError('Cannot delete the confirmed card')
+        await publisher._retry(bot.delete_messages, chat_id=publisher.chat_id,
+                               message_ids=list(delete_photo_message_ids))
+    if append_remaining_photos and len(urls) > 1:
         photos = await publisher._retry(bot.send_media_group, chat_id=publisher.chat_id,
             media=[InputMediaPhoto(media=url) for url in urls[1:10]],
             reply_parameters=ReplyParameters(message_id=message_id))
@@ -158,9 +164,9 @@ async def run(manifest_path):
         if len({a.id for _, a, _ in resolved}) != len(resolved):
             raise ValueError('Multiple owned ads resolve to the same original apartment')
         for row, apartment, ad in resolved:
-            recover_id = None
             await repo.upsert_discovered(ad, discovery_priority=True)
         for row, apartment, ad in resolved:
+            recover_id = None
             key = f"owned_send:{manifest['batch']}:{row['ad_id']}"
             if len(key) > 64:
                 raise ValueError('Batch key too long')
@@ -168,16 +174,28 @@ async def run(manifest_path):
                 marker = await session.get(LalafoAutoReplyMeta, key)
                 if marker:
                     if marker.value.startswith('published:'):
-                        print(f"OWNED_CARD_ALREADY_PUBLISHED managed_id={row['ad_id']} {marker.value}", flush=True)
-                        continue
-                    recover_id = row.get('publicly_confirmed_message_id')
-                    if not recover_id or marker.value != 'sending':
-                        raise RuntimeError('Ambiguous send: reconcile Telegram before retrying')
-                    marker.value = 'restoring_confirmed_photos'
+                        if row.get('repair_existing_media') is True:
+                            recover_id = int(marker.value.split(':', 1)[1])
+                            if recover_id != row.get('publicly_confirmed_message_id'):
+                                raise ValueError('Confirmed repair message mismatch')
+                            marker.value = 'restoring_confirmed_photos'
+                        else:
+                            print(f"OWNED_CARD_ALREADY_PUBLISHED managed_id={row['ad_id']} {marker.value}", flush=True)
+                            continue
+                    elif marker.value == 'sending' and row.get('confirmed_not_sent') is True:
+                        # Explicitly reconciled recovery error: no caption was sent for this row.
+                        pass
+                    else:
+                        recover_id = row.get('publicly_confirmed_message_id')
+                        if not recover_id or marker.value != 'sending':
+                            raise RuntimeError('Ambiguous send: reconcile Telegram before retrying')
+                        marker.value = 'restoring_confirmed_photos'
                 else:
                     session.add(LalafoAutoReplyMeta(key=key, value='sending'))
             if recover_id:
-                message = await recover_confirmed_card(bot, publisher, apartment.id, ad, int(recover_id))
+                message = await recover_confirmed_card(bot, publisher, apartment.id, ad, int(recover_id),
+                    append_remaining_photos=row.get('append_recovery_gallery', True),
+                    delete_photo_message_ids=row.get('delete_verified_wrong_photo_ids', ()))
             else:
                 message = await publisher.publish(apartment.id, ad)
             await repo.mark_published(apartment.id, chat_id=settings.telegram_group_id,

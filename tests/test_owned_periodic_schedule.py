@@ -62,3 +62,46 @@ async def test_confirmed_timeout_card_restores_photos_without_duplicate_caption(
     album = bot.send_media_group.await_args.kwargs
     assert [m.media for m in album['media']] == ad.photo_urls[1:]
     assert album['reply_parameters'].message_id == 53072
+
+
+@pytest.mark.asyncio
+async def test_recovery_does_not_reuse_message_for_next_apartment(repositories, monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from app.config import Settings
+    from tools import publish_owned_requested_cards as module
+    repo, _, sessions = repositories
+    now = datetime.now(timezone.utc)
+    ads = [make_ad(lalafo_id=710001), make_ad(lalafo_id=710002)]
+    originals = [await repo.upsert_discovered(ad) for ad in ads]
+    cards = []
+    for index, ad in enumerate(ads):
+        cards.append({'source_id': ad.lalafo_id, 'profile_id': 18209276, 'ad_id': 720001+index,
+                      'url': f'https://lalafo.kg/bishkek/ads/example-id-{720001+index}',
+                      'snapshot': {'user_id': 18209276, 'id': 720001+index, 'status_id': 2,
+                                   'rooms': '1', 'price': ad.price, 'district': ad.district,
+                                   'photo_urls': ad.photo_urls}})
+    cards[0]['publicly_confirmed_message_id'] = 600
+    manifest = {'batch': 'recovery-isolation', 'verified_at': now.isoformat(),
+                'repeat_every_hours': 2, 'externally_scheduled': True, 'cards': cards}
+    path = tmp_path/'manifest.json'
+    path.write_text(json.dumps(manifest))
+    async with sessions.begin() as session:
+        session.add(LalafoAutoReplyMeta(key='owned_send:recovery-isolation:720001', value='sending'))
+    publisher = SimpleNamespace(publish=AsyncMock(return_value=SimpleNamespace(message_id=601, date=now)))
+    recover = AsyncMock(return_value=SimpleNamespace(message_id=600, date=now))
+    settings = Settings(_env_file=None, telegram_bot_token='123:test', callback_secret='long-test-secret-value', telegram_group_id=-1004389602150)
+    monkeypatch.setenv('CONFIRM_OWNED_PUBLIC_SEND','true')
+    monkeypatch.setattr(module,'get_settings',lambda:settings)
+    monkeypatch.setattr(module,'create_engine_and_session',lambda _: (SimpleNamespace(dispose=AsyncMock()),sessions))
+    monkeypatch.setattr(module,'Bot',lambda _:SimpleNamespace(session=SimpleNamespace(close=AsyncMock())))
+    monkeypatch.setattr(module,'TelegramPublisher',lambda *args,**kwargs:publisher)
+    monkeypatch.setattr(module,'recover_confirmed_card',recover)
+    monkeypatch.setattr(module,'handoff_to_periodic_schedule',AsyncMock())
+    await module.run(str(path))
+    recover.assert_awaited_once()
+    assert recover.await_args.args[2] == originals[0].id
+    publisher.publish.assert_awaited_once()
+    assert publisher.publish.await_args.args[0] == originals[1].id
+    assert (await repo.get(originals[0].id)).telegram_message_id == 600
+    assert (await repo.get(originals[1].id)).telegram_message_id == 601
