@@ -65,7 +65,8 @@ async def test_confirmed_timeout_card_restores_photos_without_duplicate_caption(
 
 
 @pytest.mark.asyncio
-async def test_recovery_does_not_reuse_message_for_next_apartment(repositories, monkeypatch, tmp_path):
+@pytest.mark.parametrize('replace_broken', [False, True])
+async def test_recovery_does_not_reuse_message_for_next_apartment(repositories, monkeypatch, tmp_path, replace_broken):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
     from app.config import Settings
@@ -81,27 +82,45 @@ async def test_recovery_does_not_reuse_message_for_next_apartment(repositories, 
                       'snapshot': {'user_id': 18209276, 'id': 720001+index, 'status_id': 2,
                                    'rooms': '1', 'price': ad.price, 'district': ad.district,
                                    'photo_urls': ad.photo_urls}})
-    cards[0]['publicly_confirmed_message_id'] = 600
+    if replace_broken:
+        cards[0]['replace_verified_broken_publication'] = {'card_message_id': 600, 'message_ids': [600, 602, 603]}
+        await repo.mark_published(originals[0].id, chat_id=-1004389602150,
+                                  message_id=600, acknowledged_at=now)
+    else:
+        cards[0]['publicly_confirmed_message_id'] = 600
     manifest = {'batch': 'recovery-isolation', 'verified_at': now.isoformat(),
                 'repeat_every_hours': 2, 'externally_scheduled': True, 'cards': cards}
     path = tmp_path/'manifest.json'
     path.write_text(json.dumps(manifest))
     async with sessions.begin() as session:
-        session.add(LalafoAutoReplyMeta(key='owned_send:recovery-isolation:720001', value='sending'))
-    publisher = SimpleNamespace(publish=AsyncMock(return_value=SimpleNamespace(message_id=601, date=now)))
+        session.add(LalafoAutoReplyMeta(key='owned_send:recovery-isolation:720001',
+                                       value='published:600' if replace_broken else 'sending'))
+    publisher = SimpleNamespace(publish=AsyncMock(side_effect=[SimpleNamespace(message_id=i, date=now) for i in ([604, 601] if replace_broken else [601])]),
+                                _retry=AsyncMock())
     recover = AsyncMock(return_value=SimpleNamespace(message_id=600, date=now))
     settings = Settings(_env_file=None, telegram_bot_token='123:test', callback_secret='long-test-secret-value', telegram_group_id=-1004389602150)
     monkeypatch.setenv('CONFIRM_OWNED_PUBLIC_SEND','true')
     monkeypatch.setattr(module,'get_settings',lambda:settings)
     monkeypatch.setattr(module,'create_engine_and_session',lambda _: (SimpleNamespace(dispose=AsyncMock()),sessions))
-    monkeypatch.setattr(module,'Bot',lambda _:SimpleNamespace(session=SimpleNamespace(close=AsyncMock())))
+    bot = SimpleNamespace(delete_messages=AsyncMock(), session=SimpleNamespace(close=AsyncMock()))
+    monkeypatch.setattr(module,'Bot',lambda _:bot)
     monkeypatch.setattr(module,'TelegramPublisher',lambda *args,**kwargs:publisher)
     monkeypatch.setattr(module,'recover_confirmed_card',recover)
     monkeypatch.setattr(module,'handoff_to_periodic_schedule',AsyncMock())
     await module.run(str(path))
-    recover.assert_awaited_once()
-    assert recover.await_args.args[2] == originals[0].id
-    publisher.publish.assert_awaited_once()
+    if replace_broken:
+        recover.assert_not_awaited()
+        publisher._retry.assert_awaited_once_with(bot.delete_messages, chat_id=-1004389602150, message_ids=[600, 602, 603])
+        assert publisher.publish.await_count == 2
+        assert publisher.publish.await_args_list[0].args[0] == originals[0].id
+        # A rerun of the exact same manifest must neither delete nor republish again.
+        await module.run(str(path))
+        assert publisher.publish.await_count == 2
+        assert publisher._retry.await_count == 1
+    else:
+        recover.assert_awaited_once()
+        assert recover.await_args.args[2] == originals[0].id
+        publisher.publish.assert_awaited_once()
     assert publisher.publish.await_args.args[0] == originals[1].id
-    assert (await repo.get(originals[0].id)).telegram_message_id == 600
+    assert (await repo.get(originals[0].id)).telegram_message_id == (604 if replace_broken else 600)
     assert (await repo.get(originals[1].id)).telegram_message_id == 601

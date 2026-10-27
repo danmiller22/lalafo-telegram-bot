@@ -167,6 +167,16 @@ async def run(manifest_path):
             await repo.upsert_discovered(ad, discovery_priority=True)
         for row, apartment, ad in resolved:
             recover_id = None
+            cleanup_ids = None
+            cleanup = row.get('replace_verified_broken_publication')
+            if cleanup:
+                old_id = cleanup['card_message_id']
+                cleanup_ids = cleanup['message_ids']
+                if (not isinstance(old_id, int) or old_id <= 0
+                        or not isinstance(cleanup_ids, list) or not 1 <= len(cleanup_ids) <= 100
+                        or len(set(cleanup_ids)) != len(cleanup_ids) or old_id not in cleanup_ids
+                        or any(not isinstance(i, int) or i <= 0 for i in cleanup_ids)):
+                    raise ValueError('Expected exact verified broken publication message IDs')
             key = f"owned_send:{manifest['batch']}:{row['ad_id']}"
             if len(key) > 64:
                 raise ValueError('Batch key too long')
@@ -174,7 +184,11 @@ async def run(manifest_path):
                 marker = await session.get(LalafoAutoReplyMeta, key)
                 if marker:
                     if marker.value.startswith('published:'):
-                        if row.get('repair_existing_media') is True:
+                        if cleanup and marker.value == f'published:{old_id}':
+                            if apartment.telegram_message_id != old_id:
+                                raise ValueError('Broken publication receipt mismatch')
+                            marker.value = f'cleanup_for_republish:{old_id}'
+                        elif row.get('repair_existing_media') is True:
                             recover_id = int(marker.value.split(':', 1)[1])
                             if recover_id != row.get('publicly_confirmed_message_id'):
                                 raise ValueError('Confirmed repair message mismatch')
@@ -182,6 +196,8 @@ async def run(manifest_path):
                         else:
                             print(f"OWNED_CARD_ALREADY_PUBLISHED managed_id={row['ad_id']} {marker.value}", flush=True)
                             continue
+                    elif cleanup and marker.value == f'cleanup_for_republish:{old_id}':
+                        pass  # Deleting the same explicitly verified artifacts is idempotent.
                     elif marker.value == 'sending' and row.get('confirmed_not_sent') is True:
                         # Explicitly reconciled recovery error: no caption was sent for this row.
                         pass
@@ -191,7 +207,15 @@ async def run(manifest_path):
                             raise RuntimeError('Ambiguous send: reconcile Telegram before retrying')
                         marker.value = 'restoring_confirmed_photos'
                 else:
+                    if cleanup:
+                        raise ValueError('Cannot replace a publication without its existing batch marker')
                     session.add(LalafoAutoReplyMeta(key=key, value='sending'))
+            if cleanup_ids:
+                await publisher._retry(bot.delete_messages, chat_id=settings.telegram_group_id,
+                                       message_ids=cleanup_ids)
+                async with sessions.begin() as session:
+                    marker = await session.get(LalafoAutoReplyMeta, key)
+                    marker.value = 'sending'
             if recover_id:
                 message = await recover_confirmed_card(bot, publisher, apartment.id, ad, int(recover_id),
                     append_remaining_photos=row.get('append_recovery_gallery', True),
