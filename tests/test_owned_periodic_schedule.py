@@ -36,3 +36,29 @@ async def test_two_hour_external_batch_preserves_source_mapping_without_queue_re
     assert len(links) == 1
     assert links[0].managed_lalafo_ad_id == binding['ad_id']
     assert links[0].apartment.phone == apartment.phone
+
+
+@pytest.mark.asyncio
+async def test_confirmed_timeout_card_restores_photos_without_duplicate_caption():
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from app.security import TokenSigner
+    from app.telegram.publisher import TelegramPublisher
+    from tools.publish_owned_requested_cards import recover_confirmed_card
+    ad = make_ad()
+    ad.photo_urls = ['https://example.test/room.jpg', 'https://example.test/kitchen.jpg', 'https://example.test/bath.jpg']
+    existing = SimpleNamespace(message_id=53072)
+    bot = SimpleNamespace(edit_message_media=AsyncMock(return_value=existing),
+                          send_media_group=AsyncMock(return_value=[SimpleNamespace(message_id=1), SimpleNamespace(message_id=2)]),
+                          send_message=AsyncMock())
+    publisher = TelegramPublisher(bot, chat_id=-1004389602150, signer=TokenSigner('test-secret-for-recovery'),
+                                   bot_username='arenda312bot', support_url='https://t.me/support',
+                                   request_timeout_seconds=30)
+    assert await recover_confirmed_card(bot, publisher, 77, ad, 53072) is existing
+    bot.send_message.assert_not_awaited()
+    call = bot.edit_message_media.await_args.kwargs
+    assert call['message_id'] == 53072 and call['media'].media == ad.photo_urls[0]
+    assert call['reply_markup'].inline_keyboard[0][0].text == 'Получить номер'
+    album = bot.send_media_group.await_args.kwargs
+    assert [m.media for m in album['media']] == ad.photo_urls[1:]
+    assert album['reply_parameters'].message_id == 53072

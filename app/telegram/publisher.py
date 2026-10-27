@@ -34,6 +34,7 @@ class TelegramPublisher:
         support_url: str,
         max_photos: int = 5,
         include_duplicate: bool = False,
+        request_timeout_seconds: float = TELEGRAM_REQUEST_TIMEOUT_SECONDS,
     ) -> None:
         self.bot = bot
         self.chat_id = chat_id
@@ -42,6 +43,7 @@ class TelegramPublisher:
         self.support_url = support_url
         self.max_photos = max(1, min(max_photos, 5))
         self.include_duplicate = include_duplicate
+        self.request_timeout_seconds = request_timeout_seconds
         self._retry_not_before = 0.0
         self._rate_limit_lock = asyncio.Lock()
 
@@ -61,7 +63,7 @@ class TelegramPublisher:
         for attempt in range(5):
             await self._wait_for_shared_rate_limit()
             try:
-                async with asyncio.timeout(TELEGRAM_REQUEST_TIMEOUT_SECONDS):
+                async with asyncio.timeout(self.request_timeout_seconds):
                     return await method(*args, **kwargs)
             except TelegramRetryAfter as exc:
                 if attempt == 4:

@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from aiogram import Bot
+from aiogram.types import InputMediaPhoto, ReplyParameters
 from sqlalchemy import select, update
 
 from app.config import get_settings
@@ -17,10 +18,33 @@ from app.models import LalafoAutoReplyMeta, RequestedCardPromotion, ApartmentInv
 from app.payments.repository import ApartmentRepository
 from app.security import TokenSigner
 from app.telegram.publisher import TelegramPublisher
+from app.telegram.formatting import format_public_apartment
+from app.telegram.keyboards import apartment_keyboard
 from scripts.managed_requested_repeats import enroll
 from scripts.scrape_publish import apartment_to_ad
 
 SUPPORTED_MANAGED_PROFILE_IDS = {18194628, 18209276}
+
+
+async def recover_confirmed_card(bot, publisher, apartment_id, ad, message_id):
+    """Restore photos to a publicly confirmed timed-out card without a second caption."""
+    urls = list(dict.fromkeys(ad.photo_urls))
+    if not urls or message_id <= 0:
+        raise ValueError('Confirmed card and source photos are required')
+    message = await publisher._retry(
+        bot.edit_message_media, chat_id=publisher.chat_id, message_id=message_id,
+        media=InputMediaPhoto(media=urls[0], caption=format_public_apartment(
+            ad, bot_username=publisher.bot_username, wanted_deep_link=True), parse_mode='HTML'),
+        reply_markup=apartment_keyboard(apartment_id, signer=publisher.signer,
+            bot_username=publisher.bot_username, support_url=publisher.support_url,
+            include_duplicate=publisher.include_duplicate))
+    if len(urls) > 1:
+        photos = await publisher._retry(bot.send_media_group, chat_id=publisher.chat_id,
+            media=[InputMediaPhoto(media=url) for url in urls[1:10]],
+            reply_parameters=ReplyParameters(message_id=message_id))
+        if not publisher._photos_acknowledged(photos):
+            raise RuntimeError('Restored photos were not acknowledged')
+    return message
 
 
 async def handoff_to_periodic_schedule(sessions, resolved, manifest):
@@ -79,7 +103,8 @@ async def run(manifest_path):
     bot = Bot(settings.require_bot_token())
     publisher = TelegramPublisher(bot, chat_id=settings.telegram_group_id,
         signer=TokenSigner(settings.require_callback_secret()),
-        bot_username=settings.telegram_bot_username, support_url=settings.support_bot_url)
+        bot_username=settings.telegram_bot_username, support_url=settings.support_bot_url,
+        request_timeout_seconds=30)
     try:
         resolved = []
         # Resolve the entire batch before any send. Never manufacture a phone,
@@ -133,6 +158,7 @@ async def run(manifest_path):
         if len({a.id for _, a, _ in resolved}) != len(resolved):
             raise ValueError('Multiple owned ads resolve to the same original apartment')
         for row, apartment, ad in resolved:
+            recover_id = None
             await repo.upsert_discovered(ad, discovery_priority=True)
         for row, apartment, ad in resolved:
             key = f"owned_send:{manifest['batch']}:{row['ad_id']}"
@@ -144,9 +170,16 @@ async def run(manifest_path):
                     if marker.value.startswith('published:'):
                         print(f"OWNED_CARD_ALREADY_PUBLISHED managed_id={row['ad_id']} {marker.value}", flush=True)
                         continue
-                    raise RuntimeError('Ambiguous send: reconcile Telegram before retrying')
-                session.add(LalafoAutoReplyMeta(key=key, value='sending'))
-            message = await publisher.publish(apartment.id, ad)
+                    recover_id = row.get('publicly_confirmed_message_id')
+                    if not recover_id or marker.value != 'sending':
+                        raise RuntimeError('Ambiguous send: reconcile Telegram before retrying')
+                    marker.value = 'restoring_confirmed_photos'
+                else:
+                    session.add(LalafoAutoReplyMeta(key=key, value='sending'))
+            if recover_id:
+                message = await recover_confirmed_card(bot, publisher, apartment.id, ad, int(recover_id))
+            else:
+                message = await publisher.publish(apartment.id, ad)
             await repo.mark_published(apartment.id, chat_id=settings.telegram_group_id,
                 message_id=message.message_id, acknowledged_at=message.date,
                 promote_requested=True)
