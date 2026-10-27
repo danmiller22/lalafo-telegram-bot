@@ -7,12 +7,13 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from aiogram import Bot
+from sqlalchemy import select, update
 
 from app.config import get_settings
 from app.database import create_engine_and_session
 from app.lalafo.models import PHONE_SOURCE_VERSION, LalafoAd
 from app.managed_cards import PREFIX
-from app.models import LalafoAutoReplyMeta
+from app.models import LalafoAutoReplyMeta, RequestedCardPromotion, ApartmentInventoryQueue
 from app.payments.repository import ApartmentRepository
 from app.security import TokenSigner
 from app.telegram.publisher import TelegramPublisher
@@ -20,6 +21,34 @@ from scripts.managed_requested_repeats import enroll
 from scripts.scrape_publish import apartment_to_ad
 
 SUPPORTED_MANAGED_PROFILE_IDS = {18194628, 18209276}
+
+
+async def handoff_to_periodic_schedule(sessions, resolved, manifest):
+    """The explicit two-hour batch owns these repeats, avoiding queue duplicates."""
+    if manifest.get('repeat_every_hours') != 2 or manifest.get('externally_scheduled') is not True:
+        raise ValueError('Expected an explicitly scheduled two-hour batch')
+    repo = ApartmentRepository(sessions)
+    for row, apartment, _ in resolved:
+        await repo.save_managed_lalafo_source(
+            managed_lalafo_ad_id=row['ad_id'], managed_lalafo_ad_url=row['url'],
+            apartment=apartment)
+    owners = {row['profile_id'] for row, _, _ in resolved}
+    async with sessions.begin() as session:
+        markers = await session.scalars(select(LalafoAutoReplyMeta).where(
+            LalafoAutoReplyMeta.key.startswith(PREFIX)))
+        ids = {apartment.id for _, apartment, _ in resolved}
+        for marker in markers:
+            value = json.loads(marker.value)
+            if value.get('profile_id') in owners:
+                value.update(enabled=False, externally_scheduled=True, repeat_every_hours=2)
+                marker.value = json.dumps(value)
+                ids.add(int(marker.key[len(PREFIX):]))
+        await session.execute(update(RequestedCardPromotion).where(
+            RequestedCardPromotion.apartment_id.in_(ids)).values(enabled=False))
+        await session.execute(update(ApartmentInventoryQueue).where(
+            ApartmentInventoryQueue.apartment_id.in_(ids),
+            ApartmentInventoryQueue.status == 'queued').values(
+                status='skipped', last_error='external_two_hour_schedule'))
 
 
 async def run(manifest_path):
@@ -31,7 +60,8 @@ async def run(manifest_path):
     if not timedelta(0) <= now - checked <= timedelta(minutes=45):
         raise ValueError('Refresh the owner-visible snapshots before sending')
     cards = manifest['cards']
-    if not 1 <= len(cards) <= 10 or len({r['ad_id'] for r in cards}) != len(cards):
+    external = manifest.get('externally_scheduled') is True and manifest.get('repeat_every_hours') == 2
+    if not 1 <= len(cards) <= (30 if external else 10) or len({r['ad_id'] for r in cards}) != len(cards):
         raise ValueError('Expected unique explicitly requested owned ads')
     if manifest.get('sealed_contacts'):
         from tools.lalafo_campaign_session import load_session
@@ -72,7 +102,7 @@ async def run(manifest_path):
             else:
                 apartment = await repo.get_by_telegram_message(
                     chat_id=settings.telegram_group_id, message_id=row['telegram_message_id'])
-            if row.get('source_id') in supplied and (apartment is None or not apartment.phone):
+            if row.get('source_id') in supplied:
                 original = supplied[row['source_id']]
                 if (not original.phone or original.phone_source_version != PHONE_SOURCE_VERSION
                         or original.source_url != row.get('source_url')
@@ -127,8 +157,11 @@ async def run(manifest_path):
                   f"message_id={message.message_id} photos={len(ad.photo_urls)}", flush=True)
         # First-time originals have no Telegram receipt until the initial send.
         # Enroll only after every card has an acknowledged publication.
-        await enroll(sessions, manifest, now=now)
-        print(f'OWNED_BATCH_COMPLETED={len(resolved)} repeat_every_hours=3', flush=True)
+        if external:
+            await handoff_to_periodic_schedule(sessions, resolved, manifest)
+        else:
+            await enroll(sessions, manifest, now=now)
+        print(f"OWNED_BATCH_COMPLETED={len(resolved)} repeat_every_hours={manifest.get('repeat_every_hours', 3)}", flush=True)
     finally:
         await bot.session.close()
         await engine.dispose()
