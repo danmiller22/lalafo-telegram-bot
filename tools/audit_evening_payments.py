@@ -48,11 +48,8 @@ async def main():
                 hours.append(row)
                 cursor += timedelta(hours=1)
             result["hourly"] = hours
-            latest = (await session.execute(select(
-                func.max(PaymentHistory.paid_at), func.max(PaymentRequest.payment_claimed_at),
-            ).select_from(PaymentHistory).outerjoin(PaymentRequest,
-                PaymentRequest.id == PaymentHistory.payment_request_id)))).one()
-            result["latest_recorded_payment_at"] = latest[0].isoformat() if latest[0] else None
+            latest = await session.scalar(select(func.max(PaymentHistory.paid_at)))
+            result["latest_recorded_payment_at"] = latest.isoformat() if latest else None
             last_claim = await session.scalar(select(func.max(PaymentRequest.payment_claimed_at)))
             result["latest_claim_at"] = last_claim.isoformat() if last_claim else None
             pending = (await session.execute(select(
