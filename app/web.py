@@ -1475,6 +1475,7 @@ async def health() -> JSONResponse:
                 "single_photo_duplicate_guard": True,
                 "requested_cards": {"total_publications": 3, "duration_hours": 24, "minimum_gap_hours": 6, "included_in_daily_target": True},
                 "telegram_source_channels": len(settings.telegram_source_channels),
+                "shared_housing": {"daily_target": 10, "minimum_gap_minutes": 120, "mixed_with_whole_apartments": True},
             },
             "apartment_scheduler": (
                 {

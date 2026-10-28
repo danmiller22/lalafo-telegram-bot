@@ -15,6 +15,7 @@ def room_title(rooms: str) -> str:
         "studio": "Студия",
         "1": "1-комнатная квартира",
         "2": "2-комнатная квартира",
+        "shared": "Подселение",
     }.get(rooms, "Квартира")
 
 
@@ -61,6 +62,8 @@ def format_apartment(ad: LalafoAd | Apartment) -> str:
         lines.append("📍 Центр")
     lines.append(f"🏙 {ad.city}")
     lines.append(f"💰 {format_money(ad.price)} сом")
+    if ad.rooms == "shared":
+        lines.append("👥 Совместное проживание")
     if ad.deposit is not None:
         lines.append(f"🔐 Депозит: {format_money(ad.deposit)} сом")
     label = author_label(ad)

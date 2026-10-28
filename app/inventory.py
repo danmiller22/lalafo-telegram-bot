@@ -21,10 +21,11 @@ from app.listing_quality import district_priority, price_bucket, mix_prices, ren
 from app.listing_policy import OWNER_MAX_PRICE, seller_policy_eligible
 from app.telegram.formatting import is_supported_source
 from app.promotions import publications_in_window, queue_due_promotions, REQUESTED_WINDOW_PREFIX
+from app.shared_housing import SHARED_ROOMS, SHARED_MIN_PRICE, SHARED_MAX_PRICE, SHARED_DAILY_TARGET, SHARED_GAP, schedule_shared, shared_deliveries
 
 
 BISHKEK = ZoneInfo("Asia/Bishkek")
-ALLOWED_ROOMS = frozenset({"studio", "1"})
+ALLOWED_ROOMS = frozenset({"studio", "1", SHARED_ROOMS})
 CENTRAL_DAILY_SHARE = 0.50
 REALTOR_DAILY_SHARE = 0.25
 MIN_PUBLICATIONS_PER_DAY = 110
@@ -269,7 +270,7 @@ def plan_period(
     apartments = [
         item
         for item in apartments
-        if item.rooms in ALLOWED_ROOMS
+        if item.rooms in {"studio", "1"}
         and is_supported_source(item)
         and seller_policy_eligible(
             seller_type=item.seller_type,
@@ -766,7 +767,7 @@ class InventoryRepository:
                     Apartment.id.not_in(active_queue_ids),
                     Apartment.fingerprint.not_in(queued_fingerprints),
                     Apartment.price.between(25_000, OWNER_MAX_PRICE),
-                    Apartment.rooms.in_(ALLOWED_ROOMS),
+                    Apartment.rooms.in_(("studio", "1")),
                     Apartment.last_seen_at >= now - timedelta(days=2),
                 )
                 .order_by(
@@ -786,7 +787,7 @@ class InventoryRepository:
                     Apartment.id.not_in(active_queue_ids),
                     Apartment.fingerprint.not_in(queued_fingerprints),
                     Apartment.price.between(25_000, OWNER_MAX_PRICE),
-                    Apartment.rooms.in_(ALLOWED_ROOMS),
+                    Apartment.rooms.in_(("studio", "1")),
                     Apartment.last_seen_at >= now - timedelta(days=2),
                 )
                 .order_by(Apartment.published_at.asc())
@@ -879,7 +880,8 @@ class InventoryRepository:
                 existing.published_at = None
                 existing.attempts = 0
                 existing.last_error = None
-            return len(planned)
+            shared_count = await schedule_shared(session, now=now, day_start=day_start, day_end=day_end)
+            return len(planned) + shared_count
 
     async def claim_due(
         self,
@@ -924,9 +926,11 @@ class InventoryRepository:
                 .values(status="skipped", last_error="unsupported_source")
             )
             ineligible_apartment_ids = select(Apartment.id).where(
-                (Apartment.price < 25_000)
-                | (Apartment.price > OWNER_MAX_PRICE)
-                | Apartment.rooms.not_in(ALLOWED_ROOMS)
+                ~or_(
+                    (Apartment.rooms.in_(("studio", "1"))) & Apartment.price.between(25_000, OWNER_MAX_PRICE),
+                    (Apartment.rooms == SHARED_ROOMS) & Apartment.source_url.like("https://t.me/%")
+                    & Apartment.price.between(SHARED_MIN_PRICE, SHARED_MAX_PRICE),
+                )
             )
             await session.execute(
                 update(ApartmentInventoryQueue)
@@ -1018,7 +1022,9 @@ class InventoryRepository:
                         ),
                         or_(
                             ApartmentInventoryQueue.window_key.startswith(REQUESTED_WINDOW_PREFIX),
-                            Apartment.rooms.in_(ALLOWED_ROOMS) & Apartment.price.between(25_000, OWNER_MAX_PRICE),
+                            Apartment.rooms.in_(("studio", "1")) & Apartment.price.between(25_000, OWNER_MAX_PRICE),
+                            (Apartment.rooms == SHARED_ROOMS) & Apartment.price.between(SHARED_MIN_PRICE, SHARED_MAX_PRICE)
+                            & Apartment.source_url.like("https://t.me/%") & (ApartmentInventoryQueue.scheduled_at <= now),
                         ),
                         _supported_source_filter(),
                     )
@@ -1034,6 +1040,7 @@ class InventoryRepository:
             due_rows = [
                 row for row in due_rows
                 if row[4].startswith(REQUESTED_WINDOW_PREFIX)
+                or row[5] == SHARED_ROOMS
                 or seller_policy_eligible(
                     seller_type=row[2],
                     owner_listing=row[2] == "owner",
@@ -1050,6 +1057,20 @@ class InventoryRepository:
                 if not due_rows:
                     return None
             requested_rows = [row for row in due_rows if row[4].startswith(REQUESTED_WINDOW_PREFIX)]
+            shared_rows = [row for row in due_rows if row[5] == SHARED_ROOMS]
+            ordinary_rows = [row for row in due_rows if row[5] != SHARED_ROOMS]
+            shared_sent = await shared_deliveries(session, day_start, day_end)
+            last_shared = max((as_utc(t) for t in shared_sent), default=None)
+            latest_whole = await session.scalar(select(func.max(Apartment.published_at)).where(
+                Apartment.rooms.in_(("studio", "1")), Apartment.published_at >= day_start,
+                Apartment.published_at <= now,
+            ))
+            shared_allowed = (len(shared_sent) < SHARED_DAILY_TARGET
+                and (last_shared is None or (now - last_shared >= SHARED_GAP
+                    and latest_whole is not None and as_utc(latest_whole) > last_shared)))
+            due_rows = shared_rows if shared_rows and shared_allowed else ordinary_rows
+            if not due_rows:
+                return None
             due_rows = requested_rows or due_rows
             central_needed = published_central < math.ceil(
                 (published_today + 1) * CENTRAL_DAILY_SHARE

@@ -13,6 +13,7 @@ from bs4 import BeautifulSoup
 
 from app.lalafo.models import LalafoAd
 from app.telegram.source_filter import is_lodging_offer, is_owner_offer
+from app.shared_housing import SHARED_ROOMS, SHARED_MIN_PRICE, SHARED_MAX_PRICE, shared_offer
 
 
 logger = logging.getLogger(__name__)
@@ -277,15 +278,19 @@ def parse_telegram_apartments(
         ]
         text = " ".join(lines)
         normalized = text.casefold().replace("ё", "е")
+        shared = shared_offer(text)
         structured_apartment = "квартир" in normalized and _telegram_rooms(text) is not None
-        if not any(term in normalized for term in OFFER_TERMS) and not structured_apartment:
+        if not any(term in normalized for term in OFFER_TERMS) and not structured_apartment and not shared:
             note("not_a_rental_offer")
             continue
         if any(term in normalized for term in SEARCH_TERMS):
             note("wanted_ad")
             continue
+        if shared and re.search(r"\b(?:ищу|сниму|снимем|ищем)\s+(?:с\s+подселением\s+)?(?:квартир|комнат|жиль|подселен)", normalized):
+            note("wanted_ad")
+            continue
         shared_text = re.sub(r"\bбез\s+подселени[яй]\b", "", normalized)
-        if any(term in shared_text for term in SHARED_HOUSING_TERMS):
+        if any(term in shared_text for term in ("общежит", "хостел")):
             note("shared_housing")
             continue
         if is_lodging_offer(text):
@@ -316,9 +321,12 @@ def parse_telegram_apartments(
                 phone = _telegram_phone(url)
                 if phone:
                     break
-        if price is None or not 25_000 <= price <= 40_000:
+        minimum, maximum = (SHARED_MIN_PRICE, SHARED_MAX_PRICE) if shared else (25_000, 40_000)
+        if price is None or not minimum <= price <= maximum:
             note("missing_or_out_of_range_price")
             continue
+        if shared:
+            rooms = SHARED_ROOMS
         if rooms is None:
             note("missing_room_type")
             continue
@@ -341,9 +349,7 @@ def parse_telegram_apartments(
         )
         district = _telegram_district(lines, text)
         if not district:
-            if price < 25_000:
-                continue
-            district = "Центр"
+            district = "Бишкек" if shared else "Центр"
         note("eligible")
         ads.append(
             LalafoAd(
@@ -358,7 +364,7 @@ def parse_telegram_apartments(
                 deposit=_integer(DEPOSIT_RE.search(text)),
                 photo_urls=photo_urls,
                 category_id=2044,
-                no_subletting=True,
+                no_subletting=not shared,
                 owner_listing=owner,
                 seller_type=seller_type,
                 source_title=lines[0] if lines else "Квартира",

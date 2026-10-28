@@ -104,7 +104,7 @@ def test_accepts_explicit_kgs_equivalent_from_structured_channel() -> None:
     assert ads[0].owner_listing is True
 
 
-def test_rejects_search_posts_shared_housing_and_old_cards() -> None:
+def test_rejects_search_and_old_cards_but_labels_shared_housing_separately() -> None:
     search = _post(
         "Ищу квартиру. Нужна 1-комнатная квартира до 30 000 сом. 0705 111 222",
         post_id=101,
@@ -121,7 +121,9 @@ def test_rejects_search_posts_shared_housing_and_old_cards() -> None:
     now = datetime(2026, 9, 23, 7, tzinfo=timezone.utc)
 
     assert parse_telegram_apartments(search, now=now) == []
-    assert parse_telegram_apartments(shared, now=now) == []
+    shared_ads = parse_telegram_apartments(shared, now=now)
+    assert len(shared_ads) == 1
+    assert shared_ads[0].rooms == "shared" and not shared_ads[0].no_subletting
     assert parse_telegram_apartments(old, now=now) == []
 
 

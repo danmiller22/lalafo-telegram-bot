@@ -18,6 +18,7 @@ from app.lalafo.exclusions import is_excluded_agency
 from app.telegram.publisher import TelegramPublishAmbiguousError, TelegramPublishError, TelegramPublisher
 from app.telegram.formatting import is_supported_source
 from app.listing_policy import listing_policy_eligible
+from app.shared_housing import SHARED_ROOMS, valid_shared
 from scripts.scrape_publish import (
     SOURCE_ALLOWED_ROOMS,
     SOURCE_MAX_PRICE,
@@ -42,6 +43,8 @@ def _valid(ad, settings, *, allow_chat_contact=False) -> tuple[bool, str]:
         return False, "unsupported_source"
     if is_excluded_agency(ad):
         return False, "excluded_agency"
+    if ad.rooms == SHARED_ROOMS:
+        return valid_shared(ad, city=settings.city)
     allowed, reason = is_allowed(
         ad,
         city=settings.city,
@@ -153,7 +156,8 @@ async def _publish_item(settings, sessions, inventory, apartments, item) -> int 
             return None
     elif apartment.source_url.startswith("https://t.me/"):
         source_updated = as_utc(apartment.source_updated_at or apartment.updated_at)
-        if not is_requested and source_updated < datetime.now(timezone.utc) - timedelta(hours=168):
+        max_source_age = 48 if stored.rooms == SHARED_ROOMS else 168
+        if not is_requested and source_updated < datetime.now(timezone.utc) - timedelta(hours=max_source_age):
             return await _skip(inventory, item.id, "stale_telegram")
         if is_requested:
             from app.availability import AvailabilityService
