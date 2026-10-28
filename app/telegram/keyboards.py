@@ -127,7 +127,7 @@ def payment_reminder_keyboard(
     payment_url: str,
     support_url: str,
     price: int = WEEK_PRICE,
-    apartments_url: str = "https://t.me/rentkg312",
+    apartments_url: str = "https://t.me/bishkekarendakg",
 ) -> InlineKeyboardMarkup:
     """Recovery controls that remain useful outside the Mini App window."""
     return InlineKeyboardMarkup(

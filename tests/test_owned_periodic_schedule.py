@@ -66,7 +66,8 @@ async def test_confirmed_timeout_card_restores_photos_without_duplicate_caption(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('replace_broken', [False, True])
-async def test_recovery_does_not_reuse_message_for_next_apartment(repositories, monkeypatch, tmp_path, replace_broken):
+@pytest.mark.parametrize('invalid_snapshot', [None, 'studio', 'payment_waiting'])
+async def test_recovery_does_not_reuse_message_for_next_apartment(repositories, monkeypatch, tmp_path, replace_broken, invalid_snapshot):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
     from app.config import Settings
@@ -90,6 +91,10 @@ async def test_recovery_does_not_reuse_message_for_next_apartment(repositories, 
         cards[0]['publicly_confirmed_message_id'] = 600
     manifest = {'batch': 'recovery-isolation', 'verified_at': now.isoformat(),
                 'repeat_every_hours': 2, 'externally_scheduled': True, 'cards': cards}
+    if invalid_snapshot == 'studio':
+        cards[0]['snapshot']['rooms'] = 'studio'
+    elif invalid_snapshot == 'payment_waiting':
+        cards[0]['snapshot']['status_id'] = 11
     path = tmp_path/'manifest.json'
     path.write_text(json.dumps(manifest))
     async with sessions.begin() as session:
@@ -107,6 +112,12 @@ async def test_recovery_does_not_reuse_message_for_next_apartment(repositories, 
     monkeypatch.setattr(module,'TelegramPublisher',lambda *args,**kwargs:publisher)
     monkeypatch.setattr(module,'recover_confirmed_card',recover)
     monkeypatch.setattr(module,'handoff_to_periodic_schedule',AsyncMock())
+    if invalid_snapshot:
+        with pytest.raises(ValueError, match='active one-room'):
+            await module.run(str(path))
+        recover.assert_not_awaited()
+        publisher.publish.assert_not_awaited()
+        return
     await module.run(str(path))
     if replace_broken:
         recover.assert_not_awaited()

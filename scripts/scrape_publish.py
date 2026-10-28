@@ -1482,7 +1482,7 @@ async def run(
     from aiogram import Bot
 
     from app.security import TokenSigner
-    from app.telegram.publisher import TelegramPublishError, TelegramPublisher
+    from app.telegram.publisher import TelegramPublishAmbiguousError, TelegramPublishError, TelegramPublisher
 
     assert engine is not None
     assert apartments is not None
@@ -1511,8 +1511,17 @@ async def run(
                 logger.info("Skipping DB duplicate id=%s", ad.lalafo_id)
                 return ad, None, False
             apartment = await apartments.upsert_discovered(ad)
+            if apartment.publication_status == 'uncertain':
+                logger.warning('Skipping unacknowledged Telegram send pending reconciliation')
+                return ad, None, True
             try:
                 message = await publisher.publish(apartment.id, ad)
+            except (TelegramPublishAmbiguousError, asyncio.CancelledError) as exc:
+                await apartments.mark_publication_uncertain(apartment.id)
+                if isinstance(exc, asyncio.CancelledError):
+                    raise
+                logger.warning('Telegram send requires reconciliation for id=%s', ad.lalafo_id)
+                return ad, None, True
             except TelegramPublishError as exc:
                 logger.error("Publish failed for id=%s: %s", ad.lalafo_id, exc)
                 return ad, None, True

@@ -41,7 +41,7 @@ async def process_checkout_recoveries(runtime) -> int:
             or apartment.availability_status == "unavailable"
             or listing_expired(apartment)
         ):
-            await payments.finish_payment_reminder(request.id)
+            await payments.finish_payment_reminder(request.id, include_siblings=False)
             continue
         try:
             from app.web import _finik_checkout_url

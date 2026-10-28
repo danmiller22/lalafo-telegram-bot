@@ -113,7 +113,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
   <h1 id="title" class="hidden"></h1>
   <p id="intro" class="intro"></p>
   <div id="status" class="status hidden" role="status" aria-live="polite"></div>
-  <a id="other-apartments" class="button secondary hidden" href="https://t.me/rentkg312">Смотреть актуальные квартиры</a>
+  <a id="other-apartments" class="button secondary hidden" href="https://t.me/bishkekarendakg">Смотреть актуальные квартиры</a>
   <div id="tariff-description" class="intro">
     Доступ к контактам собственников — {WEEK_PRICE} сом в неделю
   </div>
@@ -206,18 +206,26 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     show("status", Boolean(text));
   }}
   async function api(path, body) {{
-    const response = await fetch(path, {{
-      method: "POST",
-      headers: {{"Content-Type": "application/json"}},
-      body: JSON.stringify({{init_data: initData, start_param: startParam, ...body}})
-    }});
-    const data = await response.json().catch(() => ({{detail: "Ошибка сервиса"}}));
-    if (!response.ok) {{
-      const error = new Error(data.detail || "Ошибка сервиса");
-      error.status = response.status;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
+    try {{
+      const response = await fetch(path, {{
+        method: "POST",
+        headers: {{"Content-Type": "application/json"}},
+        body: JSON.stringify({{init_data: initData, start_param: startParam, ...body}}),
+        signal: controller.signal
+      }});
+      const data = await response.json().catch(() => ({{detail: "Ошибка сервиса"}}));
+      if (!response.ok) {{
+        const error = new Error(data.detail || "Ошибка сервиса");
+        error.status = response.status;
+        throw error;
+      }}
+      return data;
+    }} catch (error) {{
+      if (controller.signal.aborted) throw new Error("Соединение прервалось. Попробуйте ещё раз.");
       throw error;
-    }}
-    return data;
+    }} finally {{ clearTimeout(timeout); }}
   }}
   function render(data) {{
     // A response sent before access was granted must not undo the success screen.
@@ -329,8 +337,13 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
       const targetUrl = readyUrl || data.payment_url;
       const current = telegramContext();
       if (current) current.openLink(targetUrl); else location.href = targetUrl;
-    }} catch (error) {{ message(error.message); }}
+    }} catch (error) {{
+      message(error.message);
+      // The server may have saved the checkout before the response was lost.
+      startPaymentPolling();
+    }}
     finally {{
+      paymentStart = null;
       button.disabled = false;
       button.textContent = originalText;
       paymentOpening = false;
@@ -340,7 +353,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     if (paymentPoll || accessApproved) return;
     const poll = async () => {{
       try {{
-        const data = await api("/miniapp/api/session", {{}});
+        const data = await api("/miniapp/api/session", {{track_open: false}});
         render(data);
         if (data.status === "approved" || data.status === "rejected") {{
           paymentPoll = null;

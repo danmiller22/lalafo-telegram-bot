@@ -15,7 +15,7 @@ from app.lalafo.parser import LalafoParseError, is_allowed
 from app.payments.repository import ApartmentRepository
 from app.security import TokenSigner
 from app.lalafo.exclusions import is_excluded_agency
-from app.telegram.publisher import TelegramPublishError, TelegramPublisher
+from app.telegram.publisher import TelegramPublishAmbiguousError, TelegramPublishError, TelegramPublisher
 from app.telegram.formatting import is_supported_source
 from app.listing_policy import listing_policy_eligible
 from scripts.scrape_publish import (
@@ -255,6 +255,15 @@ async def _publish_item(settings, sessions, inventory, apartments, item) -> int 
             return 1
         logger.info("Published queued apartment id=%s", apartment.lalafo_id)
         return 0
+    except (TelegramPublishAmbiguousError, asyncio.CancelledError) as exc:
+        # Do not blindly replay a request that Telegram may already have sent.
+        # The apartment state survives a deployment rebuilding the queue.
+        await apartments.mark_publication_uncertain(apartment.id)
+        await inventory.finish_item(item.id, status='uncertain', error=type(exc).__name__)
+        if isinstance(exc, asyncio.CancelledError):
+            raise
+        logger.warning('Telegram send requires reconciliation; continuing with another apartment')
+        return None
     except TelegramPublishError as exc:
         logger.warning("Queued publication will retry: %s", type(exc).__name__)
         if binding:

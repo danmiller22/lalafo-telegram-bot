@@ -744,7 +744,7 @@ class InventoryRepository:
                 0, realtor_daily_target - already_non_owners
             )
             excluded_queue = or_(
-                ApartmentInventoryQueue.status.in_(("queued", "publishing")),
+                ApartmentInventoryQueue.status.in_(("queued", "publishing", "uncertain")),
                 ApartmentInventoryQueue.last_error == "watermarked_photos",
                 and_(
                     ApartmentInventoryQueue.last_error == "TelegramPublishError",
@@ -1112,7 +1112,7 @@ class InventoryRepository:
     async def retry_item(self, queue_id: int, *, error: str, delay_minutes: int = 10) -> None:
         async with self.sessions.begin() as session:
             row = await session.get(ApartmentInventoryQueue, queue_id, with_for_update=True)
-            if row is None or row.status in {"published", "skipped"}:
+            if row is None or row.status in {"published", "skipped", "uncertain"}:
                 return
             quarantined = error == "TelegramPublishError" and row.attempts >= 3
             await session.execute(

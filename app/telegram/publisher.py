@@ -23,6 +23,10 @@ class TelegramPublishError(RuntimeError):
     pass
 
 
+class TelegramPublishAmbiguousError(TelegramPublishError):
+    """Telegram may have accepted a send; reconcile before sending it again."""
+
+
 class TelegramPublisher:
     def __init__(
         self,
@@ -34,7 +38,7 @@ class TelegramPublisher:
         support_url: str,
         max_photos: int = 5,
         include_duplicate: bool = False,
-        request_timeout_seconds: float = TELEGRAM_REQUEST_TIMEOUT_SECONDS,
+        request_timeout_seconds: float | None = None,
     ) -> None:
         self.bot = bot
         self.chat_id = chat_id
@@ -43,7 +47,8 @@ class TelegramPublisher:
         self.support_url = support_url
         self.max_photos = max(1, min(max_photos, 5))
         self.include_duplicate = include_duplicate
-        self.request_timeout_seconds = request_timeout_seconds
+        self.request_timeout_seconds = (TELEGRAM_REQUEST_TIMEOUT_SECONDS
+                                        if request_timeout_seconds is None else request_timeout_seconds)
         self._retry_not_before = 0.0
         self._rate_limit_lock = asyncio.Lock()
 
@@ -59,7 +64,8 @@ class TelegramPublisher:
                 asyncio.get_running_loop().time() + max(0.5, seconds),
             )
 
-    async def _retry(self, method, *args, **kwargs):
+    async def _retry(self, method, *args, is_send: bool = False, **kwargs):
+        is_send = is_send or getattr(method, '__name__', '') in {'send_message', 'send_photo', 'send_media_group'}
         for attempt in range(5):
             await self._wait_for_shared_rate_limit()
             try:
@@ -69,7 +75,9 @@ class TelegramPublisher:
                 if attempt == 4:
                     raise
                 await self._set_shared_rate_limit(float(exc.retry_after) + 0.5)
-            except (TelegramNetworkError, TelegramServerError):
+            except (TelegramNetworkError, TelegramServerError, TimeoutError) as exc:
+                if is_send:
+                    raise TelegramPublishAmbiguousError('Telegram send acknowledgement was lost') from exc
                 if attempt == 4:
                     raise
                 await asyncio.sleep(min(8.0, 2**attempt + attempt * 0.25))
@@ -111,6 +119,7 @@ class TelegramPublisher:
                     sent = [
                         await self._retry(
                             self.bot.send_photo,
+                            is_send=True,
                             chat_id=self.chat_id,
                             photo=chunk[0],
                         )
@@ -121,6 +130,7 @@ class TelegramPublisher:
                     sent = list(
                         await self._retry(
                             self.bot.send_media_group,
+                            is_send=True,
                             chat_id=self.chat_id,
                             media=[InputMediaPhoto(media=url) for url in chunk],
                         )
@@ -129,6 +139,8 @@ class TelegramPublisher:
                     raise TelegramPublishError(
                         "Telegram did not acknowledge the apartment photos"
                     )
+            except TelegramPublishAmbiguousError:
+                raise
             except Exception as direct_error:
                 # Manually supplied Telegram file IDs are already hosted by
                 # Telegram and cannot be downloaded as public URLs.
@@ -149,6 +161,7 @@ class TelegramPublisher:
                         sent = [
                             await self._retry(
                                 self.bot.send_photo,
+                                is_send=True,
                                 chat_id=self.chat_id,
                                 photo=url,
                             )
@@ -159,6 +172,8 @@ class TelegramPublisher:
                         last_error = TelegramPublishError(
                             "Telegram did not acknowledge the apartment photo"
                         )
+                    except TelegramPublishAmbiguousError:
+                        raise
                     except Exception as exc:
                         last_error = exc
                 if not sent:
@@ -171,6 +186,7 @@ class TelegramPublisher:
         try:
             return await self._retry(
                 self.bot.send_message,
+                is_send=True,
                 chat_id=self.chat_id,
                 text=format_public_apartment(
                     ad,
@@ -187,7 +203,9 @@ class TelegramPublisher:
                 ),
             )
         except asyncio.CancelledError:
-            await self._delete_messages(album_messages)
+            # The caption may already exist. Keep its album for reconciliation.
+            raise
+        except TelegramPublishAmbiguousError:
             raise
         except Exception as exc:
             await self._delete_messages(album_messages)

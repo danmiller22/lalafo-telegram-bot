@@ -23,6 +23,7 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
   };
   const context = {
     URLSearchParams,
+    AbortController,
     FileReader: class { readAsDataURL() { this.result = "data:application/pdf;base64,JVBERi0xLjQ="; this.onload(); } },
     location: {search: '?tgWebAppData=test&tgWebAppStartParam=test', hash: ''},
     window: {Telegram: {WebApp: {ready() {}, expand() {}, openLink(url) { opened.push(url); }, openTelegramLink(url) { opened.push(url); }}}},
@@ -76,6 +77,51 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
   await new Promise(setImmediate);
   assert.equal(embeddedBody.start_param, 'embedded-token');
   assert.equal(embedded.node('pay-lifetime').disabled, false);
+
+  // Finik may have a persisted checkout even if the start response was lost.
+  // Recover its status and allow the claim without awaiting the old rejection.
+  let checkoutPersisted = false, recoveredClaims = 0;
+  const recovery = setup(null, (path) => {
+    if (path.endsWith('/start')) {
+      checkoutPersisted = true;
+      return Promise.reject(new Error('Start response lost'));
+    }
+    if (path.endsWith('/access')) {
+      recoveredClaims++;
+      return Promise.resolve(response({status: 'pending', plan: 'week'}));
+    }
+    return Promise.resolve(response(checkoutPersisted ?
+      {status: 'awaiting_receipt', plan: 'week'} : {status: 'unpaid'}));
+  });
+  await new Promise(setImmediate);
+  await recovery.node('pay-lifetime').onclick();
+  assert.equal(recovery.node('pay-lifetime').disabled, false);
+  assert.equal(recovery.timers.size, 1, 'An ambiguous start must resume status polling');
+  const [recoveryId, recoveryPoll] = [...recovery.timers.entries()][0];
+  recovery.timers.delete(recoveryId);
+  await recoveryPoll();
+  assert.equal(recovery.node('access').hidden, false);
+  await recovery.node('access').onclick();
+  assert.equal(recoveredClaims, 1, 'A stale rejected start promise must not block the claim');
+
+  // A stalled mobile request must release the button and offer a retry.
+  let aborted = false;
+  const hanging = setup(null, (path, options) => {
+    if (!path.endsWith('/start')) return Promise.resolve(response({status: 'unpaid'}));
+    return new Promise((resolve, reject) => options.signal.addEventListener('abort', () => {
+      aborted = true;
+      reject(Object.assign(new Error('aborted'), {name: 'AbortError'}));
+    }));
+  });
+  await new Promise(setImmediate);
+  const hungStart = hanging.node('pay-lifetime').onclick();
+  const [timeoutId, requestTimeout] = [...hanging.timers.entries()][0];
+  hanging.timers.delete(timeoutId);
+  requestTimeout();
+  await hungStart;
+  assert.equal(aborted, true);
+  assert.equal(hanging.node('pay-lifetime').disabled, false);
+  assert.match(hanging.node('status').textContent, /Попробуйте ещё раз/);
 
   // Paint the tariff before either Telegram initialization or a slow DB response.
   let finishSession;

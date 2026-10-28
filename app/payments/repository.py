@@ -620,6 +620,12 @@ class ApartmentRepository:
             await session.refresh(apartment)
             return apartment
 
+    async def mark_publication_uncertain(self, apartment_id: int) -> None:
+        """Preserve an unacknowledged send across collection and queue rebuilds."""
+        async with self.sessions.begin() as session:
+            await session.execute(update(Apartment).where(Apartment.id == apartment_id)
+                                  .values(publication_status='uncertain'))
+
     async def mark_inactive(self, apartment_id: int) -> None:
         async with self.sessions.begin() as session:
             await session.execute(
@@ -1062,7 +1068,8 @@ class PaymentRepository:
             return requests
 
     async def finish_payment_reminder(
-        self, request_id: int, *, sent_at: datetime | None = None
+        self, request_id: int, *, sent_at: datetime | None = None,
+        include_siblings: bool = True,
     ) -> None:
         """Mark all current checkouts for this customer as already recovered."""
         current = sent_at or datetime.now(timezone.utc)
@@ -1080,6 +1087,7 @@ class PaymentRepository:
                     PaymentRequest.telegram_user_id == user_id,
                     PaymentRequest.status == "awaiting_receipt",
                     PaymentRequest.payment_reminder_sent_at.is_(None),
+                    True if include_siblings else PaymentRequest.id == request_id,
                 )
                 .values(
                     payment_reminder_sent_at=current,

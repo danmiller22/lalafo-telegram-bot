@@ -130,6 +130,7 @@ class MiniAppRequest(BaseModel):
     init_data: str
     start_param: str
     plan: str | None = None
+    track_open: bool = True
 
 
 class LalafoRelayRequest(BaseModel):
@@ -1635,7 +1636,8 @@ async def miniapp_session(payload: MiniAppRequest, background_tasks: BackgroundT
     response["monthly_available"] = False
     bot_url = f"https://t.me/{settings.telegram_bot_username.lstrip('@')}"
     response["privacy_url"] = f"{bot_url}?start=privacy"
-    background_tasks.add_task(_record_miniapp_open, runtime, user.id, apartment_id)
+    if payload.track_open:
+        background_tasks.add_task(_record_miniapp_open, runtime, user.id, apartment_id)
     return response
 
 

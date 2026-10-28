@@ -3,6 +3,7 @@ import argparse
 import asyncio
 import json
 import os
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -47,6 +48,7 @@ async def recover_confirmed_card(bot, publisher, apartment_id, ad, message_id,
                                message_ids=list(delete_photo_message_ids))
     if append_remaining_photos and len(urls) > 1:
         photos = await publisher._retry(bot.send_media_group, chat_id=publisher.chat_id,
+            is_send=True,
             media=[InputMediaPhoto(media=url) for url in urls[1:10]],
             reply_parameters=ReplyParameters(message_id=message_id))
         if not publisher._photos_acknowledged(photos):
@@ -118,6 +120,9 @@ async def run(manifest_path):
         # substitute the operator's phone, or turn the buttons into chat links.
         for row in cards:
             snapshot = row['snapshot']
+            if external and (row['profile_id'] != 18209276
+                             or snapshot['status_id'] != 2 or snapshot['rooms'] != '1'):
+                raise ValueError('External two-hour repeats require an active one-room current-profile ad')
             # The operator explicitly uses owner-visible payment-waiting cards
             # in Telegram while deciding which Lalafo promotion to fund.  They
             # are safe here because the snapshot comes from the authenticated
@@ -136,6 +141,12 @@ async def run(manifest_path):
                     chat_id=settings.telegram_group_id, message_id=row['telegram_message_id'])
             if row.get('source_id') in supplied:
                 original = supplied[row['source_id']]
+                if external:
+                    from scripts.scrape_publish import is_substandard_structure
+                    if (not original.no_subletting or is_substandard_structure(original)
+                            or re.search(r'\b(?:студи\w*|гостинк\w*)',
+                                         f'{original.source_title} {original.source_description}', re.I)):
+                        raise ValueError('External repeat source must be a whole apartment, not lodging or a studio')
                 if (not original.phone or original.phone_source_version != PHONE_SOURCE_VERSION
                         or original.source_url != row.get('source_url')
                         or not original.source_url.startswith('https://lalafo.kg/')

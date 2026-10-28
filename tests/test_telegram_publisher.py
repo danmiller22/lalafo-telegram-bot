@@ -7,7 +7,7 @@ import pytest
 
 from app.lalafo.models import LalafoAd
 from app.security import TokenSigner
-from app.telegram.publisher import TelegramPublishError, TelegramPublisher
+from app.telegram.publisher import TelegramPublishAmbiguousError, TelegramPublishError, TelegramPublisher
 
 
 def make_ad() -> LalafoAd:
@@ -72,7 +72,7 @@ async def test_public_album_uses_fast_direct_telegram_urls() -> None:
 
 
 @pytest.mark.asyncio
-async def test_stalled_telegram_photos_fall_back_to_text_card(monkeypatch) -> None:
+async def test_stalled_telegram_send_requires_reconciliation_without_another_send(monkeypatch) -> None:
     import asyncio
     import app.telegram.publisher as publisher_module
 
@@ -94,11 +94,26 @@ async def test_stalled_telegram_photos_fall_back_to_text_card(monkeypatch) -> No
     )
     monkeypatch.setattr(publisher_module, 'TELEGRAM_REQUEST_TIMEOUT_SECONDS', 0.001)
 
-    result = await publisher.publish(77, make_ad())
-    assert result.message_id == 3
+    with pytest.raises(TelegramPublishAmbiguousError):
+        await publisher.publish(77, make_ad())
     bot.send_media_group.assert_awaited_once()
-    assert bot.send_photo.await_count == 2
+    bot.send_photo.assert_not_awaited()
+    bot.send_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_lost_caption_response_does_not_duplicate_caption_or_delete_its_album():
+    from aiogram.exceptions import TelegramNetworkError
+    from aiogram.methods import SendMessage
+    bot = SimpleNamespace(
+        send_media_group=AsyncMock(return_value=[SimpleNamespace(message_id=1), SimpleNamespace(message_id=2)]),
+        send_message=AsyncMock(side_effect=TelegramNetworkError(method=SendMessage(chat_id=-1001,text='card'),message='Response lost')),
+        send_photo=AsyncMock(),delete_message=AsyncMock())
+    publisher = TelegramPublisher(bot,chat_id=-1001,signer=TokenSigner('s'*32),bot_username='testbot',support_url='https://t.me/support')
+    with pytest.raises(TelegramPublishAmbiguousError):
+        await publisher.publish(77,make_ad())
     bot.send_message.assert_awaited_once()
+    bot.delete_message.assert_not_awaited()
 
 
 @pytest.mark.asyncio

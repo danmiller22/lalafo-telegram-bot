@@ -62,6 +62,42 @@ async def test_review_worker_recovers_failed_notification_without_duplicates(rep
 
 
 @pytest.mark.asyncio
+async def test_paid_button_acknowledges_persisted_claim_before_slow_admin_notification(repositories, service):
+    apartment, request, runtime = await review_setup(repositories, service)
+    callback = SimpleNamespace(data=PAID_PREFIX + runtime.workflow_data['signer'].sign_id('paid', apartment.id),
+        from_user=SimpleNamespace(id=121), message=None, answer=AsyncMock())
+    async def failed_admin_notification(*args, **kwargs):
+        callback.answer.assert_awaited_once()
+        raise RuntimeError('Temporary Telegram error')
+    runtime.bot.send_message.side_effect = failed_admin_notification
+    await paid_handler(callback, service, repositories[1], runtime.workflow_data['signer'],
+                       runtime.workflow_data['settings'], runtime.bot)
+    callback.answer.assert_awaited_once_with('Оплата отправлена на проверку. Ожидайте подтверждения.', show_alert=True)
+    assert (await repositories[1].get_request(request.id)).status == 'pending'
+    assert (await repositories[1].get_request(request.id)).admin_message_id is None
+
+
+@pytest.mark.asyncio
+async def test_unavailable_checkout_does_not_suppress_valid_sibling_reminder(repositories, service):
+    apartments, payments, sessions = repositories
+    first = await apartments.upsert_discovered(make_ad(lalafo_id=15151))
+    second = await apartments.upsert_discovered(make_ad(lalafo_id=15152))
+    for apartment in (first, second):
+        await service.begin_payment(user_id=515, apartment_id=apartment.id,
+                                    username=None, first_name='Buyer', plan=WEEK_PLAN)
+    async with sessions.begin() as session:
+        await session.execute(update(PaymentRequest).where(PaymentRequest.telegram_user_id==515)
+            .values(created_at=datetime.now(timezone.utc)-timedelta(minutes=20)))
+    await apartments.set_availability(first.id, status='unavailable', checked_at=datetime.now(timezone.utc), reason='source_removed')
+    runtime = SimpleNamespace(bot=SimpleNamespace(send_message=AsyncMock()), workflow_data={
+        'payments':payments,'settings':Settings(admin_user_id=999),'signer':TokenSigner('valid-reminder-after-stale-test')})
+    assert await process_checkout_recoveries(runtime) == 0
+    assert (await payments.get_access(515, second.id)).payment_reminder_sent_at is None
+    assert await process_checkout_recoveries(runtime) == 1
+    runtime.bot.send_message.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_legacy_paid_button_notifies_admin_without_issuing_contacts(repositories, service, monkeypatch):
     apartment, request, runtime = await review_setup(repositories, service)
     signer = runtime.workflow_data["signer"]
@@ -147,7 +183,7 @@ async def test_abandoned_checkout_gets_one_recovery_message_per_customer(
     ].weekly_finik_payment_url
     assert markup.inline_keyboard[1][0].text == "✅ Я оплатил(а)"
     assert markup.inline_keyboard[1][0].callback_data.startswith(PAID_PREFIX)
-    assert markup.inline_keyboard[2][0].url == "https://t.me/rentkg312"
+    assert markup.inline_keyboard[2][0].url == "https://t.me/bishkekarendakg"
 
     callback = SimpleNamespace(
         data=markup.inline_keyboard[1][0].callback_data,
