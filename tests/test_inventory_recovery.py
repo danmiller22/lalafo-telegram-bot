@@ -94,3 +94,41 @@ async def test_catalogue_refreshes_old_cards_skips_recent_and_batches_queue(repo
     assert recent.lalafo_id not in calls
     assert schedule.await_count==2  # catalogue batch and final merge, not every card
     assert (await apartments.get_by_lalafo(fresh.lalafo_id)).publication_status=="discovered"
+
+
+@pytest.mark.asyncio
+async def test_exhausted_owner_search_still_stores_and_queues_realtor_fallback(repositories, monkeypatch, tmp_path):
+    apartments, _, sessions = repositories
+    ad = make_ad(lalafo_id=414930, price=32_000, district="ЦУМ", owner_listing=False)
+    settings = Settings(_env_file=None, database_url="postgresql://placeholder/db", posted_state_path=tmp_path/"posted.json")
+    monkeypatch.setattr(scrape_publish, "get_settings", lambda: settings)
+    monkeypatch.setattr("app.database.create_engine_and_session", lambda _: (SimpleNamespace(dispose=AsyncMock()), sessions))
+    monkeypatch.setattr("app.database.init_db", AsyncMock())
+    for name in ("PRIORITY_AD_SPECS", "CURATED_ROTATION_SPECS", "CURATED_ROTATION_LALAFO_IDS"):
+        monkeypatch.setattr(scrape_publish, name, ())
+    monkeypatch.setattr(scrape_publish, "OWNER_SHORTAGE_SEARCH_SECONDS", 0)
+    monkeypatch.setattr(scrape_publish, "INVENTORY_SEARCH_URLS", (
+        "https://lalafo.kg/bishkek/owner?price[from]=25000",
+        "https://lalafo.kg/bishkek/agent/real-estate-agency?price[from]=25000",
+    ))
+    queries=[]
+    class Client:
+        def __init__(self, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        async def search(self, url, **kwargs):
+            queries.append(url)
+            assert "real-estate-agency" in url
+            return SearchPage(items=[SearchAd(lalafo_id=ad.lalafo_id, detail_url=ad.source_url, price=ad.price)], total=1)
+        async def detail(self, url): return ad
+    monkeypatch.setattr(scrape_publish, "LalafoClient", Client)
+    stats={}
+    assert await scrape_publish.run(discovery_only=True, include_telegram_sources=False,
+        collection_budget_seconds=10, discovery_stats=stats) == 0
+    assert queries and stats["realtor_fallback_started"]
+    assert stats["realtor_candidates"] == 1 and stats["realtor_search_pages"] == 1
+    assert (await apartments.get_by_lalafo(ad.lalafo_id)).seller_type == "realtor"
+    async with sessions() as s:
+        from app.models import ApartmentInventoryQueue
+        from sqlalchemy import select
+        assert (await s.scalar(select(ApartmentInventoryQueue))) is not None

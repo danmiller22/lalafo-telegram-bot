@@ -91,3 +91,15 @@ def test_slow_owner_queries_leave_time_for_agency_sources():
 def test_unused_owner_time_remains_available_to_agencies():
     from scripts.scrape_publish import crawl_source_budget
     assert crawl_source_budget(started_at=0,now=30,seconds=180,source_index=4,owner_count=4,source_count=10)==(4,150)
+
+
+def test_thin_owner_supply_moves_to_realtors_after_one_minute_not_four():
+    from scripts.scrape_publish import crawl_source_budget
+    args=dict(started_at=0,seconds=300,owner_count=70,source_count=85,source_index=1)
+    assert crawl_source_budget(**args, now=59, owner_candidates=0) == (1,1)
+    assert crawl_source_budget(**args, now=61, owner_candidates=0) == (70,239)
+    assert crawl_source_budget(**args, now=61, owner_candidates=2) == (70,239)
+    # A healthy owner batch may retain its ordinary budget.
+    assert crawl_source_budget(**args, now=61, owner_candidates=18) == (1,164)
+    # Preparation consumes the caller's deadline too; preserve fallback time.
+    assert crawl_source_budget(**args, now=240, owner_candidates=0) == (70,60)

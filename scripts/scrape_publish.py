@@ -111,6 +111,7 @@ DISCOVERY_COLLECTION_BUDGET_SECONDS = 300
 # for inexpensive central agency stock to keep the 110-card schedule full when
 # the owner catalogue is thin; this does not reserve publication slots.
 REALTOR_CANDIDATE_RESERVE_SHARE = 0.25
+OWNER_SHORTAGE_SEARCH_SECONDS = 60.0
 REALTOR_BATCH_SHARE = REALTOR_DAILY_SHARE
 # Retained for historical reporting helpers; two-bedroom cards are no longer
 # eligible for discovery or publication.
@@ -302,13 +303,19 @@ async def fetch_detail_batch(
 
 
 
-def crawl_source_budget(*, started_at, now, seconds, source_index, owner_count, source_count):
+def crawl_source_budget(*, started_at, now, seconds, source_index, owner_count, source_count,
+                        owner_candidates=None):
     """Reserve the requested agency share when owner sources run slowly."""
     if seconds is None:
         return source_index, 3600.0
     remaining = max(0.0, started_at + seconds - now)
     if 0 < owner_count < source_count and source_index < owner_count:
-        owner_remaining = started_at + seconds * (1 - REALTOR_CANDIDATE_RESERVE_SHARE) - now
+        owner_seconds = seconds * (1 - REALTOR_CANDIDATE_RESERVE_SHARE)
+        if owner_candidates is not None and owner_candidates < SOURCE_MAX_POSTS_PER_RUN:
+            # Thin owner supply must not consume the whole run while the
+            # fallback catalogue and its detail requests wait untouched.
+            owner_seconds = min(owner_seconds, OWNER_SHORTAGE_SEARCH_SECONDS)
+        owner_remaining = started_at + owner_seconds - now
         if owner_remaining <= 0:
             return owner_count, remaining
         remaining = min(remaining, owner_remaining)
@@ -489,10 +496,15 @@ def rotate_inventory_sources(urls, *, now=None):
     ]
     rotating_owners = [url for url in owners if url not in hot_owners]
     ordered = list(hot_owners)
-    for group in (rotating_owners, agencies):
-        if group:
-            offset = cycle % len(group)
-            ordered.extend(group[offset:] + group[:offset])
+    if rotating_owners:
+        offset = cycle % len(rotating_owners)
+        ordered.extend(rotating_owners[offset:] + rotating_owners[:offset])
+    hot_agencies = [url for url in agencies if '/1-bedroom/agent/real-estate-agency?' in url]
+    ordered.extend(hot_agencies)
+    rotating_agencies = [url for url in agencies if url not in hot_agencies]
+    if rotating_agencies:
+        offset = cycle % len(rotating_agencies)
+        ordered.extend(rotating_agencies[offset:] + rotating_agencies[:offset])
     return tuple(ordered)
 
 
@@ -710,6 +722,7 @@ async def run(
     discovery_stats: dict[str, Any] | None = None,
     collection_budget_seconds: float | None = None,
 ) -> int:
+    collection_started = asyncio.get_running_loop().time()
     settings = get_settings()
     logging.basicConfig(
         level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -1111,13 +1124,16 @@ async def run(
         # Always inspect at least one page from each operator-approved source.
         # Once the shared pool is full, move to the next source for one page
         # instead of spending the whole cycle on the first, larger query.
-        crawl_started = asyncio.get_running_loop().time()
+        # Count preparation in the same deadline as the caller. Starting this
+        # clock after preparation could defer fallback beyond the outer timeout.
+        crawl_started = collection_started
         owner_count = sum("real-estate-agency" not in url for url in search_urls) if discovery_only else 0
         while len(candidates) < candidate_pool_limit or search_index < len(search_urls) - 1:
             next_index, remaining = crawl_source_budget(
                 started_at=crawl_started, now=asyncio.get_running_loop().time(),
                 seconds=collection_budget_seconds, source_index=search_index,
-                owner_count=owner_count, source_count=len(search_urls))
+                owner_count=owner_count, source_count=len(search_urls),
+                owner_candidates=sum(ad.seller_type == 'owner' for ad in candidates))
             if next_index != search_index:
                 search_index = next_index
                 search_url = search_urls[search_index]
@@ -1125,6 +1141,7 @@ async def run(
                 page_number = 1
                 if discovery_stats is not None:
                     discovery_stats["owner_budget_exhausted"] = True
+                    discovery_stats["realtor_fallback_started"] = True
             if remaining <= 0:
                 if discovery_stats is not None:
                     discovery_stats["budget_exhausted"] = True
@@ -1178,6 +1195,8 @@ async def run(
                 discovery_stats["search_results"] = discovery_stats.get("search_results", 0) + len(page.items)
                 if '/owner?' in search_url:
                     discovery_stats["owner_search_pages"] = discovery_stats.get("owner_search_pages", 0) + 1
+                if 'real-estate-agency' in search_url:
+                    discovery_stats["realtor_search_pages"] = discovery_stats.get("realtor_search_pages", 0) + 1
             if not page.items:
                 search_index += 1
                 if search_index >= len(search_urls):
@@ -1234,12 +1253,16 @@ async def run(
             detail_index, remaining = crawl_source_budget(
                 started_at=crawl_started, now=asyncio.get_running_loop().time(),
                 seconds=collection_budget_seconds, source_index=search_index,
-                owner_count=owner_count, source_count=len(search_urls))
+                owner_count=owner_count, source_count=len(search_urls),
+                owner_candidates=sum(ad.seller_type == 'owner' for ad in candidates))
             if detail_index != search_index:
                 continue
             details = await fetch_detail_batch(detail_search_ads, detail_clients, cache=detail_cache,
                                                batch_timeout_seconds=max(0.001, min(45.0, remaining)))
             parsed_ads = [ad for _, ad in details if ad is not None]
+            if discovery_stats is not None:
+                discovery_stats['detail_candidates'] = discovery_stats.get('detail_candidates', 0) + len(details)
+                discovery_stats['details_parsed'] = discovery_stats.get('details_parsed', 0) + len(parsed_ads)
             duplicate_ids = (
                 await apartments.duplicate_candidate_ids(parsed_ads,
                     repost_before=datetime.now(timezone.utc) - timedelta(hours=SOURCE_REPOST_AFTER_HOURS))
@@ -1268,6 +1291,9 @@ async def run(
                     rooms=SOURCE_ALLOWED_ROOMS,
                 )
                 if not allowed:
+                    if discovery_stats is not None:
+                        rejected = discovery_stats.setdefault('rejected', {})
+                        rejected[reason] = rejected.get(reason, 0) + 1
                     logger.info("Skipping ad id=%s reason=%s", ad.lalafo_id, reason)
                     continue
                 if ad.price < max(settings.min_price, minimum_price_for_rooms(ad.rooms)):
@@ -1293,6 +1319,9 @@ async def run(
                     )
                     continue
                 if not listing_policy_eligible(ad):
+                    if discovery_stats is not None:
+                        rejected = discovery_stats.setdefault('rejected', {})
+                        rejected['seller_policy'] = rejected.get('seller_policy', 0) + 1
                     logger.info(
                         "Skipping ad id=%s reason=seller_policy", ad.lalafo_id
                     )
@@ -1319,6 +1348,7 @@ async def run(
                         discovery_stats["owner_candidates"] = discovery_stats.get("owner_candidates", 0) + int(
                             ad.owner_listing and ad.seller_type == 'owner'
                         )
+                        discovery_stats['realtor_candidates'] = discovery_stats.get('realtor_candidates', 0) + int(ad.seller_type == 'realtor')
                 if is_repost:
                     repost_candidate_ids.add(ad.lalafo_id)
             if discovery_only and stored_this_page:

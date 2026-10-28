@@ -47,7 +47,9 @@ async def collect(settings, inventory, *, force: bool = False) -> dict:
         logger.info("Primary Lalafo collection starting verified_routes=%d", routes)
         # Keep larger searches within the small cloud instance's memory.
         settings.apartment_detail_concurrency = min(2, settings.apartment_detail_concurrency)
-        async with asyncio.timeout(300):
+        # The scraper owns its 300-second budget; allow queue/DB cleanup to
+        # finish instead of cancelling acknowledged partial inventory at 300.
+        async with asyncio.timeout(DISCOVERY_COLLECTION_BUDGET_SECONDS + 30):
             code = await discover(
                 discovery_only=True,
                 candidate_pool_limit_override=DISCOVERY_CANDIDATE_TARGET,

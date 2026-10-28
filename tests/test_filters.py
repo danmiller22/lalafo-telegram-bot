@@ -847,13 +847,16 @@ def test_source_rotation_covers_all_sources_without_mixing_budget_segments():
     agencies = [u for u in INVENTORY_SEARCH_URLS if 'real-estate-agency' in u]
     hot = next(u for u in owners if 'price[from]=30000' in u and 'price[to]=35000' in u)
     rotating_owners = [u for u in owners if u != hot]
-    second_owners, first_agencies = set(), set()
+    hot_agency = next(u for u in agencies if '/1-bedroom/agent/real-estate-agency?' in u)
+    rotating_agencies = [u for u in agencies if u != hot_agency]
+    second_owners, rotating_agency_starts = set(), set()
     for cycle in range(max(len(owners), len(agencies))):
         now = datetime.fromtimestamp(cycle*180, timezone.utc)
         urls = rotate_inventory_sources(INVENTORY_SEARCH_URLS, now=now)
         assert set(urls) == set(INVENTORY_SEARCH_URLS)
         assert all('real-estate-agency' not in u for u in urls[:len(owners)])
         assert urls[0] == hot
-        second_owners.add(urls[1]);first_agencies.add(urls[len(owners)])
+        assert urls[len(owners)] == hot_agency
+        second_owners.add(urls[1]);rotating_agency_starts.add(urls[len(owners)+1])
     assert second_owners == set(rotating_owners)
-    assert first_agencies == set(agencies)
+    assert rotating_agency_starts == set(rotating_agencies)
