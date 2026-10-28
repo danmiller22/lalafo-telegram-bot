@@ -87,7 +87,7 @@ def test_supplementary_search_uses_central_realtor_pool():
         } == {"42340", "19055"}
         assert not any(key.startswith("parameters[946]") for key in params)
         assert params["price[from]"] == "25000"
-        assert params["price[to]"] == "35000"
+        assert params["price[to]"] == "45000"
 
 
 @pytest.mark.asyncio

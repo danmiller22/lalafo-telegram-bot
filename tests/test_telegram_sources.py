@@ -49,6 +49,18 @@ def test_parses_fresh_owner_apartment_with_album_and_contact() -> None:
     assert len(ad.photo_urls) == 2
 
 
+@pytest.mark.parametrize("seller", ["Собственник", "Агентство"])
+@pytest.mark.parametrize("price,eligible", [(24_999,False),(25_000,True),(40_001,True),(45_000,True),(45_001,False)])
+def test_telegram_whole_apartments_share_the_exact_25_to_45k_range(seller, price, eligible):
+    from app.config import Settings
+    from scripts.publish_inventory import _valid
+    html=_post(f"Сдам 1-комнатную квартиру. Район: ЦУМ. Цена {price} сом. {seller}. 0705 123 456")
+    ads=parse_telegram_apartments(html,now=datetime(2026,9,23,7,tzinfo=timezone.utc))
+    assert bool(ads)==eligible
+    if eligible:
+        assert _valid(ads[0],Settings()) == (True,"ok")
+
+
 def test_structured_rental_card_does_not_require_a_sdam_verb():
     html = _post("Однокомнатная квартира<br>Район: ЦУМ<br>Цена: 32 000 сом<br>Телефон: 0705 123 456")
     ads = parse_telegram_apartments(html, now=datetime(2026, 9, 23, 7, tzinfo=timezone.utc))

@@ -110,11 +110,11 @@ TELEGRAM_SOURCE_CHANNELS: tuple[str, ...] = (
 # numbers in Telegram's web preview, so they can supplement Lalafo directly.
 TELEGRAM_APARTMENT_CHANNELS: tuple[str, ...] = TELEGRAM_SOURCE_CHANNELS
 
-# Realtor discovery is intentionally limited to inexpensive central stock.
+# Prefer central discovery routes; both seller categories use 25–45k.
 ADDITIONAL_SEARCH_URLS: tuple[str, ...] = (
     *(f"https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
       f"dolgosrochnaya-arenda-kvartir/studio/1-bedroom/{district}/"
-      f"agent/real-estate-agency?price[from]=25000&price[to]=35000"
+      f"agent/real-estate-agency?price[from]=25000&price[to]=45000"
       for district in (
           "vostok-5", "filarmoniya", "bishkek-park-trc",
           "vefa-shopping-center", "mossovet", "tsum", "manasabokonbaeva",
@@ -144,10 +144,10 @@ INVENTORY_OWNER_DISTRICTS = (
 # Split both seller categories by price. This exposes affordable ads that can
 # be buried behind newer, more expensive broad-search results.
 INVENTORY_SEARCH_URLS: tuple[str, ...] = (
-    # Read the strongest owner price band on every cycle. Rotating dozens of
+    # Read the entire owner price range on every cycle. Rotating dozens of
     # district searches used to leave this broad 30–35k query untouched for
     # hours whenever the cloud collection budget expired early.
-    f"{_INVENTORY_BASE}owner?price[from]=30000&price[to]=35000",
+    f"{_INVENTORY_BASE}owner?price[from]=25000&price[to]=45000",
     f"{_INVENTORY_BASE}owner?price[from]=25000&price[to]=27999",
     f"{_INVENTORY_BASE}owner?price[from]=28000&price[to]=31999",
     f"{_INVENTORY_BASE}owner?price[from]=32000&price[to]=35999",
@@ -162,8 +162,8 @@ INVENTORY_SEARCH_URLS: tuple[str, ...] = (
     f"{_INVENTORY_BASE}?price[from]=30000&price[to]=45000",
     # The discovery targets reserve their first segment for owner-capable
     # searches; agency-only searches must come after that segment.
-    f"{_INVENTORY_BASE}agent/real-estate-agency?price[from]=25000&price[to]=35000",
-    *(f"{_INVENTORY_BASE}{district}/agent/real-estate-agency?price[from]=25000&price[to]=35000"
+    f"{_INVENTORY_BASE}agent/real-estate-agency?price[from]=25000&price[to]=45000",
+    *(f"{_INVENTORY_BASE}{district}/agent/real-estate-agency?price[from]=25000&price[to]=45000"
       for district in INVENTORY_PRIORITY_DISTRICTS),
 )
 
@@ -241,7 +241,7 @@ class Settings(BaseSettings):
     apartment_publication_lease_seconds: int = 300
     apartment_publication_heartbeat_seconds: float = 60.0
     city: str = "Бишкек"
-    min_price: int = 23_000
+    min_price: int = 25_000
     max_price: int = 45_000
     rooms: str = "studio,1"
     max_new_posts_per_run: int = 18

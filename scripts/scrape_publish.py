@@ -480,7 +480,7 @@ def insert_randomly(
 
 
 def rotate_inventory_sources(urls, *, now=None):
-    """Always read 30–35k owners, then rotate the remaining source groups."""
+    """Always read full-budget owner and agency feeds, then rotate districts."""
     current = now or datetime.now(timezone.utc)
     # Thin owner inventory retries after three minutes. Rotate on that same
     # clock so retries inspect a new district slice instead of repeating the
@@ -490,9 +490,9 @@ def rotate_inventory_sources(urls, *, now=None):
     agencies = [url for url in urls if 'real-estate-agency' in url]
     hot_owners = [
         url for url in owners
-        if '/owner?' in url
-        and 'price[from]=30000' in url
-        and 'price[to]=35000' in url
+        if '/1-bedroom/owner?' in url
+        and 'price[from]=25000' in url
+        and 'price[to]=45000' in url
     ]
     rotating_owners = [url for url in owners if url not in hot_owners]
     ordered = list(hot_owners)

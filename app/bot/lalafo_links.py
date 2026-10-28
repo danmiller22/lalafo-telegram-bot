@@ -18,6 +18,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from app.config import Settings
+from app.listing_policy import RENT_MIN_PRICE, RENT_MAX_PRICE
 from app.lalafo.client import LalafoAccessError, LalafoClient, LalafoError, LalafoNotFound
 from app.lalafo.parser import LalafoParseError
 from app.lalafo.models import LalafoAd
@@ -715,8 +716,8 @@ async def manual_card_price(
         price = int(digits) if digits.isdecimal() else 0
     except ValueError:
         price = 0
-    if not 25_000 <= price <= 40_000:
-        await message.answer("Укажите цену от 18 000 до 40 000 сом.")
+    if not RENT_MIN_PRICE <= price <= RENT_MAX_PRICE:
+        await message.answer("Укажите цену от 25 000 до 45 000 сом.")
         return
     await state.update_data(price=price)
     await state.set_state(ManualCardPublish.waiting_for_author)

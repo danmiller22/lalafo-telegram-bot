@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from app.listing_policy import RENT_MIN_PRICE, RENT_MAX_PRICE
 
 PRICE_RE = re.compile(r"(?<!\d)(\d{2,3}(?:[ .]\d{3})|\d{4,6})(?:\s*(?:сом|сомов|с|kgs|кгс))?", re.I)
 THOUSANDS_PRICE_RE = re.compile(
@@ -48,7 +49,7 @@ def extract_kgs_price(text: str) -> int | None:
 
 
 def is_apartment_offer(
-    text: str, *, min_price: int = 25_000, max_price: int = 40_000
+    text: str, *, min_price: int = RENT_MIN_PRICE, max_price: int = RENT_MAX_PRICE
 ) -> bool:
     normalized = " ".join((text or "").casefold().replace("ё", "е").split())
     if (

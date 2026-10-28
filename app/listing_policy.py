@@ -5,11 +5,10 @@ import re
 from typing import Any
 
 
-OWNER_MIN_PRICE = 25_000
-OWNER_MAX_PRICE = 45_000
-REALTOR_MIN_PRICE = 25_000
-REALTOR_MAX_PRICE = 35_000
-REALTOR_ANY_DISTRICT_MAX_PRICE = 30_000
+RENT_MIN_PRICE = 25_000
+RENT_MAX_PRICE = 45_000
+OWNER_MIN_PRICE = REALTOR_MIN_PRICE = RENT_MIN_PRICE
+OWNER_MAX_PRICE = REALTOR_MAX_PRICE = RENT_MAX_PRICE
 
 CENTRAL_REALTOR_TERMS = (
     "центр",
@@ -48,17 +47,11 @@ def is_central_realtor_area(district: str | None) -> bool:
 def seller_policy_eligible(
     *, seller_type: str | None, owner_listing: bool, price: int, district: str | None
 ) -> bool:
-    """Accept broad owner stock and only inexpensive central realtor stock."""
+    """Apply the same 25–45k range to both confirmed seller categories."""
     if seller_type == "owner" and owner_listing:
         return OWNER_MIN_PRICE <= price <= OWNER_MAX_PRICE
     if seller_type == "realtor":
-        return (
-            REALTOR_MIN_PRICE <= price <= REALTOR_MAX_PRICE
-            and (
-                price <= REALTOR_ANY_DISTRICT_MAX_PRICE
-                or is_central_realtor_area(district)
-            )
-        )
+        return REALTOR_MIN_PRICE <= price <= REALTOR_MAX_PRICE
     return False
 
 

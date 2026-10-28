@@ -13,6 +13,7 @@ from bs4 import BeautifulSoup
 
 from app.lalafo.models import LalafoAd
 from app.telegram.source_filter import is_lodging_offer, is_owner_offer
+from app.listing_policy import RENT_MIN_PRICE, RENT_MAX_PRICE
 from app.shared_housing import SHARED_ROOMS, SHARED_MIN_PRICE, SHARED_MAX_PRICE, shared_offer
 
 
@@ -321,7 +322,7 @@ def parse_telegram_apartments(
                 phone = _telegram_phone(url)
                 if phone:
                     break
-        minimum, maximum = (SHARED_MIN_PRICE, SHARED_MAX_PRICE) if shared else (25_000, 40_000)
+        minimum, maximum = (SHARED_MIN_PRICE, SHARED_MAX_PRICE) if shared else (RENT_MIN_PRICE, RENT_MAX_PRICE)
         if price is None or not minimum <= price <= maximum:
             note("missing_or_out_of_range_price")
             continue
