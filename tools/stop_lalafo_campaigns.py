@@ -3,15 +3,112 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
 from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 
 import httpx
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding
 
 from app.config import get_settings
 from app.lalafo.managed_ads import LalafoManagedAdsClient, ManagedSession
 from scripts.select_lalafo_proxy import find_working_proxies
+
+
+REGISTRATION_PREFIX = "registration-envelope-v1:"
+
+
+async def register_new_account(encoded: str) -> None:
+    from tools.lalafo_campaign_session import private_key
+
+    envelope = json.loads(base64.urlsafe_b64decode(encoded).decode())
+    key = await private_key(key_name=envelope["key_name"])
+    content_key = key.decrypt(
+        base64.b64decode(envelope["wrapped_key"]),
+        padding.OAEP(
+            mgf=padding.MGF1(hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None,
+        ),
+    )
+    requested = json.loads(Fernet(content_key).decrypt(envelope["ciphertext"].encode()))
+    fingerprint = "cloud-registration-20261029"
+    headers = {
+        "accept": "application/json, text/plain, */*",
+        "content-type": "application/json",
+        "device": "pc",
+        "language": "ru_RU",
+        "country-id": "12",
+        "request-id": "react-client-cloud-registration-20261029",
+        "device-fingerprint": fingerprint,
+        "user-hash": "cloud-registration-20261029",
+        "origin": "https://lalafo.kg",
+        "referer": "https://lalafo.kg/",
+        "x-cache-bypass": "yes",
+        "user-agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 Chrome/151.0.0.0 Safari/537.36"
+        ),
+    }
+    async with httpx.AsyncClient(
+        base_url="https://lalafo.kg", follow_redirects=True, timeout=25
+    ) as client:
+        await client.get("/", headers={k: v for k, v in headers.items() if k != "content-type"})
+        response = await client.post(
+            "/api/auth/registration",
+            headers=headers,
+            json={"mobile": requested["phone"], "password": requested["password"]},
+        )
+    try:
+        result = response.json()
+    except ValueError:
+        result = None
+    if response.is_error:
+        safe_error = result if isinstance(result, (dict, list)) else {"status": response.status_code}
+        print("REGISTRATION_RESULT=" + json.dumps({
+            "code_sent": False,
+            "status": response.status_code,
+            "error": safe_error,
+        }, ensure_ascii=False), flush=True)
+        raise RuntimeError("Lalafo registration request was rejected")
+    tmp_token = result.get("tmp_token") if isinstance(result, dict) else None
+    confirmation = result.get("confirmation", {}) if isinstance(result, dict) else {}
+    sources = confirmation.get("sources", []) if isinstance(confirmation, dict) else []
+    source_types = [item.get("type") for item in sources if isinstance(item, dict)]
+    if not tmp_token:
+        raise RuntimeError("Lalafo did not return a temporary registration token")
+    state = {
+        "requested": requested,
+        "registration": result,
+    }
+    local_public = serialization.load_pem_public_key(
+        requested["local_public_key"].encode()
+    )
+    state_key = Fernet.generate_key()
+    local_envelope = {
+        "wrapped_key": base64.b64encode(local_public.encrypt(
+            state_key,
+            padding.OAEP(
+                mgf=padding.MGF1(hashes.SHA256()),
+                algorithm=hashes.SHA256(),
+                label=None,
+            ),
+        )).decode(),
+        "ciphertext": Fernet(state_key).encrypt(json.dumps(state).encode()).decode(),
+    }
+    print(
+        "NEW_ACCOUNT_STATE="
+        + base64.urlsafe_b64encode(json.dumps(local_envelope).encode()).decode(),
+        flush=True,
+    )
+    print("REGISTRATION_RESULT=" + json.dumps({
+        "code_sent": True,
+        "status": response.status_code,
+        "confirmation_types": source_types,
+    }), flush=True)
 
 
 def now_utc():
@@ -148,4 +245,7 @@ if __name__ == '__main__':
     parser.add_argument('--plan', default='tools/lalafo_campaigns_20261012.json')
     parser.add_argument('--verify-only', action='store_true')
     args = parser.parse_args()
-    asyncio.run(run(json.loads(Path(args.plan).read_text()), verify_only=args.verify_only))
+    if args.plan.startswith(REGISTRATION_PREFIX):
+        asyncio.run(register_new_account(args.plan.removeprefix(REGISTRATION_PREFIX)))
+    else:
+        asyncio.run(run(json.loads(Path(args.plan).read_text()), verify_only=args.verify_only))
