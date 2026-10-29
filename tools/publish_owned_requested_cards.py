@@ -25,7 +25,7 @@ from app.telegram.keyboards import apartment_keyboard
 from scripts.managed_requested_repeats import enroll
 from scripts.scrape_publish import apartment_to_ad
 
-SUPPORTED_MANAGED_PROFILE_IDS = {18194628, 18209276}
+SUPPORTED_MANAGED_PROFILE_IDS = {18194628, 18209276, 18225120}
 
 
 async def recover_confirmed_card(bot, publisher, apartment_id, ad, message_id,
@@ -120,7 +120,7 @@ async def run(manifest_path):
         # substitute the operator's phone, or turn the buttons into chat links.
         for row in cards:
             snapshot = row['snapshot']
-            if external and (row['profile_id'] != 18209276
+            if external and (row['profile_id'] != 18225120
                              or snapshot['status_id'] != 2 or snapshot['rooms'] != '1'):
                 raise ValueError('External two-hour repeats require an active one-room current-profile ad')
             # The operator explicitly uses owner-visible payment-waiting cards

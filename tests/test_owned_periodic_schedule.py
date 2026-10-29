@@ -66,7 +66,7 @@ async def test_confirmed_timeout_card_restores_photos_without_duplicate_caption(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('replace_broken', [False, True])
-@pytest.mark.parametrize('invalid_snapshot', [None, 'studio', 'payment_waiting'])
+@pytest.mark.parametrize('invalid_snapshot', [None, 'studio', 'payment_waiting', 'old_profile'])
 async def test_recovery_does_not_reuse_message_for_next_apartment(repositories, monkeypatch, tmp_path, replace_broken, invalid_snapshot):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
@@ -78,9 +78,9 @@ async def test_recovery_does_not_reuse_message_for_next_apartment(repositories, 
     originals = [await repo.upsert_discovered(ad) for ad in ads]
     cards = []
     for index, ad in enumerate(ads):
-        cards.append({'source_id': ad.lalafo_id, 'profile_id': 18209276, 'ad_id': 720001+index,
+        cards.append({'source_id': ad.lalafo_id, 'profile_id': 18225120, 'ad_id': 720001+index,
                       'url': f'https://lalafo.kg/bishkek/ads/example-id-{720001+index}',
-                      'snapshot': {'user_id': 18209276, 'id': 720001+index, 'status_id': 2,
+                      'snapshot': {'user_id': 18225120, 'id': 720001+index, 'status_id': 2,
                                    'rooms': '1', 'price': ad.price, 'district': ad.district,
                                    'photo_urls': ad.photo_urls}})
     if replace_broken:
@@ -95,6 +95,9 @@ async def test_recovery_does_not_reuse_message_for_next_apartment(repositories, 
         cards[0]['snapshot']['rooms'] = 'studio'
     elif invalid_snapshot == 'payment_waiting':
         cards[0]['snapshot']['status_id'] = 11
+    elif invalid_snapshot == 'old_profile':
+        cards[0]['profile_id'] = 18209276
+        cards[0]['snapshot']['user_id'] = 18209276
     path = tmp_path/'manifest.json'
     path.write_text(json.dumps(manifest))
     async with sessions.begin() as session:

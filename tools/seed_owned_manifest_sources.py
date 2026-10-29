@@ -15,7 +15,7 @@ from app.lalafo.models import PHONE_SOURCE_VERSION
 from app.payments.repository import ApartmentRepository
 from app.telegram.source_filter import is_lodging_offer
 
-SUPPORTED_MANAGED_PROFILE_IDS = {18194628, 18209276}
+SUPPORTED_MANAGED_PROFILE_IDS = {18194628, 18209276, 18225120}
 
 
 async def run(manifest_path: str) -> None:

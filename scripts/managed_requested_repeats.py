@@ -24,7 +24,7 @@ from scripts.publish_inventory import _publish_item, run as publish_next_due
 from scripts.scrape_publish import apartment_to_ad
 
 LOOKAHEAD = timedelta(minutes=15)
-SUPPORTED_MANAGED_PROFILE_IDS = {18194628, 18209276}
+SUPPORTED_MANAGED_PROFILE_IDS = {18194628, 18209276, 18225120}
 
 
 async def latest_delivery_time(session, events):
