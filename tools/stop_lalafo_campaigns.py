@@ -6,7 +6,6 @@ import asyncio
 import base64
 from datetime import datetime, timedelta, timezone
 import json
-import os
 from pathlib import Path
 
 import httpx
@@ -54,12 +53,8 @@ async def register_new_account(encoded: str) -> None:
             "AppleWebKit/537.36 Chrome/151.0.0.0 Safari/537.36"
         ),
     }
-    proxy_url = os.getenv("LALAFO_PROXY_URL", "").strip() or None
     async with httpx.AsyncClient(
-        base_url="https://lalafo.kg",
-        follow_redirects=True,
-        timeout=25,
-        proxy=proxy_url,
+        base_url="https://lalafo.kg", follow_redirects=True, timeout=25
     ) as client:
         await client.get("/", headers={k: v for k, v in headers.items() if k != "content-type"})
         response = await client.post(
