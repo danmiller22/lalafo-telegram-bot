@@ -54,36 +54,19 @@ async def register_new_account(encoded: str) -> None:
             "AppleWebKit/537.36 Chrome/151.0.0.0 Safari/537.36"
         ),
     }
-    configured = os.getenv("LALAFO_PROXY_URL", "").strip()
-    routes = await find_working_proxies(configured)
-    if not routes:
-        routes = await find_working_proxies("")
-    response = None
-    for proxy_url in routes[:3]:
-        async with httpx.AsyncClient(
-            base_url="https://lalafo.kg",
-            follow_redirects=True,
-            timeout=25,
-            proxy=proxy_url,
-        ) as client:
-            await client.get(
-                "/", headers={k: v for k, v in headers.items() if k != "content-type"}
-            )
-            candidate = await client.post(
-                "/api/auth/registration",
-                headers=headers,
-                json={"mobile": requested["phone"], "password": requested["password"]},
-            )
-        response = candidate
-        if candidate.status_code != 403:
-            break
-    if response is None:
-        print("REGISTRATION_RESULT=" + json.dumps({
-            "code_sent": False,
-            "status": 503,
-            "error": {"route": "unavailable"},
-        }), flush=True)
-        raise RuntimeError("No verified cloud route to Lalafo registration")
+    proxy_url = os.getenv("LALAFO_PROXY_URL", "").strip() or None
+    async with httpx.AsyncClient(
+        base_url="https://lalafo.kg",
+        follow_redirects=True,
+        timeout=25,
+        proxy=proxy_url,
+    ) as client:
+        await client.get("/", headers={k: v for k, v in headers.items() if k != "content-type"})
+        response = await client.post(
+            "/api/auth/registration",
+            headers=headers,
+            json={"mobile": requested["phone"], "password": requested["password"]},
+        )
     try:
         result = response.json()
     except ValueError:
