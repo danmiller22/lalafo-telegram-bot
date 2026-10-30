@@ -70,7 +70,7 @@ async def process_checkout_recoveries(runtime) -> int:
         period = "в неделю" if request.plan == WEEK_PLAN else plan_label(request.plan).lower()
         text = (
             "Вы открывали оплату контактов квартиры.\n\n"
-            f"Доступ к контактам собственников — {price} сом {period}.\n\n"
+            f"Доступ к контактам квартир — {price} сом {period}.\n\n"
             "Если уже оплатили, нажмите «Я оплатил(а)» — администратор "
             "проверит поступление."
         )

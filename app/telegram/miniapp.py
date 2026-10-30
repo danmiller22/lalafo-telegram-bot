@@ -115,8 +115,9 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
   <div id="status" class="status hidden" role="status" aria-live="polite"></div>
   <a id="other-apartments" class="button secondary hidden" href="https://t.me/bishkekarendakg">Смотреть актуальные квартиры</a>
   <div id="tariff-description" class="intro">
-    Доступ к контактам собственников — {WEEK_PRICE} сом в неделю
+    Доступ к контактам квартир — {WEEK_PRICE} сом на 7 дней
   </div>
+  <p id="access-benefits" class="caption">Одна оплата — доступ ко всем доступным контактам на 7 дней. Есть предложения собственников и риелторов. После перевода нажмите «Я оплатил(а)» — администратор подтвердит оплату.</p>
   <p id="agreement-caption" class="agreement-caption">Оплачивая доступ, вы подтверждаете, что ознакомились с <a id="terms-link" class="terms-link" href="#agreement">пользовательским договором</a> и соглашаетесь с его условиями.</p>
   <button id="pay-lifetime" class="primary tariff-button"{'' if payment_urls else ' disabled'}>Оплатить {WEEK_PRICE} сом</button>
   <a id="privacy" class="privacy hidden">Политика конфиденциальности</a>
@@ -243,6 +244,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     show("phone", approved);
     const canPay = !approved && !waiting && !apartmentUnavailable;
     show("tariff-description", canPay);
+    show("access-benefits", canPay);
     show("checkout", waiting);
     show("privacy", !approved);
     show("agreement-caption", !approved && !apartmentUnavailable);
@@ -332,9 +334,10 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
       paymentStart = api("/miniapp/api/start", {{plan}});
       const data = await paymentStart;
       render(data);
-      if (data.status === "approved") return;
+      if (data.status === "approved" || data.status === "unavailable" || data.status === "pending") return;
       startPaymentPolling();
       const targetUrl = readyUrl || data.payment_url;
+      if (!targetUrl) throw new Error("Не удалось открыть оплату. Попробуйте ещё раз.");
       const current = telegramContext();
       if (current) current.openLink(targetUrl); else location.href = targetUrl;
     }} catch (error) {{

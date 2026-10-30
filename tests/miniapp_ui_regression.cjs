@@ -45,6 +45,14 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
   assert.equal(unavailable.node('other-apartments').hidden, false);
   await unavailable.node('pay-lifetime').onclick();
   assert.deepEqual(unavailable.opened, []);
+  // An apartment may become unavailable between page load and checkout start.
+  for (const status of ['unavailable', 'pending', 'approved']) {
+    const changed = setup(null, path => Promise.resolve(response(path.endsWith('/start') ?
+      {status, plan: 'week', apartment: {}} : {status: 'unpaid'})));
+    await new Promise(setImmediate);
+    await changed.node('pay-lifetime').onclick();
+    assert.deepEqual(changed.opened, [], status + ' must not redirect to Finik');
+  }
   let lateCalls = 0;
   const late = setup({status: 'unpaid'}, () => {
     lateCalls++;
