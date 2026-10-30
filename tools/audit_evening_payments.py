@@ -73,6 +73,10 @@ async def main():
                 PaymentRequest.payment_claimed_at >= start, PaymentRequest.payment_claimed_at < now,
             ).group_by(PaymentRequest.status))).all()
             result["claims_after_18_current_status"] = dict(claims)
+            result["last_6h"] = await _period_summary(session, now-timedelta(hours=6), now)
+            result["previous_6h"] = await _period_summary(session, now-timedelta(hours=12), now-timedelta(hours=6))
+            result["last_24h"] = await _period_summary(session, now-timedelta(hours=24), now)
+            result["previous_24h"] = await _period_summary(session, now-timedelta(hours=48), now-timedelta(hours=24))
             result["read_only"] = True
             print(json.dumps(result, ensure_ascii=False, default=str))
     finally:
