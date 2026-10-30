@@ -78,7 +78,10 @@ async def main():
             result["last_24h"] = await _period_summary(session, now-timedelta(hours=24), now)
             result["previous_24h"] = await _period_summary(session, now-timedelta(hours=48), now-timedelta(hours=24))
             result["read_only"] = True
-            print(json.dumps(result, ensure_ascii=False, default=str))
+            from pathlib import Path
+            from tools.lalafo_campaign_session import seal_session
+            encoded = seal_session(Path('tools/payment_audit_transport_public.pem').read_bytes(), result)
+            print('SEALED_PAYMENT_AUDIT=' + json.dumps(encoded))
     finally:
         await engine.dispose()
 

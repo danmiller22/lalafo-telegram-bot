@@ -18,7 +18,7 @@ jobs:
           python3 -m venv /tmp/payment-audit-venv
           /tmp/payment-audit-venv/bin/pip install -r requirements.txt
       - name: Print aggregate funnel only
-        run: /tmp/payment-audit-venv/bin/python -m tools.audit_evening_payments > payment-evening-audit.json
+        run: /tmp/payment-audit-venv/bin/python -m tools.audit_evening_payments | tee payment-evening-audit.json
       - uses: actions/upload-artifact@v4
         with:
           name: payment-evening-audit
