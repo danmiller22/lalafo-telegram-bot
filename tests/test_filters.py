@@ -837,7 +837,8 @@ def test_owner_price_searches_cover_the_budget_and_agencies_follow_owner_segment
     for url in INVENTORY_SEARCH_URLS[owner_segment:]:
         query = parse_qs(urlsplit(url).query)
         agency_ranges.append((int(query['price[from]'][0]), int(query['price[to]'][0])))
-    assert all(value == (25000,45000) for value in agency_ranges)
+    assert (25000,35000) in agency_ranges
+    assert all(value in {(25000,45000),(25000,35000)} for value in agency_ranges)
 
 
 def test_source_rotation_covers_all_sources_without_mixing_budget_segments():
@@ -847,8 +848,8 @@ def test_source_rotation_covers_all_sources_without_mixing_budget_segments():
     agencies = [u for u in INVENTORY_SEARCH_URLS if 'real-estate-agency' in u]
     hot = next(u for u in owners if '/1-bedroom/owner?' in u and 'price[from]=25000' in u and 'price[to]=45000' in u)
     rotating_owners = [u for u in owners if u != hot]
-    hot_agency = next(u for u in agencies if '/1-bedroom/agent/real-estate-agency?' in u)
-    rotating_agencies = [u for u in agencies if u != hot_agency]
+    hot_agencies = [u for u in agencies if '/1-bedroom/agent/real-estate-agency?' in u]
+    rotating_agencies = [u for u in agencies if u not in hot_agencies]
     second_owners, rotating_agency_starts = set(), set()
     for cycle in range(max(len(owners), len(agencies))):
         now = datetime.fromtimestamp(cycle*180, timezone.utc)
@@ -856,7 +857,7 @@ def test_source_rotation_covers_all_sources_without_mixing_budget_segments():
         assert set(urls) == set(INVENTORY_SEARCH_URLS)
         assert all('real-estate-agency' not in u for u in urls[:len(owners)])
         assert urls[0] == hot
-        assert urls[len(owners)] == hot_agency
-        second_owners.add(urls[1]);rotating_agency_starts.add(urls[len(owners)+1])
+        assert list(urls[len(owners):len(owners)+len(hot_agencies)]) == hot_agencies
+        second_owners.add(urls[1]);rotating_agency_starts.add(urls[len(owners)+len(hot_agencies)])
     assert second_owners == set(rotating_owners)
     assert rotating_agency_starts == set(rotating_agencies)

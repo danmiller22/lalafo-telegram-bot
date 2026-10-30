@@ -163,6 +163,9 @@ INVENTORY_SEARCH_URLS: tuple[str, ...] = (
     # The discovery targets reserve their first segment for owner-capable
     # searches; agency-only searches must come after that segment.
     f"{_INVENTORY_BASE}agent/real-estate-agency?price[from]=25000&price[to]=45000",
+    # A dedicated affordable feed finds older 25–35k offers that newer
+    # expensive cards can displace from the broad feed's first pages.
+    f"{_INVENTORY_BASE}agent/real-estate-agency?price[from]=25000&price[to]=35000",
     *(f"{_INVENTORY_BASE}{district}/agent/real-estate-agency?price[from]=25000&price[to]=45000"
       for district in INVENTORY_PRIORITY_DISTRICTS),
 )
