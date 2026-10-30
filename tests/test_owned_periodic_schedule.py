@@ -78,9 +78,9 @@ async def test_recovery_does_not_reuse_message_for_next_apartment(repositories, 
     originals = [await repo.upsert_discovered(ad) for ad in ads]
     cards = []
     for index, ad in enumerate(ads):
-        cards.append({'source_id': ad.lalafo_id, 'profile_id': 18225120, 'ad_id': 720001+index,
+        cards.append({'source_id': ad.lalafo_id, 'profile_id': 18225388, 'ad_id': 720001+index,
                       'url': f'https://lalafo.kg/bishkek/ads/example-id-{720001+index}',
-                      'snapshot': {'user_id': 18225120, 'id': 720001+index, 'status_id': 2,
+                      'snapshot': {'user_id': 18225388, 'id': 720001+index, 'status_id': 2,
                                    'rooms': '1', 'price': ad.price, 'district': ad.district,
                                    'photo_urls': ad.photo_urls}})
     if replace_broken:
