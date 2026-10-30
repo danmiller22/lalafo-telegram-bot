@@ -250,9 +250,10 @@ async def run(manifest_path):
         # Enroll only after every card has an acknowledged publication.
         if external:
             await handoff_to_periodic_schedule(sessions, resolved, manifest)
-        else:
+        elif manifest.get('publish_once') is not True:
             await enroll(sessions, manifest, now=now)
-        print(f"OWNED_BATCH_COMPLETED={len(resolved)} repeat_every_hours={manifest.get('repeat_every_hours', 3)}", flush=True)
+        cadence = 0 if manifest.get('publish_once') is True else manifest.get('repeat_every_hours', 3)
+        print(f"OWNED_BATCH_COMPLETED={len(resolved)} repeat_every_hours={cadence}", flush=True)
     finally:
         await bot.session.close()
         await engine.dispose()
