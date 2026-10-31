@@ -58,7 +58,7 @@ async def test_confirmed_timeout_card_restores_photos_without_duplicate_caption(
     bot.send_message.assert_not_awaited()
     call = bot.edit_message_media.await_args.kwargs
     assert call['message_id'] == 53072 and call['media'].media == ad.photo_urls[0]
-    assert call['reply_markup'].inline_keyboard[0][0].text == 'Получить номер'
+    assert call['reply_markup'].inline_keyboard[0][0].text == '+996555123***'
     album = bot.send_media_group.await_args.kwargs
     assert [m.media for m in album['media']] == ad.photo_urls[1:]
     assert album['reply_parameters'].message_id == 53072

@@ -446,7 +446,7 @@ async def test_confirmed_manual_card_reaches_album_keyboard_and_database(reposit
     card = bot.send_message.await_args.kwargs
     assert "🏠 1-комнатная квартира" in card["text"]
     assert "👤 Автор:" not in card["text"]
-    assert card["reply_markup"].inline_keyboard[0][0].text == "Получить номер"
+    assert card["reply_markup"].inline_keyboard[0][0].text == "+996700123***"
     async with sessions() as session:
         stored = (
             await session.scalars(
