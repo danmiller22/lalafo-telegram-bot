@@ -7,6 +7,11 @@ from app.config import Settings
 from app.payments.service import ContactResult
 
 
+def test_legacy_lifetime_link_is_replaced_by_verified_999_link():
+    settings=Settings(_env_file=None,lifetime_finik_payment_url='https://qr.finik.kg/e0c9972e-0f05-4dc3-99fd-96ec1debea1f?type=t')
+    assert settings.lifetime_finik_payment_url=='https://qr.finik.kg/08fdd246-0b74-40c6-a37d-29404ff54fa9?type=t'
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize('plan,price', [('week',499),('lifetime',999)])
 async def test_checkout_keeps_selected_plan_and_price(monkeypatch,plan,price):
