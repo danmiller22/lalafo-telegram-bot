@@ -762,11 +762,11 @@ async def _execute_queue_dispatch() -> int:
     return exit_code
 
 
-async def _inventory_queue_status() -> tuple[int, int, datetime | None]:
+async def _inventory_queue_status(*, whole_apartments_only: bool = False) -> tuple[int, int, datetime | None]:
     from sqlalchemy import case, func, select
 
     from app.database import create_engine_and_session
-    from app.models import ApartmentInventoryQueue
+    from app.models import ApartmentInventoryQueue, Apartment
 
     engine = None
     apartments = _bot_runtime.workflow_data.get("apartments") if _bot_runtime is not None else None
@@ -782,8 +782,9 @@ async def _inventory_queue_status() -> tuple[int, int, datetime | None]:
                     func.count(),
                     func.coalesce(func.sum(case((ApartmentInventoryQueue.scheduled_at <= now, 1), else_=0)), 0),
                     func.min(ApartmentInventoryQueue.scheduled_at),
-                ).where(
-                    ApartmentInventoryQueue.status == "queued"
+                ).join(Apartment).where(
+                    ApartmentInventoryQueue.status == "queued",
+                    Apartment.rooms.in_(("studio", "1")) if whole_apartments_only else True,
                 )
             )).one()
             from app.promotions import publications_in_window
@@ -839,9 +840,9 @@ async def _refill_saved_inventory() -> int:
         if engine is not None:
             await init_db(engine)
         inventory = InventoryRepository(sessions)
-        code_version = (
-            os.getenv("GITHUB_SHA") or os.getenv("KOYEB_GIT_SHA") or ""
-        ).strip()
+        # Only a queue policy migration may rebuild reservations. UI/text
+        # deployments must preserve due cards, claims and retry cooldowns.
+        code_version = "publication-110-owner-first-v15-unique-stock"
         await inventory.reset_publication_history_for_code(code_version)
         return await inventory.schedule_period(now=datetime.now(UTC))
     finally:
@@ -920,7 +921,7 @@ async def _run_hosted_apartment_scheduler() -> None:
     try:
         while True:
             try:
-                queued_count, _, _ = await _inventory_queue_status()
+                queued_count, _, _ = await _inventory_queue_status(whole_apartments_only=True)
                 now = datetime.now(UTC)
                 if queued_count < MIN_HEALTHY_PERIOD_QUEUE and now >= next_refill_at:
                     next_refill_at = now + timedelta(minutes=DISCOVERY_RETRY_MINUTES)

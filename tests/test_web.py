@@ -1135,6 +1135,12 @@ async def test_queue_status_reuses_bot_pool_and_counts_only_queued(repositories,
     queued, due, earliest = await web._inventory_queue_status()
     assert (queued, due) == (2, 1)
     assert earliest.replace(tzinfo=timezone.utc) == now-timedelta(minutes=5)
+    shared = await apartments.upsert_discovered(make_ad(lalafo_id=990100, rooms='shared', price=10000))
+    async with sessions.begin() as session:
+        session.add(ApartmentInventoryQueue(apartment_id=shared.id,
+            scheduled_at=now+timedelta(hours=3), window_key='shared-future', sequence=4, status='queued'))
+    assert (await web._inventory_queue_status())[0] == 3
+    assert (await web._inventory_queue_status(whole_apartments_only=True))[0] == 2
     async with sessions.begin() as session:
         from sqlalchemy import update
         await session.execute(update(ApartmentInventoryQueue).values(status='published'))
@@ -1181,6 +1187,31 @@ async def test_saved_refill_reuses_initialized_runtime_database(repositories, mo
     monkeypatch.setattr(InventoryRepository, 'schedule_period', schedule)
     assert await web._refill_saved_inventory() == 3
     schedule.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_text_deployment_preserves_queued_retry(repositories, monkeypatch):
+    from app.models import ApartmentInventoryQueue
+    from tests.helpers import make_ad
+    from sqlalchemy import select
+    apartments, _, sessions = repositories
+    web._bot_runtime = SimpleNamespace(workflow_data={'apartments': apartments})
+    await apartments.upsert_discovered(make_ad(lalafo_id=991901))
+    monkeypatch.setenv('KOYEB_GIT_SHA', 'before-text-change')
+    await web._refill_saved_inventory()
+    async with sessions.begin() as session:
+        row = await session.scalar(select(ApartmentInventoryQueue))
+        assert row is not None
+        row.attempts = 2
+        row.last_error = 'TelegramPublishError'
+        queue_id, scheduled_at = row.id, row.scheduled_at
+    monkeypatch.setenv('KOYEB_GIT_SHA', 'after-text-change')
+    await web._refill_saved_inventory()
+    async with sessions() as session:
+        row = await session.get(ApartmentInventoryQueue, queue_id)
+        assert row is not None and row.attempts == 2
+        assert row.last_error == 'TelegramPublishError'
+        assert row.scheduled_at == scheduled_at
 
 
 def test_paid_host_keeps_inventory_collection_enabled_without_github_cron(monkeypatch):

@@ -30,6 +30,23 @@ def test_publication_schedule_uses_eleven_point_four_five_minute_slots() -> None
     assert PUBLICATION_SPACING_MINUTES == 11.45
 
 
+@pytest.mark.asyncio
+async def test_refill_does_not_reserve_slots_for_already_published_cross_source_duplicates(repositories):
+    apartments, _, sessions = repositories
+    now = datetime.now(timezone.utc)
+    original = await apartments.upsert_discovered(make_ad(lalafo_id=998001))
+    await apartments.mark_published(original.id, chat_id=-1001, message_id=123)
+    duplicate = await apartments.upsert_discovered(make_ad(lalafo_id=998002))
+    fresh = await apartments.upsert_discovered(make_ad(lalafo_id=998003,
+        phone='+996555999333', photo_urls=['https://img.example/unique-new-apartment.jpg']))
+    await InventoryRepository(sessions).schedule_period(now=now)
+    async with sessions() as session:
+        ids = set((await session.scalars(select(ApartmentInventoryQueue.apartment_id)
+            .where(ApartmentInventoryQueue.status == 'queued'))).all())
+    assert duplicate.id not in ids
+    assert fresh.id in ids
+
+
 @pytest.mark.parametrize("hour,minute,expected", [(5,0,1),(5,11,1),(5,12,2),(20,0,79),(1,49,110)])
 def test_daily_pace_spans_the_entire_bishkek_publication_window(hour, minute, expected):
     now = datetime(2026, 10, 15, hour, minute, tzinfo=BISHKEK)
@@ -407,7 +424,8 @@ async def test_afternoon_schedule_fills_only_remaining_period_target(repositorie
     apartments, _, sessions = repositories
     stored = [
         await apartments.upsert_discovered(
-            make_ad(lalafo_id=10_000 + index, district="ЦУМ", rooms="1", owner_listing=index % 2 == 0)
+            make_ad(lalafo_id=10_000 + index, district="ЦУМ", rooms="1", owner_listing=index % 2 == 0,
+                    phone=f'+996555{index:06d}', photo_urls=[f'https://img.example/apartment-unique-{index:06d}.jpg'])
         )
         for index in range(120)
     ]
@@ -608,7 +626,8 @@ async def test_schedule_repeats_only_after_forty_eight_hours(repositories):
     apartments, _, sessions = repositories
     now = datetime(2026, 9, 23, 10, 0, tzinfo=timezone.utc)
     eligible = await apartments.upsert_discovered(make_ad(lalafo_id=32_001))
-    too_new = await apartments.upsert_discovered(make_ad(lalafo_id=32_002))
+    too_new = await apartments.upsert_discovered(make_ad(lalafo_id=32_002,
+        phone='+996555999888', photo_urls=['https://img.example/newer-different-flat.jpg']))
     await apartments.upsert_discovered(make_ad(lalafo_id=32_003, owner_listing=False))
     async with sessions.begin() as session:
         await session.execute(

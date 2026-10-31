@@ -16,7 +16,7 @@ from app.models import (
     ApartmentInventoryQueue,
     LalafoAutoReplyMeta,
 )
-from app.state import normalized_district
+from app.state import normalized_district, ListingIndex
 from app.listing_quality import district_priority, price_bucket, mix_prices, rental_value_band, price_mix_rank
 from app.listing_policy import OWNER_MAX_PRICE, seller_policy_eligible
 from app.telegram.formatting import is_supported_source
@@ -763,6 +763,8 @@ class InventoryRepository:
                 select(Apartment).where(
                     Apartment.active.is_(True),
                     Apartment.publication_status == "discovered",
+                    Apartment.fingerprint.not_in(select(Apartment.fingerprint).where(
+                        Apartment.publication_status == "published")),
                     _supported_source_filter(),
                     Apartment.id.not_in(active_queue_ids),
                     Apartment.fingerprint.not_in(queued_fingerprints),
@@ -792,6 +794,18 @@ class InventoryRepository:
                 )
                 .order_by(Apartment.published_at.asc())
             )
+            # A newly discovered source ID may be the same apartment already
+            # sent from another source. Filter before reserving its time slot;
+            # send-time checks remain necessary for concurrent publications.
+            published = list((await session.scalars(select(Apartment).where(
+                Apartment.publication_status == "published",
+                Apartment.rooms.in_(("studio", "1")),
+            ))).all())
+            published_index = ListingIndex(published)
+            recent_index = ListingIndex(item for item in published
+                if item.published_at is None or as_utc(item.published_at) > now - timedelta(hours=REPOST_AFTER_HOURS))
+            fresh_stock = [item for item in fresh_stock if not published_index.contains(item)]
+            repeat_stock = [item for item in repeat_stock if not recent_index.contains(item)]
             chooser = rng or random.SystemRandom()
             period_target, period_central_target = period_publication_targets(period)
             period_target = await self._period_stock_target(session, now)
