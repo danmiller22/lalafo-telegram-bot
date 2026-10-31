@@ -641,19 +641,9 @@ class InventoryRepository:
                     ApartmentInventoryQueue.status == "queued",
                 )
             )
-            published_non_owners = int(
-                await session.scalar(
-                    select(func.count())
-                    .select_from(Apartment)
-                    .where(
-                        Apartment.publication_status == "published",
-                        Apartment.published_at >= day_start,
-                        Apartment.published_at < day_end,
-                        func.coalesce(Apartment.seller_type, "unknown") == "realtor",
-                    )
-                )
-                or 0
-            )
+            day_events = await publications_in_window(
+                session, day_start, day_end, include_external_repeats=False)
+            published_non_owners = sum(event.seller_type == "realtor" for event in day_events)
             reserved_non_owners = int(
                 await session.scalar(
                     select(func.count())
@@ -792,16 +782,12 @@ class InventoryRepository:
                 - reserved_central
                 - published_outside_queue_central,
             )
-            period_realtors = int(await session.scalar(
-                select(func.count()).select_from(Apartment).where(
+            period_realtors = sum(event.seller_type == "realtor" for event in ordinary_events)
+            period_realtors += int(await session.scalar(
+                select(func.count()).select_from(ApartmentInventoryQueue).join(Apartment).where(
                     Apartment.seller_type == "realtor",
-                    ((Apartment.publication_status == "published")
-                     & (Apartment.published_at >= period_start)
-                     & (Apartment.published_at < period_end))
-                    | Apartment.id.in_(select(ApartmentInventoryQueue.apartment_id).where(
-                        ApartmentInventoryQueue.window_key == period_window_key,
-                        ApartmentInventoryQueue.status.in_(("queued", "publishing")),
-                    )),
+                    ApartmentInventoryQueue.window_key == period_window_key,
+                    ApartmentInventoryQueue.status.in_(("queued", "publishing")),
                 )
             ) or 0)
             non_owner_target = min(remaining_non_owners, target_override,

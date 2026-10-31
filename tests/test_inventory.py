@@ -76,6 +76,30 @@ async def test_afternoon_stock_target_preserves_morning_receipt_after_external_r
 
 
 @pytest.mark.asyncio
+async def test_external_realtor_repeats_do_not_reduce_ordinary_half_share(repositories):
+    from app.models import LalafoAutoReplyMeta
+    from app.promotions import external_repeat_receipt_key, record_delivery
+    apartments, _, sessions = repositories
+    now = publication_day_start(datetime.now(timezone.utc)).astimezone(timezone.utc)
+    for index in range(2):
+        ad = await apartments.upsert_discovered(make_ad(lalafo_id=980000 + index,
+            owner_listing=False, seller_type="realtor", phone=f'+99677798000{index}',
+            photo_urls=[f'https://img.example/external-realtor-{index}.jpg']))
+        await apartments.mark_published(ad.id, chat_id=-1001, message_id=980000+index, acknowledged_at=now)
+        async with sessions.begin() as session:
+            await record_delivery(session, ad, chat_id=-1001, message_id=980000+index, published_at=now)
+            session.add(LalafoAutoReplyMeta(key=external_repeat_receipt_key(-1001,980000+index), value="2h"))
+    for index in range(80):
+        await apartments.upsert_discovered(make_ad(lalafo_id=981000 + index,
+            owner_listing=index < 40, seller_type="owner" if index < 40 else "realtor",
+            phone=f'+996777{981000+index}', photo_urls=[f'https://img.example/fresh-mix-{index}.jpg']))
+    assert await InventoryRepository(sessions).schedule_period(now=now) == 60
+    async with sessions() as session:
+        kinds = list((await session.scalars(select(Apartment.seller_type).join(ApartmentInventoryQueue))).all())
+    assert kinds.count("owner") == kinds.count("realtor") == 30
+
+
+@pytest.mark.asyncio
 async def test_refill_does_not_reserve_slots_for_already_published_cross_source_duplicates(repositories):
     apartments, _, sessions = repositories
     now = datetime.now(timezone.utc)
