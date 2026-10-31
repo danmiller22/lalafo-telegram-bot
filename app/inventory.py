@@ -438,12 +438,8 @@ class InventoryRepository:
         if period.astimezone(BISHKEK).hour == 5:
             return DISCOVERY_PERIOD_TARGET
         start = publication_day_start(now).astimezone(timezone.utc)
-        published_before = int(await session.scalar(
-            select(func.count()).select_from(Apartment).where(
-                Apartment.publication_status == "published",
-                Apartment.published_at >= start, Apartment.published_at < period,
-            )
-        ) or 0)
+        published_before = len(await publications_in_window(
+            session, start, period, include_external_repeats=False))
         reserved_before = int(await session.scalar(
             select(func.count()).select_from(ApartmentInventoryQueue).where(
                 ApartmentInventoryQueue.status.in_(("queued", "publishing")),
@@ -546,13 +542,8 @@ class InventoryRepository:
                     )
                     or 0
                 )
-                published_count = int(await session.scalar(
-                    select(func.count()).select_from(Apartment).where(
-                        Apartment.publication_status == "published",
-                        Apartment.published_at >= period_start,
-                        Apartment.published_at < period_end,
-                    )
-                ) or 0)
+                published_count = len(await publications_in_window(
+                    session, period_start, period_end, include_external_repeats=False))
                 stock_target = await self._period_stock_target(session, now)
                 if (not force and live_queue_count + published_count >= stock_target):
                     return None
@@ -615,13 +606,8 @@ class InventoryRepository:
     async def period_published_count(self, *, now: datetime | None = None) -> int:
         start = discovery_period_start(now).astimezone(timezone.utc)
         async with self.sessions() as session:
-            return int(await session.scalar(
-                select(func.count()).select_from(Apartment).where(
-                    Apartment.publication_status == "published",
-                    Apartment.published_at >= start,
-                    Apartment.published_at < start + timedelta(minutes=PUBLICATION_PERIOD_MINUTES),
-                )
-            ) or 0)
+            return len(await publications_in_window(session, start,
+                start + timedelta(minutes=PUBLICATION_PERIOD_MINUTES), include_external_repeats=False))
 
     async def schedule_period(self, *, now: datetime | None = None, rng: random.Random | None = None) -> int:
         now = as_utc(now or datetime.now(timezone.utc))
@@ -698,32 +684,12 @@ class InventoryRepository:
                     ("queued", "publishing", "published")
                 ),
             )
-            published_outside_queue = int(
-                await session.scalar(
-                    select(func.count())
-                    .select_from(Apartment)
-                    .where(
-                        Apartment.publication_status == "published",
-                        Apartment.published_at >= period_start,
-                        Apartment.published_at < period_end,
-                        Apartment.id.not_in(period_queue_apartment_ids),
-                    )
-                )
-                or 0
-            )
-            published_outside_queue_central = sum(
-                is_central(district)
-                for district in (
-                    await session.scalars(
-                        select(Apartment.district).where(
-                            Apartment.publication_status == "published",
-                            Apartment.published_at >= period_start,
-                            Apartment.published_at < period_end,
-                            Apartment.id.not_in(period_queue_apartment_ids),
-                        )
-                    )
-                ).all()
-            )
+            queued_ids = set((await session.scalars(period_queue_apartment_ids)).all())
+            ordinary_events = await publications_in_window(session, period_start, period_end,
+                include_external_repeats=False)
+            outside_events = [event for event in ordinary_events if event.apartment_id not in queued_ids]
+            published_outside_queue = len(outside_events)
+            published_outside_queue_central = sum(is_central(event.district) for event in outside_events)
             reserved_central = sum(
                 is_central(district)
                 for district in (

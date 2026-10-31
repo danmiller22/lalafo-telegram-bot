@@ -31,6 +31,51 @@ def test_publication_schedule_uses_eleven_point_four_five_minute_slots() -> None
 
 
 @pytest.mark.asyncio
+async def test_external_repeat_batch_cannot_stop_discovery_or_consume_inventory_slots(repositories):
+    from app.models import LalafoAutoReplyMeta
+    from app.promotions import external_repeat_receipt_key, record_delivery
+    apartments, _, sessions = repositories
+    inventory = InventoryRepository(sessions)
+    now = publication_day_start(datetime.now(timezone.utc)) + timedelta(hours=1)
+    key = await inventory.claim_discovery(now=now)
+    for index in range(55):
+        ad = await apartments.upsert_discovered(make_ad(lalafo_id=970000+index,
+            phone=f'+996555{index:06d}', photo_urls=[f'https://img.example/external-{index:06d}.jpg']))
+        async with sessions.begin() as session:
+            await session.execute(update(Apartment).where(Apartment.id==ad.id).values(
+                publication_status='published', published_at=now-timedelta(minutes=10)))
+            await record_delivery(session, ad, chat_id=-1001, message_id=970000+index,
+                                  published_at=now-timedelta(minutes=10))
+            session.add(LalafoAutoReplyMeta(key=external_repeat_receipt_key(-1001,970000+index),value='2h'))
+    await inventory.finish_discovery(key,success=True,discovered=55,queued=0)
+    assert await inventory.period_published_count(now=now) == 0
+    assert await inventory.claim_discovery(now=now) == key
+    fresh=await apartments.upsert_discovered(make_ad(lalafo_id=979999,
+        phone='+996777999111',photo_urls=['https://img.example/new-ordinary-979999.jpg']))
+    assert await inventory.schedule_period(now=now) == 1
+    async with sessions() as session:
+        assert await session.scalar(select(ApartmentInventoryQueue.apartment_id)) == fresh.id
+
+
+@pytest.mark.asyncio
+async def test_afternoon_stock_target_preserves_morning_receipt_after_external_repeat(repositories):
+    from app.models import LalafoAutoReplyMeta
+    from app.promotions import external_repeat_receipt_key, record_delivery
+    apartments, _, sessions = repositories
+    inventory=InventoryRepository(sessions)
+    start=publication_day_start(datetime.now(timezone.utc))
+    now=start+timedelta(hours=12)
+    ad=await apartments.upsert_discovered(make_ad(lalafo_id=979998))
+    async with sessions.begin() as session:
+        await record_delivery(session,ad,chat_id=-1001,message_id=979997,published_at=start+timedelta(hours=1))
+        await record_delivery(session,ad,chat_id=-1001,message_id=979998,published_at=now)
+        session.add(LalafoAutoReplyMeta(key=external_repeat_receipt_key(-1001,979998),value='2h'))
+        await session.execute(update(Apartment).where(Apartment.id==ad.id).values(publication_status='published',published_at=now))
+    async with sessions() as session:
+        assert await inventory._period_stock_target(session,now) == 109
+
+
+@pytest.mark.asyncio
 async def test_refill_does_not_reserve_slots_for_already_published_cross_source_duplicates(repositories):
     apartments, _, sessions = repositories
     now = datetime.now(timezone.utc)
