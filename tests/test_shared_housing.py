@@ -54,18 +54,18 @@ def test_shared_exception_never_opens_lalafo_or_whole_apartment_price_rules():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("owner", [False, True])
-async def test_shared_schedule_is_ten_per_day_spaced_and_refill_safe(repositories, owner):
+async def test_shared_stock_is_excluded_from_new_whole_apartment_plan(repositories, owner):
     apartments, _, sessions = repositories
     now = datetime.now(BISHKEK).replace(hour=5, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
     for i in range(15):
         await apartments.upsert_discovered(shared_ad(i+1, price=25_000 if owner else 12_000,
             owner_listing=owner, seller_type="owner" if owner else "unknown"))
     inventory = InventoryRepository(sessions)
-    assert await inventory.schedule_period(now=now) == SHARED_DAILY_TARGET
+    assert await inventory.schedule_period(now=now) == 0
     assert await inventory.schedule_period(now=now) == 0
     async with sessions() as s:
         rows = list((await s.scalars(select(ApartmentInventoryQueue).order_by(ApartmentInventoryQueue.scheduled_at))).all())
-    assert len(rows) == 10
+    assert len(rows) == 0
     assert all(as_utc(b.scheduled_at)-as_utc(a.scheduled_at) >= timedelta(hours=2) for a,b in zip(rows,rows[1:]))
 
 
@@ -75,7 +75,7 @@ async def test_shared_collector_stores_unknown_seller_without_relaxing_whole_pol
     apartments, _, sessions = repositories
     monkeypatch.setattr("scripts.collect_telegram_inventory.fetch_telegram_apartments", AsyncMock(return_value=[shared_ad()]))
     result = await collect(Settings(), apartments, InventoryRepository(sessions))
-    assert result["stored"] == 1 and result["queued"] == 1
+    assert result["stored"] == 1 and result["queued"] == 0
 
 
 @pytest.mark.asyncio
@@ -94,7 +94,7 @@ async def test_catchup_cannot_cluster_shared_cards_and_requires_whole_card_betwe
     async with sessions.begin() as s:
         await s.execute(update(Apartment).where(Apartment.id==whole.id).values(publication_status="published", published_at=now+timedelta(minutes=30)))
     row=await inventory.claim_due(now=now+timedelta(hours=2))
-    assert row is not None and row.apartment_id==second.id
+    assert row is None
 
 
 @pytest.mark.asyncio
@@ -111,3 +111,21 @@ async def test_daily_cap_survives_queue_rebuild(repositories):
     async with sessions.begin() as s:
         s.add(ApartmentInventoryQueue(apartment_id=extra.id,window_key="shared:test",sequence=1,scheduled_at=now-timedelta(hours=1)))
     assert await inventory.claim_due(now=now) is None
+
+
+@pytest.mark.asyncio
+async def test_new_plan_keeps_uncertain_shared_receipt_for_reconciliation(repositories):
+    apartments, _, sessions = repositories
+    now = datetime.now(timezone.utc)
+    ad = await apartments.upsert_discovered(shared_ad(99))
+    async with sessions.begin() as session:
+        session.add(ApartmentInventoryQueue(
+            apartment_id=ad.id, window_key="shared:old", sequence=1,
+            scheduled_at=now, status="uncertain", last_error="TelegramPublishAmbiguousError",
+        ))
+    await InventoryRepository(sessions).schedule_period(now=now)
+    async with sessions() as session:
+        row = await session.scalar(select(ApartmentInventoryQueue).where(
+            ApartmentInventoryQueue.apartment_id == ad.id))
+        assert row is not None and row.status == "uncertain"
+        assert row.last_error == "TelegramPublishAmbiguousError"

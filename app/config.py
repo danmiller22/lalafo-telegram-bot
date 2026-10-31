@@ -82,7 +82,7 @@ DEFAULT_SEARCH_URL = (
     "dolgosrochnaya-arenda-kvartir/studio/1-bedroom/owner/"
     "semeynym/param-bez-detey/studentam/bez-podseleniya/"
     "mozhno-s-zhivotnymi"
-    "?price[from]=25000&price[to]=45000"
+    "?price[from]=25000&price[to]=40000"
 )
 
 TELEGRAM_SOURCE_CHANNELS: tuple[str, ...] = (
@@ -114,11 +114,11 @@ TELEGRAM_SOURCE_CHANNELS: tuple[str, ...] = (
 # descriptions, verified contact fields and photos enter publication.
 TELEGRAM_APARTMENT_CHANNELS: tuple[str, ...] = TELEGRAM_SOURCE_CHANNELS
 
-# Prefer central discovery routes; both seller categories use 25–45k.
+# Prefer central discovery routes; both seller categories use 25–40k.
 ADDITIONAL_SEARCH_URLS: tuple[str, ...] = (
     *(f"https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
       f"dolgosrochnaya-arenda-kvartir/studio/1-bedroom/{district}/"
-      f"agent/real-estate-agency?price[from]=25000&price[to]=45000"
+      f"agent/real-estate-agency?price[from]=25000&price[to]=40000"
       for district in (
           "vostok-5", "filarmoniya", "bishkek-park-trc",
           "vefa-shopping-center", "mossovet", "tsum", "manasabokonbaeva",
@@ -151,26 +151,25 @@ INVENTORY_SEARCH_URLS: tuple[str, ...] = (
     # Read the entire owner price range on every cycle. Rotating dozens of
     # district searches used to leave this broad 30–35k query untouched for
     # hours whenever the cloud collection budget expired early.
-    f"{_INVENTORY_BASE}owner?price[from]=25000&price[to]=45000",
+    f"{_INVENTORY_BASE}owner?price[from]=25000&price[to]=40000",
     f"{_INVENTORY_BASE}owner?price[from]=25000&price[to]=27999",
     f"{_INVENTORY_BASE}owner?price[from]=28000&price[to]=31999",
     f"{_INVENTORY_BASE}owner?price[from]=32000&price[to]=35999",
-    f"{_INVENTORY_BASE}owner?price[from]=36000&price[to]=39999",
-    f"{_INVENTORY_BASE}owner?price[from]=40000&price[to]=45000",
-    *(f"{_INVENTORY_BASE}{district}/owner?price[from]=25000&price[to]=45000"
+    f"{_INVENTORY_BASE}owner?price[from]=36000&price[to]=40000",
+    *(f"{_INVENTORY_BASE}{district}/owner?price[from]=25000&price[to]=40000"
       for district in INVENTORY_OWNER_DISTRICTS),
     # Lalafo authors do not always fill the offerer field. Broad searches keep
     # those fresh cards available; seller classification still happens from
     # the detail page before anything enters the Telegram queue.
     f"{_INVENTORY_BASE}?price[from]=25000&price[to]=29999",
-    f"{_INVENTORY_BASE}?price[from]=30000&price[to]=45000",
+    f"{_INVENTORY_BASE}?price[from]=30000&price[to]=40000",
     # The discovery targets reserve their first segment for owner-capable
     # searches; agency-only searches must come after that segment.
-    f"{_INVENTORY_BASE}agent/real-estate-agency?price[from]=25000&price[to]=45000",
+    f"{_INVENTORY_BASE}agent/real-estate-agency?price[from]=25000&price[to]=40000",
     # A dedicated affordable feed finds older 25–35k offers that newer
     # expensive cards can displace from the broad feed's first pages.
     f"{_INVENTORY_BASE}agent/real-estate-agency?price[from]=25000&price[to]=35000",
-    *(f"{_INVENTORY_BASE}{district}/agent/real-estate-agency?price[from]=25000&price[to]=45000"
+    *(f"{_INVENTORY_BASE}{district}/agent/real-estate-agency?price[from]=25000&price[to]=40000"
       for district in INVENTORY_PRIORITY_DISTRICTS),
 )
 
@@ -249,7 +248,7 @@ class Settings(BaseSettings):
     apartment_publication_heartbeat_seconds: float = 60.0
     city: str = "Бишкек"
     min_price: int = 25_000
-    max_price: int = 45_000
+    max_price: int = 40_000
     rooms: str = "studio,1"
     max_new_posts_per_run: int = 18
     max_search_pages: int = 36

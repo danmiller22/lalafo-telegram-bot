@@ -103,14 +103,13 @@ MAX_REPOSTS_PER_RUN = 18
 CENTRAL_BATCH_SHARE = 0.50
 OWNER_OTHER_BATCH_SHARE = 0.50
 MAX_CANDIDATE_POOL = 300
-# Discovery must retain enough unique stock for the 110-card daily schedule
+# Discovery must retain enough unique stock for the 120-card daily schedule
 # and its 48-hour no-repeat window.
 DISCOVERY_CANDIDATE_TARGET = 220
 DISCOVERY_COLLECTION_BUDGET_SECONDS = 300
-# Owner cards still fill the publication batch first. Reserve enough crawl time
-# for inexpensive central agency stock to keep the 110-card schedule full when
-# the owner catalogue is thin; this does not reserve publication slots.
-REALTOR_CANDIDATE_RESERVE_SHARE = 0.25
+# Split crawl capacity equally between seller categories. Either category can
+# fill a shortage so the 120-card plan does not stall on a thin catalogue.
+REALTOR_CANDIDATE_RESERVE_SHARE = 0.50
 OWNER_SHORTAGE_SEARCH_SECONDS = 60.0
 REALTOR_BATCH_SHARE = REALTOR_DAILY_SHARE
 # Retained for historical reporting helpers; two-bedroom cards are no longer
@@ -492,7 +491,7 @@ def rotate_inventory_sources(urls, *, now=None):
         url for url in owners
         if '/1-bedroom/owner?' in url
         and 'price[from]=25000' in url
-        and 'price[to]=45000' in url
+        and 'price[to]=40000' in url
     ]
     rotating_owners = [url for url in owners if url not in hot_owners]
     ordered = list(hot_owners)

@@ -50,7 +50,7 @@ def test_parses_fresh_owner_apartment_with_album_and_contact() -> None:
 
 
 @pytest.mark.parametrize("seller", ["Собственник", "Агентство"])
-@pytest.mark.parametrize("price,eligible", [(24_999,False),(25_000,True),(40_001,True),(45_000,True),(45_001,False)])
+@pytest.mark.parametrize("price,eligible", [(24_999,False),(25_000,True),(40_000,True),(40_001,False),(45_000,False),(45_001,False)])
 def test_telegram_whole_apartments_share_the_exact_25_to_45k_range(seller, price, eligible):
     from app.config import Settings
     from scripts.publish_inventory import _valid

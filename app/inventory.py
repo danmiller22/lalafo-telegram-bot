@@ -21,19 +21,17 @@ from app.listing_quality import district_priority, price_bucket, mix_prices, ren
 from app.listing_policy import OWNER_MAX_PRICE, seller_policy_eligible
 from app.telegram.formatting import is_supported_source
 from app.promotions import publications_in_window, queue_due_promotions, REQUESTED_WINDOW_PREFIX
-from app.shared_housing import SHARED_ROOMS, SHARED_MIN_PRICE, SHARED_MAX_PRICE, SHARED_DAILY_TARGET, SHARED_GAP, schedule_shared, shared_deliveries
 
 
 BISHKEK = ZoneInfo("Asia/Bishkek")
-ALLOWED_ROOMS = frozenset({"studio", "1", SHARED_ROOMS})
+ALLOWED_ROOMS = frozenset({"studio", "1"})
 CENTRAL_DAILY_SHARE = 0.50
-REALTOR_DAILY_SHARE = 0.25
-MIN_PUBLICATIONS_PER_DAY = 110
-MAX_PUBLICATIONS_PER_DAY = 110
+REALTOR_DAILY_SHARE = 0.50
+MIN_PUBLICATIONS_PER_DAY = 120
+MAX_PUBLICATIONS_PER_DAY = 120
 # The daily target is chosen once per Bishkek date, then split across the two
 # discovery periods so retries cannot increase the day's publication volume.
-# Prefer confirmed owners for three quarters of the daily plan and retain one
-# quarter for inexpensive central realtors. Either known category fills
+# Reserve half of the daily plan for each seller category. Either category fills
 # shortages in the other; unclassified listings do not enter the public queue.
 MIN_NON_OWNERS_PER_DAY = math.ceil(MAX_PUBLICATIONS_PER_DAY * REALTOR_DAILY_SHARE)
 MAX_NON_OWNERS_PER_DAY = MIN_NON_OWNERS_PER_DAY
@@ -47,11 +45,11 @@ MAX_FRESH_STOCK_LOAD = 600
 # Telegram reserve sources recover the queue on the next cloud tick.
 DISCOVERY_RETRY_MINUTES = 3
 MIN_HEALTHY_PERIOD_QUEUE = 12
-# Scheduling a small stock densely is separate from filling the 55-card plan.
+# Scheduling a small stock densely is separate from filling the 60-card plan.
 DISCOVERY_PERIOD_TARGET = (MAX_PUBLICATIONS_PER_DAY + 1) // 2
-# Spread 110 cards evenly through the 21-hour publication window.
-PUBLICATION_SPACING_MINUTES = 11.45
-MIN_PUBLICATION_GAP_MINUTES = 11
+# Spread 120 cards evenly through the 21-hour publication window.
+PUBLICATION_SPACING_MINUTES = 10.5
+MIN_PUBLICATION_GAP_MINUTES = 10
 INVENTORY_CLAIM_LOCK_ID = 731_290_512
 # Two equal 10.5-hour periods cover 05:00 through 02:00 the next day.
 PUBLICATION_PERIOD_MINUTES = 630
@@ -263,7 +261,7 @@ def plan_period(
     repeat_apartment_ids: set[int] | None = None,
     rng: random.Random | None = None,
 ) -> list[PlannedApartment]:
-    """Create half of a 110-card day in evenly spaced slots."""
+    """Create half of a 120-card day in evenly spaced slots."""
     rng = rng or random.SystemRandom()
     if non_owner_target is None:
         non_owner_target = period_realtor_target(period_start)
@@ -632,7 +630,8 @@ class InventoryRepository:
             )
             await session.execute(
                 delete(ApartmentInventoryQueue).where(
-                    ApartmentInventoryQueue.apartment_id.in_(invalid_room_ids)
+                    ApartmentInventoryQueue.apartment_id.in_(invalid_room_ids),
+                    ApartmentInventoryQueue.status == "queued",
                 )
             )
             published_non_owners = int(
@@ -860,8 +859,7 @@ class InventoryRepository:
                 existing.published_at = None
                 existing.attempts = 0
                 existing.last_error = None
-            shared_count = await schedule_shared(session, now=now, day_start=day_start, day_end=day_end)
-            return len(planned) + shared_count
+            return len(planned)
 
     async def claim_due(
         self,
@@ -908,8 +906,6 @@ class InventoryRepository:
             ineligible_apartment_ids = select(Apartment.id).where(
                 ~or_(
                     (Apartment.rooms.in_(("studio", "1"))) & Apartment.price.between(25_000, OWNER_MAX_PRICE),
-                    (Apartment.rooms == SHARED_ROOMS) & Apartment.source_url.like("https://t.me/%")
-                    & Apartment.price.between(SHARED_MIN_PRICE, SHARED_MAX_PRICE),
                 )
             )
             await session.execute(
@@ -1003,8 +999,6 @@ class InventoryRepository:
                         or_(
                             ApartmentInventoryQueue.window_key.startswith(REQUESTED_WINDOW_PREFIX),
                             Apartment.rooms.in_(("studio", "1")) & Apartment.price.between(25_000, OWNER_MAX_PRICE),
-                            (Apartment.rooms == SHARED_ROOMS) & Apartment.price.between(SHARED_MIN_PRICE, SHARED_MAX_PRICE)
-                            & Apartment.source_url.like("https://t.me/%") & (ApartmentInventoryQueue.scheduled_at <= now),
                         ),
                         _supported_source_filter(),
                     )
@@ -1020,7 +1014,6 @@ class InventoryRepository:
             due_rows = [
                 row for row in due_rows
                 if row[4].startswith(REQUESTED_WINDOW_PREFIX)
-                or row[5] == SHARED_ROOMS
                 or seller_policy_eligible(
                     seller_type=row[2],
                     owner_listing=row[2] == "owner",
@@ -1031,26 +1024,12 @@ class InventoryRepository:
             if not due_rows:
                 return None
             # Leave room for repeats that become due later today. They belong
-            # to the same 110-card plan, rather than being added above it.
+            # to the same 120-card plan, rather than being added above it.
             if published_today >= MAX_PUBLICATIONS_PER_DAY - reserved_promotions:
                 due_rows = [row for row in due_rows if row[4].startswith(REQUESTED_WINDOW_PREFIX)]
                 if not due_rows:
                     return None
             requested_rows = [row for row in due_rows if row[4].startswith(REQUESTED_WINDOW_PREFIX)]
-            shared_rows = [row for row in due_rows if row[5] == SHARED_ROOMS]
-            ordinary_rows = [row for row in due_rows if row[5] != SHARED_ROOMS]
-            shared_sent = await shared_deliveries(session, day_start, day_end)
-            last_shared = max((as_utc(t) for t in shared_sent), default=None)
-            latest_whole = await session.scalar(select(func.max(Apartment.published_at)).where(
-                Apartment.rooms.in_(("studio", "1")), Apartment.published_at >= day_start,
-                Apartment.published_at <= now,
-            ))
-            shared_allowed = (len(shared_sent) < SHARED_DAILY_TARGET
-                and (last_shared is None or (now - last_shared >= SHARED_GAP
-                    and latest_whole is not None and as_utc(latest_whole) > last_shared)))
-            due_rows = shared_rows if shared_rows and shared_allowed else ordinary_rows
-            if not due_rows:
-                return None
             due_rows = requested_rows or due_rows
             central_needed = published_central < math.ceil(
                 (published_today + 1) * CENTRAL_DAILY_SHARE

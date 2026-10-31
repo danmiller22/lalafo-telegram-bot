@@ -100,7 +100,7 @@ async def test_day_limit_counts_repeat_receipts_before_claim(repositories):
     first = await apartments.upsert_discovered(make_ad(lalafo_id=20001))
     other = await apartments.upsert_discovered(make_ad(lalafo_id=20002, phone='+996555987654', photo_urls=['https://img5.lalafo.com/unique.jpeg']))
     async with sessions.begin() as session:
-        for index in range(110):
+        for index in range(120):
             await record_delivery(session, first, chat_id=1, message_id=100+index, published_at=START)
         session.add(ApartmentInventoryQueue(apartment_id=other.id, scheduled_at=START, window_key='ordinary', sequence=1, status='queued'))
     assert await InventoryRepository(sessions).claim_due(now=START+timedelta(hours=4)) is None
@@ -152,7 +152,7 @@ async def test_fresh_stock_cannot_consume_reserved_repeat_slots(repositories):
     fresh = await apartments.upsert_discovered(make_ad(lalafo_id=20003, phone='+996555887654', photo_urls=['https://img5.lalafo.com/fresh.jpeg']))
     await apartments.mark_published(featured.id, chat_id=1, message_id=1, acknowledged_at=START, promote_requested=True)
     async with sessions.begin() as session:
-        for index in range(108):
+        for index in range(118):
             await record_delivery(session, history, chat_id=1, message_id=100+index, published_at=START)
         session.add(ApartmentInventoryQueue(apartment_id=fresh.id, scheduled_at=START, window_key='ordinary', sequence=1, status='queued'))
     assert (await work(sessions, START+timedelta(hours=4)))[1] == 2

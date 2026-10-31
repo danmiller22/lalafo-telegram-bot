@@ -14,7 +14,8 @@ def test_rejects_people_looking_for_housing():
 
 
 def test_rejects_over_limit():
-    assert is_apartment_offer("Сдам квартиру, хозяин, 45 000 сом")
+    assert is_apartment_offer("Сдам квартиру, хозяин, 40 000 сом")
+    assert not is_apartment_offer("Сдам квартиру, хозяин, 40 001 сом")
     assert not is_apartment_offer("Сдам квартиру, хозяин, 45 001 сом")
 
 

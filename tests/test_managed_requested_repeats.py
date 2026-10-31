@@ -133,14 +133,14 @@ async def test_managed_claim_reserves_shared_slot_and_cannot_claim_ordinary_rows
                                requested_only=True, reservation_clock=NOW)
     assert item is not None and item.window_key.startswith('requested-card:')
     assert as_utc(item.claimed_at) == NOW
-    assert await repo.claim_due(now=NOW+timedelta(minutes=11)) is None
+    assert await repo.claim_due(now=NOW+timedelta(minutes=10)) is None
 
 
 def test_reservations_respect_daily_cap_clock_and_minimum_gap():
-    assert reservation_time(NOW, 110, None) is None
+    assert reservation_time(NOW, 120, None) is None
     assert reservation_time(NOW.replace(hour=21), 0, None) is None  # 03:00 Bishkek
-    assert reservation_time(NOW, 0, NOW) == NOW+timedelta(minutes=11)
-    assert reservation_time(NOW, 0, NOW-timedelta(minutes=4)) == NOW+timedelta(minutes=7)
+    assert reservation_time(NOW, 0, NOW) == NOW+timedelta(minutes=10)
+    assert reservation_time(NOW, 0, NOW-timedelta(minutes=4)) == NOW+timedelta(minutes=6)
     assert reservation_time(NOW, 0, None) == NOW
 
 @pytest.mark.asyncio
@@ -269,8 +269,8 @@ def test_queue_catchup_uses_five_minutes_only_when_three_slots_behind():
     from app.inventory import publication_slots_due
     due = publication_slots_due(NOW)
     assert reservation_gap(NOW, due-3, catch_up=True) == 5
-    assert reservation_gap(NOW, due-2, catch_up=True) == 11
-    assert reservation_gap(NOW, due-3, catch_up=False) == 11
+    assert reservation_gap(NOW, due-2, catch_up=True) == 10
+    assert reservation_gap(NOW, due-3, catch_up=False) == 10
     assert reservation_time(NOW, due-3, NOW, catch_up=True) == NOW+timedelta(minutes=5)
 
 
