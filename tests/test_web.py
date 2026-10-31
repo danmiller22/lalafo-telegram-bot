@@ -725,7 +725,7 @@ async def test_miniapp_starts_a_checkout_bound_to_the_selected_apartment(
             json={
                 "init_data": miniapp_init_data(bot_token=bot_token, user_id=778899),
                 "start_param": signer.sign_start_id("miniapp-apartment", 42),
-                "plan": MONTH_PLAN,
+                "plan": WEEK_PLAN,
             },
         )
 
@@ -784,7 +784,7 @@ async def test_miniapp_uses_configured_payment_url_without_waiting_for_finik(
             json={
                 "init_data": miniapp_init_data(bot_token=bot_token, user_id=778899),
                 "start_param": signer.sign_start_id("miniapp-apartment", 42),
-                "plan": MONTH_PLAN,
+                "plan": WEEK_PLAN,
             },
         )
 

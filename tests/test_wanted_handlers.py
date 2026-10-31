@@ -309,6 +309,7 @@ async def test_apartment_start_link_survives_cloud_signer_mismatch():
     markup = message.answer.await_args.kwargs["reply_markup"]
     assert [row[0].text for row in markup.inline_keyboard] == [
         "Недельный тариф — 499 сом",
+        "✨ Навсегда — 999 сом",
         "🔒 Политика конфиденциальности",
     ]
 

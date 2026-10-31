@@ -201,7 +201,7 @@ class Settings(BaseSettings):
     finik_payment_url: str = ""
     weekly_finik_payment_url: str = "https://qr.finik.kg/bbfd79c8-38a6-483e-b57b-c42ea362fa81?type=t"
     monthly_finik_payment_url: str = ""
-    lifetime_finik_payment_url: str = "https://qr.finik.kg/e0c9972e-0f05-4dc3-99fd-96ec1debea1f?type=t"
+    lifetime_finik_payment_url: str = "https://qr.finik.kg/08fdd246-0b74-40c6-a37d-29404ff54fa9?type=t"
     wanted_finik_payment_url: str = ""
     # Finik Web SDK. Secrets are configured only in the deployment environment.
     finik_api_url: str = "https://api.acquiring.averspay.kg/v1/payment"
@@ -281,6 +281,13 @@ class Settings(BaseSettings):
     def replace_legacy_weekly_qr(cls, value: object) -> object:
         if value == 'https://qr.finik.kg/#00020101021232810011qr.finik.kg0114averspay-items1032bbfd79c838a6483eb57bc42ea362fa811202121302125204482953034175405500005908Finik-QR6304a55c':
             return "https://qr.finik.kg/bbfd79c8-38a6-483e-b57b-c42ea362fa81?type=t"
+        return value
+
+    @field_validator("lifetime_finik_payment_url", mode="before")
+    @classmethod
+    def replace_legacy_lifetime_qr(cls, value: object) -> object:
+        if isinstance(value, str) and value.startswith("https://qr.finik.kg/e0c9972e-0f05-4dc3-99fd-96ec1debea1f"):
+            return "https://qr.finik.kg/08fdd246-0b74-40c6-a37d-29404ff54fa9?type=t"
         return value
 
     @field_validator("admin_user_id", mode="before")

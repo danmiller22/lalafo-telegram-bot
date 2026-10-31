@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from html import escape
 from urllib.parse import parse_qsl
 
-from app.payment_plans import WEEK_PRICE
+from app.payment_plans import WEEK_PRICE, LIFETIME_PRICE
 from app.terms import TERMS_TEXT
 
 
@@ -99,6 +99,10 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     .photos img {{ width: 100%; height: 140px; object-fit: cover; border-radius: 12px; }}
     .details {{ white-space: pre-line; font-size: 16px; line-height: 1.6; }}
     .tariff-button {{ margin-bottom: 12px; }}
+    .forever-offer {{ border: 1px solid #d9ad43; border-radius: 18px; padding: 16px; margin: 4px 0 18px; background: linear-gradient(135deg, #d9ad4314, #087f6810); }}
+    .forever-label {{ font-size: 13px; font-weight: 800; color: var(--tg-theme-link-color, #087f68); margin-bottom: 8px; }}
+    .forever-note {{ font-size: 14px; line-height: 1.4; color: var(--muted); margin: 9px 0 0; }}
+    #pay-forever {{ background: linear-gradient(120deg, #087f68, #065345); color: #fff; }}
     #tariff-description {{ color: var(--tg-theme-text-color, #172b24); font-size: 26px; font-weight: 800; line-height: 1.3; }}
     .agreement-caption {{ font-size: 12px; font-weight: 400; color: var(--muted); line-height: 1.5; margin: 0 0 16px; }}
     .terms-link {{ color: var(--tg-theme-link-color, #087f68); }}
@@ -119,6 +123,11 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
   </div>
   <p id="agreement-caption" class="agreement-caption">Оплачивая доступ, вы подтверждаете, что ознакомились с <a id="terms-link" class="terms-link" href="#agreement">пользовательским договором</a> и соглашаетесь с его условиями.</p>
   <button id="pay-lifetime" class="primary tariff-button"{'' if payment_urls else ' disabled'}>Оплатить {WEEK_PRICE} сом</button>
+  <div id="forever-offer" class="forever-offer">
+    <div class="forever-label">✨ Один платёж — без продлений</div>
+    <button id="pay-forever" class="tariff-button">Навсегда — {LIFETIME_PRICE} сом</button>
+    <p class="forever-note">Все номера и новые квартиры. Бессрочный доступ без повторной оплаты.</p>
+  </div>
   <a id="privacy" class="privacy hidden">Политика конфиденциальности</a>
   <section id="checkout" class="checkout hidden">
     <button id="access" class="primary hidden">Я оплатил(а)</button>
@@ -150,32 +159,32 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
   let sessionLoading = false;
   let selectedPlan = "week";
   const paymentUrls = {checkout_json};
-  let preparedUntil = Infinity;
-  let checkoutPreparation = null;
-  let refreshCheckoutTimer = null;
+  const preparedUntil = {{week: Infinity, lifetime: Infinity}};
+  const checkoutPreparation = {{}};
+  const refreshCheckoutTimer = {{}};
 
-  function prepareCheckout() {{
-    if (accessApproved || checkoutPreparation) return checkoutPreparation;
-    if (paymentUrls.week && preparedUntil > Date.now()) return Promise.resolve();
-    el("pay-lifetime").disabled = true;
+  function prepareCheckout(plan = "week") {{
+    if (accessApproved || checkoutPreparation[plan]) return checkoutPreparation[plan];
+    if (paymentUrls[plan] && preparedUntil[plan] > Date.now()) return Promise.resolve();
+    const buttonId = plan === "lifetime" ? "pay-forever" : "pay-lifetime";
+    el(buttonId).disabled = true;
     el("reopen-payment").disabled = true;
-    checkoutPreparation = api("/miniapp/api/prepare", {{}}).then(data => {{
+    checkoutPreparation[plan] = api("/miniapp/api/prepare", {{plan}}).then(data => {{
       if (data.status === "approved" || data.status === "unavailable") {{ render(data); return; }}
-      paymentUrls.week = data.payment_url;
-      preparedUntil = data.expires_at_ms;
-      el("pay-lifetime").disabled = !paymentUrls.week;
+      paymentUrls[plan] = data.payment_url;
+      preparedUntil[plan] = data.expires_at_ms;
+      el(buttonId).disabled = !paymentUrls[plan];
       el("reopen-payment").disabled = false;
-      if (refreshCheckoutTimer) clearTimeout(refreshCheckoutTimer);
-      refreshCheckoutTimer = setTimeout(() => {{
-        paymentUrls.week = "";
-        prepareCheckout();
-      }}, Math.max(1000, preparedUntil - Date.now()));
+      if (refreshCheckoutTimer[plan]) clearTimeout(refreshCheckoutTimer[plan]);
+      refreshCheckoutTimer[plan] = setTimeout(() => {{
+        paymentUrls[plan] = "";
+      }}, Math.max(1000, preparedUntil[plan] - Date.now()));
     }}).catch(error => {{
       message(error.message);
-      el("pay-lifetime").disabled = !paymentUrls.week;
+      el(buttonId).disabled = !paymentUrls[plan];
       el("reopen-payment").disabled = false;
-    }}).finally(() => {{ checkoutPreparation = null; }});
-    return checkoutPreparation;
+    }}).finally(() => {{ checkoutPreparation[plan] = null; }});
+    return checkoutPreparation[plan];
   }}
 
   function telegramContext() {{
@@ -233,11 +242,11 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     const approved = data.status === "approved";
     apartmentUnavailable = data.status === "unavailable";
     show("other-apartments", apartmentUnavailable);
-    const waiting = data.plan === "week" && (data.status === "awaiting_receipt" || data.status === "pending");
-    selectedPlan = "week";
+    const waiting = (data.plan === "week" || data.plan === "lifetime") && (data.status === "awaiting_receipt" || data.status === "pending");
+    if (data.plan === "week" || data.plan === "lifetime") selectedPlan = data.plan;
     el("title").textContent = approved ? "Квартира" : waiting ? "Оплата" : "";
     show("title", approved || waiting);
-    el("intro").textContent = approved ? "" : waiting ? "7 дней · {WEEK_PRICE} сом" : "";
+    el("intro").textContent = approved ? "" : waiting ? (selectedPlan === "lifetime" ? "Навсегда · {LIFETIME_PRICE} сом" : "7 дней · {WEEK_PRICE} сом") : "";
     show("intro", waiting);
     show("apartment", approved);
     show("phone", approved);
@@ -247,6 +256,8 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     show("privacy", !approved);
     show("agreement-caption", !approved && !apartmentUnavailable);
     show("pay-lifetime", canPay);
+    show("forever-offer", canPay);
+    show("pay-forever", canPay);
     show("access", waiting && data.status === "awaiting_receipt");
     show("reopen-payment", waiting && data.status === "awaiting_receipt");
     if (!approved) {{
@@ -256,8 +267,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
       accessApproved = true;
       if (paymentPoll) clearTimeout(paymentPoll);
       paymentPoll = null;
-      if (refreshCheckoutTimer) clearTimeout(refreshCheckoutTimer);
-      refreshCheckoutTimer = null;
+      Object.values(refreshCheckoutTimer).forEach(clearTimeout);
       message("");
       const apartment = data.apartment || {{}};
       const photos = el("photos");
@@ -321,9 +331,9 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     button.disabled = true;
     button.textContent = "Открываем Finik…";
     try {{
-      if (!paymentUrls[plan] || preparedUntil <= Date.now()) {{
+      if (!paymentUrls[plan] || preparedUntil[plan] <= Date.now()) {{
         paymentUrls[plan] = "";
-        await prepareCheckout();
+        await prepareCheckout(plan);
       }}
       const readyUrl = paymentUrls[plan];
       // Persist the checkout before leaving Telegram. Opening Finik first can
@@ -386,6 +396,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     if (agreement.close) agreement.close(); else agreement.removeAttribute("open");
   }};
   el("pay-lifetime").onclick = () => startPayment("week", "pay-lifetime");
+  el("pay-forever").onclick = () => startPayment("lifetime", "pay-forever");
   el("reopen-payment").onclick = () => {{
     if (accessApproved) return;
     const url = paymentUrls[selectedPlan];

@@ -32,7 +32,7 @@ async def test_lifetime_grant_covers_other_and_future_apartments(repositories, s
     async with sessions() as session:
         history = (await session.scalars(select(PaymentHistory))).all()
     assert len(history) == 1
-    assert history[0].amount == 699
+    assert history[0].amount == 999
     assert history[0].plan == LIFETIME_PLAN
     assert history[0].access_expires_at is None
     class FutureClock(datetime):
@@ -105,7 +105,7 @@ async def test_weekly_miniapp_checkout_and_manual_access_end_to_end(repositories
     async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as finik_http:
         monkeypatch.setattr(web, "FinikClient", lambda **kwargs: FinikClient(client=finik_http, **kwargs))
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=web.app), base_url="http://test") as client:
-            payload = {"init_data": miniapp_init_data(bot_token="123456:test-token", user_id=880), "start_param": TokenSigner("c" * 32).sign_start_id("miniapp-apartment", first.id), "plan": "month"}
+            payload = {"init_data": miniapp_init_data(bot_token="123456:test-token", user_id=880), "start_param": TokenSigner("c" * 32).sign_start_id("miniapp-apartment", first.id), "plan": "week"}
             initial = await client.post("/miniapp/api/session", json=payload)
             assert initial.json()["status"] == "unpaid"
             assert initial.json()["price"] == 499

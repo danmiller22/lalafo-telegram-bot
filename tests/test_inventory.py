@@ -747,10 +747,15 @@ async def test_claim_due_skips_old_unsupported_source_even_if_owner(repositories
 
 
 @pytest.mark.asyncio
-async def test_failed_empty_discovery_retries_after_cooldown(repositories):
+async def test_failed_empty_discovery_retries_after_cooldown(repositories, monkeypatch):
     _, _, sessions = repositories
     inventory = InventoryRepository(sessions)
-    now = datetime.now(timezone.utc)
+    now = publication_day_start(datetime.now(timezone.utc)) + timedelta(hours=1)
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now.astimezone(tz) if tz else now.replace(tzinfo=None)
+    monkeypatch.setattr('app.inventory.datetime', Clock)
     key = await inventory.claim_discovery(now=now)
     assert key is not None
     await inventory.finish_discovery(
