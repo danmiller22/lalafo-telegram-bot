@@ -2,6 +2,10 @@ name: Restore standard managed card buttons
 on:
   workflow_dispatch:
     inputs:
+      all_public_cards:
+        description: Update all recorded public card buttons (no new messages)
+        type: boolean
+        default: false
       follow_publication_run:
         description: Optional active publication run to follow for new receipts
         type: string
@@ -23,6 +27,7 @@ jobs:
       TELEGRAM_GROUP_ID: '-1004389602150'
       GH_TOKEN: ${{ github.token }}
       FOLLOW_PUBLICATION_RUN: ${{ inputs.follow_publication_run }}
+      ALL_PUBLIC_CARDS: ${{ inputs.all_public_cards }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7

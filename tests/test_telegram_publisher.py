@@ -59,7 +59,7 @@ async def test_public_album_uses_fast_direct_telegram_urls() -> None:
     )
     keyboard = bot.send_message.await_args.kwargs["reply_markup"]
     assert [button.text for row in keyboard.inline_keyboard for button in row] == [
-        "Получить номер",
+        "+996700000***",
         "🔄 Проверить актуальность",
         "🛟 Техподдержка",
     ]

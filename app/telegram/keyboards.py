@@ -1,13 +1,22 @@
 from __future__ import annotations
 
+import re
+
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from app.security import TokenSigner
 from app.payment_plans import WEEK_PRICE
 
 
-APARTMENT_KEYBOARD_VERSION = 17
+APARTMENT_KEYBOARD_VERSION = 18
 MINI_APP_SHORT_NAME = "access"
+
+
+def masked_contact_label(phone: str | None) -> str:
+    digits = re.sub(r"\D", "", phone or "")
+    if not 9 <= len(digits) <= 15:
+        return "Получить номер"
+    return ("+" if (phone or "").strip().startswith("+") else "") + digits[:-3] + "***"
 
 
 def _support_row(support_url: str) -> list[InlineKeyboardButton]:
@@ -28,6 +37,7 @@ def apartment_keyboard(
     bot_username: str,
     support_url: str,
     include_duplicate: bool = False,
+    phone: str | None = None,
 ) -> InlineKeyboardMarkup:
     payment_token = signer.sign_start_id("miniapp-apartment", apartment_id)
     bot_url = f"https://t.me/{bot_username.lstrip('@')}"
@@ -35,7 +45,7 @@ def apartment_keyboard(
     rows = [
             [
                 InlineKeyboardButton(
-                    text="Получить номер",
+                    text=masked_contact_label(phone),
                     url=mini_app_url,
                 )
             ],
@@ -62,6 +72,7 @@ def matching_apartment_keyboard(
     *,
     signer: TokenSigner,
     bot_username: str,
+    phone: str | None = None,
 ) -> InlineKeyboardMarkup:
     """Compact card keyboard for the private personalized feed."""
     payment_token = signer.sign_start_id("miniapp-apartment", apartment_id)
@@ -70,7 +81,7 @@ def matching_apartment_keyboard(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text=f"📞 Получить номер — {WEEK_PRICE} сом / 7 дней",
+                    text=masked_contact_label(phone),
                     url=f"{bot_url}/{MINI_APP_SHORT_NAME}?startapp={payment_token}",
                 )
             ],

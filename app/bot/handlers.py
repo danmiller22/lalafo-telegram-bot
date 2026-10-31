@@ -337,7 +337,7 @@ async def contact_handler(
             await callback.message.edit_reply_markup(
                 reply_markup=apartment_keyboard(
                     apartment_id,
-                    signer=signer,
+                    phone=getattr(result.apartment, "phone", None), signer=signer,
                     bot_username=settings.telegram_bot_username,
                     support_url=settings.support_bot_url,
                 )
@@ -368,7 +368,7 @@ async def contact_handler(
         await callback.message.edit_reply_markup(
             reply_markup=apartment_keyboard(
                 apartment_id,
-                signer=signer,
+                phone=getattr(result.apartment, "phone", None), signer=signer,
                 bot_username=settings.telegram_bot_username,
                 support_url=settings.support_bot_url,
             )
@@ -466,7 +466,7 @@ async def view_contact_handler(
                 if callback.message.chat.type == "private"
                 else apartment_keyboard(
                     apartment_id,
-                    signer=signer,
+                    phone=getattr(result.apartment, "phone", None), signer=signer,
                     bot_username=settings.telegram_bot_username,
                     support_url=settings.support_bot_url,
                 )
@@ -493,7 +493,7 @@ async def view_contact_handler(
                 if callback.message.chat.type == "private"
                 else apartment_keyboard(
                     apartment_id,
-                    signer=signer,
+                    phone=getattr(result.apartment, "phone", None), signer=signer,
                     bot_username=settings.telegram_bot_username,
                     support_url=settings.support_bot_url,
                 )

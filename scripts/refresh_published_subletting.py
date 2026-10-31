@@ -126,7 +126,7 @@ async def run() -> int:
                     ),
                     apartment_keyboard(
                         apartment.id,
-                        signer=signer,
+                        phone=apartment.phone, signer=signer,
                         bot_username=settings.telegram_bot_username,
                         support_url=settings.support_bot_url,
                     ),

@@ -33,7 +33,7 @@ async def main():
                         text=format_public_apartment(apartment,
                             bot_username=settings.telegram_bot_username, wanted_deep_link=True),
                         parse_mode='HTML', reply_markup=apartment_keyboard(aid,
-                            signer=TokenSigner(settings.require_callback_secret()),
+                            phone=apartment.phone, signer=TokenSigner(settings.require_callback_secret()),
                             bot_username=settings.telegram_bot_username,
                             support_url=settings.support_bot_url))
                 except TelegramBadRequest as exc:

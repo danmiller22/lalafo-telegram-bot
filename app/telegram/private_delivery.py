@@ -117,7 +117,7 @@ async def send_private_public_card(
     urls = list(dict.fromkeys(apartment.photo_urls))
     keyboard = apartment_keyboard(
         apartment.id,
-        signer=signer,
+        phone=apartment.phone, signer=signer,
         bot_username=bot_username,
         support_url=support_url,
         include_duplicate=False,
@@ -162,7 +162,7 @@ async def send_matching_card(
     """Send a phone-free apartment card for hot and personalized feeds."""
     keyboard = matching_apartment_keyboard(
         apartment.id,
-        signer=signer,
+        phone=apartment.phone, signer=signer,
         bot_username=bot_username,
     )
     text = f"🆕 Новое объявление:\n\n{format_apartment(apartment)}"

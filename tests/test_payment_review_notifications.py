@@ -173,7 +173,7 @@ async def test_abandoned_checkout_gets_one_recovery_message_per_customer(
     bot.send_message.assert_awaited_once()
     assert bot.send_message.await_args.args[0] == 313
     assert "499 сом" in bot.send_message.await_args.args[1]
-    assert "Доступ ко всем номерам — 499 сом в неделю." in (
+    assert "Недельный доступ ко всем номерам — 499 сом." in (
         bot.send_message.await_args.args[1]
     )
     markup = bot.send_message.await_args.kwargs["reply_markup"]

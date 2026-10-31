@@ -196,7 +196,7 @@ class TelegramPublisher:
                 parse_mode="HTML",
                 reply_markup=reply_markup if reply_markup is not None else apartment_keyboard(
                     apartment_id,
-                    signer=self.signer,
+                    phone=ad.phone, signer=self.signer,
                     bot_username=self.bot_username,
                     support_url=self.support_url,
                     include_duplicate=self.include_duplicate,

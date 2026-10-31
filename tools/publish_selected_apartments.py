@@ -498,7 +498,7 @@ async def run() -> int:
                     ),
                     reply_markup=apartment_keyboard(
                         published_apartment.id,
-                        signer=TokenSigner(callback_secret),
+                        phone=corrected_ad.phone, signer=TokenSigner(callback_secret),
                         bot_username=settings.telegram_bot_username,
                         support_url=settings.support_url,
                     ),
