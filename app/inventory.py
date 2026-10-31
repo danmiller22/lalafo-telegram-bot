@@ -448,15 +448,22 @@ class InventoryRepository:
         return max(0, MAX_PUBLICATIONS_PER_DAY - published_before - reserved_before)
 
     async def reset_publication_history_for_code(self, code_version: str) -> bool:
-        """Rebuild the queue once per deployment without erasing repost history."""
-        version = code_version.strip() or "publication-110-owner-first-v14"
+        """Rebuild unattempted ordinary slots once per policy migration."""
+        version = code_version.strip() or "publication-120-equal-25-40-v16"
         key = "apartment_publication_code_version"
         async with self.sessions.begin() as session:
             marker = await session.get(LalafoAutoReplyMeta, key)
             if marker is not None and marker.value == version:
                 return False
-            await session.execute(delete(ApartmentInventoryQueue))
-            await session.execute(delete(ApartmentDiscoveryRun))
+            await session.execute(delete(ApartmentInventoryQueue).where(
+                ApartmentInventoryQueue.status == "queued",
+                ApartmentInventoryQueue.last_error.is_(None),
+                ApartmentInventoryQueue.attempts == 0,
+                ~ApartmentInventoryQueue.window_key.startswith(REQUESTED_WINDOW_PREFIX),
+            ))
+            await session.execute(delete(ApartmentDiscoveryRun).where(
+                ApartmentDiscoveryRun.status != "running",
+            ))
             if marker is None:
                 session.add(LalafoAutoReplyMeta(key=key, value=version))
             else:

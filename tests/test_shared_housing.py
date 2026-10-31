@@ -124,6 +124,7 @@ async def test_new_plan_keeps_uncertain_shared_receipt_for_reconciliation(reposi
             scheduled_at=now, status="uncertain", last_error="TelegramPublishAmbiguousError",
         ))
     await InventoryRepository(sessions).schedule_period(now=now)
+    await InventoryRepository(sessions).reset_publication_history_for_code("new-120-plan")
     async with sessions() as session:
         row = await session.scalar(select(ApartmentInventoryQueue).where(
             ApartmentInventoryQueue.apartment_id == ad.id))

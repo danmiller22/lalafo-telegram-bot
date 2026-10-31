@@ -969,6 +969,27 @@ async def test_seller_policy_rebuilds_queue_without_git_environment(repositories
 
 
 @pytest.mark.asyncio
+async def test_policy_migration_preserves_claims_uncertainty_and_retry_cooldowns(repositories):
+    apartments, _, sessions = repositories
+    cases = [("publishing", None, 1), ("uncertain", "ambiguous", 1),
+             ("queued", "TelegramPublishError", 1), ("queued", None, 0)]
+    for index, (status, error, attempts) in enumerate(cases):
+        ad = await apartments.upsert_discovered(make_ad(lalafo_id=99950 + index))
+        async with sessions.begin() as session:
+            session.add(ApartmentInventoryQueue(
+                apartment_id=ad.id, scheduled_at=datetime.now(timezone.utc),
+                window_key="old-plan", sequence=index + 1, status=status,
+                last_error=error, attempts=attempts,
+            ))
+    inventory = InventoryRepository(sessions)
+    assert await inventory.reset_publication_history_for_code("safe-120-migration")
+    async with sessions() as session:
+        rows = list((await session.scalars(select(ApartmentInventoryQueue))).all())
+        assert sorted((r.status, r.attempts) for r in rows) == [
+            ("publishing", 1), ("queued", 1), ("uncertain", 1)]
+
+
+@pytest.mark.asyncio
 async def test_stock_load_reserves_equal_shares_for_owners(repositories, monkeypatch):
     monkeypatch.setattr("app.inventory.MAX_FRESH_STOCK_LOAD", 4)
     apartments, _, sessions = repositories

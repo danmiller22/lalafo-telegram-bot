@@ -842,7 +842,7 @@ async def _refill_saved_inventory() -> int:
         inventory = InventoryRepository(sessions)
         # Only a queue policy migration may rebuild reservations. UI/text
         # deployments must preserve due cards, claims and retry cooldowns.
-        code_version = "publication-110-owner-first-v15-unique-stock"
+        code_version = "publication-120-equal-25-40-v16"
         await inventory.reset_publication_history_for_code(code_version)
         return await inventory.schedule_period(now=datetime.now(UTC))
     finally:
