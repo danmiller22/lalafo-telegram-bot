@@ -7,7 +7,7 @@ from app.config import get_settings
 from app.database import create_engine_and_session
 from app.models import Apartment, RequestedCardPublication
 from app.security import TokenSigner
-from app.telegram.formatting import format_public_apartment
+from app.telegram.formatting import is_confirmed_owner, format_public_apartment
 from app.telegram.keyboards import apartment_keyboard
 
 CORRECTIONS = [(46983, 'Вефа ТЦ', '1'), (47024, 'Филармония', '1'),
@@ -33,7 +33,7 @@ async def main():
                         text=format_public_apartment(apartment,
                             bot_username=settings.telegram_bot_username, wanted_deep_link=True),
                         parse_mode='HTML', reply_markup=apartment_keyboard(aid,
-                            phone=apartment.phone, signer=TokenSigner(settings.require_callback_secret()),
+                            phone=apartment.phone, confirmed_owner=is_confirmed_owner(apartment), signer=TokenSigner(settings.require_callback_secret()),
                             bot_username=settings.telegram_bot_username,
                             support_url=settings.support_bot_url))
                 except TelegramBadRequest as exc:

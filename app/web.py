@@ -1150,11 +1150,8 @@ async def startup() -> None:
         _payment_review_worker_task = asyncio.create_task(
             run_payment_review_worker(_bot_runtime), name="payment-review-worker"
         )
-        from app.telegram.keyboard_sync import sync_published_keyboards
-
-        _keyboard_sync_task = asyncio.create_task(
-            sync_published_keyboards(_bot_runtime), name="published-keyboard-sync"
-        )
+        # Card presentation changes apply to new publications only.
+        # Do not rewrite historical group messages during application startup.
         if (
             IN_PROCESS_QUEUE_DISPATCHER_ENABLED
             and settings.hosted_apartment_scheduler_enabled

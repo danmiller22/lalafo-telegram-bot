@@ -47,7 +47,9 @@ async def run():
             async with sessions() as session:
                 ids = list(await managed_bindings(session))
                 all_cards = os.environ.get('ALL_PUBLIC_CARDS') == 'true'
-                phones = dict((await session.execute(select(Apartment.id, Apartment.phone))).all())
+                contacts = {aid: (phone, seller_type == 'owner' and bool(owner_listing))
+                    for aid, phone, seller_type, owner_listing in (await session.execute(select(
+                        Apartment.id, Apartment.phone, Apartment.seller_type, Apartment.owner_listing))).all()}
                 cutoff = datetime.now(timezone.utc) - timedelta(days=1)
                 rows = set((await session.execute(select(
                     RequestedCardPublication.apartment_id,
@@ -65,11 +67,12 @@ async def run():
                         DailyFeaturedPublication.telegram_message_id,
                     ).where(DailyFeaturedPublication.telegram_message_id.is_not(None)))).all())
             rows = {row for row in rows if row[0] is not None and row[1] is not None and row[2] is not None}
-            for apartment_id, chat_id, message_id in sorted(rows):
+            for apartment_id, chat_id, message_id in sorted(rows, key=lambda row: row[2], reverse=True):
                 key = (chat_id, message_id)
                 if chat_id != settings.telegram_group_id or not message_id or key in completed:
                     continue
-                markup = apartment_keyboard(apartment_id, phone=phones.get(apartment_id), signer=signer,
+                phone, confirmed_owner = contacts.get(apartment_id, (None, False))
+                markup = apartment_keyboard(apartment_id, phone=phone, confirmed_owner=confirmed_owner, signer=signer,
                     bot_username=settings.telegram_bot_username, support_url=settings.support_bot_url)
                 try:
                     while True:

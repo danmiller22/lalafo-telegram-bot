@@ -13,7 +13,7 @@ from app.lalafo.client import LalafoClient, LalafoError, LalafoNotFound
 from app.lalafo.parser import LalafoParseError
 from app.models import Apartment
 from app.security import TokenSigner
-from app.telegram.formatting import format_public_apartment
+from app.telegram.formatting import is_confirmed_owner, format_public_apartment
 from app.telegram.keyboards import apartment_keyboard
 
 
@@ -126,7 +126,7 @@ async def run() -> int:
                     ),
                     apartment_keyboard(
                         apartment.id,
-                        phone=apartment.phone, signer=signer,
+                        phone=apartment.phone, confirmed_owner=is_confirmed_owner(apartment), signer=signer,
                         bot_username=settings.telegram_bot_username,
                         support_url=settings.support_bot_url,
                     ),

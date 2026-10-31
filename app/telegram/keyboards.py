@@ -8,7 +8,7 @@ from app.security import TokenSigner
 from app.payment_plans import WEEK_PRICE
 
 
-APARTMENT_KEYBOARD_VERSION = 18
+APARTMENT_KEYBOARD_VERSION = 19
 MINI_APP_SHORT_NAME = "access"
 
 
@@ -38,6 +38,7 @@ def apartment_keyboard(
     support_url: str,
     include_duplicate: bool = False,
     phone: str | None = None,
+    confirmed_owner: bool = False,
 ) -> InlineKeyboardMarkup:
     payment_token = signer.sign_start_id("miniapp-apartment", apartment_id)
     bot_url = f"https://t.me/{bot_username.lstrip('@')}"
@@ -45,7 +46,7 @@ def apartment_keyboard(
     rows = [
             [
                 InlineKeyboardButton(
-                    text=masked_contact_label(phone),
+                    text=masked_contact_label(phone) if confirmed_owner else "Получить номер",
                     url=mini_app_url,
                 )
             ],
@@ -73,6 +74,7 @@ def matching_apartment_keyboard(
     signer: TokenSigner,
     bot_username: str,
     phone: str | None = None,
+    confirmed_owner: bool = False,
 ) -> InlineKeyboardMarkup:
     """Compact card keyboard for the private personalized feed."""
     payment_token = signer.sign_start_id("miniapp-apartment", apartment_id)
@@ -81,7 +83,7 @@ def matching_apartment_keyboard(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text=masked_contact_label(phone),
+                    text=masked_contact_label(phone) if confirmed_owner else "Получить номер",
                     url=f"{bot_url}/{MINI_APP_SHORT_NAME}?startapp={payment_token}",
                 )
             ],

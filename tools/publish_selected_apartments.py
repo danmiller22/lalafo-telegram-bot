@@ -19,7 +19,7 @@ from app.lalafo.models import PHONE_SOURCE_VERSION, LalafoAd
 from app.lalafo.parser import LalafoParseError
 from app.payments.repository import ApartmentRepository, ManagedLalafoSource
 from app.security import TokenSigner
-from app.telegram.formatting import format_public_apartment
+from app.telegram.formatting import is_confirmed_owner, format_public_apartment
 from app.telegram.keyboards import apartment_keyboard
 from app.telegram.publisher import TelegramPublishError, TelegramPublisher
 
@@ -498,7 +498,7 @@ async def run() -> int:
                     ),
                     reply_markup=apartment_keyboard(
                         published_apartment.id,
-                        phone=corrected_ad.phone, signer=TokenSigner(callback_secret),
+                        phone=corrected_ad.phone, confirmed_owner=is_confirmed_owner(corrected_ad), signer=TokenSigner(callback_secret),
                         bot_username=settings.telegram_bot_username,
                         support_url=settings.support_url,
                     ),

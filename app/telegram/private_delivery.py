@@ -11,7 +11,7 @@ from aiogram.types import InputMediaPhoto, URLInputFile
 
 from app.lalafo.phone import display_phone
 from app.models import Apartment
-from app.telegram.formatting import format_apartment
+from app.telegram.formatting import is_confirmed_owner, format_apartment
 from app.telegram.formatting import format_public_apartment
 from app.telegram.keyboards import apartment_keyboard
 from app.telegram.keyboards import matching_apartment_keyboard
@@ -117,7 +117,7 @@ async def send_private_public_card(
     urls = list(dict.fromkeys(apartment.photo_urls))
     keyboard = apartment_keyboard(
         apartment.id,
-        phone=apartment.phone, signer=signer,
+        phone=apartment.phone, confirmed_owner=is_confirmed_owner(apartment), signer=signer,
         bot_username=bot_username,
         support_url=support_url,
         include_duplicate=False,
@@ -162,7 +162,7 @@ async def send_matching_card(
     """Send a phone-free apartment card for hot and personalized feeds."""
     keyboard = matching_apartment_keyboard(
         apartment.id,
-        phone=apartment.phone, signer=signer,
+        phone=apartment.phone, confirmed_owner=is_confirmed_owner(apartment), signer=signer,
         bot_username=bot_username,
     )
     text = f"🆕 Новое объявление:\n\n{format_apartment(apartment)}"

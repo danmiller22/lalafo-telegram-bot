@@ -22,7 +22,8 @@ async def sync_published_keyboards(runtime) -> None:
     while True:
         async with sessions() as session:
             rows = (await session.execute(select(
-                Apartment.id, Apartment.telegram_chat_id, Apartment.telegram_message_id, Apartment.phone
+                Apartment.id, Apartment.telegram_chat_id, Apartment.telegram_message_id, Apartment.phone,
+                Apartment.seller_type, Apartment.owner_listing
             ).where(
                 Apartment.id < last_id if last_id is not None else True,
                 Apartment.keyboard_version < APARTMENT_KEYBOARD_VERSION,
@@ -31,9 +32,10 @@ async def sync_published_keyboards(runtime) -> None:
             ).order_by(Apartment.id.desc()).limit(50))).all()
         if not rows:
             break
-        for apartment_id, chat_id, message_id, phone in rows:
+        for apartment_id, chat_id, message_id, phone, seller_type, owner_listing in rows:
             last_id = apartment_id
-            markup = apartment_keyboard(apartment_id, phone=phone, signer=signer,
+            markup = apartment_keyboard(apartment_id, phone=phone,
+                confirmed_owner=seller_type == 'owner' and bool(owner_listing), signer=signer,
                 bot_username=settings.telegram_bot_username, support_url=settings.support_bot_url)
             try:
                 while True:

@@ -20,7 +20,7 @@ from app.payments.repository import ApartmentRepository
 from app.promotions import external_repeat_receipt_key
 from app.security import TokenSigner
 from app.telegram.publisher import TelegramPublisher
-from app.telegram.formatting import format_public_apartment
+from app.telegram.formatting import is_confirmed_owner, format_public_apartment
 from app.telegram.keyboards import apartment_keyboard
 from scripts.managed_requested_repeats import enroll
 from scripts.scrape_publish import apartment_to_ad
@@ -38,7 +38,7 @@ async def recover_confirmed_card(bot, publisher, apartment_id, ad, message_id,
         bot.edit_message_media, chat_id=publisher.chat_id, message_id=message_id,
         media=InputMediaPhoto(media=urls[0], caption=format_public_apartment(
             ad, bot_username=publisher.bot_username, wanted_deep_link=True), parse_mode='HTML'),
-        reply_markup=apartment_keyboard(apartment_id, phone=ad.phone, signer=publisher.signer,
+        reply_markup=apartment_keyboard(apartment_id, phone=ad.phone, confirmed_owner=is_confirmed_owner(ad), signer=publisher.signer,
             bot_username=publisher.bot_username, support_url=publisher.support_url,
             include_duplicate=publisher.include_duplicate))
     if delete_photo_message_ids:

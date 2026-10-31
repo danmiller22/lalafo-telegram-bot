@@ -19,8 +19,17 @@ def test_card_buttons_only_expose_masked_phone_and_keep_signed_target():
     signer = TokenSigner('test-secret-long-enough')
     for factory in (apartment_keyboard, matching_apartment_keyboard):
         kwargs = {'support_url': 'https://t.me/support'} if factory == apartment_keyboard else {}
-        markup = factory(123, phone='+996555123456', signer=signer, bot_username='testbot', **kwargs)
+        markup = factory(123, phone='+996555123456', confirmed_owner=True, signer=signer, bot_username='testbot', **kwargs)
         button = markup.inline_keyboard[0][0]
         assert button.text == '+996555123***'
         assert '996555123456' not in markup.model_dump_json()
         assert signer.verify_start_id('miniapp-apartment', button.url.split('startapp=')[1]) == 123
+
+
+def test_realtor_or_unconfirmed_contact_keeps_generic_button():
+    signer = TokenSigner('test-secret-long-enough')
+    for factory in (apartment_keyboard, matching_apartment_keyboard):
+        kwargs = {'support_url': 'https://t.me/support'} if factory == apartment_keyboard else {}
+        markup = factory(123, phone='+996555123456', signer=signer, bot_username='testbot', **kwargs)
+        assert markup.inline_keyboard[0][0].text == 'Получить номер'
+        assert '996555123' not in markup.model_dump_json()

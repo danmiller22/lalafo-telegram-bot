@@ -29,7 +29,7 @@ from app.payment_plans import (
 from app.payments.service import PaymentService
 from app.security import TokenSigner
 from app.support.handlers import begin_support
-from app.telegram.formatting import format_apartment
+from app.telegram.formatting import is_confirmed_owner, format_apartment
 from app.telegram.keyboards import (
     apartment_keyboard,
     payment_keyboard,
@@ -337,7 +337,7 @@ async def contact_handler(
             await callback.message.edit_reply_markup(
                 reply_markup=apartment_keyboard(
                     apartment_id,
-                    phone=getattr(result.apartment, "phone", None), signer=signer,
+                    phone=getattr(result.apartment, "phone", None), confirmed_owner=is_confirmed_owner(result.apartment), signer=signer,
                     bot_username=settings.telegram_bot_username,
                     support_url=settings.support_bot_url,
                 )
@@ -368,7 +368,7 @@ async def contact_handler(
         await callback.message.edit_reply_markup(
             reply_markup=apartment_keyboard(
                 apartment_id,
-                phone=getattr(result.apartment, "phone", None), signer=signer,
+                phone=getattr(result.apartment, "phone", None), confirmed_owner=is_confirmed_owner(result.apartment), signer=signer,
                 bot_username=settings.telegram_bot_username,
                 support_url=settings.support_bot_url,
             )
@@ -466,7 +466,7 @@ async def view_contact_handler(
                 if callback.message.chat.type == "private"
                 else apartment_keyboard(
                     apartment_id,
-                    phone=getattr(result.apartment, "phone", None), signer=signer,
+                    phone=getattr(result.apartment, "phone", None), confirmed_owner=is_confirmed_owner(result.apartment), signer=signer,
                     bot_username=settings.telegram_bot_username,
                     support_url=settings.support_bot_url,
                 )
@@ -493,7 +493,7 @@ async def view_contact_handler(
                 if callback.message.chat.type == "private"
                 else apartment_keyboard(
                     apartment_id,
-                    phone=getattr(result.apartment, "phone", None), signer=signer,
+                    phone=getattr(result.apartment, "phone", None), confirmed_owner=is_confirmed_owner(result.apartment), signer=signer,
                     bot_username=settings.telegram_bot_username,
                     support_url=settings.support_bot_url,
                 )
