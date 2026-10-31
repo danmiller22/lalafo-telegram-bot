@@ -37,6 +37,22 @@ async def main():
     row['paid_users_who_opened_in_period']=len(opened & {p.telegram_user_id for p in period})
     result['weeks'].append(row)
    result['days']=[]
+   result['calendar_weeks']=[]
+   for i in range(3):
+    end=midnight-timedelta(days=7*i);start=end-timedelta(days=7)
+    result['calendar_weeks'].append(await _period_summary(s,start,end))
+   history=list((await s.execute(select(PaymentHistory.telegram_user_id,PaymentHistory.paid_at,PaymentHistory.access_expires_at,PaymentHistory.payment_request_id))).all())
+   histories=defaultdict(list)
+   for item in history:histories[item.telegram_user_id].append(item)
+   repeat_events=[]
+   for items in histories.values():
+    items.sort(key=lambda item:utc(item.paid_at))
+    for prev,item in zip(items,items[1:]):
+     repeat_events.append((utc(item.paid_at),(utc(item.paid_at)-utc(prev.paid_at)).total_seconds()/3600, bool(prev.access_expires_at and utc(prev.access_expires_at)>utc(item.paid_at)),prev.payment_request_id==item.payment_request_id))
+   result['repeat_payment_audit']=[]
+   for row in result['weeks']:
+    start=datetime.fromisoformat(row['start']);end=datetime.fromisoformat(row['end']);events=[v for v in repeat_events if start<=v[0]<end]
+    result['repeat_payment_audit'].append({'within_7_days':sum(v[1]<168 for v in events),'within_24h':sum(v[1]<24 for v in events),'previous_access_still_active':sum(v[2] for v in events),'same_payment_request':sum(v[3] for v in events)})
    for i in range(22):
     start=midnight-timedelta(days=i);end=min(start+timedelta(days=1),now)
     row=await _period_summary(s,start,end);row['date']=start.astimezone(zone).date().isoformat();result['days'].append(row)
