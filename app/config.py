@@ -104,10 +104,14 @@ TELEGRAM_SOURCE_CHANNELS: tuple[str, ...] = (
     # Large public Bishkek rental channel. It posts less often, but keeping it
     # in the rotation captures new direct listings as soon as they appear.
     "https://t.me/s/kvartira_bishkek",
+    # Active local rental feeds; incomplete, wanted and unsuitable posts
+    # still pass through the same contact/photo/seller/publication filters.
+    "https://t.me/s/Bishkek_Batir_izhara",
+    "https://t.me/s/Bishkek_izhara_Batir",
 )
 
-# These public channels expose complete photo albums, descriptions and phone
-# numbers in Telegram's web preview, so they can supplement Lalafo directly.
+# Public web previews supplement Lalafo; only posts with the required
+# descriptions, verified contact fields and photos enter publication.
 TELEGRAM_APARTMENT_CHANNELS: tuple[str, ...] = TELEGRAM_SOURCE_CHANNELS
 
 # Prefer central discovery routes; both seller categories use 25–45k.
