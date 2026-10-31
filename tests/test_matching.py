@@ -148,7 +148,7 @@ async def test_new_customer_sees_two_hot_cards_before_filter_setup(repositories)
 
     assert message.answer.await_args_list[0].args[0] == (
         "🔥 Вот самые выгодные свежие квартиры. Под подходящим вариантом "
-        "нажмите «Получить номер»."
+        "нажмите на кнопку с номером."
     )
     assert bot.send_photo.await_count == 2
     first_card = bot.send_photo.await_args_list[0]

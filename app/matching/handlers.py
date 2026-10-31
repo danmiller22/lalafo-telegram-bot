@@ -86,7 +86,7 @@ async def show_hot_start(
         )
     else:
         intro = "🔥 Вот самые выгодные свежие квартиры."
-    intro += " Под подходящим вариантом нажмите «Получить номер»."
+    intro += " Под подходящим вариантом нажмите на кнопку с номером."
     await message.answer(intro)
     await _send_cards(
         bot,
