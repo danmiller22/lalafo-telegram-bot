@@ -21,6 +21,7 @@ from app.matching.repository import MatchingRepository
 from app.availability import AvailabilityService
 from app.payments.repository import PaymentRepository
 from app.payment_plans import (
+    LIFETIME_PLAN,
     WEEK_PLAN,
     WEEK_PRICE,
     plan_label,
@@ -46,11 +47,12 @@ router = Router(name="user")
 
 
 def _payment_details(plan: str | None, settings: Settings, *, signer: TokenSigner | None = None, apartment_id: int | None = None) -> tuple[str, int]:
-    url = settings.weekly_finik_payment_url
+    chosen = LIFETIME_PLAN if plan == LIFETIME_PLAN else WEEK_PLAN
+    url = settings.lifetime_finik_payment_url if chosen == LIFETIME_PLAN else settings.weekly_finik_payment_url
     if not url and signer is not None and apartment_id is not None:
         token = signer.sign_start_id("miniapp-apartment", apartment_id)
         url = f"https://t.me/{settings.telegram_bot_username.lstrip('@')}/access?startapp={token}"
-    return url, plan_price(WEEK_PLAN)
+    return url, plan_price(chosen)
 
 
 def _start_payload(message: Message) -> str:
@@ -182,11 +184,14 @@ async def plan_handler(
     terms_consents: TermsConsentRepository | None = None,
 ) -> None:
     parts = (callback.data or "").split(":", 2)
-    if len(parts) != 3 or parts[1] != "w":
+    if len(parts) != 3 or parts[1] not in {"w", "l"}:
         await callback.answer("Недействительная кнопка.", show_alert=True)
         return
-    plan = WEEK_PLAN
-    purpose = "plan-week"
+    plan = WEEK_PLAN if parts[1] == "w" else LIFETIME_PLAN
+    purpose = "plan-week" if plan == WEEK_PLAN else "plan-lifetime"
+    if plan == LIFETIME_PLAN and not settings.lifetime_finik_payment_url:
+        await callback.answer("Бессрочный тариф временно недоступен.", show_alert=True)
+        return
     payment_url, price = _payment_details(plan, settings)
     apartment_id = signer.verify_id(purpose, parts[2])
     if apartment_id is None:

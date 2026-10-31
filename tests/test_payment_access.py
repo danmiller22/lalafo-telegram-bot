@@ -375,6 +375,28 @@ async def test_monthly_access_unlocks_all_apartments(repositories, service):
 
 
 @pytest.mark.asyncio
+async def test_lifetime_999_unlocks_all_contacts_and_survives_checkout_cleanup(repositories, service):
+    from app.payment_plans import LIFETIME_PLAN, plan_price
+    from app.models import PaymentHistory
+    from sqlalchemy import delete, select
+    apartments, payments, sessions = repositories
+    first = await apartments.upsert_discovered(make_ad(lalafo_id=991001))
+    second = await apartments.upsert_discovered(make_ad(lalafo_id=991002,phone='+996555000002'))
+    submission = await service.begin_payment(user_id=991001, apartment_id=first.id,
+        username=None, first_name='Test', plan=LIFETIME_PLAN)
+    await payments.mark_payment_claimed(user_id=991001, apartment_id=first.id)
+    assert await service.decide(submission.request.id,approve=True,actor_id=999) == 'approved'
+    access = await service.contact_status(991001,second.id)
+    assert access.status == 'approved' and access.plan == LIFETIME_PLAN
+    assert access.access_expires_at is None and plan_price(LIFETIME_PLAN)==999
+    async with sessions.begin() as session:
+        ledger=await session.scalar(select(PaymentHistory).where(PaymentHistory.telegram_user_id==991001))
+        assert ledger.amount==999 and ledger.access_expires_at is None
+        await session.execute(delete(PaymentRequest).where(PaymentRequest.id==submission.request.id))
+    assert (await service.contact_status(991001,second.id)).status == 'approved'
+
+
+@pytest.mark.asyncio
 async def test_weekly_access_unlocks_every_apartment_and_expires(repositories, service):
     apartments, payments, sessions = repositories
     first = await apartments.upsert_discovered(make_ad(lalafo_id=601))

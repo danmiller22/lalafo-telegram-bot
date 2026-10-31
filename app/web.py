@@ -1608,7 +1608,8 @@ async def _record_funnel(
 async def telegram_mini_app() -> HTMLResponse:
     settings = get_settings()
     return HTMLResponse(
-        mini_app_html(payment_urls={WEEK_PLAN: _finik_payment_url(settings, WEEK_PLAN)}),
+        mini_app_html(payment_urls={WEEK_PLAN: _finik_payment_url(settings, WEEK_PLAN),
+                                   LIFETIME_PLAN: _finik_payment_url(settings, LIFETIME_PLAN)}),
         headers={
             "Cache-Control": "no-store",
             "Content-Security-Policy": (
@@ -1702,26 +1703,33 @@ async def miniapp_availability(payload: MiniAppRequest) -> dict[str, Any]:
 @app.post("/miniapp/api/prepare", include_in_schema=False)
 async def miniapp_prepare_payment(payload: MiniAppRequest) -> dict[str, Any]:
     settings, runtime, user, apartment_id = _miniapp_context(payload)
+    plan = payload.plan or WEEK_PLAN
+    if plan not in {WEEK_PLAN, LIFETIME_PLAN}:
+        raise HTTPException(status_code=400, detail="Неизвестный тариф.")
+    if plan == LIFETIME_PLAN and not settings.lifetime_finik_payment_url:
+        raise HTTPException(status_code=503, detail="Бессрочный тариф временно недоступен.")
     result = await runtime.workflow_data["service"].contact_status(user.id, apartment_id)
-    if result.status in {"approved", "unavailable"}:
+    if result.status in {"approved", "unavailable", "pending"}:
         return _miniapp_result_payload(result)
     payments = runtime.workflow_data["payments"]
     try:
         submission = await payments.submit(
             user_id=user.id, apartment_id=apartment_id, username=user.username,
-            first_name=user.first_name, plan=WEEK_PLAN, prepare_only=True,
+            first_name=user.first_name, plan=plan, prepare_only=True,
         )
         if submission.outcome == "approved":
             return _miniapp_result_payload(await runtime.workflow_data["service"].contact_status(user.id, apartment_id))
+        if getattr(submission.request, "plan", plan) != plan:
+            return _miniapp_result_payload(await runtime.workflow_data["service"].contact_status(user.id, apartment_id))
         url = await _finik_checkout_url(settings, payments, submission.request,
-                                        apartment_id=apartment_id, plan=WEEK_PLAN)
+                                        apartment_id=apartment_id, plan=plan)
         prepared = await payments.get_request(submission.request.id)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail="Квартира больше недоступна.") from exc
     except Exception as exc:
         logger.exception("Could not prepare Finik checkout")
         raise HTTPException(status_code=503, detail="Не удалось подготовить оплату. Попробуйте ещё раз.") from exc
-    created = prepared.created_at if _uses_dynamic_finik(settings, WEEK_PLAN) else datetime.now(UTC)
+    created = prepared.created_at if _uses_dynamic_finik(settings, plan) else datetime.now(UTC)
     if created.tzinfo is None:
         created = created.replace(tzinfo=UTC)
     return {"payment_url": url, "expires_at_ms": int(created.timestamp() * 1000) + 300_000}
@@ -1734,9 +1742,13 @@ async def miniapp_start_payment(
     settings, runtime, user, apartment_id = _miniapp_context(payload)
     service = runtime.workflow_data["service"]
     result = await service.contact_status(user.id, apartment_id)
-    if result.status in {"approved", "unavailable"}:
+    if result.status in {"approved", "unavailable", "pending"}:
         return _miniapp_result_payload(result)
-    plan = WEEK_PLAN
+    plan = payload.plan or WEEK_PLAN
+    if plan not in {WEEK_PLAN, LIFETIME_PLAN}:
+        raise HTTPException(status_code=400, detail="Неизвестный тариф.")
+    if plan == LIFETIME_PLAN and not settings.lifetime_finik_payment_url:
+        raise HTTPException(status_code=503, detail="Бессрочный тариф временно недоступен.")
     payment_url = _finik_payment_url(settings, plan)
     if not payment_url and not _uses_dynamic_finik(settings, plan):
         raise HTTPException(
@@ -1782,6 +1794,7 @@ async def miniapp_start_payment(
         response["status"] = payment_request.status
         response["plan"] = getattr(payment_request, "plan", plan)
     response["payment_url"] = payment_url
+    response["price"] = plan_price(response.get("plan") or plan)
     response["automatic_payment"] = _uses_dynamic_finik(settings, plan)
     response["monthly_available"] = False
     background_tasks.add_task(

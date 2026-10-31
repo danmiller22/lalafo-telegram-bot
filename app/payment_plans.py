@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 WEEK_PLAN = "week"
 MONTH_PLAN = "month"
 LIFETIME_PLAN = "lifetime"
-LIFETIME_PRICE = 699
+LIFETIME_PRICE = 999
 WEEK_PRICE = 499
 MONTH_PRICE = 999
 WANTED_SEARCH_PRICE = 100

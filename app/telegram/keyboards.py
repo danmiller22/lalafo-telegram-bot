@@ -5,7 +5,7 @@ import re
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from app.security import TokenSigner
-from app.payment_plans import WEEK_PRICE
+from app.payment_plans import WEEK_PRICE, LIFETIME_PRICE
 
 
 APARTMENT_KEYBOARD_VERSION = 19
@@ -170,6 +170,9 @@ def private_payment_keyboard(
     rows = [[InlineKeyboardButton(
         text=f"Недельный тариф — {WEEK_PRICE} сом",
         callback_data=f"plan:w:{signer.sign_id('plan-week', apartment_id)}",
+    )], [InlineKeyboardButton(
+        text=f"✨ Навсегда — {LIFETIME_PRICE} сом",
+        callback_data=f"plan:l:{signer.sign_id('plan-lifetime', apartment_id)}",
     )]]
     rows.append(
         [

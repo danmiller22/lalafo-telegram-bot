@@ -5,15 +5,17 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import TermsConsent
-from app.payment_plans import WEEK_PRICE
+from app.payment_plans import WEEK_PRICE, LIFETIME_PRICE
 
 
-TERMS_VERSION = "2026-10-05-v6"
+TERMS_VERSION = "2026-10-31-v7"
 TERMS_ACCEPT_BUTTON = "✅ Я ознакомлен(а) с условиями и согласен(на) со всеми пунктами"
 TERMS_TEXT = (
     "Пользовательское соглашение Arenda.KG\n\n"
     "Arenda.KG предоставляет платный доступ к базе контактов объявлений об аренде "
-    f"квартир: доступ на 7 дней — {WEEK_PRICE} сом. Доступ закреплён за Telegram-аккаунтом пользователя. Сервис не является "
+    f"квартир: доступ на 7 дней — {WEEK_PRICE} сом; бессрочный доступ — {LIFETIME_PRICE} сом, "
+    "без автоматических продлений и повторных платежей. Оба тарифа открывают контакты всей базы. "
+    "Доступ закреплён за Telegram-аккаунтом пользователя. Сервис не является "
     "собственником квартир и не выступает стороной договора аренды.\n\n"
     "Объявления автоматически собираются и обрабатываются с помощью искусственного "
     "интеллекта из открытых источников. При сборе, распознавании и отборе возможны "

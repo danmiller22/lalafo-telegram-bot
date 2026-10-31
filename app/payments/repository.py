@@ -822,6 +822,10 @@ class PaymentRepository:
                 )
             ):
                 outcome = "approved"
+            elif prepare_only and request.status in {"awaiting_receipt", "pending"}:
+                # A delayed background preparation must not replace the plan
+                # the customer has already selected and possibly paid for.
+                outcome = request.status
             elif request.status == "prepared" and request.plan == plan:
                 if not prepare_only:
                     request.status = "awaiting_receipt"

@@ -201,7 +201,7 @@ class Settings(BaseSettings):
     finik_payment_url: str = ""
     weekly_finik_payment_url: str = "https://qr.finik.kg/bbfd79c8-38a6-483e-b57b-c42ea362fa81?type=t"
     monthly_finik_payment_url: str = ""
-    lifetime_finik_payment_url: str = "https://qr.finik.kg/e0c9972e-0f05-4dc3-99fd-96ec1debea1f?type=t"
+    lifetime_finik_payment_url: str = ""
     wanted_finik_payment_url: str = ""
     # Finik Web SDK. Secrets are configured only in the deployment environment.
     finik_api_url: str = "https://api.acquiring.averspay.kg/v1/payment"

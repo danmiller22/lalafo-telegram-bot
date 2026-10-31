@@ -63,7 +63,7 @@ def test_telegram_init_data_rejects_tampering_and_stale_payload():
     ) is None
 
 
-def test_mini_app_page_has_only_weekly_tariff_and_privacy_link():
+def test_mini_app_page_has_weekly_and_lifetime_tariffs_and_privacy_link():
     html = mini_app_html()
 
     assert "/miniapp/api/session" in html
@@ -71,7 +71,8 @@ def test_mini_app_page_has_only_weekly_tariff_and_privacy_link():
     assert "Недельный доступ ко всем номерам — 499 сом" in html
     assert "Одна оплата открывает номера всех актуальных квартир на 7 дней." not in html
     assert ">Оплатить 499 сом</button>" in html
-    assert "500 сом" not in html and "699" not in html and "999" not in html
+    assert "500 сом" not in html and "699" not in html
+    assert "Навсегда — 999 сом" in html
     assert "Месячный тариф" not in html
     assert 'id="hero"' not in html
     assert 'id="apartment"' in html
@@ -100,7 +101,7 @@ def test_mini_app_page_has_only_weekly_tariff_and_privacy_link():
     assert "искусственного интеллекта" in html
     assert "Риелторы и другие лица могут выдавать себя за хозяев" in html
     first_screen = html.split('id="tariff-description"', 1)[1].split('id="checkout"', 1)[0]
-    assert first_screen.count("<button") == 1
+    assert first_screen.count("<button") == 2
     assert 'const canPay = !approved && !waiting && !apartmentUnavailable' in html
     assert 'show("pay-lifetime", canPay)' in html
     assert "Открываю Finik" not in html
