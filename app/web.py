@@ -1559,7 +1559,7 @@ def _miniapp_result_payload(result) -> dict[str, Any]:
         )
     response: dict[str, Any] = {
         "status": result.status,
-        "price": WEEK_PRICE,
+        "price": plan_price(getattr(result, "plan", None) or WEEK_PLAN),
         "plan": getattr(result, "plan", None),
     }
     if result.status == "approved":

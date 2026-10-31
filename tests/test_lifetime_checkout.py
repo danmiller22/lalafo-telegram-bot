@@ -12,6 +12,11 @@ def test_legacy_lifetime_link_is_replaced_by_verified_999_link():
     assert settings.lifetime_finik_payment_url=='https://qr.finik.kg/08fdd246-0b74-40c6-a37d-29404ff54fa9?type=t'
 
 
+def test_restored_lifetime_session_keeps_999_price():
+    payload=web._miniapp_result_payload(ContactResult('awaiting_receipt',SimpleNamespace(id=42),plan='lifetime'))
+    assert payload['plan']=='lifetime' and payload['price']==999
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize('plan,price', [('week',499),('lifetime',999)])
 async def test_checkout_keeps_selected_plan_and_price(monkeypatch,plan,price):
