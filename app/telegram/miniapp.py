@@ -96,7 +96,7 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
     .details {{ white-space: pre-line; font-size: 16px; line-height: 1.6; }}
     .tariff-button {{ position: relative; display: block; text-align: left; padding: 20px; border: 1px solid #d7d8da; border-radius: 13px; background: #fff; color: #141619; margin: 0 0 14px; min-height: 120px; }}
     .tariff-button[aria-pressed="true"] {{ border: 1.5px solid var(--accent); background: #f0f7f6; }}
-    .plan-heading {{ display: flex; align-items: center; gap: 12px; font-size: 18px; line-height: 1.3; padding-right: 76px; }}
+    .plan-heading {{ display: flex; align-items: center; gap: 12px; font-size: 17px; line-height: 1.3; padding-right: 68px; }}
     .plan-icon {{ width: 23px; height: 23px; flex: 0 0 23px; color: var(--accent); }}
     .plan-price {{ display: block; font-size: 32px; font-weight: 800; letter-spacing: -.6px; margin: 10px 0 2px; line-height: 1.1; }}
     .plan-note {{ display: block; color: #747679; font-size: 15px; font-weight: 400; line-height: 1.4; }}
