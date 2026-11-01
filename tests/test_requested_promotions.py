@@ -9,6 +9,45 @@ from tests.helpers import make_ad
 
 START = datetime(2026, 10, 14, 0, tzinfo=timezone.utc)
 
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('legacy_marker', [False, True])
+async def test_publication_summary_matches_receipts_in_one_query(repositories, legacy_marker):
+    from sqlalchemy import event, update
+    from app.models import Apartment, LalafoAutoReplyMeta
+    from app.promotions import publication_counts_in_window, record_delivery, external_repeat_receipt_key
+    apartments, _, sessions = repositories
+    ads = [await apartments.upsert_discovered(make_ad(lalafo_id=990010 + i)) for i in range(3)]
+    chat = -1004389602150
+    async with sessions.begin() as session:
+        for i, ad in enumerate(ads):
+            await session.execute(update(Apartment).where(Apartment.id == ad.id).values(
+                publication_status='published', published_at=START + timedelta(minutes=i+2)))
+        await record_delivery(session, ads[0], chat_id=chat, message_id=9101, published_at=START)
+        await record_delivery(session, ads[0], chat_id=chat, message_id=9102, published_at=START+timedelta(minutes=2))
+        session.add(LalafoAutoReplyMeta(key=external_repeat_receipt_key(chat, 9102), value='2h'))
+        await record_delivery(session, ads[2], chat_id=chat, message_id=9103, published_at=START+timedelta(minutes=4))
+        key = 'owned_send:all18209276-2h-summary:990012' if legacy_marker else external_repeat_receipt_key(chat, 9103)
+        session.add(LalafoAutoReplyMeta(key=key, value='published:9103' if legacy_marker else '2h'))
+    engine = sessions.kw['bind'].sync_engine
+    queries = []
+    def capture(_conn, _cursor, statement, _params, _context, _many):
+        queries.append(statement)
+    async with sessions() as session:
+        all_events = await publications_in_window(session, START, START+timedelta(days=1))
+        ordinary = await publications_in_window(session, START, START+timedelta(days=1), include_external_repeats=False)
+        event.listen(engine, 'before_cursor_execute', capture)
+        try:
+            counts = await publication_counts_in_window(session, START, START+timedelta(days=1))
+        finally:
+            event.remove(engine, 'before_cursor_execute', capture)
+        assert len(queries) == 1
+        assert counts.total == len(all_events) == 4
+        assert counts.ordinary == len(ordinary) == 2
+        assert counts.latest == max(a.published_at for a in all_events)
+        empty = await publication_counts_in_window(session, START-timedelta(days=2), START-timedelta(days=1))
+        assert tuple(empty) == (0, 0, None)
+
 async def work(sessions, now):
     async with sessions() as session:
         return await promotion_work(session, now=now, day_start=START - timedelta(hours=1), day_end=START + timedelta(hours=20))

@@ -7,26 +7,29 @@ from collections import Counter, defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 from pathlib import Path
 from urllib.parse import urlsplit
 
 from app.lalafo.models import LalafoAd
 
 
+@lru_cache(maxsize=1024)
 def normalized_district(value: str | None) -> str:
     district = (value or "").casefold().replace("ё", "е")
     district = re.sub(r"\b(?:мкр|микрорайон)\b", "", district)
     return re.sub(r"[^0-9a-zа-я]+", "", district)
 
 
+@lru_cache(maxsize=16384)
+def _photo_key(url: str) -> str | None:
+    name = urlsplit(url).path.rsplit("/", 1)[-1].casefold()
+    stem = name.rsplit(".", 1)[0]
+    return stem if len(stem) >= 12 else None
+
+
 def _photo_keys(urls: list[str]) -> set[str]:
-    keys = set()
-    for url in urls:
-        name = urlsplit(url).path.rsplit("/", 1)[-1].casefold()
-        stem = name.rsplit(".", 1)[0]
-        if len(stem) >= 12:
-            keys.add(stem)
-    return keys
+    return {key for url in urls if (key := _photo_key(url)) is not None}
 
 
 def same_listing(ad: LalafoAd, other: LalafoAd | object) -> bool:

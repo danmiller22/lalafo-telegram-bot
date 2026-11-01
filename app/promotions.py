@@ -1,7 +1,7 @@
 """Durable, explicitly requested card promotion and acknowledged-send accounting."""
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import String, cast, func, or_, select, union_all
+from sqlalchemy import String, case, cast, func, literal, or_, select, union_all
 
 from app.telegram.formatting import is_supported_source
 from app.models import Apartment, ApartmentInventoryQueue, LalafoAutoReplyMeta, RequestedCardPromotion, RequestedCardPublication
@@ -35,20 +35,22 @@ def utc(value):
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
 
 
-def publication_window(start, end, *, include_external_repeats=True):
+def publication_window(start, end, *, include_external_repeats=True, with_external_marker=False):
     events = select(RequestedCardPublication.apartment_id).where(
         RequestedCardPublication.published_at >= start,
         RequestedCardPublication.published_at < end,
     )
     return union_all(
         select(Apartment.id.label('apartment_id'), Apartment.district, Apartment.seller_type,
-               Apartment.price, Apartment.published_at).where(
+               Apartment.price, Apartment.published_at,
+               *([literal(False).label('external_repeat')] if with_external_marker else [])).where(
             Apartment.publication_status == 'published', Apartment.published_at >= start,
             Apartment.published_at < end, Apartment.id.not_in(events),
         ),
         select(RequestedCardPublication.apartment_id, RequestedCardPublication.district,
                RequestedCardPublication.seller_type, RequestedCardPublication.price,
-               RequestedCardPublication.published_at).where(
+               RequestedCardPublication.published_at,
+               *([_external_repeat_receipt().label('external_repeat')] if with_external_marker else [])).where(
             RequestedCardPublication.published_at >= start,
             RequestedCardPublication.published_at < end,
             True if include_external_repeats else ~_external_repeat_receipt(),
@@ -59,6 +61,16 @@ def publication_window(start, end, *, include_external_repeats=True):
 async def publications_in_window(session, start, end, *, include_external_repeats=True):
     records = publication_window(start, end, include_external_repeats=include_external_repeats)
     return list((await session.execute(select(records).order_by(records.c.published_at.desc()))).all())
+
+
+async def publication_counts_in_window(session, start, end):
+    """Return daily counters and the latest send in one unsorted aggregate row."""
+    records = publication_window(start, end, with_external_marker=True)
+    return (await session.execute(select(
+        func.count().label('total'),
+        func.coalesce(func.sum(case((records.c.external_repeat.is_(False), 1), else_=0)), 0).label('ordinary'),
+        func.max(records.c.published_at).label('latest'),
+    ).select_from(records))).one()
 
 
 async def record_delivery(session, apartment, *, chat_id, message_id, published_at):

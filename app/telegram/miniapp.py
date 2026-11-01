@@ -78,7 +78,8 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
     :root {{ color-scheme: light; font-family: "SF Pro Text", -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; font-optical-sizing: auto; --accent: #116960; --muted: #737579; --surface: #fff; }}
     * {{ box-sizing: border-box; }}
     body {{ margin: 0; background: #fff; color: #141619; }}
-    main {{ max-width: 480px; margin: 0 auto; padding: 28px 18px calc(22px + env(safe-area-inset-bottom)); }}
+    main {{ position: relative; max-width: 480px; margin: 0 auto; padding: 28px 18px calc(22px + env(safe-area-inset-bottom)); }}
+    .back-button {{ position: absolute; top: 23px; left: 18px; width: auto; min-height: 30px; padding: 3px 0; border-radius: 6px; background: transparent; color: var(--accent); font-size: 14px; font-weight: 500; }}
     .brand {{ text-align: center; font-size: 18px; font-weight: 800; color: var(--accent); margin: 0 0 18px; }}
     h1 {{ text-align: center; font-size: 32px; line-height: 1.15; letter-spacing: -.8px; margin: 0 0 10px; }}
     h1, .brand, .plan-heading, .plan-price, #pay-now {{ font-family: "SF Pro Display", -apple-system, BlinkMacSystemFont, system-ui, sans-serif; }}
@@ -106,6 +107,7 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
     #pay-now {{ margin-top: 30px; font-size: 22px; }}
     .agreement-caption {{ text-align: center; font-size: 13px; font-weight: 400; color: #818387; line-height: 1.5; margin: 14px 10px 0; }}
     .terms-link {{ color: var(--accent); text-underline-offset: 2px; }}
+    @media (max-width: 380px) {{ .plan-heading {{ font-size: 16px; gap: 10px; }} }}
     @media (max-width: 350px) {{ h1 {{ font-size: 28px; }} .plan-heading {{ font-size: 16px; gap: 8px; padding-right: 65px; }} .tariff-button {{ padding: 17px; }} .popular {{ font-size: 10px; padding: 5px 7px; right: 9px; }} }}
     .agreement-dialog {{ width: min(92vw, 460px); max-height: 82vh; border: 1px solid #879b9260; border-radius: 16px; padding: 20px; background: var(--tg-theme-bg-color, #fff); color: var(--tg-theme-text-color, #172b24); }}
     .agreement-text {{ white-space: pre-wrap; font-size: 15px; line-height: 1.5; margin-top: 16px; }}
@@ -114,6 +116,7 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
 </head>
 <body>
 <main id="lifetime-checkout">
+  <button id="back" class="back-button" aria-label="Назад">← Назад</button>
   <div class="brand">Arenda.KG</div>
   <h1 id="title">Получить доступ</h1>
   <p id="intro" class="intro">Доступ ко всем контактам для прямой связи</p>
@@ -132,6 +135,7 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
       <span class="plan-price">{LIFETIME_PRICE} сом</span><span class="plan-note">Без повторной оплаты</span>
     </button>
   </div>
+  <button id="resume-payment" class="secondary hidden" style="margin-top:14px">Вернуться к оплате</button>
   <button id="pay-now" class="primary"{'' if payment_urls else ' disabled'}>Оплата</button>
   <p id="agreement-caption" class="agreement-caption">Оплачивая доступ, вы соглашаетесь с <a id="terms-link" class="terms-link" href="#agreement">пользовательским договором</a>.</p>
   <a id="privacy" class="privacy hidden">Политика конфиденциальности</a>
@@ -164,6 +168,12 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
   let sessionReady = false;
   let sessionLoading = false;
   let selectedPlan = "week";
+  let lastSession = null;
+  let tariffsView = false;
+  let navigationVersion = 0;
+  let paymentExpected = false;
+  let pollingVersion = 0;
+  let initializedWebApp = null;
   const paymentUrls = {checkout_json};
   const preparedUntil = {{week: Infinity, lifetime: Infinity}};
   const checkoutPreparation = {{}};
@@ -203,8 +213,18 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
       startParam = new URLSearchParams(initData).get("start_param") || "";
     }}
     if (!current) return null;
-    current.ready();
-    current.expand();
+    const nativeBack = current.BackButton && typeof current.BackButton.onClick === "function" && typeof current.BackButton.show === "function" && (!current.isVersionAtLeast || current.isVersionAtLeast("6.1"));
+    if (initializedWebApp !== current) {{
+      if (initializedWebApp && initializedWebApp.BackButton && initializedWebApp.BackButton.offClick) initializedWebApp.BackButton.offClick(goBack);
+      current.ready();
+      current.expand();
+      if (nativeBack) {{
+        current.BackButton.onClick(goBack);
+        current.BackButton.show();
+      }}
+      initializedWebApp = current;
+    }}
+    show("back", !nativeBack);
     return current;
   }}
   async function prepareTelegramContext() {{
@@ -245,10 +265,14 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
   function render(data) {{
     // A response sent before access was granted must not undo the success screen.
     if (accessApproved && data.status !== "approved") return;
+    lastSession = data;
     const approved = data.status === "approved";
     apartmentUnavailable = data.status === "unavailable";
     show("other-apartments", apartmentUnavailable);
-    const waiting = (data.plan === "week" || data.plan === "lifetime") && (data.status === "awaiting_receipt" || data.status === "pending");
+    const serverWaiting = (data.plan === "week" || data.plan === "lifetime") && (data.status === "awaiting_receipt" || data.status === "pending");
+    if (serverWaiting) paymentExpected = true;
+    if (approved || apartmentUnavailable || data.status === "rejected") {{ paymentExpected = false; pausePaymentPolling(); }}
+    const waiting = serverWaiting && !tariffsView;
     if (waiting) selectedPlan = data.plan;
     el("title").textContent = approved ? "Квартира" : waiting ? "Оплата" : "Получить доступ";
     show("title", !apartmentUnavailable);
@@ -265,9 +289,11 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
     show("forever-offer", canPay);
     show("pay-forever", canPay);
     show("pay-now", canPay);
+    show("resume-payment", serverWaiting && tariffsView && !approved);
     updatePlanSelection();
     show("access", waiting && data.status === "awaiting_receipt");
     show("reopen-payment", waiting && data.status === "awaiting_receipt");
+    if (serverWaiting) startPaymentPolling();
     if (!approved) {{
       el("privacy").href = data.privacy_url || "#";
     }}
@@ -334,6 +360,10 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
     if (paymentOpening || accessApproved || apartmentUnavailable || (!sessionReady && !paymentUrls[plan])) return;
     telegramContext();
     selectedPlan = plan;
+    tariffsView = false;
+    paymentExpected = true;
+    const navigation = ++navigationVersion;
+    let checkoutStarted = false;
     paymentOpening = true;
     const button = el(buttonId);
     const originalText = button.textContent;
@@ -344,15 +374,18 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
         paymentUrls[plan] = "";
         await prepareCheckout(plan);
       }}
+      if (navigation !== navigationVersion || accessApproved || apartmentUnavailable) return;
       const readyUrl = paymentUrls[plan];
       // Persist the checkout before leaving Telegram. Opening Finik first can
       // suspend the WebView and lose the request, leaving no verification
       // button when the customer returns.
+      checkoutStarted = true;
       paymentStart = api("/miniapp/api/start", {{plan}});
       const data = await paymentStart;
       render(data);
       if (data.status === "approved" || data.status === "unavailable" || data.status === "pending") return;
       startPaymentPolling();
+      if (navigation !== navigationVersion) return;
       const targetUrl = readyUrl || data.payment_url;
       if (!targetUrl) throw new Error("Не удалось открыть оплату. Попробуйте ещё раз.");
       const current = telegramContext();
@@ -363,32 +396,60 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
       startPaymentPolling();
     }}
     finally {{
+      if (!checkoutStarted && !(lastSession && ["awaiting_receipt", "pending"].includes(lastSession.status))) {{ paymentExpected = false; pausePaymentPolling(); }}
       paymentStart = null;
       button.disabled = false;
       button.textContent = originalText;
       paymentOpening = false;
     }}
   }}
+  function pausePaymentPolling() {{
+    pollingVersion += 1;
+    if (paymentPoll) clearTimeout(paymentPoll);
+    paymentPoll = null;
+  }}
   function startPaymentPolling() {{
-    if (paymentPoll || accessApproved) return;
+    if (paymentPoll || accessApproved || apartmentUnavailable || !paymentExpected || document.hidden) return;
+    const version = pollingVersion;
     const poll = async () => {{
+      if (version !== pollingVersion || document.hidden) return;
       try {{
         const data = await api("/miniapp/api/session", {{track_open: false}});
         render(data);
-        if (data.status === "approved" || data.status === "rejected") {{
-          paymentPoll = null;
+        if (data.status === "approved" || data.status === "rejected" || data.status === "unavailable") {{
+          if (version === pollingVersion) paymentPoll = null;
           return;
         }}
       }} catch (_) {{}}
-      if (!accessApproved) paymentPoll = setTimeout(poll, 5000);
+      if (version === pollingVersion && paymentExpected && !accessApproved && !document.hidden) paymentPoll = setTimeout(poll, 5000);
     }};
     paymentPoll = setTimeout(poll, 5000);
   }}
+  function goBack() {{
+    const agreement = el("agreement");
+    if (agreement.open) {{
+      if (agreement.close) agreement.close(); else agreement.removeAttribute("open");
+      return;
+    }}
+    const waiting = lastSession && ["awaiting_receipt", "pending"].includes(lastSession.status);
+    if (!accessApproved && !tariffsView && (waiting || paymentOpening)) {{
+      navigationVersion += 1;
+      tariffsView = true;
+      render(lastSession || {{status: "unpaid"}});
+      return;
+    }}
+    const current = window.Telegram && window.Telegram.WebApp;
+    if (current && typeof current.close === "function") current.close();
+    else if (window.history && window.history.length > 1) window.history.back();
+    else location.href = "https://t.me/bishkekarendakg";
+  }}
+  el("back").onclick = goBack;
+  el("resume-payment").onclick = () => {{ tariffsView = false; if (lastSession) render(lastSession); }};
   document.addEventListener("visibilitychange", () => {{
-    if (!document.hidden && !accessApproved) {{
+    if (document.hidden) {{ pausePaymentPolling(); return; }}
+    if (!accessApproved) {{
       if (!sessionReady) {{ load(); return; }}
-      prepareCheckout();
-      startPaymentPolling();
+      if (paymentExpected) startPaymentPolling();
     }}
   }});
   el("telegram-sdk").addEventListener("load", () => {{

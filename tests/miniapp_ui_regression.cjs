@@ -28,7 +28,8 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
     FileReader: class { readAsDataURL() { this.result = "data:application/pdf;base64,JVBERi0xLjQ="; this.onload(); } },
     location: {search: '?tgWebAppData=test&tgWebAppStartParam=test', hash: ''},
     window: {Telegram: {WebApp: {ready() {}, expand() {}, openLink(url) { opened.push(url); }, openTelegramLink(url) { opened.push(url); }}}},
-    document: {getElementById: node, addEventListener() {}, querySelectorAll() { return []; }},
+    document: {hidden: false, listeners: {}, getElementById: node,
+      addEventListener(event, fn) { this.listeners[event] = fn; }, querySelectorAll() { return []; }},
     setTimeout(fn) { const id = nextTimer++; timers.set(id, fn); return id; },
     clearTimeout(id) { timers.delete(id); },
     fetch: fetchOverride || (() => Promise.resolve(response(initial))),
@@ -249,5 +250,72 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
   await opening;
   assert.deepEqual(warm.opened, ['https://example.com/prepared']);
   assert.equal(warm.node('access').hidden, false);
+  // Back returns to tariffs without cancelling or losing the payment request.
+  restored.node('back').onclick();
+  assert.equal(restored.node('tariff-description').hidden, false);
+  assert.equal(restored.node('checkout').hidden, true);
+  assert.equal(restored.node('resume-payment').hidden, false);
+  restored.node('resume-payment').onclick();
+  assert.equal(restored.node('checkout').hidden, false);
+  assert.equal(restored.node('access').hidden, false);
+  restored.node('terms-link').onclick({preventDefault() {}});
+  restored.node('back').onclick();
+  assert.equal(restored.node('agreement').open, false);
+  assert.equal(restored.node('checkout').hidden, false);
+
+  let finishBackStart;
+  const backDuringStart = setup(null, path => {
+    if (path.endsWith('/start')) return new Promise(resolve => { finishBackStart = resolve; });
+    return Promise.resolve(response({status:'unpaid'}));
+  });
+  await new Promise(setImmediate);
+  const backOpening = backDuringStart.node('pay-now').onclick();
+  backDuringStart.node('back').onclick();
+  finishBackStart(response({status:'awaiting_receipt',plan:'week'}));
+  await backOpening;
+  assert.deepEqual(backDuringStart.opened, [], 'Back must prevent a late Finik redirect');
+  assert.equal(backDuringStart.node('tariff-description').hidden, false);
+  backDuringStart.node('resume-payment').onclick();
+  assert.equal(backDuringStart.node('access').hidden, false);
+
+  let unpaidRequests = 0;
+  const idle = setup(null, () => { unpaidRequests++; return Promise.resolve(response({status:'unpaid'})); });
+  await new Promise(setImmediate);
+  for (let i = 0; i < 3; i++) {
+    idle.context.document.hidden = true;
+    idle.context.document.listeners.visibilitychange();
+    idle.context.document.hidden = false;
+    idle.context.document.listeners.visibilitychange();
+  }
+  assert.equal(unpaidRequests, 1, 'Unpaid browsing must not start payment polling');
+  assert.equal(idle.timers.size, 0);
+  pending.context.document.hidden = true;
+  pending.context.document.listeners.visibilitychange();
+  assert.equal(pending.timers.size, 0, 'Hidden Mini Apps must pause payment polling');
+  pending.context.document.hidden = false;
+  pending.context.document.listeners.visibilitychange();
+  assert.equal(pending.timers.size, 1);
+
+  let nativeHandler, nativeBindings = 0, closed = 0, readyCalls = 0;
+  const native = setup(null, null, false, {window:{Telegram:{WebApp:{
+    initData:'test', initDataUnsafe:{start_param:'test'},
+    ready(){readyCalls++;}, expand(){}, close(){closed++;},
+    BackButton:{onClick(fn){nativeHandler=fn;nativeBindings++;},show(){}},
+  }}}});
+  await new Promise(setImmediate);
+  native.node('telegram-sdk').listeners.load();
+  assert.equal(nativeBindings, 1, 'Bind the Telegram back handler only once');
+  assert.equal(readyCalls, 1);
+  assert.equal(native.node('back').hidden, true);
+  nativeHandler();
+  assert.equal(closed, 1);
+  const olderTelegram = setup(null, null, false, {window:{Telegram:{WebApp:{
+    initData:'test',initDataUnsafe:{start_param:'test'},ready(){},expand(){},
+    isVersionAtLeast(){return false;},
+    BackButton:{onClick(){throw Error('unsupported');},show(){throw Error('unsupported');}},
+  }}}});
+  await new Promise(setImmediate);
+  assert.equal(olderTelegram.node('back').hidden, false);
+  assert.equal(olderTelegram.node('pay-now').hidden, false);
   console.log('Mini App UI regression checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

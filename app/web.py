@@ -787,19 +787,17 @@ async def _inventory_queue_status(*, whole_apartments_only: bool = False) -> tup
                     Apartment.rooms.in_(("studio", "1")) if whole_apartments_only else True,
                 )
             )).one()
-            from app.promotions import publications_in_window
+            from app.promotions import publication_counts_in_window
             from app.inventory import (
                 MAX_PUBLICATIONS_PER_DAY, PUBLICATION_SPACING_MINUTES,
                 publication_day_start, publication_window_open, next_publication_slot,
             )
             day_start = publication_day_start(now).astimezone(UTC)
-            events = await publications_in_window(session, day_start, day_start + timedelta(days=1))
-            scheduled_events = await publications_in_window(
-                session, day_start, day_start + timedelta(days=1), include_external_repeats=False)
-            published = len(scheduled_events)
+            counts = await publication_counts_in_window(session, day_start, day_start + timedelta(days=1))
+            published = counts.ordinary
             daily_limit_reached = published >= MAX_PUBLICATIONS_PER_DAY
             quiet_hours = not publication_window_open(now)
-            latest = max((event.published_at for event in events), default=None)
+            latest = counts.latest
             next_slot = next_publication_slot(now, published, latest)
             pace_reached = now < next_slot
             slot_at = (
@@ -809,8 +807,8 @@ async def _inventory_queue_status(*, whole_apartments_only: bool = False) -> tup
             )
             _apartment_scheduler_state.update(
                 daily_published_count=published,
-                daily_total_with_external_repeats=len(events),
-                daily_external_repeat_count=len(events) - published,
+                daily_total_with_external_repeats=counts.total,
+                daily_external_repeat_count=counts.total - published,
                 daily_remaining_count=max(0, MAX_PUBLICATIONS_PER_DAY - published),
                 dispatch_pause_reason=(
                     "daily_limit_reached" if daily_limit_reached else

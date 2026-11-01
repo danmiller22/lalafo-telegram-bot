@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import and_, delete, func, or_, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import load_only
 
 from app.models import (
     Apartment,
@@ -762,7 +763,11 @@ class InventoryRepository:
             published = list((await session.scalars(select(Apartment).where(
                 Apartment.publication_status == "published",
                 Apartment.rooms.in_(("studio", "1")),
-            ))).all())
+            ).options(load_only(
+                Apartment.lalafo_id, Apartment.rooms, Apartment.district,
+                Apartment.price, Apartment.phone, Apartment.photo_urls,
+                Apartment.published_at,
+            )))).all())
             published_index = ListingIndex(published)
             recent_index = ListingIndex(item for item in published
                 if item.published_at is None or as_utc(item.published_at) > now - timedelta(hours=REPOST_AFTER_HOURS))
