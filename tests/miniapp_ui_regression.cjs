@@ -16,6 +16,7 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
       toggle(_, hidden) { nodes[id].hidden = hidden; },
       contains() { return nodes[id].hidden; },
     },
+    attributes: {}, setAttribute(key, value) { this.attributes[key] = value; },
     checked: false, click() {}, open: false,
     listeners: {}, addEventListener(event, fn) { this.listeners[event] = fn; },
     showModal() { this.open = true; }, close() { this.open = false; },
@@ -49,6 +50,13 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
   });
   await new Promise(setImmediate);
   await forever.node('pay-forever').onclick();
+  assert.equal(forever.opened.length, 0, 'Selecting a plan must not open checkout');
+  assert.equal(forever.node('pay-forever').attributes['aria-pressed'], 'true');
+  await forever.node('pay-lifetime').onclick();
+  assert.equal(forever.node('pay-lifetime').attributes['aria-pressed'], 'true');
+  assert.equal(forever.opened.length, 0);
+  await forever.node('pay-forever').onclick();
+  await forever.node('pay-now').onclick();
   assert.deepEqual(forever.opened, ['https://qr.finik.kg/lifetime-999']);
   assert.equal(forever.node('intro').textContent, 'Навсегда · 999 сом');
   assert.equal(forever.node('pay-lifetime').hidden, true);
@@ -58,14 +66,14 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
   await new Promise(setImmediate);
   assert.equal(unavailable.node('pay-lifetime').hidden, true);
   assert.equal(unavailable.node('other-apartments').hidden, false);
-  await unavailable.node('pay-lifetime').onclick();
+  await unavailable.node('pay-now').onclick();
   assert.deepEqual(unavailable.opened, []);
   // An apartment may become unavailable between page load and checkout start.
   for (const status of ['unavailable', 'pending', 'approved']) {
     const changed = setup(null, path => Promise.resolve(response(path.endsWith('/start') ?
       {status, plan: 'week', apartment: {}} : {status: 'unpaid'})));
     await new Promise(setImmediate);
-    await changed.node('pay-lifetime').onclick();
+    await changed.node('pay-now').onclick();
     assert.deepEqual(changed.opened, [], status + ' must not redirect to Finik');
   }
   let lateCalls = 0;
@@ -117,7 +125,7 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
       {status: 'awaiting_receipt', plan: 'week'} : {status: 'unpaid'}));
   });
   await new Promise(setImmediate);
-  await recovery.node('pay-lifetime').onclick();
+  await recovery.node('pay-now').onclick();
   assert.equal(recovery.node('pay-lifetime').disabled, false);
   assert.equal(recovery.timers.size, 1, 'An ambiguous start must resume status polling');
   const [recoveryId, recoveryPoll] = [...recovery.timers.entries()][0];
@@ -137,7 +145,7 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
     }));
   });
   await new Promise(setImmediate);
-  const hungStart = hanging.node('pay-lifetime').onclick();
+  const hungStart = hanging.node('pay-now').onclick();
   const [timeoutId, requestTimeout] = [...hanging.timers.entries()][0];
   hanging.timers.delete(timeoutId);
   requestTimeout();
@@ -154,7 +162,7 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
   assert.equal(slow.node('pay-lifetime').hidden, false);
   assert.equal(slow.node('pay-lifetime').disabled, false);
   assert.equal(slow.node('phone').hidden, true);
-  await slow.node('pay-lifetime').onclick();
+  await slow.node('pay-now').onclick();
   assert.deepEqual(slow.opened, ['https://example.com/week']);
   await new Promise(setImmediate);
   finishSession(response({status: 'approved', phone: '+996555000000', apartment: {}}));
@@ -168,7 +176,7 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
   assert.equal(failed.node('pay-lifetime').disabled, false);
   assert.equal(failed.node('phone').hidden, true);
   assert.equal(failed.node('status').textContent, 'Service unavailable');
-  await failed.node('pay-lifetime').onclick();
+  await failed.node('pay-now').onclick();
   assert.deepEqual(failed.opened, []);
 
   // A restored weekly checkout must reopen its URL without a new request.
@@ -203,7 +211,7 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
   race.node('close-agreement').onclick();
   assert.equal(race.node('agreement').open, false);
   assert.equal(race.node('checkout').hidden, true);
-  await race.node('pay-lifetime').onclick();
+  await race.node('pay-now').onclick();
   assert.deepEqual(race.opened, ['https://example.com/week']);
   const [id, callback] = [...race.timers.entries()][0];
   race.timers.delete(id);
@@ -234,7 +242,7 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
   }, true);
   await new Promise(setImmediate);
   assert.equal(warm.node('pay-lifetime').disabled, false);
-  const opening = warm.node('pay-lifetime').onclick();
+  const opening = warm.node('pay-now').onclick();
   // The checkout request is persisted before Telegram opens Finik.
   assert.deepEqual(warm.opened, []);
   finishStart(response({status: 'awaiting_receipt', plan: 'week'}));

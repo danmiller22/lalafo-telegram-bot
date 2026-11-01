@@ -68,11 +68,15 @@ def test_mini_app_page_has_weekly_and_lifetime_tariffs_and_privacy_link():
 
     assert "/miniapp/api/session" in html
     assert "/miniapp/api/start" in html
-    assert "Недельный доступ ко всем номерам — 499 сом" in html
+    assert "Доступ ко всем контактам для прямой связи" in html
+    assert "Недельный доступ" in html
     assert "Одна оплата открывает номера всех актуальных квартир на 7 дней." not in html
-    assert ">Оплатить 499 сом</button>" in html
+    assert ">499 сом</span>" in html
+    assert 'id="pay-now"' in html
+    assert ">Оплата</button>" in html
     assert "500 сом" not in html and "699" not in html
-    assert "Навсегда — 999 сом" in html
+    assert ">999 сом</span>" in html
+    assert "Без повторной оплаты" in html
     assert "Месячный тариф" not in html
     assert 'id="hero"' not in html
     assert 'id="apartment"' in html
@@ -101,7 +105,7 @@ def test_mini_app_page_has_weekly_and_lifetime_tariffs_and_privacy_link():
     assert "искусственного интеллекта" in html
     assert "Риелторы и другие лица могут выдавать себя за хозяев" in html
     first_screen = html.split('id="tariff-description"', 1)[1].split('id="checkout"', 1)[0]
-    assert first_screen.count("<button") == 2
+    assert first_screen.count("<button") == 3
     assert 'const canPay = !approved && !waiting && !apartmentUnavailable' in html
     assert 'show("pay-lifetime", canPay)' in html
     assert "Открываю Finik" not in html

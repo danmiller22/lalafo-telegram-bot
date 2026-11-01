@@ -62,7 +62,7 @@ def verify_telegram_init_data(
         return None
 
 
-def mini_app_html(*, title: str = "Доступ к квартире", payment_urls: dict[str, str] | None = None) -> str:
+def mini_app_html(*, title: str = "Получить доступ", payment_urls: dict[str, str] | None = None) -> str:
     safe_title = escape(title)
     safe_terms = escape(TERMS_TEXT)
     # Script-safe JSON: configured public checkout URLs are not credentials.
@@ -75,37 +75,37 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
   <title>{safe_title}</title>
   <script id="telegram-sdk" async src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
-    :root {{ color-scheme: light dark; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; --accent: #087f68; --muted: var(--tg-theme-hint-color, #64746e); --surface: var(--tg-theme-secondary-bg-color, #fff); }}
+    :root {{ color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; --accent: #116960; --muted: #737579; --surface: #fff; }}
     * {{ box-sizing: border-box; }}
-    body {{ margin: 0; background: var(--tg-theme-bg-color, #f3f6f5); color: var(--tg-theme-text-color, #172b24); }}
-    main {{ max-width: 480px; margin: 0 auto; padding: 22px 16px calc(24px + env(safe-area-inset-bottom)); }}
-    .brand {{ font-size: 14px; font-weight: 800; color: var(--tg-theme-link-color, #087f68); margin-bottom: 20px; }}
-    h1 {{ font-size: 27px; line-height: 1.15; letter-spacing: -.6px; margin: 0 0 8px; }}
-    .intro {{ font-size: 15px; color: var(--muted); line-height: 1.5; margin: 0 0 20px; }}
-    .checkout {{ background: var(--surface); border: 1px solid #879b922b; border-radius: 18px; padding: 18px; margin: 0 0 14px; }}
-    .caption {{ font-size: 14px; color: var(--muted); line-height: 1.4; margin: 6px 0 16px; }}
-    button, .button {{ display: block; width: 100%; min-height: 52px; border: 0; border-radius: 12px; padding: 15px; font: inherit; font-size: 17px; font-weight: 700; text-align: center; text-decoration: none; cursor: pointer; touch-action: manipulation; }}
+    body {{ margin: 0; background: #fff; color: #141619; }}
+    main {{ max-width: 480px; margin: 0 auto; padding: 28px 18px calc(22px + env(safe-area-inset-bottom)); }}
+    .brand {{ text-align: center; font-size: 18px; font-weight: 800; color: var(--accent); margin: 0 0 18px; }}
+    h1 {{ text-align: center; font-size: 32px; line-height: 1.15; letter-spacing: -.8px; margin: 0 0 10px; }}
+    .intro {{ text-align: center; font-size: 16px; color: #66686b; line-height: 1.45; margin: 0 auto 28px; max-width: 350px; }}
+    .checkout {{ border: 1px solid #ddd; border-radius: 14px; padding: 18px; margin: 18px 0; }}
+    button, .button {{ display: block; width: 100%; min-height: 50px; border: 0; border-radius: 16px; padding: 14px; font: inherit; font-size: 19px; font-weight: 700; text-align: center; text-decoration: none; cursor: pointer; touch-action: manipulation; }}
     .primary {{ background: var(--accent); color: #fff; }}
-    .secondary {{ background: transparent; color: var(--tg-theme-link-color, #087f68); border: 1px solid #879b9260; }}
-    button:disabled {{ cursor: default; background: #879b9230; color: var(--muted); }}
+    .secondary {{ background: transparent; color: var(--accent); border: 1px solid #ccd5d2; }}
+    button:disabled {{ cursor: default; opacity: .55; }}
     button:focus-visible, a:focus-visible {{ outline: 3px solid #38a88b; outline-offset: 3px; }}
-    .step {{ display: flex; align-items: center; gap: 9px; font-size: 17px; font-weight: 750; margin-bottom: 12px; }}
-    .step span {{ display: grid; place-items: center; width: 25px; height: 25px; border-radius: 50%; background: #087f6818; color: var(--tg-theme-link-color, #087f68); font-size: 13px; }}
-    .receipt-step {{ margin-top: 22px; }}
-    .status {{ padding: 12px 14px; margin: 0 0 14px; border-radius: 12px; background: #087f6818; font-size: 15px; line-height: 1.4; }}
-    .privacy {{ display: block; text-align: center; font-size: 13px; color: var(--muted); margin-top: 20px; text-decoration: none; padding: 8px; }}
+    .status {{ padding: 12px 14px; margin: 0 0 14px; border-radius: 12px; background: #edf6f3; font-size: 15px; line-height: 1.4; }}
+    .privacy {{ display: block; text-align: center; font-size: 13px; color: #939599; margin: 22px 4px 0; border-top: 1px solid #e4e5e7; text-decoration: none; padding: 14px 0 4px; }}
     .phone {{ display: block; background: var(--accent); color: #fff; border-radius: 12px; padding: 16px; font-size: 22px; font-weight: 800; text-align: center; text-decoration: none; word-break: break-word; margin-top: 16px; }}
     .photos {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 16px; }}
     .photos img {{ width: 100%; height: 140px; object-fit: cover; border-radius: 12px; }}
     .details {{ white-space: pre-line; font-size: 16px; line-height: 1.6; }}
-    .tariff-button {{ margin-bottom: 12px; }}
-    .forever-offer {{ border: 1px solid #d9ad43; border-radius: 18px; padding: 16px; margin: 4px 0 18px; background: linear-gradient(135deg, #d9ad4314, #087f6810); }}
-    .forever-label {{ font-size: 13px; font-weight: 800; color: var(--tg-theme-link-color, #087f68); margin-bottom: 8px; }}
-    .forever-note {{ font-size: 14px; line-height: 1.4; color: var(--muted); margin: 9px 0 0; }}
-    #pay-forever {{ background: linear-gradient(120deg, #087f68, #065345); color: #fff; }}
-    #tariff-description {{ color: var(--tg-theme-text-color, #172b24); font-size: 26px; font-weight: 800; line-height: 1.3; }}
-    .agreement-caption {{ font-size: 12px; font-weight: 400; color: var(--muted); line-height: 1.5; margin: 0 0 16px; }}
-    .terms-link {{ color: var(--tg-theme-link-color, #087f68); }}
+    .tariff-button {{ position: relative; display: block; text-align: left; padding: 20px; border: 1px solid #d7d8da; border-radius: 13px; background: #fff; color: #141619; margin: 0 0 14px; min-height: 120px; }}
+    .tariff-button[aria-pressed="true"] {{ border: 1.5px solid var(--accent); background: #f0f7f6; }}
+    .plan-heading {{ display: flex; align-items: center; gap: 12px; font-size: 18px; line-height: 1.3; padding-right: 76px; }}
+    .plan-icon {{ width: 23px; height: 23px; flex: 0 0 23px; color: var(--accent); }}
+    .plan-price {{ display: block; font-size: 32px; font-weight: 800; letter-spacing: -.6px; margin: 10px 0 2px; line-height: 1.1; }}
+    .plan-note {{ display: block; color: #747679; font-size: 15px; font-weight: 400; line-height: 1.4; }}
+    .popular {{ position: absolute; right: 12px; top: 12px; border-radius: 30px; background: var(--accent); color: #fff; padding: 5px 9px; font-size: 11px; font-weight: 500; }}
+    .forever-offer {{ margin: 0; }}
+    #pay-now {{ margin-top: 30px; font-size: 22px; }}
+    .agreement-caption {{ text-align: center; font-size: 13px; font-weight: 400; color: #818387; line-height: 1.5; margin: 14px 10px 0; }}
+    .terms-link {{ color: var(--accent); text-underline-offset: 2px; }}
+    @media (max-width: 350px) {{ h1 {{ font-size: 28px; }} .plan-heading {{ font-size: 16px; gap: 8px; padding-right: 65px; }} .tariff-button {{ padding: 17px; }} .popular {{ font-size: 10px; padding: 5px 7px; right: 9px; }} }}
     .agreement-dialog {{ width: min(92vw, 460px); max-height: 82vh; border: 1px solid #879b9260; border-radius: 16px; padding: 20px; background: var(--tg-theme-bg-color, #fff); color: var(--tg-theme-text-color, #172b24); }}
     .agreement-text {{ white-space: pre-wrap; font-size: 15px; line-height: 1.5; margin-top: 16px; }}
     .hidden {{ display: none !important; }}
@@ -114,20 +114,25 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
 <body>
 <main id="lifetime-checkout">
   <div class="brand">Arenda.KG</div>
-  <h1 id="title" class="hidden"></h1>
-  <p id="intro" class="intro"></p>
+  <h1 id="title">Получить доступ</h1>
+  <p id="intro" class="intro">Доступ ко всем контактам для прямой связи</p>
   <div id="status" class="status hidden" role="status" aria-live="polite"></div>
   <a id="other-apartments" class="button secondary hidden" href="https://t.me/bishkekarendakg">Смотреть актуальные квартиры</a>
-  <div id="tariff-description" class="intro">
-    Недельный доступ ко всем номерам — {WEEK_PRICE} сом
+  <div id="tariff-description">
+    <button id="pay-lifetime" class="tariff-button" aria-pressed="true"{'' if payment_urls else ' disabled'}>
+      <span class="popular">Популярный</span>
+      <span class="plan-heading"><svg class="plan-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/></svg>Недельный доступ</span>
+      <span class="plan-price">{WEEK_PRICE} сом</span><span class="plan-note">7 дней</span>
+    </button>
   </div>
-  <p id="agreement-caption" class="agreement-caption">Оплачивая доступ, вы подтверждаете, что ознакомились с <a id="terms-link" class="terms-link" href="#agreement">пользовательским договором</a> и соглашаетесь с его условиями.</p>
-  <button id="pay-lifetime" class="primary tariff-button"{'' if payment_urls else ' disabled'}>Оплатить {WEEK_PRICE} сом</button>
   <div id="forever-offer" class="forever-offer">
-    <div class="forever-label">✨ Один платёж — без продлений</div>
-    <button id="pay-forever" class="tariff-button">Навсегда — {LIFETIME_PRICE} сом</button>
-    <p class="forever-note">Все номера и новые квартиры. Бессрочный доступ без повторной оплаты.</p>
+    <button id="pay-forever" class="tariff-button" aria-pressed="false">
+      <span class="plan-heading"><svg class="plan-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 12c-2-3-3-5-5.5-5a5 5 0 0 0 0 10c2.5 0 3.5-2 5.5-5s3-5 5.5-5a5 5 0 0 1 0 10c-2.5 0-3.5-2-5.5-5Z"/></svg>Навсегда</span>
+      <span class="plan-price">{LIFETIME_PRICE} сом</span><span class="plan-note">Без повторной оплаты</span>
+    </button>
   </div>
+  <button id="pay-now" class="primary"{'' if payment_urls else ' disabled'}>Оплата</button>
+  <p id="agreement-caption" class="agreement-caption">Оплачивая доступ, вы соглашаетесь с <a id="terms-link" class="terms-link" href="#agreement">пользовательским договором</a>.</p>
   <a id="privacy" class="privacy hidden">Политика конфиденциальности</a>
   <section id="checkout" class="checkout hidden">
     <button id="access" class="primary hidden">Я оплатил(а)</button>
@@ -243,11 +248,11 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     apartmentUnavailable = data.status === "unavailable";
     show("other-apartments", apartmentUnavailable);
     const waiting = (data.plan === "week" || data.plan === "lifetime") && (data.status === "awaiting_receipt" || data.status === "pending");
-    if (data.plan === "week" || data.plan === "lifetime") selectedPlan = data.plan;
-    el("title").textContent = approved ? "Квартира" : waiting ? "Оплата" : "";
-    show("title", approved || waiting);
-    el("intro").textContent = approved ? "" : waiting ? (selectedPlan === "lifetime" ? "Навсегда · {LIFETIME_PRICE} сом" : "7 дней · {WEEK_PRICE} сом") : "";
-    show("intro", waiting);
+    if (waiting) selectedPlan = data.plan;
+    el("title").textContent = approved ? "Квартира" : waiting ? "Оплата" : "Получить доступ";
+    show("title", !apartmentUnavailable);
+    el("intro").textContent = approved ? "" : waiting ? (selectedPlan === "lifetime" ? "Навсегда · {LIFETIME_PRICE} сом" : "7 дней · {WEEK_PRICE} сом") : "Доступ ко всем контактам для прямой связи";
+    show("intro", !approved && !apartmentUnavailable);
     show("apartment", approved);
     show("phone", approved);
     const canPay = !approved && !waiting && !apartmentUnavailable;
@@ -258,6 +263,8 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     show("pay-lifetime", canPay);
     show("forever-offer", canPay);
     show("pay-forever", canPay);
+    show("pay-now", canPay);
+    updatePlanSelection();
     show("access", waiting && data.status === "awaiting_receipt");
     show("reopen-payment", waiting && data.status === "awaiting_receipt");
     if (!approved) {{
@@ -314,6 +321,7 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
       sessionReady = true;
       await preparation;
       el("pay-lifetime").disabled = false;
+      el("pay-now").disabled = false;
     }}
     catch (error) {{
       if (error.status === 404) render({{status: "unavailable"}});
@@ -395,8 +403,18 @@ def mini_app_html(*, title: str = "Доступ к квартире", payment_ur
     const agreement = el("agreement");
     if (agreement.close) agreement.close(); else agreement.removeAttribute("open");
   }};
-  el("pay-lifetime").onclick = () => startPayment("week", "pay-lifetime");
-  el("pay-forever").onclick = () => startPayment("lifetime", "pay-forever");
+  function updatePlanSelection() {{
+    el("pay-lifetime").setAttribute("aria-pressed", String(selectedPlan === "week"));
+    el("pay-forever").setAttribute("aria-pressed", String(selectedPlan === "lifetime"));
+  }}
+  function selectPlan(plan) {{
+    if (accessApproved || apartmentUnavailable || paymentOpening) return;
+    selectedPlan = plan;
+    updatePlanSelection();
+  }}
+  el("pay-lifetime").onclick = () => selectPlan("week");
+  el("pay-forever").onclick = () => selectPlan("lifetime");
+  el("pay-now").onclick = () => startPayment(selectedPlan, "pay-now");
   el("reopen-payment").onclick = () => {{
     if (accessApproved) return;
     const url = paymentUrls[selectedPlan];
