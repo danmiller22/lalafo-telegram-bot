@@ -75,12 +75,13 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
   <title>{safe_title}</title>
   <script id="telegram-sdk" async src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
-    :root {{ color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; --accent: #116960; --muted: #737579; --surface: #fff; }}
+    :root {{ color-scheme: light; font-family: "SF Pro Text", -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; font-optical-sizing: auto; --accent: #116960; --muted: #737579; --surface: #fff; }}
     * {{ box-sizing: border-box; }}
     body {{ margin: 0; background: #fff; color: #141619; }}
     main {{ max-width: 480px; margin: 0 auto; padding: 28px 18px calc(22px + env(safe-area-inset-bottom)); }}
     .brand {{ text-align: center; font-size: 18px; font-weight: 800; color: var(--accent); margin: 0 0 18px; }}
     h1 {{ text-align: center; font-size: 32px; line-height: 1.15; letter-spacing: -.8px; margin: 0 0 10px; }}
+    h1, .brand, .plan-heading, .plan-price, #pay-now {{ font-family: "SF Pro Display", -apple-system, BlinkMacSystemFont, system-ui, sans-serif; }}
     .intro {{ text-align: center; font-size: 16px; color: #66686b; line-height: 1.45; margin: 0 auto 28px; max-width: 350px; }}
     .checkout {{ border: 1px solid #ddd; border-radius: 14px; padding: 18px; margin: 18px 0; }}
     button, .button {{ display: block; width: 100%; min-height: 50px; border: 0; border-radius: 16px; padding: 14px; font: inherit; font-size: 19px; font-weight: 700; text-align: center; text-decoration: none; cursor: pointer; touch-action: manipulation; }}
