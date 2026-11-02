@@ -69,7 +69,7 @@ async def test_old_pending_checkout_can_switch_to_lifetime(repositories, service
 
 
 @pytest.mark.asyncio
-async def test_weekly_miniapp_checkout_and_manual_access_end_to_end(repositories, service, monkeypatch):
+async def test_weekly_miniapp_checkout_and_automatic_access_end_to_end(repositories, service, monkeypatch):
     import json
     from datetime import timedelta
     from unittest.mock import AsyncMock
@@ -131,14 +131,15 @@ async def test_weekly_miniapp_checkout_and_manual_access_end_to_end(repositories
             assert again.json()["payment_url"] == started.json()["payment_url"]
             assert len(captured) == 1
             granted = await client.post("/miniapp/api/access", json=payload)
-            assert granted.json()["status"] == "pending"
+            assert granted.status_code == 409
+            assert "автоматически" in granted.json()["detail"]
             assert "phone" not in granted.json()
-            pending_again = await client.post("/miniapp/api/access", json=payload)
-            assert pending_again.json()["status"] == "pending"
-            web._bot_runtime.bot.send_message.assert_awaited_once()
             checkout = await payments.get_access(880, first.id)
             assert checkout.payment_claimed_at is None
-            assert await service.decide(checkout.id, approve=True, actor_id=999) == "approved"
+            outcome, _ = await payments.apply_provider_result(
+                captured[0]["PaymentId"], succeeded=True, amount=499
+            )
+            assert outcome == "approved"
             repeated = await client.post("/miniapp/api/access", json=payload)
             assert repeated.json()["status"] == "approved"
             already_ready = await client.post("/miniapp/api/prepare", json=payload)

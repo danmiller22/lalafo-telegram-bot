@@ -172,6 +172,7 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
   let tariffsView = false;
   let navigationVersion = 0;
   let paymentExpected = false;
+  let automaticPayment = false;
   let pollingVersion = 0;
   let initializedWebApp = null;
   const paymentUrls = {checkout_json};
@@ -266,6 +267,7 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
     // A response sent before access was granted must not undo the success screen.
     if (accessApproved && data.status !== "approved") return;
     lastSession = data;
+    if (typeof data.automatic_payment === "boolean") automaticPayment = data.automatic_payment;
     const approved = data.status === "approved";
     apartmentUnavailable = data.status === "unavailable";
     show("other-apartments", apartmentUnavailable);
@@ -291,7 +293,7 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
     show("pay-now", canPay);
     show("resume-payment", serverWaiting && tariffsView && !approved);
     updatePlanSelection();
-    show("access", waiting && data.status === "awaiting_receipt");
+    show("access", waiting && data.status === "awaiting_receipt" && !automaticPayment);
     show("reopen-payment", waiting && data.status === "awaiting_receipt");
     if (serverWaiting) startPaymentPolling();
     if (!approved) {{
@@ -323,6 +325,9 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
       el("phone").href = "tel:" + String(data.phone || "").replace(/\\s+/g, "");
     }} else if (apartmentUnavailable) {{
       message("Контакт этой квартиры сейчас недоступен. Выберите другой актуальный вариант.");
+    }} else if (waiting && automaticPayment) {{
+      message("Ожидаем подтверждение оплаты от Finik. Доступ откроется автоматически.");
+      startPaymentPolling();
     }} else if (waiting && data.status === "pending") {{
       message("Заявка отправлена на проверку. Ожидайте подтверждения.");
       startPaymentPolling();

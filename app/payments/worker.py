@@ -17,6 +17,26 @@ logger = logging.getLogger(__name__)
 async def process_payment_reviews(runtime) -> int:
     payments = runtime.workflow_data["payments"]
     settings = runtime.workflow_data["settings"]
+    if settings.finik_auto_enabled:
+        retired = 0
+        for request in await payments.active_manual_review_notifications():
+            try:
+                await runtime.bot.edit_message_reply_markup(
+                    chat_id=settings.admin_user_id,
+                    message_id=request.admin_message_id,
+                    reply_markup=None,
+                )
+            except TelegramBadRequest:
+                # Deleted and already-edited messages are terminal as well.
+                pass
+            except Exception:
+                logger.exception(
+                    "Could not retire manual payment review %s", request.id
+                )
+                continue
+            await payments.set_admin_message(request.id, -2)
+            retired += 1
+        return retired
     signer = runtime.workflow_data["signer"]
     sent = 0
     for request in await payments.pending_notifications():
@@ -66,14 +86,19 @@ async def process_checkout_recoveries(runtime) -> int:
             payment_url=checkout_url,
             support_url=settings.support_bot_url,
             price=price,
+            manual_claim=not settings.finik_auto_enabled,
         )
         offer = (f"Недельный доступ ко всем номерам — {price} сом"
                  if request.plan == WEEK_PLAN else f"Доступ ко всем номерам — {price} сом {plan_label(request.plan).lower()}")
+        next_step = (
+            "После оплаты доступ откроется автоматически."
+            if settings.finik_auto_enabled
+            else "Если уже оплатили, нажмите «Я оплатил(а)» — администратор проверит поступление."
+        )
         text = (
             "Вы открывали оплату контактов квартиры.\n\n"
             f"{offer}.\n\n"
-            "Если уже оплатили, нажмите «Я оплатил(а)» — администратор "
-            "проверит поступление."
+            f"{next_step}"
         )
         try:
             await runtime.bot.send_message(

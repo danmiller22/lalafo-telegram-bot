@@ -44,9 +44,9 @@ def test_faq_answers_only_confident_common_questions():
 
 def test_payment_faq_gives_only_customer_facing_instructions():
     assert "Получить номер" in FAQ_BY_KEY["payment"].answer
-    assert "подтверждения администратором" in FAQ_BY_KEY["review"].answer
+    assert "автоматически" in FAQ_BY_KEY["review"].answer
     assert "проверяется вручную" not in FAQ_BY_KEY["review"].answer
-    assert "Finik" not in FAQ_BY_KEY["review"].answer
+    assert "Finik" in FAQ_BY_KEY["review"].answer
 
 
 def test_support_menu_contains_every_faq_and_close_button():

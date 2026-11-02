@@ -1425,7 +1425,8 @@ async def health() -> JSONResponse:
                 "automatic" if settings.finik_auto_enabled else "manual"
             ),
             "payment_review_worker": (
-                "running" if settings.run_bot and not _task_stopped(_payment_review_worker_task)
+                ("recovery_only" if settings.finik_auto_enabled else "running")
+                if settings.run_bot and not _task_stopped(_payment_review_worker_task)
                 else "stopped" if settings.run_bot else "disabled"
             ),
             "telegram_inventory": (
@@ -1633,6 +1634,9 @@ async def miniapp_session(payload: MiniAppRequest, background_tasks: BackgroundT
             detail="Квартира больше недоступна.",
         )
     response = _miniapp_result_payload(result)
+    response["automatic_payment"] = bool(
+        getattr(settings, "finik_auto_enabled", False)
+    )
     response["monthly_available"] = False
     bot_url = f"https://t.me/{settings.telegram_bot_username.lstrip('@')}"
     response["privacy_url"] = f"{bot_url}?start=privacy"
@@ -1826,6 +1830,11 @@ async def miniapp_issue_access(
     current = await service.contact_status(user.id, apartment_id)
     if current.status == "approved":
         return _miniapp_result_payload(current)
+    if settings.finik_auto_enabled:
+        raise HTTPException(
+            status_code=409,
+            detail="Оплата подтверждается Finik автоматически. Подождите несколько секунд.",
+        )
     if not settings.admin_user_id:
         raise HTTPException(status_code=503, detail="Проверка оплаты временно недоступна. Обратитесь в поддержку.")
     if current.status not in {"awaiting_receipt", "pending"}:

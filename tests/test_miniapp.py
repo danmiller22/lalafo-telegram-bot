@@ -89,6 +89,8 @@ def test_mini_app_page_has_weekly_and_lifetime_tariffs_and_privacy_link():
     assert "Выберите банк" not in html
     assert "Выберите доступ:" not in html
     assert '>Я оплатил(а)</button>' in html
+    assert '&& !automaticPayment' in html
+    assert "Доступ откроется автоматически" in html
     assert "Проверить оплату" not in html
     assert "Оплата через Finik" not in html
     assert "Оплатили 499 сом?" not in html

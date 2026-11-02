@@ -114,6 +114,31 @@ async def test_older_signed_admin_message_can_approve_pending_request(
 
 
 @pytest.mark.asyncio
+async def test_old_admin_button_is_retired_when_finik_is_automatic(
+    repositories, service, review_context
+):
+    _, signer, bot = review_context
+    apartment, request = await pending_checkout(repositories, service)
+    settings = Settings(
+        admin_user_id=999,
+        callback_secret="manual-payment-secret-long",
+        finik_api_key="configured",
+        finik_account_id="merchant",
+        finik_private_key_pem="configured",
+        telegram_webhook_url="https://example.test/telegram/webhook",
+    )
+    callback = callback_for(request.id, signer)
+
+    await payment_review_callback(callback, settings, service, signer, bot)
+
+    assert (await service.contact_status(101, apartment.id)).status == "pending"
+    callback.answer.assert_awaited_once()
+    assert "Ручная выдача отключена" in callback.answer.await_args.args[0]
+    callback.message.edit_reply_markup.assert_awaited_once_with(reply_markup=None)
+    bot.send_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_telegram_failure_releases_notification_for_retry(repositories, service, review_context):
     settings, signer, bot = review_context
     apartment, request = await pending_checkout(repositories, service)

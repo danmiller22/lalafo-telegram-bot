@@ -533,6 +533,12 @@ async def paid_handler(
         )
         await callback.answer("✅ Карточка с номером отправлена вам.")
         return
+    if settings.finik_auto_enabled:
+        await callback.answer(
+            "Оплата подтверждается Finik автоматически. Подождите несколько секунд.",
+            show_alert=True,
+        )
+        return
     if result.status in {"awaiting_receipt", "pending"}:
         request = await payments.mark_payment_claimed(
             user_id=callback.from_user.id,

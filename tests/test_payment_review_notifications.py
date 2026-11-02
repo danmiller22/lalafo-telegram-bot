@@ -63,6 +63,81 @@ async def test_review_worker_recovers_failed_notification_without_duplicates(rep
 
 
 @pytest.mark.asyncio
+async def test_review_worker_skips_manual_notifications_in_automatic_mode(
+    repositories, service
+):
+    apartment, request, runtime = await review_setup(repositories, service)
+    runtime.workflow_data["settings"] = Settings(
+        admin_user_id=999,
+        finik_api_key="configured",
+        finik_account_id="merchant",
+        finik_private_key_pem="configured",
+        telegram_webhook_url="https://example.test/telegram/webhook",
+    )
+
+    assert await process_payment_reviews(runtime) == 0
+    runtime.bot.send_message.assert_not_awaited()
+    assert (await service.contact_status(121, apartment.id)).status == "pending"
+
+
+@pytest.mark.asyncio
+async def test_automatic_mode_removes_legacy_admin_review_buttons(
+    repositories, service
+):
+    apartment, request, runtime = await review_setup(repositories, service)
+    await repositories[1].set_admin_message(request.id, 515)
+    runtime.bot.edit_message_reply_markup = AsyncMock()
+    runtime.workflow_data["settings"] = Settings(
+        admin_user_id=999,
+        finik_api_key="configured",
+        finik_account_id="merchant",
+        finik_private_key_pem="configured",
+        telegram_webhook_url="https://example.test/telegram/webhook",
+    )
+
+    assert await process_payment_reviews(runtime) == 1
+    runtime.bot.edit_message_reply_markup.assert_awaited_once_with(
+        chat_id=999, message_id=515, reply_markup=None
+    )
+    assert (await repositories[1].get_request(request.id)).admin_message_id == -2
+    assert await process_payment_reviews(runtime) == 0
+
+
+@pytest.mark.asyncio
+async def test_old_customer_paid_button_cannot_create_manual_review_in_automatic_mode(
+    repositories, service
+):
+    apartment = await repositories[0].upsert_discovered(make_ad(lalafo_id=12122))
+    await service.begin_payment(
+        user_id=122, apartment_id=apartment.id, username="buyer",
+        first_name="Buyer", plan=WEEK_PLAN,
+    )
+    signer = TokenSigner("automatic-paid-button-test-secret")
+    settings = Settings(
+        admin_user_id=999,
+        finik_api_key="configured",
+        finik_account_id="merchant",
+        finik_private_key_pem="configured",
+        telegram_webhook_url="https://example.test/telegram/webhook",
+    )
+    callback = SimpleNamespace(
+        data=PAID_PREFIX + signer.sign_id("paid", apartment.id),
+        from_user=SimpleNamespace(id=122),
+        message=None,
+        answer=AsyncMock(),
+    )
+    bot = SimpleNamespace(send_message=AsyncMock())
+
+    await paid_handler(
+        callback, service, repositories[1], signer, settings, bot
+    )
+
+    assert (await service.contact_status(122, apartment.id)).status == "awaiting_receipt"
+    assert "автоматически" in callback.answer.await_args.args[0]
+    bot.send_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_paid_button_acknowledges_persisted_claim_before_slow_admin_notification(repositories, service):
     apartment, request, runtime = await review_setup(repositories, service)
     callback = SimpleNamespace(data=PAID_PREFIX + runtime.workflow_data['signer'].sign_id('paid', apartment.id),

@@ -139,6 +139,17 @@ async def payment_review_callback(
     if not _is_admin(callback.from_user.id, settings):
         await callback.answer("Недостаточно прав.", show_alert=True)
         return
+    if settings.finik_auto_enabled:
+        await callback.answer(
+            "Ручная выдача отключена: доступ выдаёт подтверждённый webhook Finik.",
+            show_alert=True,
+        )
+        if callback.message is not None:
+            try:
+                await callback.message.edit_reply_markup(reply_markup=None)
+            except Exception:
+                logger.exception("Could not remove retired payment review buttons")
+        return
     parts = (callback.data or "").split(":", 2)
     if len(parts) != 3 or parts[1] not in {"a", "r"} or callback.message is None:
         await callback.answer("Недействительная кнопка.", show_alert=True)

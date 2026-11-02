@@ -141,21 +141,22 @@ def payment_reminder_keyboard(
     support_url: str,
     price: int = WEEK_PRICE,
     apartments_url: str = "https://t.me/bishkekarendakg",
+    manual_claim: bool = True,
 ) -> InlineKeyboardMarkup:
     """Recovery controls that remain useful outside the Mini App window."""
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text=f"💳 Оплатить {price} сом", url=payment_url)],
-            [
-                InlineKeyboardButton(
-                    text="✅ Я оплатил(а)",
-                    callback_data=f"paid:{signer.sign_id('paid', apartment_id)}",
-                )
-            ],
-            [InlineKeyboardButton(text="🏠 Смотреть актуальные квартиры", url=apartments_url)],
-            _support_row(support_url),
-        ]
-    )
+    rows = [[InlineKeyboardButton(text=f"💳 Оплатить {price} сом", url=payment_url)]]
+    if manual_claim:
+        rows.append([
+            InlineKeyboardButton(
+                text="✅ Я оплатил(а)",
+                callback_data=f"paid:{signer.sign_id('paid', apartment_id)}",
+            )
+        ])
+    rows.extend([
+        [InlineKeyboardButton(text="🏠 Смотреть актуальные квартиры", url=apartments_url)],
+        _support_row(support_url),
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def private_payment_keyboard(

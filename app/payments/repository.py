@@ -1060,6 +1060,21 @@ class PaymentRepository:
                 .limit(limit)
             )).all())
 
+    async def active_manual_review_notifications(
+        self, limit: int = 50
+    ) -> list[PaymentRequest]:
+        """Return legacy admin messages whose buttons must be retired."""
+        async with self.sessions() as session:
+            return list((await session.scalars(
+                select(PaymentRequest)
+                .where(
+                    PaymentRequest.status == "pending",
+                    PaymentRequest.admin_message_id > 0,
+                )
+                .order_by(PaymentRequest.created_at.asc())
+                .limit(limit)
+            )).all())
+
     async def claim_payment_reminders(
         self,
         *,
