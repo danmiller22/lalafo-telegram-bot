@@ -1,6 +1,6 @@
 """Discard checkout URLs that can no longer be used.
 
-Revision ID: 0033_clear_terminal_finik_checkout_urls
+Revision ID: 0033_clear_finik_urls
 Revises: 0032_payment_recovery_reminder
 """
 
@@ -8,7 +8,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0033_clear_terminal_finik_checkout_urls"
+revision = "0033_clear_finik_urls"
 down_revision = "0032_payment_recovery_reminder"
 branch_labels = None
 depends_on = None
