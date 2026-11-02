@@ -47,11 +47,9 @@ def is_central_realtor_area(district: str | None) -> bool:
 def seller_policy_eligible(
     *, seller_type: str | None, owner_listing: bool, price: int, district: str | None
 ) -> bool:
-    """Apply the same 25–40k range to both confirmed seller categories."""
+    """Allow only confirmed owner listings in the public feed."""
     if seller_type == "owner" and owner_listing:
         return OWNER_MIN_PRICE <= price <= OWNER_MAX_PRICE
-    if seller_type == "realtor":
-        return REALTOR_MIN_PRICE <= price <= REALTOR_MAX_PRICE
     return False
 
 

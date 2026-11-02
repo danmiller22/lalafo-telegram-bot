@@ -56,13 +56,14 @@ def test_telegram_whole_apartments_share_the_exact_25_to_45k_range(seller, price
     from scripts.publish_inventory import _valid
     html=_post(f"Сдам 1-комнатную квартиру. Район: ЦУМ. Цена {price} сом. {seller}. 0705 123 456")
     ads=parse_telegram_apartments(html,now=datetime(2026,9,23,7,tzinfo=timezone.utc))
-    assert bool(ads)==eligible
-    if eligible:
+    expected = eligible and seller == "Собственник"
+    assert bool(ads)==expected
+    if expected:
         assert _valid(ads[0],Settings()) == (True,"ok")
 
 
 def test_structured_rental_card_does_not_require_a_sdam_verb():
-    html = _post("Однокомнатная квартира<br>Район: ЦУМ<br>Цена: 32 000 сом<br>Телефон: 0705 123 456")
+    html = _post("Однокомнатная квартира<br>Район: ЦУМ<br>Цена: 32 000 сом<br>Собственник<br>Телефон: 0705 123 456")
     ads = parse_telegram_apartments(html, now=datetime(2026, 9, 23, 7, tzinfo=timezone.utc))
     assert len(ads) == 1
     assert ads[0].rooms == "1"
@@ -122,7 +123,7 @@ def test_rejects_search_and_old_cards_but_labels_shared_housing_separately() -> 
         post_id=101,
     )
     shared = _post(
-        "Сдаётся 1-комнатная квартира с подселением. Оплата 25 000 сом. 0705 111 223",
+        "Сдаётся 1-комнатная квартира с подселением. Собственник. Оплата 25 000 сом. 0705 111 223",
         post_id=102,
     )
     old = _post(
@@ -197,7 +198,7 @@ def test_accepts_thousands_price_notation() -> None:
 
 
 def test_accepts_sdam_short_room_and_without_shared_housing():
-    html = _post("Сдам 1к квартиру без подселения. Цена 30 000 сом. 0705 123 456")
+    html = _post("Сдам 1к квартиру без подселения. Собственник. Цена 30 000 сом. 0705 123 456")
     ads = parse_telegram_apartments(html, now=datetime(2026, 9, 23, 7, tzinfo=timezone.utc))
     assert len(ads) == 1
     assert ads[0].rooms == "1"
@@ -205,7 +206,7 @@ def test_accepts_sdam_short_room_and_without_shared_housing():
 
 
 def test_reads_contact_from_whatsapp_link_without_visible_digits():
-    html = _post('Сдам 1-комнатную квартиру. Цена 30 000 сом. '
+    html = _post('Сдам 1-комнатную квартиру. Собственник. Цена 30 000 сом. '
                  '<a href="https://wa.me/996705123456">Написать WhatsApp</a>')
     ads = parse_telegram_apartments(html, now=datetime(2026, 9, 23, 7, tzinfo=timezone.utc))
     assert len(ads) == 1
@@ -234,9 +235,8 @@ async def test_newer_agency_flood_does_not_evict_a_confirmed_owner(monkeypatch):
         return httpx.Response(200, text=owner+agencies, request=httpx.Request('GET',url))
     monkeypatch.setattr(httpx.AsyncClient, 'get', get)
     ads = await fetch_telegram_apartments(('https://t.me/s/owners_bishkek',), limit=2, pages_per_channel=1)
-    assert len(ads)==2
+    assert len(ads)==1
     assert ads[0].owner_listing and ads[0].seller_type=='owner'
-    assert ads[1].seller_type=='realtor'
 
 
 @pytest.mark.parametrize('offer', ['Сдается 1ком дом с хозяином один', 'Сдам 1-к дом', 'Сдаю полдома'])
@@ -265,5 +265,5 @@ async def test_slow_channel_keeps_partial_results_and_does_not_delay_other_sourc
     monkeypatch.setattr(httpx.AsyncClient,'get',get)
     monkeypatch.setattr(sources,'CHANNEL_FETCH_BUDGET_SECONDS',0.05)
     ads=await asyncio.wait_for(sources.fetch_telegram_apartments(('https://t.me/s/owners','https://t.me/s/agencies'),pages_per_channel=30),timeout=0.5)
-    assert len(ads)==2
-    assert {ad.seller_type for ad in ads}=={'owner','realtor'}
+    assert len(ads)==1
+    assert {ad.seller_type for ad in ads}=={'owner'}

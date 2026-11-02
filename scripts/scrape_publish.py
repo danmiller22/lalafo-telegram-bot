@@ -88,8 +88,7 @@ CENTRAL_DISTRICT_TERMS = (
     "западный автовокзал",
     "политех",
 )
-# The fallback search includes owners and real-estate agents; detail-level
-# checks still remove shared housing and all public cards omit offerer type.
+# Every discovery route and every detail-level policy check requires an owner.
 SOURCE_MIN_PRICE = 25_000
 SOURCE_MAX_PRICE = OWNER_MAX_PRICE
 SOURCE_ALLOWED_ROOMS = ("studio", "1")
@@ -107,9 +106,8 @@ MAX_CANDIDATE_POOL = 300
 # and its 48-hour no-repeat window.
 DISCOVERY_CANDIDATE_TARGET = 220
 DISCOVERY_COLLECTION_BUDGET_SECONDS = 300
-# Split crawl capacity equally between seller categories. Either category can
-# fill a shortage so the 120-card plan does not stall on a thin catalogue.
-REALTOR_CANDIDATE_RESERVE_SHARE = 0.50
+# Realtor inventory is never collected or published.
+REALTOR_CANDIDATE_RESERVE_SHARE = 0.0
 OWNER_SHORTAGE_SEARCH_SECONDS = 60.0
 REALTOR_BATCH_SHARE = REALTOR_DAILY_SHARE
 # Retained for historical reporting helpers; two-bedroom cards are no longer
@@ -688,29 +686,14 @@ def select_owners_then_realtors(
     candidates: list[LalafoAd],
     limit: int,
 ) -> list[LalafoAd]:
-    """Fill with confirmed owners, then use realtors only for a shortage."""
+    """Select only confirmed owner cards."""
     if limit <= 0:
         return []
     eligible = deduplicate_candidates(
         [ad for ad in candidates if listing_policy_eligible(ad)]
     )
     owners = [ad for ad in eligible if ad.seller_type == "owner"]
-    realtors = [ad for ad in eligible if ad.seller_type == "realtor"]
-    realtor_target = math.floor(limit * REALTOR_BATCH_SHARE)
-    owner_target = limit - realtor_target
-    selected = select_publish_batch_with_reposts(owners, {}, owner_target)
-    selected.extend(
-        select_publish_batch_with_reposts(realtors, {}, realtor_target)
-    )
-    selected_ids = {ad.lalafo_id for ad in selected}
-    if len(selected) < limit:
-        remainder = [ad for ad in eligible if ad.lalafo_id not in selected_ids]
-        selected.extend(
-            select_publish_batch_with_reposts(
-                remainder, {}, min(limit - len(selected), len(remainder))
-            )
-        )
-    return mix_prices(selected)
+    return mix_prices(select_publish_batch_with_reposts(owners, {}, limit))
 
 
 async def run(

@@ -108,17 +108,33 @@ TELEGRAM_SOURCE_CHANNELS: tuple[str, ...] = (
     # still pass through the same contact/photo/seller/publication filters.
     "https://t.me/s/Bishkek_Batir_izhara",
     "https://t.me/s/Bishkek_izhara_Batir",
+    # Additional independent public feeds found through web discovery. The
+    # collector accepts a post only when its own text confirms an owner, so a
+    # mixed channel cannot introduce realtor cards.
+    "https://t.me/s/arendakg312",
+    "https://t.me/s/arendabishkek",
+    "https://t.me/s/arenda_bishkek_kg",
+    "https://t.me/s/kvartira_bishkek_kg",
+    "https://t.me/s/bishkek_kvartiry",
+    "https://t.me/s/arenda_kvartir_bishkek",
+    "https://t.me/s/arenda_kvartiry_bishkek",
+    "https://t.me/s/arenda_kvartiry_kg",
+    "https://t.me/s/bishkekrent",
+    "https://t.me/s/apartment_bishkek",
+    "https://t.me/s/apartments_bishkek",
+    "https://t.me/s/kg_kvartira",
 )
 
 # Public web previews supplement Lalafo; only posts with the required
 # descriptions, verified contact fields and photos enter publication.
 TELEGRAM_APARTMENT_CHANNELS: tuple[str, ...] = TELEGRAM_SOURCE_CHANNELS
 
-# Prefer central discovery routes; both seller categories use 25–40k.
+# Extra routes remain owner-only. Seller classification is checked again on
+# the detail page before a card may enter the queue.
 ADDITIONAL_SEARCH_URLS: tuple[str, ...] = (
     *(f"https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
       f"dolgosrochnaya-arenda-kvartir/studio/1-bedroom/{district}/"
-      f"agent/real-estate-agency?price[from]=25000&price[to]=40000"
+      f"owner?price[from]=25000&price[to]=40000"
       for district in (
           "vostok-5", "filarmoniya", "bishkek-park-trc",
           "vefa-shopping-center", "mossovet", "tsum", "manasabokonbaeva",
@@ -145,8 +161,8 @@ INVENTORY_OWNER_DISTRICTS = (
         if slug not in INVENTORY_PRIORITY_DISTRICTS
     ),
 )
-# Split both seller categories by price. This exposes affordable ads that can
-# be buried behind newer, more expensive broad-search results.
+# Five broad price routes plus 45 district routes provide 50 explicit owner
+# sources without relying on unclassified or agency search results.
 INVENTORY_SEARCH_URLS: tuple[str, ...] = (
     # Read the entire owner price range on every cycle. Rotating dozens of
     # district searches used to leave this broad 30–35k query untouched for
@@ -157,20 +173,7 @@ INVENTORY_SEARCH_URLS: tuple[str, ...] = (
     f"{_INVENTORY_BASE}owner?price[from]=32000&price[to]=35999",
     f"{_INVENTORY_BASE}owner?price[from]=36000&price[to]=40000",
     *(f"{_INVENTORY_BASE}{district}/owner?price[from]=25000&price[to]=40000"
-      for district in INVENTORY_OWNER_DISTRICTS),
-    # Lalafo authors do not always fill the offerer field. Broad searches keep
-    # those fresh cards available; seller classification still happens from
-    # the detail page before anything enters the Telegram queue.
-    f"{_INVENTORY_BASE}?price[from]=25000&price[to]=29999",
-    f"{_INVENTORY_BASE}?price[from]=30000&price[to]=40000",
-    # The discovery targets reserve their first segment for owner-capable
-    # searches; agency-only searches must come after that segment.
-    f"{_INVENTORY_BASE}agent/real-estate-agency?price[from]=25000&price[to]=40000",
-    # A dedicated affordable feed finds older 25–35k offers that newer
-    # expensive cards can displace from the broad feed's first pages.
-    f"{_INVENTORY_BASE}agent/real-estate-agency?price[from]=25000&price[to]=35000",
-    *(f"{_INVENTORY_BASE}{district}/agent/real-estate-agency?price[from]=25000&price[to]=40000"
-      for district in INVENTORY_PRIORITY_DISTRICTS),
+      for district in INVENTORY_OWNER_DISTRICTS[:45]),
 )
 
 APARTMENT_PUBLISH_INTERVAL_MINUTES = 90

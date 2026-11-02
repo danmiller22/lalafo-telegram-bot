@@ -22,17 +22,10 @@ def shared_ad(index=1, **kwargs):
         phone=f"+996700{index:06d}", photo_urls=[f"https://img.example/shared-{index}.jpg"]).model_copy(update=kwargs)
 
 
-def test_shared_posts_keep_their_kind_price_and_contact_without_owner_invention():
+def test_shared_posts_without_confirmed_owner_are_rejected():
     text = "Подселение для девушек | Юг-2<br>Цена 12000 сом.<br>0705 123 456"
     ads = parse_telegram_apartments(_post(text), now=datetime(2026, 9, 23, 7, tzinfo=timezone.utc))
-    assert len(ads) == 1
-    ad = ads[0]
-    assert ad.rooms == "shared" and ad.price == 12_000 and not ad.no_subletting
-    assert not ad.owner_listing and ad.seller_type == "unknown"
-    assert _valid(ad, Settings()) == (True, "ok")
-    caption = format_apartment(ad)
-    assert "Подселение" in caption and "Совместное проживание" in caption
-    assert "1-комнатная квартира" not in caption
+    assert ads == []
 
 
 @pytest.mark.parametrize("text", [

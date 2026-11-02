@@ -182,7 +182,7 @@ async def test_manual_telegram_file_ids_form_album_with_working_card_keyboard() 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("seller_type,owner_listing", [("unknown", False), ("realtor", False), ("owner", False)])
-async def test_all_author_types_are_published(seller_type, owner_listing) -> None:
+async def test_non_owner_author_types_are_rejected(seller_type, owner_listing) -> None:
     bot = SimpleNamespace(
         send_media_group=AsyncMock(
             return_value=[SimpleNamespace(message_id=1), SimpleNamespace(message_id=2)]
@@ -195,9 +195,10 @@ async def test_all_author_types_are_published(seller_type, owner_listing) -> Non
     )
     ad = make_ad().model_copy(update={"seller_type": seller_type, "owner_listing": owner_listing})
 
-    await publisher.publish(77, ad)
-    bot.send_media_group.assert_awaited_once()
-    bot.send_message.assert_awaited_once()
+    with pytest.raises(TelegramPublishError, match="confirmed owner"):
+        await publisher.publish(77, ad)
+    bot.send_media_group.assert_not_awaited()
+    bot.send_message.assert_not_awaited()
 
 
 @pytest.mark.asyncio

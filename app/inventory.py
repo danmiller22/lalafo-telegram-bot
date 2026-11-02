@@ -27,13 +27,12 @@ from app.promotions import publications_in_window, queue_due_promotions, REQUEST
 BISHKEK = ZoneInfo("Asia/Bishkek")
 ALLOWED_ROOMS = frozenset({"studio", "1"})
 CENTRAL_DAILY_SHARE = 0.50
-REALTOR_DAILY_SHARE = 0.50
+REALTOR_DAILY_SHARE = 0.0
 MIN_PUBLICATIONS_PER_DAY = 120
 MAX_PUBLICATIONS_PER_DAY = 120
 # The daily target is chosen once per Bishkek date, then split across the two
 # discovery periods so retries cannot increase the day's publication volume.
-# Reserve half of the daily plan for each seller category. Either category fills
-# shortages in the other; unclassified listings do not enter the public queue.
+# Public inventory is restricted to confirmed owners.
 MIN_NON_OWNERS_PER_DAY = math.ceil(MAX_PUBLICATIONS_PER_DAY * REALTOR_DAILY_SHARE)
 MAX_NON_OWNERS_PER_DAY = MIN_NON_OWNERS_PER_DAY
 TARGET_NON_OWNERS_PER_PERIOD = (MAX_NON_OWNERS_PER_DAY + 1) // 2
@@ -52,6 +51,7 @@ DISCOVERY_PERIOD_TARGET = (MAX_PUBLICATIONS_PER_DAY + 1) // 2
 PUBLICATION_SPACING_MINUTES = 10.5
 MIN_PUBLICATION_GAP_MINUTES = 10
 INVENTORY_CLAIM_LOCK_ID = 731_290_512
+PUBLICATION_POLICY_VERSION = "publication-owner-only-25-40-v17"
 # Two equal 10.5-hour periods cover 05:00 through 02:00 the next day.
 PUBLICATION_PERIOD_MINUTES = 630
 
@@ -121,7 +121,7 @@ def daily_publication_target(period_start: datetime) -> int:
 
 
 def daily_realtor_target(period_start: datetime) -> int:
-    """Return the realtor floor; owner shortages may still use realtor cards."""
+    """Realtor cards are disabled by the publication policy."""
     del period_start
     return MAX_NON_OWNERS_PER_DAY
 
@@ -303,19 +303,18 @@ def plan_period(
         target_count = max(0, target_count_override)
     if central_target_override is not None:
         central_target = max(0, min(target_count, central_target_override))
-    realtor_count = min(target_count, max(0, non_owner_target), max(0, non_owner_limit))
-    owner_count = target_count - realtor_count
+    owner_count = target_count
     available = {
         kind: sum(_seller_type(item) == kind for item in apartments)
         for kind in ("owner", "realtor", "unknown")
     }
     seller_remaining = {
         "owner": min(owner_count, available["owner"]),
-        "realtor": min(realtor_count, available["realtor"]),
+        "realtor": 0,
         "unknown": 0,
     }
     missing = target_count - sum(seller_remaining.values())
-    for kind in ("owner", "realtor", "unknown"):
+    for kind in ("owner",):
         extra = min(missing, available[kind] - seller_remaining[kind])
         seller_remaining[kind] += extra
         missing -= extra
@@ -385,47 +384,22 @@ def plan_period(
 
 
 def mix_sellers(items: list[Apartment]) -> list[Apartment]:
-    """Alternate owners and realtors so expensive owner cards are diluted."""
-    queues = {
-        "owner": [item for item in items if _seller_type(item) == "owner"],
-        "realtor": [item for item in items if _seller_type(item) == "realtor"],
-    }
-    result: list[Apartment] = []
-    turn = "owner" if len(queues["owner"]) > len(queues["realtor"]) else "realtor"
-    while queues["owner"] and queues["realtor"]:
-        result.append(queues[turn].pop(0))
-        turn = "realtor" if turn == "owner" else "owner"
-    result.extend(queues["owner"])
-    result.extend(queues["realtor"])
-    return result
+    """Keep only confirmed owners while preserving the quality ordering."""
+    return [
+        item
+        for item in items
+        if _seller_type(item) == "owner" and item.owner_listing
+    ]
 
 
 async def _balanced_stock(session: AsyncSession, statement) -> list[Apartment]:
-    """Reserve database load capacity for each known seller category."""
-    stock: list[Apartment] = []
-    realtor_limit = round(MAX_FRESH_STOCK_LOAD * REALTOR_DAILY_SHARE)
-    limits = {"owner": MAX_FRESH_STOCK_LOAD - realtor_limit, "realtor": realtor_limit}
-    for kind in ("owner", "realtor"):
-        query = statement.where(Apartment.seller_type == kind)
-        stock.extend((await session.scalars(
-            query.limit(limits[kind])
-        )).all())
-    if len(stock) < MAX_FRESH_STOCK_LOAD:
-        for kind in ("owner", "realtor"):
-            if sum(item.seller_type == kind for item in stock) < limits[kind]:
-                continue
-            query = statement.where(Apartment.seller_type == kind)
-            stock.extend((await session.scalars(
-                query.offset(limits[kind]).limit(MAX_FRESH_STOCK_LOAD - len(stock))
-            )).all())
-            if len(stock) >= MAX_FRESH_STOCK_LOAD:
-                break
-    if len(stock) < MAX_FRESH_STOCK_LOAD:
-        stock.extend((await session.scalars(
-            statement.where(func.coalesce(Apartment.seller_type, "unknown").not_in(("owner", "realtor")))
-            .limit(MAX_FRESH_STOCK_LOAD - len(stock))
-        )).all())
-    return stock
+    """Load only confirmed owner inventory."""
+    return list((await session.scalars(
+        statement.where(
+            Apartment.seller_type == "owner",
+            Apartment.owner_listing.is_(True),
+        ).limit(MAX_FRESH_STOCK_LOAD)
+    )).all())
 
 
 class InventoryRepository:
@@ -450,7 +424,7 @@ class InventoryRepository:
 
     async def reset_publication_history_for_code(self, code_version: str) -> bool:
         """Rebuild unattempted ordinary slots once per policy migration."""
-        version = code_version.strip() or "publication-120-equal-25-40-v16"
+        version = code_version.strip() or PUBLICATION_POLICY_VERSION
         key = "apartment_publication_code_version"
         async with self.sessions.begin() as session:
             marker = await session.get(LalafoAutoReplyMeta, key)
@@ -641,6 +615,19 @@ class InventoryRepository:
                     ApartmentInventoryQueue.apartment_id.in_(invalid_room_ids),
                     ApartmentInventoryQueue.status == "queued",
                 )
+            )
+            non_owner_ids = select(Apartment.id).where(or_(
+                Apartment.seller_type != "owner",
+                Apartment.seller_type.is_(None),
+                Apartment.owner_listing.is_(False),
+            ))
+            await session.execute(
+                update(ApartmentInventoryQueue)
+                .where(
+                    ApartmentInventoryQueue.apartment_id.in_(non_owner_ids),
+                    ApartmentInventoryQueue.status == "queued",
+                )
+                .values(status="skipped", last_error="owner_only_policy")
             )
             day_events = await publications_in_window(
                 session, day_start, day_end, include_external_repeats=False)
@@ -892,6 +879,19 @@ class InventoryRepository:
                 )
                 .values(status="queued", claimed_at=None, last_error="stale_claim")
             )
+            non_owner_ids = select(Apartment.id).where(or_(
+                Apartment.seller_type != "owner",
+                Apartment.seller_type.is_(None),
+                Apartment.owner_listing.is_(False),
+            ))
+            await session.execute(
+                update(ApartmentInventoryQueue)
+                .where(
+                    ApartmentInventoryQueue.status == "queued",
+                    ApartmentInventoryQueue.apartment_id.in_(non_owner_ids),
+                )
+                .values(status="skipped", last_error="owner_only_policy")
+            )
             unconfirmed_apartment_ids = select(Apartment.id).where(~_supported_source_filter())
             await session.execute(
                 update(ApartmentInventoryQueue)
@@ -1011,8 +1011,7 @@ class InventoryRepository:
                 return None
             due_rows = [
                 row for row in due_rows
-                if row[4].startswith(REQUESTED_WINDOW_PREFIX)
-                or seller_policy_eligible(
+                if seller_policy_eligible(
                     seller_type=row[2],
                     owner_listing=row[2] == "owner",
                     price=row[3],

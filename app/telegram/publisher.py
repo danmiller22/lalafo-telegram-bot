@@ -103,6 +103,8 @@ class TelegramPublisher:
     async def publish(self, apartment_id: int, ad: LalafoAd, *, reply_markup: InlineKeyboardMarkup | None = None) -> Message:
         if not is_supported_source(ad):
             raise TelegramPublishError("Unsupported apartment source")
+        if not is_confirmed_owner(ad):
+            raise TelegramPublishError("Only confirmed owner listings are allowed")
         if is_excluded_agency(ad):
             raise TelegramPublishError("Excluded agency source")
         if ad.rooms not in ("studio", "1"):

@@ -51,12 +51,10 @@ async def run(*, force_discovery: bool | None = None) -> int:
     await init_db(engine)
     inventory = InventoryRepository(sessions)
     now = datetime.now(timezone.utc)
-    code_version = (
-        os.getenv("GITHUB_SHA") or os.getenv("KOYEB_GIT_SHA") or ""
-    ).strip()
-    # Only the live web service owns deployment resets. GitHub jobs for older
-    # commits may still be queued; letting them reset shared state would erase
-    # inventory prepared by the newest deployment.
+    from app.inventory import PUBLICATION_POLICY_VERSION
+    code_version = PUBLICATION_POLICY_VERSION
+    # Reset only for a publication-policy migration. Ordinary deployments must
+    # preserve due cards, claims and retry cooldowns.
     if settings.run_bot and await inventory.reset_publication_history_for_code(
         code_version
     ):

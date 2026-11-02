@@ -341,6 +341,9 @@ def parse_telegram_apartments(
                 photo_urls.append(match.group(1))
         data_post = str(message.get("data-post"))
         owner = is_owner_offer(text)
+        if not owner:
+            note("not_confirmed_owner")
+            continue
         seller_type = (
             "owner"
             if owner

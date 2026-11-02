@@ -158,20 +158,19 @@ def test_source_urls_follow_the_operator_filters():
     assert "bez-zhivotnyh" not in DEFAULT_SEARCH_URL
     assert "price[from]=25000&price[to]=40000" in DEFAULT_SEARCH_URL
     assert len(ADDITIONAL_SEARCH_URLS) == 14
-    assert all("/agent/real-estate-agency" in url for url in ADDITIONAL_SEARCH_URLS)
+    assert all("/owner?" in url for url in ADDITIONAL_SEARCH_URLS)
     assert all("bez-podseleniya" not in url for url in ADDITIONAL_SEARCH_URLS)
     assert all("price[from]=25000&price[to]=40000" in url for url in ADDITIONAL_SEARCH_URLS)
 
 
-def test_discovery_pool_reserves_enough_time_for_realtor_fallback():
+def test_discovery_pool_uses_full_budget_for_owner_sources():
     targets = source_candidate_targets(300, source_count=3, batch_limit=18)
 
-    assert REALTOR_CANDIDATE_RESERVE_SHARE == 0.50
-    assert targets == [75, 150, 300]
-    assert targets[-1] - targets[-2] == 150
+    assert REALTOR_CANDIDATE_RESERVE_SHARE == 0.0
+    assert targets == [150, 300, 300]
 
 
-def test_inventory_sources_split_capacity_between_categories():
+def test_inventory_sources_use_owner_capacity_only():
     targets = source_candidate_targets(
         240,
         source_count=4,
@@ -179,7 +178,7 @@ def test_inventory_sources_split_capacity_between_categories():
         owner_source_count=2,
     )
 
-    assert targets == [60, 120, 180, 240]
+    assert targets == [120, 240, 240, 240]
 
 
 def test_supported_room_types_have_twenty_five_thousand_price_floor():
@@ -196,23 +195,12 @@ def test_confirmed_owners_are_eligible_in_every_district_through_40000(price):
     ))
 
 
-def test_realtors_use_the_same_price_range_as_owners():
-    assert listing_policy_eligible(make_ad(
-        price=35_000, district="Восток-5", owner_listing=False,
-        seller_type="realtor",
-    ))
-    assert listing_policy_eligible(make_ad(
-        price=36_000, district="Восток-5", owner_listing=False,
-        seller_type="realtor",
-    ))
-    assert listing_policy_eligible(make_ad(
-        price=30_000, district="Арча-Бешик", owner_listing=False,
-        seller_type="realtor",
-    ))
-    assert listing_policy_eligible(make_ad(
-        price=31_000, district="Арча-Бешик", owner_listing=False,
-        seller_type="realtor",
-    ))
+def test_realtors_are_never_eligible():
+    for price, district in ((35_000, "Восток-5"), (30_000, "Арча-Бешик")):
+        assert not listing_policy_eligible(make_ad(
+            price=price, district=district, owner_listing=False,
+            seller_type="realtor",
+        ))
 
 
 def test_unclassified_listings_do_not_enter_public_selection():
@@ -414,7 +402,7 @@ def test_unknown_author_label_is_stable_and_exact():
     assert all(author_label(ad) == author_label(ad) for ad in ads)
 
 
-def test_mixed_batch_balances_owners_and_realtors():
+def test_mixed_batch_keeps_only_owners():
     owners = [
         make_ad(lalafo_id=index, owner_listing=True, phone=f"+996700{index:06d}")
         for index in (1, 2, 6, 7, 8)
@@ -427,8 +415,7 @@ def test_mixed_batch_balances_owners_and_realtors():
     selected = select_owners_then_realtors(owners + realtors, limit=4)
 
     assert len(selected) == 4
-    assert sum(ad.owner_listing for ad in selected) == 2
-    assert sum(ad.seller_type == "realtor" for ad in selected) == 2
+    assert all(ad.owner_listing and ad.seller_type == "owner" for ad in selected)
 
 
 def test_permanently_excluded_source_never_enters_a_publish_batch():
@@ -810,7 +797,7 @@ def test_kyrgyz_wanted_ad_still_rejected():
     assert is_substandard_structure(make_ad(source_description="Квартира арендага керек"))
 
 
-def test_owner_price_searches_cover_the_budget_and_agencies_follow_owner_segment():
+def test_owner_price_searches_cover_fifty_explicit_owner_sources():
     from app.config import (
         INVENTORY_OWNER_DISTRICTS,
         INVENTORY_SEARCH_URLS,
@@ -826,38 +813,23 @@ def test_owner_price_searches_cover_the_budget_and_agencies_follow_owner_segment
     assert set(INVENTORY_OWNER_DISTRICTS) == {
         slug for slug, _ in LALAFO_DISTRICT_FILTERS
     }
-    assert all(
-        any(f'/{district}/owner?' in url for url in INVENTORY_SEARCH_URLS)
-        for district in INVENTORY_OWNER_DISTRICTS
-    )
-    owner_segment=sum('real-estate-agency' not in url for url in INVENTORY_SEARCH_URLS)
-    assert all('real-estate-agency' not in url for url in INVENTORY_SEARCH_URLS[:owner_segment])
-    assert all('real-estate-agency' in url for url in INVENTORY_SEARCH_URLS[owner_segment:])
-    agency_ranges = []
-    for url in INVENTORY_SEARCH_URLS[owner_segment:]:
-        query = parse_qs(urlsplit(url).query)
-        agency_ranges.append((int(query['price[from]'][0]), int(query['price[to]'][0])))
-    assert (25000,35000) in agency_ranges
-    assert all(value in {(25000,40000),(25000,35000)} for value in agency_ranges)
+    assert len(INVENTORY_SEARCH_URLS) == 50
+    assert all('/owner?' in url for url in INVENTORY_SEARCH_URLS)
+    assert all('real-estate-agency' not in url for url in INVENTORY_SEARCH_URLS)
 
 
-def test_source_rotation_covers_all_sources_without_mixing_budget_segments():
+def test_source_rotation_covers_all_owner_sources():
     from scripts.scrape_publish import rotate_inventory_sources
     from app.config import INVENTORY_SEARCH_URLS
     owners = [u for u in INVENTORY_SEARCH_URLS if 'real-estate-agency' not in u]
-    agencies = [u for u in INVENTORY_SEARCH_URLS if 'real-estate-agency' in u]
     hot = next(u for u in owners if '/1-bedroom/owner?' in u and 'price[from]=25000' in u and 'price[to]=40000' in u)
     rotating_owners = [u for u in owners if u != hot]
-    hot_agencies = [u for u in agencies if '/1-bedroom/agent/real-estate-agency?' in u]
-    rotating_agencies = [u for u in agencies if u not in hot_agencies]
-    second_owners, rotating_agency_starts = set(), set()
-    for cycle in range(max(len(owners), len(agencies))):
+    second_owners = set()
+    for cycle in range(len(owners)):
         now = datetime.fromtimestamp(cycle*180, timezone.utc)
         urls = rotate_inventory_sources(INVENTORY_SEARCH_URLS, now=now)
         assert set(urls) == set(INVENTORY_SEARCH_URLS)
         assert all('real-estate-agency' not in u for u in urls[:len(owners)])
         assert urls[0] == hot
-        assert list(urls[len(owners):len(owners)+len(hot_agencies)]) == hot_agencies
-        second_owners.add(urls[1]);rotating_agency_starts.add(urls[len(owners)+len(hot_agencies)])
+        second_owners.add(urls[1])
     assert second_owners == set(rotating_owners)
-    assert rotating_agency_starts == set(rotating_agencies)
