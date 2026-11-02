@@ -94,7 +94,7 @@ async def run(manifest_path):
         raise ValueError('Refresh the owner-visible snapshots before sending')
     cards = manifest['cards']
     external = manifest.get('externally_scheduled') is True and manifest.get('repeat_every_hours') == 2
-    if not 1 <= len(cards) <= (30 if external else 10) or len({r['ad_id'] for r in cards}) != len(cards):
+    if not 1 <= len(cards) <= (100 if external else 10) or len({r['ad_id'] for r in cards}) != len(cards):
         raise ValueError('Expected unique explicitly requested owned ads')
     if manifest.get('sealed_contacts'):
         from tools.lalafo_campaign_session import load_session
