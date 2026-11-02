@@ -169,6 +169,12 @@ async def test_health_and_authentication() -> None:
                                    "single_photo_duplicate_guard": True,
                 "requested_cards": {"total_publications": 3, "duration_hours": 24, "minimum_gap_hours": 6, "included_in_daily_target": True},
                                            "telegram_source_channels": 27,
+                                       "source_summary": {
+                                           "total_sources": 28,
+                                           "lalafo_sources": 1,
+                                           "telegram_sources": 27,
+                                           "lalafo_search_routes": 50,
+                                       },
                                    "shared_housing": {"daily_target": 0, "minimum_gap_minutes": 120, "mixed_with_whole_apartments": False}},
             "apartment_scheduler": "disabled",
         }
