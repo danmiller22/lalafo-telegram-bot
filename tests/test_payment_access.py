@@ -174,6 +174,74 @@ async def test_verified_finik_payment_grants_access_without_admin_review(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("succeeded", "amount", "expected"),
+    [(True, 499, "approved"), (True, 1, "amount_mismatch"), (False, None, "failed")],
+)
+async def test_terminal_finik_callback_discards_checkout_url(
+    repositories, service, succeeded, amount, expected
+):
+    apartments, payments, _ = repositories
+    apartment = await apartments.upsert_discovered(make_ad(lalafo_id=9192))
+    submission = await service.begin_payment(
+        user_id=9192,
+        apartment_id=apartment.id,
+        username=None,
+        first_name="Finik",
+        plan=WEEK_PLAN,
+    )
+    await payments.prepare_provider_payment(submission.request.id, "payment-9192")
+    assert await payments.set_provider_payment_url(
+        submission.request.id,
+        "https://qr.finik.kg/temporary-9192",
+        payment_id="payment-9192",
+    )
+
+    outcome, _ = await payments.apply_provider_result(
+        "payment-9192", succeeded=succeeded, amount=amount
+    )
+
+    assert outcome == expected
+    stored = await payments.get_request(submission.request.id)
+    assert stored.provider_payment_url is None
+
+
+@pytest.mark.asyncio
+async def test_verified_payment_discards_parallel_checkout_urls(repositories, service):
+    apartments, payments, _ = repositories
+    first = await apartments.upsert_discovered(make_ad(lalafo_id=9193))
+    second = await apartments.upsert_discovered(make_ad(lalafo_id=9194))
+    first_request = await service.begin_payment(
+        user_id=9193, apartment_id=first.id, username=None,
+        first_name="Finik", plan=WEEK_PLAN,
+    )
+    second_request = await service.begin_payment(
+        user_id=9193, apartment_id=second.id, username=None,
+        first_name="Finik", plan=WEEK_PLAN,
+    )
+    for request, payment_id in (
+        (first_request.request, "payment-9193-a"),
+        (second_request.request, "payment-9193-b"),
+    ):
+        await payments.prepare_provider_payment(request.id, payment_id)
+        assert await payments.set_provider_payment_url(
+            request.id,
+            f"https://qr.finik.kg/{payment_id}",
+            payment_id=payment_id,
+        )
+
+    outcome, _ = await payments.apply_provider_result(
+        "payment-9193-a", succeeded=True, amount=499
+    )
+
+    assert outcome == "approved"
+    assert (await payments.get_request(first_request.request.id)).provider_payment_url is None
+    sibling = await payments.get_request(second_request.request.id)
+    assert sibling.status == "approved"
+    assert sibling.provider_payment_url is None
+
+
+@pytest.mark.asyncio
 async def test_open_checkout_is_kept_on_the_selected_apartment(
     repositories, service
 ):

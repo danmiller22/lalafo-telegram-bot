@@ -994,6 +994,10 @@ class PaymentRepository:
         current.approved_at = now
         current.approved_by = approved_by
         current.access_expires_at = expires_at_for(current.plan, now)
+        # Checkout URLs are short-lived secrets used only to complete payment.
+        # Keep the provider id in the immutable ledger for reconciliation, but
+        # remove the reusable URL as soon as access has been granted.
+        current.provider_payment_url = None
         current.rejected_at = None
         current.rejected_by = None
         current.admin_notification_token = None
@@ -1043,6 +1047,7 @@ class PaymentRepository:
                 rejected_by=None,
                 admin_notification_token=None,
                 admin_notification_claimed_at=None,
+                provider_payment_url=None,
             )
         )
 
@@ -1235,6 +1240,7 @@ class PaymentRepository:
             if succeeded and not amount_matches:
                 if current.status != "approved" and current.provider_status != "succeeded":
                     current.provider_status = "amount_mismatch"
+                    current.provider_payment_url = None
                 return "amount_mismatch", current
             if current.status == "approved":
                 return "already_approved", current
@@ -1242,6 +1248,7 @@ class PaymentRepository:
                 if current.provider_status == "succeeded":
                     return "already_succeeded", current
                 current.provider_status = "failed"
+                current.provider_payment_url = None
                 return "failed", current
             current.provider_status = "succeeded"
             now = datetime.now(timezone.utc)
