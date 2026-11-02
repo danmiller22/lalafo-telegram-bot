@@ -17,6 +17,10 @@
 
 История репозитория подтверждает последовательность изменений:
 
+![Finik переведён на ручное подтверждение](proofs/01-finik-manual-flow.png)
+
+![Автоматическая выдача Finik восстановлена](proofs/02-finik-auto-webhook.png)
+
 - [4f6094e — Streamline Finik checkout and automatic payment review](https://github.com/danmiller22/lalafo-telegram-bot/commit/4f6094e)
   фиксирует автоматическую обработку оплаты Finik.
 - [d88cdb5 — Restore shared Finik checkout and manual approval flow](https://github.com/danmiller22/lalafo-telegram-bot/commit/d88cdb5)
@@ -35,6 +39,10 @@
 
 Это также подтверждается историей репозитория:
 
+![Риелторы добавлены до доли 50 процентов](proofs/03-realtor-half-mix.png)
+
+![Восстановлена публикация только собственников](proofs/04-owner-only-policy.png)
+
 - [9deca49 — Balance owner and curated realtor inventory](https://github.com/danmiller22/lalafo-telegram-bot/commit/9deca49)
   добавил смешивание собственников и риелторов.
 - [a70e350 — Prioritize 75 percent owners while retaining the 110-card fallback](https://github.com/danmiller22/lalafo-telegram-bot/commit/a70e350)
@@ -49,6 +57,8 @@
 клиентские чаты, отправляет одно заданное приветствие в новый диалог и после
 этого только отмечает новые сообщения прочитанными. Наличие этого механизма
 подтверждают:
+
+![Автоматическое приветствие Lalafo](proofs/05-lalafo-auto-reply.png)
 
 - [b334cee — Skip historical chats during hourly greeting sync](https://github.com/danmiller22/lalafo-telegram-bot/commit/b334cee);
 - [a336cf8 — Use encrypted session for hourly Lalafo greeting](https://github.com/danmiller22/lalafo-telegram-bot/commit/a336cf8);
