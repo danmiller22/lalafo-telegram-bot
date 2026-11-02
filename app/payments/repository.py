@@ -967,24 +967,8 @@ class PaymentRepository:
                 # administrator reviews the first one. Close those sibling
                 # claims under the same grant so later button clicks cannot be
                 # counted as additional payments or extend access repeatedly.
-                await session.execute(
-                    update(PaymentRequest)
-                    .where(
-                        PaymentRequest.telegram_user_id == current.telegram_user_id,
-                        PaymentRequest.id != current.id,
-                        PaymentRequest.plan == current.plan,
-                        PaymentRequest.status.in_(("prepared", "awaiting_receipt", "pending")),
-                    )
-                    .values(
-                        status="approved",
-                        approved_at=now,
-                        approved_by=admin_id,
-                        access_expires_at=current.access_expires_at,
-                        rejected_at=None,
-                        rejected_by=None,
-                        admin_notification_token=None,
-                        admin_notification_claimed_at=None,
-                    )
+                await self._close_sibling_requests(
+                    session, current, now=now, approved_by=admin_id
                 )
                 return "approved"
             current.status = "rejected"
@@ -997,10 +981,23 @@ class PaymentRepository:
     def _approve_request(session, current: PaymentRequest, *, now: datetime, admin_id: int) -> None:
         if admin_id <= 0:
             raise ValueError("Administrator approval is required")
+        PaymentRepository._grant_access(
+            session, current, now=now, approved_by=admin_id
+        )
+
+    @staticmethod
+    def _grant_access(
+        session, current: PaymentRequest, *, now: datetime, approved_by: int | None
+    ) -> None:
+        """Persist one paid grant from either an admin or a verified provider."""
         current.status = "approved"
         current.approved_at = now
-        current.approved_by = admin_id
+        current.approved_by = approved_by
         current.access_expires_at = expires_at_for(current.plan, now)
+        current.rejected_at = None
+        current.rejected_by = None
+        current.admin_notification_token = None
+        current.admin_notification_claimed_at = None
         if current.access_expires_at is not None or current.plan == LIFETIME_PLAN:
             session.add(
                 PaymentHistory(
@@ -1019,6 +1016,35 @@ class PaymentRepository:
                     access_expires_at=current.access_expires_at,
                 )
             )
+
+    @staticmethod
+    async def _close_sibling_requests(
+        session,
+        current: PaymentRequest,
+        *,
+        now: datetime,
+        approved_by: int | None,
+    ) -> None:
+        """Expose the same paid account-wide grant through its other cards."""
+        await session.execute(
+            update(PaymentRequest)
+            .where(
+                PaymentRequest.telegram_user_id == current.telegram_user_id,
+                PaymentRequest.id != current.id,
+                PaymentRequest.plan == current.plan,
+                PaymentRequest.status.in_(("prepared", "awaiting_receipt", "pending")),
+            )
+            .values(
+                status="approved",
+                approved_at=now,
+                approved_by=approved_by,
+                access_expires_at=current.access_expires_at,
+                rejected_at=None,
+                rejected_by=None,
+                admin_notification_token=None,
+                admin_notification_claimed_at=None,
+            )
+        )
 
     async def pending_notifications(self, limit: int = 50) -> list[PaymentRequest]:
         async with self.sessions() as session:
@@ -1191,7 +1217,7 @@ class PaymentRepository:
     async def apply_provider_result(
         self, payment_id: str, *, succeeded: bool, amount: int | float | None
     ) -> tuple[str, PaymentRequest | None]:
-        """Record the provider result without bypassing administrator approval."""
+        """Atomically grant access after a signed, exact-amount provider result."""
         async with self.sessions.begin() as session:
             result = await session.execute(
                 select(PaymentRequest)
@@ -1218,7 +1244,12 @@ class PaymentRepository:
                 current.provider_status = "failed"
                 return "failed", current
             current.provider_status = "succeeded"
-            return ("pending" if current.status == "pending" else "awaiting_confirmation"), current
+            now = datetime.now(timezone.utc)
+            self._grant_access(session, current, now=now, approved_by=None)
+            await self._close_sibling_requests(
+                session, current, now=now, approved_by=None
+            )
+            return "approved", current
 
     async def pending(self, limit: int = 20) -> list[PaymentRequest]:
         async with self.sessions() as session:

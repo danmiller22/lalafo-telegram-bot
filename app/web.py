@@ -153,10 +153,10 @@ def _finik_payment_url(settings: Any, plan: str) -> str:
 
 
 def _uses_dynamic_finik(settings: Any, plan: str) -> bool:
-    if plan == WEEK_PLAN and settings.weekly_finik_payment_url:
-        return False
-    if plan == LIFETIME_PLAN and settings.lifetime_finik_payment_url:
-        return False
+    # A shared QR cannot identify the paying Telegram account. Whenever the
+    # acquiring API is configured, create a request-bound checkout so its
+    # signed webhook can grant access automatically. Static links remain the
+    # fallback only while provider credentials are unavailable.
     return plan in {LIFETIME_PLAN, WEEK_PLAN, MONTH_PLAN} and settings.finik_auto_enabled
 
 
@@ -1421,7 +1421,9 @@ async def health() -> JSONResponse:
             "status": "ok",
             "bot": "running" if settings.run_bot else "disabled",
             "finik_auto_payment": "ready" if settings.finik_auto_enabled else "disabled",
-            "payment_access_mode": "manual",
+            "payment_access_mode": (
+                "automatic" if settings.finik_auto_enabled else "manual"
+            ),
             "payment_review_worker": (
                 "running" if settings.run_bot and not _task_stopped(_payment_review_worker_task)
                 else "stopped" if settings.run_bot else "disabled"
@@ -1704,7 +1706,11 @@ async def miniapp_prepare_payment(payload: MiniAppRequest) -> dict[str, Any]:
     plan = payload.plan or WEEK_PLAN
     if plan not in {WEEK_PLAN, LIFETIME_PLAN}:
         raise HTTPException(status_code=400, detail="Неизвестный тариф.")
-    if plan == LIFETIME_PLAN and not settings.lifetime_finik_payment_url:
+    if (
+        plan == LIFETIME_PLAN
+        and not settings.lifetime_finik_payment_url
+        and not _uses_dynamic_finik(settings, plan)
+    ):
         raise HTTPException(status_code=503, detail="Бессрочный тариф временно недоступен.")
     result = await runtime.workflow_data["service"].contact_status(user.id, apartment_id)
     if result.status in {"approved", "unavailable", "pending"}:
@@ -1745,9 +1751,15 @@ async def miniapp_start_payment(
     plan = payload.plan or WEEK_PLAN
     if plan not in {WEEK_PLAN, LIFETIME_PLAN}:
         raise HTTPException(status_code=400, detail="Неизвестный тариф.")
-    if plan == LIFETIME_PLAN and not settings.lifetime_finik_payment_url:
+    if (
+        plan == LIFETIME_PLAN
+        and not settings.lifetime_finik_payment_url
+        and not _uses_dynamic_finik(settings, plan)
+    ):
         raise HTTPException(status_code=503, detail="Бессрочный тариф временно недоступен.")
-    payment_url = _finik_payment_url(settings, plan)
+    payment_url = (
+        "" if _uses_dynamic_finik(settings, plan) else _finik_payment_url(settings, plan)
+    )
     if not payment_url and not _uses_dynamic_finik(settings, plan):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -1835,9 +1847,52 @@ async def miniapp_issue_access(
     return _miniapp_result_payload(await service.contact_status(user.id, apartment_id))
 
 
+async def _deliver_verified_finik_access(
+    runtime: Any, settings: Any, request_id: int
+) -> None:
+    """Send the paid contact once after the transaction has been committed."""
+    try:
+        payment_request = await runtime.workflow_data["payments"].get_request(
+            request_id
+        )
+        if payment_request is None or payment_request.status != "approved":
+            return
+        await runtime.bot.send_message(
+            payment_request.telegram_user_id,
+            "Оплата подтверждена автоматически. Доступ ко всем контактам открыт.",
+        )
+        if payment_request.apartment is not None:
+            from app.telegram.private_delivery import send_private_contact
+
+            await send_private_contact(
+                runtime.bot,
+                user_id=payment_request.telegram_user_id,
+                apartment=payment_request.apartment,
+                support_url=settings.support_bot_url,
+                max_photos=settings.max_photos_per_apartment,
+            )
+        matching = runtime.workflow_data.get("matching")
+        if matching is not None:
+            profile = await matching.profile(payment_request.telegram_user_id)
+            await matching.event(
+                payment_request.telegram_user_id,
+                "access_granted",
+                source=profile.source if profile is not None else "telegram",
+                apartment_id=payment_request.apartment_id,
+            )
+    except Exception:
+        # The database grant is authoritative. Telegram delivery can fail when
+        # the customer has blocked the bot; the Mini App will still show access.
+        logger.exception(
+            "Could not deliver verified Finik access for request %s", request_id
+        )
+
+
 @app.post("/finik/webhook", include_in_schema=False)
-async def finik_webhook(request: Request) -> dict[str, str]:
-    """Record a verified provider callback independently of customer-claim grants."""
+async def finik_webhook(
+    request: Request, background_tasks: BackgroundTasks
+) -> dict[str, str]:
+    """Verify a provider callback and atomically grant the purchased access."""
     settings = get_settings()
     runtime = _bot_runtime
     if not settings.run_bot or runtime is None or not settings.finik_auto_enabled:
@@ -1889,6 +1944,13 @@ async def finik_webhook(request: Request) -> dict[str, str]:
     if outcome == "amount_mismatch":
         logger.error("Finik amount mismatch for payment request %s", payment_request.id)
         raise HTTPException(status_code=status.HTTP_409_CONFLICT)
+    if outcome == "approved" and payment_request is not None:
+        background_tasks.add_task(
+            _deliver_verified_finik_access,
+            runtime,
+            settings,
+            payment_request.id,
+        )
     return {"status": outcome}
 
 

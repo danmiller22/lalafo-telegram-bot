@@ -666,7 +666,7 @@ async def test_miniapp_page_is_public_but_session_requires_telegram_auth(
     service.contact_status.assert_awaited_once_with(778899, 42)
 
 
-def test_shared_weekly_checkout_is_preserved_when_finik_api_is_configured(
+def test_personal_checkout_takes_priority_when_finik_api_is_configured(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("WEEKLY_FINIK_PAYMENT_URL", "https://qr.finik.kg/weekly")
@@ -679,7 +679,7 @@ def test_shared_weekly_checkout_is_preserved_when_finik_api_is_configured(
     settings = get_settings()
 
     assert settings.finik_auto_enabled
-    assert not web._uses_dynamic_finik(settings, WEEK_PLAN)
+    assert web._uses_dynamic_finik(settings, WEEK_PLAN)
     assert web._uses_dynamic_finik(settings, MONTH_PLAN)
     assert web._finik_payment_url(settings, WEEK_PLAN).endswith("/weekly")
     assert web._finik_payment_url(settings, MONTH_PLAN).endswith("/monthly")
@@ -746,7 +746,7 @@ async def test_miniapp_starts_a_checkout_bound_to_the_selected_apartment(
 
 
 @pytest.mark.asyncio
-async def test_miniapp_uses_configured_payment_url_without_waiting_for_finik(
+async def test_miniapp_uses_personal_checkout_when_finik_api_is_ready(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     bot_token = "123456:telegram-test-token"
@@ -789,10 +789,10 @@ async def test_miniapp_uses_configured_payment_url_without_waiting_for_finik(
         )
 
     assert response.status_code == 200
-    assert response.json()["payment_url"] == "https://qr.finik.kg/weekly"
-    assert response.json()["automatic_payment"] is False
+    assert response.json()["payment_url"] == "https://qr.finik.kg/request-73"
+    assert response.json()["automatic_payment"] is True
     service.begin_payment.assert_awaited_once()
-    checkout.assert_not_awaited()
+    checkout.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -878,7 +878,7 @@ async def test_miniapp_access_sends_pending_claim_to_admin(
 
 
 @pytest.mark.asyncio
-async def test_successful_finik_webhook_does_not_deliver_contact(
+async def test_successful_finik_webhook_grants_and_delivers_contact(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("RUN_BOT", "true")
@@ -894,7 +894,7 @@ async def test_successful_finik_webhook_does_not_deliver_contact(
         apartment=apartment,
     )
     payments = SimpleNamespace(
-        apply_provider_result=AsyncMock(return_value=("awaiting_confirmation", payment_request))
+        apply_provider_result=AsyncMock(return_value=("approved", payment_request))
     )
     bot = object()
     monkeypatch.setattr(
@@ -904,7 +904,7 @@ async def test_successful_finik_webhook_does_not_deliver_contact(
     )
     monkeypatch.setattr(web, "verify_request", lambda *_args, **_kwargs: True)
     delivery = AsyncMock()
-    monkeypatch.setattr("app.telegram.private_delivery.send_private_contact", delivery)
+    monkeypatch.setattr(web, "_deliver_verified_finik_access", delivery)
     transport = httpx.ASGITransport(app=web.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
@@ -921,11 +921,13 @@ async def test_successful_finik_webhook_does_not_deliver_contact(
         )
 
     assert response.status_code == 200
-    assert response.json() == {"status": "awaiting_confirmation"}
+    assert response.json() == {"status": "approved"}
     payments.apply_provider_result.assert_awaited_once_with(
         "arenda-73", succeeded=True, amount=499
     )
-    delivery.assert_not_awaited()
+    delivery.assert_awaited_once()
+    assert delivery.await_args.args[0].workflow_data["payments"] is payments
+    assert delivery.await_args.args[2] == 73
 
 
 @pytest.mark.asyncio

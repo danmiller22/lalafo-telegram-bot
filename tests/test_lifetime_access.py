@@ -20,15 +20,17 @@ async def test_lifetime_grant_covers_other_and_future_apartments(repositories, s
         assert outcome == "amount_mismatch"
         assert (await service.contact_status(880, first.id)).status != "approved"
         outcome, _ = await payments.apply_provider_result("lifetime-test", succeeded=True, amount=LIFETIME_PRICE)
-        assert outcome == "awaiting_confirmation"
-        assert (await service.contact_status(880, first.id)).status == "awaiting_receipt"
-        await payments.mark_payment_claimed(user_id=880, apartment_id=first.id)
+        assert outcome == "approved"
+        assert (await service.contact_status(880, first.id)).status == "approved"
         outcome, _ = await payments.apply_provider_result("lifetime-test", succeeded=True, amount=LIFETIME_PRICE)
-        assert outcome == "pending"
+        assert outcome == "already_approved"
     else:
         await payments.mark_payment_claimed(user_id=880, apartment_id=first.id)
         await payments.mark_payment_claimed(user_id=880, apartment_id=first.id)
-    assert await service.decide(submission.request.id, approve=True, actor_id=999) == "approved"
+    expected_decision = "already_approved" if via_webhook else "approved"
+    assert await service.decide(
+        submission.request.id, approve=True, actor_id=999
+    ) == expected_decision
     async with sessions() as session:
         history = (await session.scalars(select(PaymentHistory))).all()
     assert len(history) == 1

@@ -1,4 +1,4 @@
-"""Background retries may notify administrators, but must never issue access."""
+"""Background reviews coexist with provider-verified automatic access."""
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -30,21 +30,22 @@ async def review_setup(repositories, service):
 
 
 @pytest.mark.asyncio
-async def test_old_overdue_hold_and_provider_success_never_grant_access(repositories, service):
+async def test_provider_success_grants_access_without_review_worker(repositories, service):
     apartment, request, runtime = await review_setup(repositories, service)
     payments = repositories[1]
     await payments.prepare_provider_payment(request.id, "provider-confirmed")
-    await payments.apply_provider_result("provider-confirmed", succeeded=True, amount=499)
+    outcome, _ = await payments.apply_provider_result(
+        "provider-confirmed", succeeded=True, amount=499
+    )
+    assert outcome == "approved"
     async with repositories[2].begin() as session:
         await session.execute(update(PaymentRequest).where(PaymentRequest.id == request.id)
             .values(payment_claimed_at=datetime.now(timezone.utc) - timedelta(days=1)))
-    assert await process_payment_reviews(runtime) == 1
     assert await process_payment_reviews(runtime) == 0
-    assert (await service.contact_status(121, apartment.id)).status == "pending"
-    async with repositories[2]() as session:
-        assert await session.scalar(select(func.count(PaymentHistory.id))) == 0
-    assert await service.decide(request.id, approve=True, actor_id=999) == "approved"
+    assert await process_payment_reviews(runtime) == 0
     assert (await service.contact_status(121, apartment.id)).status == "approved"
+    async with repositories[2]() as session:
+        assert await session.scalar(select(func.count(PaymentHistory.id))) == 1
 
 
 @pytest.mark.asyncio

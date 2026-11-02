@@ -129,25 +129,22 @@ async def test_telegram_failure_releases_notification_for_retry(repositories, se
 
 
 @pytest.mark.asyncio
-async def test_rejected_payment_cannot_be_revived_by_claim_or_finik(repositories, service, review_context):
+async def test_verified_finik_payment_overrides_an_earlier_manual_rejection(repositories, service, review_context):
     settings, signer, bot = review_context
     apartment, request = await pending_checkout(repositories, service)
     payments = repositories[1]
     await payments.prepare_provider_payment(request.id, "manual-test")
     await notify_payment_admin(bot, payments, settings, signer, request)
     assert await service.decide(request.id, approve=False, actor_id=999) == "rejected"
-    await payments.apply_provider_result("manual-test", succeeded=True, amount=499)
-    assert (await payments.mark_payment_claimed(user_id=101, apartment_id=apartment.id)).status == "rejected"
-    assert (await service.contact_status(101, apartment.id)).status == "rejected"
-    # The reused checkout must reject the previous admin message's buttons.
-    reopened = await service.begin_payment(user_id=101, apartment_id=apartment.id, username=None, first_name="Buyer", plan=WEEK_PLAN)
-    assert reopened.request.id == request.id
-    new_claim = await payments.mark_payment_claimed(user_id=101, apartment_id=apartment.id)
-    bot.send_message.return_value.message_id = 516
-    await notify_payment_admin(bot, payments, settings, signer, new_claim)
-    assert await service.decide(request.id, approve=True, actor_id=999, expected_admin_message_id=515) == "stale"
+    outcome, _ = await payments.apply_provider_result(
+        "manual-test", succeeded=True, amount=499
+    )
+    assert outcome == "approved"
+    assert (await service.contact_status(101, apartment.id)).status == "approved"
+    assert await service.decide(
+        request.id, approve=True, actor_id=999, expected_admin_message_id=515
+    ) == "already_approved"
     assert await payments.decide(request.id, approve=True, admin_id=0) == "forbidden"
-    assert (await service.contact_status(101, apartment.id)).status == "pending"
 
 
 @pytest.mark.asyncio
