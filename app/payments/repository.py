@@ -947,6 +947,107 @@ class PaymentRepository:
                         admin_notification_claimed_at=None)
             )
 
+    async def pending_provider_admin_notifications(
+        self, limit: int = 50
+    ) -> list[PaymentRequest]:
+        """Return verified automatic grants whose admin receipt is still due."""
+        now = datetime.now(timezone.utc)
+        due = or_(
+            PaymentRequest.provider_admin_message_id.is_(None),
+            and_(
+                PaymentRequest.provider_admin_message_id == -1,
+                or_(
+                    PaymentRequest.provider_admin_notification_claimed_at.is_(None),
+                    PaymentRequest.provider_admin_notification_claimed_at
+                    <= now - timedelta(minutes=5),
+                ),
+            ),
+        )
+        async with self.sessions() as session:
+            return list((await session.scalars(
+                select(PaymentRequest)
+                .where(
+                    PaymentRequest.status == "approved",
+                    PaymentRequest.approved_by.is_(None),
+                    PaymentRequest.provider_status == "succeeded",
+                    PaymentRequest.provider_payment_id.is_not(None),
+                    due,
+                )
+                .order_by(PaymentRequest.approved_at.asc())
+                .limit(limit)
+            )).all())
+
+    async def claim_provider_admin_notification(
+        self, request_id: int, *, token: str
+    ) -> bool:
+        """Lease one automatic-payment admin notification send."""
+        now = datetime.now(timezone.utc)
+        due = or_(
+            PaymentRequest.provider_admin_message_id.is_(None),
+            and_(
+                PaymentRequest.provider_admin_message_id == -1,
+                or_(
+                    PaymentRequest.provider_admin_notification_claimed_at.is_(None),
+                    PaymentRequest.provider_admin_notification_claimed_at
+                    <= now - timedelta(minutes=5),
+                ),
+            ),
+        )
+        async with self.sessions.begin() as session:
+            result = await session.execute(
+                update(PaymentRequest)
+                .where(
+                    PaymentRequest.id == request_id,
+                    PaymentRequest.status == "approved",
+                    PaymentRequest.approved_by.is_(None),
+                    PaymentRequest.provider_status == "succeeded",
+                    due,
+                )
+                .values(
+                    provider_admin_message_id=-1,
+                    provider_admin_notification_token=token,
+                    provider_admin_notification_claimed_at=now,
+                )
+            )
+            return result.rowcount == 1
+
+    async def finish_provider_admin_notification(
+        self, request_id: int, message_id: int, *, token: str
+    ) -> bool:
+        async with self.sessions.begin() as session:
+            result = await session.execute(
+                update(PaymentRequest)
+                .where(
+                    PaymentRequest.id == request_id,
+                    PaymentRequest.provider_admin_message_id == -1,
+                    PaymentRequest.provider_admin_notification_token == token,
+                )
+                .values(
+                    provider_admin_message_id=message_id,
+                    provider_admin_notification_token=None,
+                    provider_admin_notification_claimed_at=None,
+                )
+            )
+            return result.rowcount == 1
+
+    async def release_provider_admin_notification(
+        self, request_id: int, *, token: str
+    ) -> None:
+        async with self.sessions.begin() as session:
+            await session.execute(
+                update(PaymentRequest)
+                .where(
+                    PaymentRequest.id == request_id,
+                    PaymentRequest.provider_admin_message_id == -1,
+                    PaymentRequest.provider_admin_notification_token == token,
+                )
+                .values(
+                    provider_admin_message_id=None,
+                    provider_admin_notification_token=None,
+                    provider_admin_notification_claimed_at=None,
+                )
+            )
+
 
     async def decide(self, request_id: int, *, approve: bool, admin_id: int, expected_admin_message_id: int | None = None) -> str:
         if admin_id <= 0:

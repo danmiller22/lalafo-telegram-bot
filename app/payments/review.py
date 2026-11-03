@@ -50,3 +50,43 @@ async def notify_payment_admin(
     except (Exception, asyncio.CancelledError):
         await payments.release_admin_notification(request.id, token=token)
         raise
+
+
+async def notify_verified_payment_admin(
+    bot: Bot,
+    payments: PaymentRepository,
+    settings: Settings,
+    request: PaymentRequest,
+) -> bool:
+    """Report one provider-verified automatic grant to the administrator."""
+    if request.status != "approved" or request.approved_by is not None:
+        return False
+    if not settings.admin_user_id:
+        raise RuntimeError("Payment administrator is not configured")
+    token = uuid4().hex
+    if not await payments.claim_provider_admin_notification(request.id, token=token):
+        return False
+    try:
+        username = f"@{request.username}" if request.username else "без username"
+        expires = (
+            request.access_expires_at.strftime("%d.%m.%Y %H:%M UTC")
+            if request.access_expires_at is not None
+            else "без ограничения срока"
+        )
+        text = (
+            f"✅ Автоматическая оплата #{request.id}\n"
+            f"Клиент: {request.first_name or 'Имя не указано'} — {username}\n"
+            f"Telegram ID: {request.telegram_user_id}\n"
+            f"Тариф: {plan_label(request.plan)}\n"
+            f"Сумма: {plan_price(request.plan)} сом\n"
+            f"Квартира ID: {request.apartment_id}\n"
+            f"Доступ: {expires}\n\n"
+            "Finik подтвердил платёж, доступ выдан автоматически."
+        )
+        sent = await bot.send_message(settings.admin_user_id, text)
+        return await payments.finish_provider_admin_notification(
+            request.id, sent.message_id, token=token
+        )
+    except (Exception, asyncio.CancelledError):
+        await payments.release_provider_admin_notification(request.id, token=token)
+        raise

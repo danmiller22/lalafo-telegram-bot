@@ -309,6 +309,9 @@ class PaymentRequest(Base):
     payment_claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     admin_notification_token: Mapped[str | None] = mapped_column(String(64))
     admin_notification_claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    provider_admin_message_id: Mapped[int | None] = mapped_column(BigInteger)
+    provider_admin_notification_token: Mapped[str | None] = mapped_column(String(64))
+    provider_admin_notification_claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     payment_reminder_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     payment_reminder_claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

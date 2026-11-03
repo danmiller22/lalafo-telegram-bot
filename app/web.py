@@ -1873,6 +1873,21 @@ async def _deliver_verified_finik_access(
         )
         if payment_request is None or payment_request.status != "approved":
             return
+        try:
+            from app.payments.review import notify_verified_payment_admin
+
+            await notify_verified_payment_admin(
+                runtime.bot,
+                runtime.workflow_data["payments"],
+                settings,
+                payment_request,
+            )
+        except Exception:
+            # The payment worker retries this durable notification lease.
+            logger.exception(
+                "Could not notify administrator about verified payment %s",
+                request_id,
+            )
         await runtime.bot.send_message(
             payment_request.telegram_user_id,
             "Оплата подтверждена автоматически. Доступ ко всем контактам открыт.",

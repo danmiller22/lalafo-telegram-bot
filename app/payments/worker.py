@@ -6,7 +6,7 @@ import logging
 
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 
-from app.payments.review import notify_payment_admin
+from app.payments.review import notify_payment_admin, notify_verified_payment_admin
 from app.listing_lifecycle import listing_expired
 from app.payment_plans import WEEK_PLAN, plan_label, plan_price
 from app.telegram.keyboards import payment_reminder_keyboard
@@ -36,6 +36,16 @@ async def process_payment_reviews(runtime) -> int:
                 continue
             await payments.set_admin_message(request.id, -2)
             retired += 1
+        for request in await payments.pending_provider_admin_notifications():
+            try:
+                retired += bool(await notify_verified_payment_admin(
+                    runtime.bot, payments, settings, request
+                ))
+            except Exception:
+                logger.exception(
+                    "Could not notify administrator about verified payment %s",
+                    request.id,
+                )
         return retired
     signer = runtime.workflow_data["signer"]
     sent = 0

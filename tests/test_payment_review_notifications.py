@@ -12,6 +12,7 @@ from app.config import Settings
 from app.models import PaymentHistory, PaymentRequest
 from app.payment_plans import WEEK_PLAN
 from app.payments.worker import process_checkout_recoveries, process_payment_reviews
+from app.payments.review import notify_verified_payment_admin
 from app.security import TokenSigner
 from tests.helpers import make_ad
 
@@ -46,6 +47,60 @@ async def test_provider_success_grants_access_without_review_worker(repositories
     assert (await service.contact_status(121, apartment.id)).status == "approved"
     async with repositories[2]() as session:
         assert await session.scalar(select(func.count(PaymentHistory.id))) == 1
+
+
+@pytest.mark.asyncio
+async def test_verified_provider_payment_notifies_admin_once(repositories, service):
+    apartment, request, runtime = await review_setup(repositories, service)
+    payments = repositories[1]
+    runtime.workflow_data["settings"] = Settings(admin_user_id=999)
+    await payments.prepare_provider_payment(request.id, "provider-admin-notice")
+    outcome, approved = await payments.apply_provider_result(
+        "provider-admin-notice", succeeded=True, amount=499
+    )
+
+    assert outcome == "approved"
+    assert await notify_verified_payment_admin(
+        runtime.bot, payments, runtime.workflow_data["settings"], approved
+    )
+    fresh = await payments.get_request(request.id)
+    assert fresh.provider_admin_message_id == 515
+    assert not await notify_verified_payment_admin(
+        runtime.bot, payments, runtime.workflow_data["settings"], fresh
+    )
+    assert runtime.bot.send_message.await_count == 1
+    text = runtime.bot.send_message.await_args.args[1]
+    assert "499 сом" in text
+    assert "Базовая: 7 дней" in text
+    assert "Telegram ID: 121" in text
+    assert "@buyer" in text
+
+
+@pytest.mark.asyncio
+async def test_automatic_worker_retries_failed_verified_payment_notice(
+    repositories, service
+):
+    _apartment, request, runtime = await review_setup(repositories, service)
+    payments = repositories[1]
+    runtime.workflow_data["settings"] = Settings(
+        admin_user_id=999,
+        finik_api_key="configured",
+        finik_account_id="merchant",
+        finik_private_key_pem="configured",
+        telegram_webhook_url="https://example.test/telegram/webhook",
+    )
+    await payments.prepare_provider_payment(request.id, "provider-retry-notice")
+    await payments.apply_provider_result(
+        "provider-retry-notice", succeeded=True, amount=499
+    )
+    runtime.bot.send_message.side_effect = RuntimeError("Telegram unavailable")
+
+    assert await process_payment_reviews(runtime) == 0
+    assert (await payments.get_request(request.id)).provider_admin_message_id is None
+    runtime.bot.send_message.side_effect = None
+    assert await process_payment_reviews(runtime) == 1
+    assert await process_payment_reviews(runtime) == 0
+    assert runtime.bot.send_message.await_count == 2
 
 
 @pytest.mark.asyncio
