@@ -23,7 +23,7 @@ from app.database import create_engine_and_session
 from app.models import PaymentHistory, PaymentRequest
 
 
-def _phone_hashes_from_text(text: str, target_hashes: set[str]) -> list[str]:
+def _phone_candidates_from_text(text: str) -> list[str]:
     candidates: set[str] = set()
     for value in re.findall(r"(?:\+?996|0)[\d\s()\-]{8,20}", text):
         digits = re.sub(r"\D", "", value)
@@ -37,16 +37,20 @@ def _phone_hashes_from_text(text: str, target_hashes: set[str]) -> list[str]:
         for index in range(max(0, len(compact) - 11))
         if compact[index : index + 3] == "996"
     )
+    return sorted(candidates)
+
+
+def _phone_hashes_from_text(text: str, target_hashes: set[str]) -> list[str]:
     return sorted(
         digest
-        for digits in candidates
+        for digits in _phone_candidates_from_text(text)
         if (digest := hashlib.sha256(digits.encode()).hexdigest()) in target_hashes
     )
 
 
 async def _receipt_phone_matches(
     rows: list[tuple[PaymentHistory, PaymentRequest | None]],
-) -> dict[int, list[str]]:
+) -> dict[int, dict[str, list[str]]]:
     target_hashes = {
         value.strip()
         for value in os.environ.get("AUDIT_TARGET_PHONE_HASHES", "").split(",")
@@ -55,7 +59,7 @@ async def _receipt_phone_matches(
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     if not target_hashes or not token:
         return {}
-    matches: dict[int, list[str]] = {}
+    matches: dict[int, dict[str, list[str]]] = {}
     async with httpx.AsyncClient(timeout=30) as client:
         for history, request in rows[-160:]:
             if request is None or not request.receipt_file_id:
@@ -92,9 +96,13 @@ async def _receipt_phone_matches(
                                 check=False,
                             )
                             text += "\n" + result.stdout
+                candidates = _phone_candidates_from_text(text)
                 found = _phone_hashes_from_text(text, target_hashes)
-                if found:
-                    matches[history.id] = found
+                if candidates:
+                    matches[history.id] = {
+                        "matched": found,
+                        "candidates": candidates,
+                    }
             except Exception:
                 continue
     return matches
@@ -166,7 +174,8 @@ async def main() -> None:
                     ),
                     "provider_status": request.provider_status if request else None,
                     "approved_by": request.approved_by if request else None,
-                    "matched_phone_hashes": receipt_matches.get(history.id, []),
+                    "matched_phone_hashes": receipt_matches.get(history.id, {}).get("matched", []),
+                    "receipt_phone_candidates": receipt_matches.get(history.id, {}).get("candidates", []),
                     **profiles.get(history.telegram_user_id, {}),
                 }
                 for history, request in rows
