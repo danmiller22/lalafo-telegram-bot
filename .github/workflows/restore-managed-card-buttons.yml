@@ -19,7 +19,7 @@ concurrency:
 jobs:
   restore:
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 180
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}

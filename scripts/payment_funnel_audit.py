@@ -42,9 +42,13 @@ async def _period(session, *, start: datetime, end: datetime) -> dict[str, objec
         )
         .group_by(PaymentRequest.provider_status)
     )
-    paid_count, paid_som = (
+    paid_count, paid_users, paid_som = (
         await session.execute(
-            select(func.count(PaymentHistory.id), func.coalesce(func.sum(PaymentHistory.amount), 0))
+            select(
+                func.count(PaymentHistory.id),
+                func.count(distinct(PaymentHistory.telegram_user_id)),
+                func.coalesce(func.sum(PaymentHistory.amount), 0),
+            )
             .where(PaymentHistory.paid_at >= start, PaymentHistory.paid_at < end)
         )
     ).one()
@@ -54,7 +58,11 @@ async def _period(session, *, start: datetime, end: datetime) -> dict[str, objec
         "events": events,
         "requests": {str(status): int(count) for status, count in request_rows},
         "provider": {str(status): int(count) for status, count in provider_rows},
-        "paid": {"count": int(paid_count), "som": int(paid_som)},
+        "paid": {
+            "count": int(paid_count),
+            "users": int(paid_users),
+            "som": int(paid_som),
+        },
     }
 
 
@@ -62,8 +70,9 @@ async def main() -> None:
     database_url = os.environ["DATABASE_URL"]
     engine, sessions = create_engine_and_session(database_url)
     now = datetime.now(timezone.utc)
-    bishkek = ZoneInfo("Asia/Bishkek")
-    local_now = now.astimezone(bishkek)
+    timezone_name = os.environ.get("PAYMENT_AUDIT_TIMEZONE", "Asia/Bishkek")
+    local_timezone = ZoneInfo(timezone_name)
+    local_now = now.astimezone(local_timezone)
     today_start = local_now.replace(
         hour=0, minute=0, second=0, microsecond=0
     ).astimezone(timezone.utc)
@@ -72,13 +81,14 @@ async def main() -> None:
         async with sessions() as session:
             result = {
                 "generated_at": now.isoformat(),
-                "today_bishkek": await _period(
+                "timezone": timezone_name,
+                "today": await _period(
                     session, start=today_start, end=now
                 ),
-                "yesterday_bishkek_same_time": await _period(
+                "yesterday": await _period(
                     session,
                     start=yesterday_start,
-                    end=min(today_start, now - timedelta(days=1)),
+                    end=today_start,
                 ),
                 "last_24h": await _period(session, start=now - timedelta(days=1), end=now),
                 "last_7d": await _period(session, start=now - timedelta(days=7), end=now),

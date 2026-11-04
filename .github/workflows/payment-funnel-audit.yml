@@ -2,6 +2,11 @@ name: Audit aggregate payment funnel
 
 on:
   workflow_dispatch:
+    inputs:
+      timezone:
+        description: IANA timezone used for today and yesterday
+        required: false
+        default: Asia/Bishkek
 
 permissions:
   contents: read
@@ -12,6 +17,7 @@ jobs:
     timeout-minutes: 5
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PAYMENT_AUDIT_TIMEZONE: ${{ inputs.timezone }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
