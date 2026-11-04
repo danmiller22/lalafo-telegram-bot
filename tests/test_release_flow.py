@@ -11,7 +11,7 @@ from app.config import Settings
 from app.models import TermsConsent
 from app.payments.service import PaymentService
 from app.security import TokenSigner
-from app.terms import TERMS_VERSION, TermsConsentRepository
+from app.terms import TERMS_TEXT, TERMS_VERSION, TermsConsentRepository
 from scripts.publish_inventory import _valid
 from tests.helpers import make_ad
 
@@ -43,6 +43,13 @@ async def test_terms_must_be_reaccepted_after_version_change(repositories) -> No
         )
     assert TERMS_VERSION != "old-version"
     assert not await consents.accepted(123)
+
+
+def test_terms_explain_operator_support_and_partial_refunds() -> None:
+    assert "Помощь оператора" in TERMS_TEXT
+    assert "Бот передаст обращение оператору" in TERMS_TEXT
+    assert "Возврат средств возможен только частично" in TERMS_TEXT
+    assert "не ограничивает обязательные права пользователя" in TERMS_TEXT
 
 
 @pytest.mark.asyncio

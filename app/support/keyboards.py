@@ -14,6 +14,14 @@ def support_menu_keyboard() -> InlineKeyboardMarkup:
     rows.append(
         [InlineKeyboardButton(text="✖️ Закрыть поддержку", callback_data="support:close")]
     )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="👩‍💻 Помощь оператора",
+                callback_data="support:operator",
+            )
+        ]
+    )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
