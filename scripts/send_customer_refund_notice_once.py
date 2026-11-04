@@ -11,7 +11,7 @@ import httpx
 from sqlalchemy import select
 
 from app.database import create_engine_and_session
-from app.models import PaymentHistory
+from app.models import PaymentHistory, PaymentRequest
 
 
 MESSAGE = (
@@ -30,9 +30,8 @@ async def main() -> None:
     engine, sessions = create_engine_and_session(os.environ["DATABASE_URL"])
     try:
         async with sessions() as session:
-            user_ids = set(
-                await session.scalars(select(PaymentHistory.telegram_user_id))
-            )
+            user_ids = set(await session.scalars(select(PaymentHistory.telegram_user_id)))
+            user_ids.update(await session.scalars(select(PaymentRequest.telegram_user_id)))
     finally:
         await engine.dispose()
     targets = sorted(
