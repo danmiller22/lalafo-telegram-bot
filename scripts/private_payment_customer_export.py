@@ -14,7 +14,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from sqlalchemy import select
 
 from app.database import create_engine_and_session
-from app.models import PaymentHistory
+from app.models import PaymentHistory, PaymentRequest
 
 
 async def main() -> None:
@@ -25,21 +25,32 @@ async def main() -> None:
     try:
         async with sessions() as session:
             rows = (
-                await session.scalars(
-                    select(PaymentHistory).order_by(PaymentHistory.paid_at)
+                await session.execute(
+                    select(PaymentHistory, PaymentRequest)
+                    .outerjoin(
+                        PaymentRequest,
+                        PaymentRequest.id == PaymentHistory.payment_request_id,
+                    )
+                    .order_by(PaymentHistory.paid_at)
                 )
             ).all()
         payload = json.dumps(
             [
                 {
-                    "telegram_user_id": row.telegram_user_id,
-                    "username": row.username,
-                    "first_name": row.first_name,
-                    "plan": row.plan,
-                    "amount": row.amount,
-                    "paid_at": row.paid_at.isoformat(),
+                    "telegram_user_id": history.telegram_user_id,
+                    "username": history.username,
+                    "first_name": history.first_name,
+                    "plan": history.plan,
+                    "amount": history.amount,
+                    "paid_at": history.paid_at.isoformat(),
+                    "provider_payment_id": history.provider_payment_id,
+                    "request_created_at": (
+                        request.created_at.isoformat() if request else None
+                    ),
+                    "provider_status": request.provider_status if request else None,
+                    "approved_by": request.approved_by if request else None,
                 }
-                for row in rows
+                for history, request in rows
             ],
             ensure_ascii=False,
             separators=(",", ":"),
