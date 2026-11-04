@@ -57,7 +57,7 @@ async def create_runtime(*, bot_token: str | None = None, lalafo_only: bool = Fa
     support_tickets = SupportTicketRepository(sessions)
     terms_consents = TermsConsentRepository(sessions)
     service = PaymentService(apartments, payments, admin_user_id=settings.admin_user_id)
-    showcase = ShowcaseService(apartments, favorites, settings, signer)
+    showcase = ShowcaseService(apartments, matching, favorites, settings, signer)
     availability = AvailabilityService(apartments, settings)
     bot = Bot(token=bot_token or settings.require_bot_token())
     dispatcher = Dispatcher(storage=MemoryStorage())
@@ -101,6 +101,9 @@ async def configure_bot_profile(runtime: BotRuntime) -> None:
     They must never delay FastAPI readiness or customer messages.
     """
     me = await runtime.bot.get_me()
+    # Telegram auto-links dotted domain-like display names. Keep the product
+    # name plain so the bot header is never presented as an external link.
+    await runtime.bot.set_my_name(name="Arenda KG")
     # Customer navigation is entirely button-driven. /start remains an
     # internal Telegram deep-link transport, but is not advertised as a command.
     await runtime.bot.delete_my_commands()

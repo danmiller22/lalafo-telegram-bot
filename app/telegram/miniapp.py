@@ -117,7 +117,7 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
 <body>
 <main id="lifetime-checkout">
   <button id="back" class="back-button" aria-label="Назад">← Назад</button>
-  <div class="brand">Arenda.KG</div>
+  <div class="brand">Arenda.&#8288;KG</div>
   <h1 id="title">Получить доступ</h1>
   <p id="intro" class="intro">Доступ ко всем контактам для прямой связи</p>
   <div id="status" class="status hidden" role="status" aria-live="polite"></div>

@@ -196,6 +196,14 @@ class MatchingRepository:
                 ).all()
             )
 
+    async def current_apartments(self, *, limit: int = 500) -> list[Apartment]:
+        """Return all fresh contact-ready apartments from every collector."""
+        return [
+            apartment
+            for apartment in await self._fresh_apartments(limit=limit)
+            if apartment.photo_urls
+        ]
+
     async def hot_apartments(
         self, limit: int = 2, *, exclude_ids: set[int] | None = None
     ) -> list[Apartment]:

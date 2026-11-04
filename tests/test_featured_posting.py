@@ -10,5 +10,5 @@ def test_requested_lalafo_description_contains_privacy_policy() -> None:
     description = payload["description"]
     assert "1-комнатная квартира" in description
     assert "Филармония" in description
-    assert "Политика конфиденциальности Arenda.KG" in description
+    assert "Политика конфиденциальности Arenda.\u2060KG" in description
     assert "Мы не продаём персональные данные" in description

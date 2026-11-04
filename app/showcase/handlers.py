@@ -122,7 +122,7 @@ async def about_service(callback: CallbackQuery) -> None:
     await callback.answer()
     if callback.message:
         await callback.message.answer(
-            "Arenda.KG помогает находить квартиры и получать контакты по объявлениям.\n\n"
+            "Arenda.\u2060KG помогает находить квартиры и получать контакты по объявлениям.\n\n"
             "Просмотр квартир и сохранение в избранное бесплатны. Доступ ко всем "
             "контактам: 7 дней — 499 сом, 30 дней — 999 сом. Автоматического "
             "продления нет."

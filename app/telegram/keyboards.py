@@ -73,24 +73,8 @@ def matching_apartment_keyboard(
     confirmed_owner: bool = False,
 ) -> InlineKeyboardMarkup:
     """Compact card keyboard for the private personalized feed."""
-    payment_token = signer.sign_start_id("miniapp-apartment", apartment_id)
-    bot_url = f"https://t.me/{bot_username.lstrip('@')}"
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text=masked_contact_label(phone) if confirmed_owner else "Получить номер",
-                    url=f"{bot_url}/{MINI_APP_SHORT_NAME}?startapp={payment_token}",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🏠 Смотреть все",
-                    callback_data="matching:start",
-                )
-            ],
-        ]
-    )
+    del bot_username, phone, confirmed_owner
+    return showcase_apartment_keyboard(apartment_id, signer=signer)
 
 
 def terms_keyboard(apartment_id: int, *, signer: TokenSigner, bot_username: str) -> InlineKeyboardMarkup:

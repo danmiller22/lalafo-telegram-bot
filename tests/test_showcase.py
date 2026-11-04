@@ -5,7 +5,8 @@ import pytest
 
 from app.config import Settings
 from app.favorites import FavoriteRepository
-from app.lalafo.managed_ads import LalafoManagedAdsClient, ManagedSession
+from app.lalafo.managed_ads import LalafoManagedAdsClient
+from app.matching.repository import MatchingRepository
 from app.security import TokenSigner
 from app.showcase.service import ShowcaseService
 from app.showcase.handlers import listing_contact
@@ -31,39 +32,23 @@ async def test_all_my_ads_reads_every_page() -> None:
 
 
 @pytest.mark.asyncio
-async def test_showcase_loads_only_active_mapped_ads_from_exact_profile(repositories) -> None:
+async def test_showcase_loads_fresh_apartments_from_all_collectors(repositories) -> None:
     apartments, _, sessions = repositories
     first = await apartments.upsert_discovered(make_ad(lalafo_id=8101))
     second = await apartments.upsert_discovered(make_ad(lalafo_id=8102))
     favorites = FavoriteRepository(sessions)
-    settings = Settings(
-        _env_file=None,
-        lalafo_login="login",
-        lalafo_password="password",
-        callback_secret="a-very-long-test-secret",
-    )
+    settings = Settings(_env_file=None, callback_secret="a-very-long-test-secret")
+    matching = SimpleNamespace(current_apartments=AsyncMock(return_value=[first, second]))
     service = ShowcaseService(
-        apartments, favorites, settings, TokenSigner(settings.callback_secret)
+        apartments,
+        matching,
+        favorites,
+        settings,
+        TokenSigner(settings.callback_secret),
     )
-    await service._client.close()
-    service._client = SimpleNamespace(
-        session=ManagedSession(18225388, "token", "access"),
-        all_my_ads=AsyncMock(return_value=[
-            {"id": 9101, "status_id": 2, "user_id": 18225388, "updated_time": 2},
-            {"id": 9102, "status_id": 8, "user_id": 18225388, "updated_time": 3},
-            {"id": 9103, "status_id": 2, "user_id": 999, "updated_time": 4},
-            {"id": 9999, "status_id": 2, "user_id": 18225388, "updated_time": 5},
-        ]),
-        login=AsyncMock(),
-        close=AsyncMock(),
-    )
-    apartments.managed_lalafo_sources = AsyncMock(return_value=[
-        SimpleNamespace(apartment=first, managed_lalafo_ad_id=9101),
-        SimpleNamespace(apartment=second, managed_lalafo_ad_id=9102),
-        SimpleNamespace(apartment=second, managed_lalafo_ad_id=9103),
-    ])
 
-    assert [item.id for item in await service._load_current()] == [first.id]
+    assert [item.id for item in await service._load_current()] == [first.id, second.id]
+    matching.current_apartments.assert_awaited_once_with(limit=500)
     await service.close()
 
 
@@ -81,6 +66,7 @@ async def test_showcase_sends_all_cards_five_seconds_apart_then_menu(
     )
     service = ShowcaseService(
         apartments,
+        MatchingRepository(sessions),
         FavoriteRepository(sessions),
         settings,
         TokenSigner(settings.callback_secret),

@@ -238,7 +238,7 @@ async def lifespan(app: FastAPI):
         app.state.worker = worker
         await bot.set_webhook(url, secret_token=secret, allowed_updates=["message"],
                               max_connections=1, drop_pending_updates=False)
-        await bot.set_my_name(name="Arenda.KG")
+        await bot.set_my_name(name="Arenda KG")
         yield
     finally:
         if worker:
