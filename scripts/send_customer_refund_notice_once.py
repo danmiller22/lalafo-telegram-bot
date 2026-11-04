@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 
 import httpx
+from sqlalchemy import select
+
+from app.database import create_engine_and_session
+from app.models import PaymentHistory
 
 
 MESSAGE = (
@@ -17,9 +22,27 @@ MESSAGE = (
 
 async def main() -> None:
     token = os.environ["TELEGRAM_BOT_TOKEN"].strip()
+    target_hashes = {
+        value.strip()
+        for value in os.environ["CUSTOMER_NOTICE_TARGET_HASHES"].split(",")
+        if value.strip()
+    }
+    engine, sessions = create_engine_and_session(os.environ["DATABASE_URL"])
+    try:
+        async with sessions() as session:
+            user_ids = set(
+                await session.scalars(select(PaymentHistory.telegram_user_id))
+            )
+    finally:
+        await engine.dispose()
     targets = sorted(
-        {int(value) for value in os.environ["CUSTOMER_NOTICE_TARGETS_ONCE"].split(",")}
+        user_id
+        for user_id in user_ids
+        if hashlib.sha256(str(user_id).encode()).hexdigest() in target_hashes
     )
+    if len(targets) != len(target_hashes):
+        print(json.dumps({"status": "target_mismatch", "requested": len(target_hashes), "resolved": len(targets)}))
+        raise SystemExit(3)
     results: list[dict[str, object]] = []
     async with httpx.AsyncClient(timeout=20) as client:
         for chat_id in targets:
