@@ -5,7 +5,7 @@ import re
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from app.security import TokenSigner
-from app.payment_plans import WEEK_PRICE, LIFETIME_PRICE
+from app.payment_plans import MONTH_PRICE, WEEK_PRICE
 
 
 APARTMENT_KEYBOARD_VERSION = 20
@@ -167,8 +167,8 @@ def private_payment_keyboard(
         text=f"Недельный тариф — {WEEK_PRICE} сом",
         callback_data=f"plan:w:{signer.sign_id('plan-week', apartment_id)}",
     )], [InlineKeyboardButton(
-        text=f"✨ Навсегда — {LIFETIME_PRICE} сом",
-        callback_data=f"plan:l:{signer.sign_id('plan-lifetime', apartment_id)}",
+        text=f"Месячный тариф — {MONTH_PRICE} сом",
+        callback_data=f"plan:m:{signer.sign_id('plan-month', apartment_id)}",
     )]]
     rows.append(
         [
@@ -179,6 +179,60 @@ def private_payment_keyboard(
         ]
     )
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def showcase_apartment_keyboard(
+    apartment_id: int, *, signer: TokenSigner, saved: bool = False
+) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(
+                text="📞 Получить номер",
+                callback_data=(
+                    f"listing:contact:{signer.sign_id('listing-contact', apartment_id)}"
+                ),
+            )],
+            [InlineKeyboardButton(
+                text="✅ Сохранено" if saved else "❤️ Сохранить",
+                callback_data=(
+                    "favorite:noop" if saved else
+                    f"listing:save:{signer.sign_id('listing-save', apartment_id)}"
+                ),
+            )],
+        ]
+    )
+
+
+def favorite_apartment_keyboard(
+    apartment_id: int, *, signer: TokenSigner, available: bool
+) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    if available:
+        rows.append([InlineKeyboardButton(
+            text="📞 Получить номер",
+            callback_data=(
+                f"listing:contact:{signer.sign_id('listing-contact', apartment_id)}"
+            ),
+        )])
+    rows.append([InlineKeyboardButton(
+        text="🗑 Удалить из избранного",
+        callback_data=f"favorite:remove:{signer.sign_id('favorite-remove', apartment_id)}",
+    )])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def customer_menu_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="🔎 Найти выгодные и дешевые квартиры", callback_data="menu:cheap"
+        )],
+        [InlineKeyboardButton(text="❤️ Избранные", callback_data="menu:favorites")],
+        [InlineKeyboardButton(text="🛟 Техподдержка", callback_data="menu:support")],
+        [InlineKeyboardButton(text="ℹ️ О сервисе и услугах", callback_data="menu:about")],
+        [InlineKeyboardButton(
+            text="🔒 Политика конфиденциальности", callback_data="menu:privacy"
+        )],
+    ])
 
 
 def private_contact_keyboard(*, support_url: str) -> InlineKeyboardMarkup:

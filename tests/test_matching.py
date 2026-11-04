@@ -4,7 +4,14 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.matching.repository import MatchingRepository, apartment_matches
+from app.matching.keyboards import (
+    budget_keyboard,
+    district_preset_members,
+    districts_keyboard,
+    rooms_keyboard,
+    seller_types_keyboard,
+)
+from app.matching.repository import MAX_PRICE, MatchingRepository, apartment_matches
 from app.matching.handlers import show_hot_start
 from app.config import Settings
 from app.models import DailyFeaturedPublication, LalafoAutoReplyMeta
@@ -152,8 +159,9 @@ async def test_new_customer_sees_two_hot_cards_before_filter_setup(repositories)
     )
     assert bot.send_photo.await_count == 2
     first_card = bot.send_photo.await_args_list[0]
-    assert first_card.kwargs["caption"].startswith("🆕 Новое объявление:")
-    assert "Проверено:" in first_card.kwargs["caption"]
+    assert first_card.kwargs["caption"].startswith("🏠 1-комнатная квартира")
+    assert "Описание:" not in first_card.kwargs["caption"]
+    assert "Проверено:" not in first_card.kwargs["caption"]
     card_keyboard = first_card.kwargs["reply_markup"]
     assert card_keyboard.inline_keyboard[0][0].text == (
         "+996555123***"
@@ -162,6 +170,94 @@ async def test_new_customer_sees_two_hot_cards_before_filter_setup(repositories)
     footer = message.answer.await_args_list[-1].kwargs["reply_markup"]
     assert footer.inline_keyboard[0][0].callback_data == "matching:start"
     assert footer.inline_keyboard[0][0].text == "🏠 Смотреть все"
+
+
+def test_matching_filters_offer_only_requested_rooms_quick_districts_and_60k():
+    room_buttons = [
+        button
+        for row in rooms_keyboard(set()).inline_keyboard
+        for button in row
+        if button.callback_data and button.callback_data.startswith("matching:room:")
+    ]
+    assert [button.callback_data for button in room_buttons] == [
+        "matching:room:studio",
+        "matching:room:1",
+        "matching:room:2",
+    ]
+
+    seller_buttons = [
+        button
+        for row in seller_types_keyboard(set()).inline_keyboard
+        for button in row
+    ]
+    assert [button.text for button in seller_buttons[:2]] == [
+        "👤 От собственников",
+        "🏢 От агентств недвижимости",
+    ]
+
+    options = ["Центр", "7 мкр", "Асанбай", "Тунгуч", "Джал"]
+    assert district_preset_members(options, "center") == {"Центр"}
+    assert district_preset_members(options, "micro") == {"7 мкр"}
+    assert district_preset_members(options, "upper") == {"Асанбай"}
+    district_labels = [
+        button.text
+        for row in districts_keyboard(
+            options, set(), page=0, all_districts=False
+        ).inline_keyboard
+        for button in row
+    ]
+    assert "🏙 Центр" in district_labels
+    assert "⛰ Верхние районы" in district_labels
+    assert "🏢 Микрорайоны" in district_labels
+
+    budget_callbacks = {
+        button.callback_data
+        for row in budget_keyboard().inline_keyboard
+        for button in row
+    }
+    assert "matching:budget:60000" in budget_callbacks
+    assert {
+        button.text
+        for row in budget_keyboard().inline_keyboard
+        for button in row
+        if button.callback_data == "matching:budget:60000"
+    } == {"до 60 000 сом"}
+    assert MAX_PRICE == 60_000
+
+
+@pytest.mark.asyncio
+async def test_matching_profile_filters_owner_and_agency_options(repositories):
+    apartments, _, sessions = repositories
+    matching = MatchingRepository(sessions)
+    owner = await apartments.upsert_discovered(
+        make_ad(lalafo_id=7091, seller_type="owner", owner_listing=True)
+    )
+    agency = await apartments.upsert_discovered(
+        make_ad(lalafo_id=7092, seller_type="realtor", owner_listing=False)
+    )
+    owner_profile = await matching.save_profile(
+        user_id=709,
+        rooms=["1"],
+        districts=[],
+        all_districts=True,
+        max_budget=60_000,
+        source="telegram",
+        seller_types=["owner"],
+    )
+    assert apartment_matches(owner, owner_profile)
+    assert not apartment_matches(agency, owner_profile)
+
+    agency_profile = await matching.save_profile(
+        user_id=709,
+        rooms=["1"],
+        districts=[],
+        all_districts=True,
+        max_budget=60_000,
+        source="telegram",
+        seller_types=["realtor"],
+    )
+    assert not apartment_matches(owner, agency_profile)
+    assert apartment_matches(agency, agency_profile)
 
 
 @pytest.mark.asyncio

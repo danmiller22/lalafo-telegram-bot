@@ -110,16 +110,18 @@ class ManagedSession:
 class LalafoManagedAdsClient:
     """Dedicated authenticated session that deliberately exposes no chat routes."""
 
-    def __init__(self, *, timeout: float = 25.0) -> None:
+    def __init__(self, *, timeout: float = 25.0, proxy_url: str = "") -> None:
         self._user_hash = str(uuid.uuid4())
         self._fingerprint = hashlib.sha256(uuid.uuid4().bytes).hexdigest()
         self._http = httpx.AsyncClient(
             base_url="https://lalafo.kg", follow_redirects=True,
             timeout=httpx.Timeout(timeout),
+            proxy=proxy_url or None,
         )
         self._images = httpx.AsyncClient(
             follow_redirects=True, timeout=httpx.Timeout(timeout),
             headers={"Accept": "image/jpeg,image/png,image/webp"},
+            proxy=proxy_url or None,
         )
         self.session: ManagedSession | None = None
 
@@ -264,6 +266,32 @@ class LalafoManagedAdsClient:
         return await self._json(
             "GET", f"/api/catalog/v3/feed/my-ad-details/{ad_id}"
         )
+
+    async def all_my_ads(self, *, per_page: int = 100) -> list[dict[str, Any]]:
+        """Read every owner-visible ad page without assuming the first page is complete."""
+        rows: list[dict[str, Any]] = []
+        seen: set[int] = set()
+        for page in range(1, 101):
+            payload = await self._json(
+                "GET",
+                f"/api/search/v3/feed/my/all?expand=url&page={page}&per-page={per_page}",
+            )
+            items = payload.get("items")
+            if not isinstance(items, list):
+                raise ManagedAdsContractError("Lalafo profile feed has no item list")
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    ad_id = int(item["id"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if ad_id not in seen:
+                    rows.append(item)
+                    seen.add(ad_id)
+            if len(items) < per_page:
+                return rows
+        raise ManagedAdsContractError("Lalafo profile feed exceeded 100 pages")
 
     async def wallet_balances(self) -> dict[str, Any]:
         return await self._json("GET", "/api/wallet/v3/accounts/all-balances")

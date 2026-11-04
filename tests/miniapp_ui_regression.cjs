@@ -42,10 +42,10 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
 (async () => {
   const forever = setup(null, (path, options) => {
     const body = JSON.parse(options.body);
-    if (path.endsWith('/prepare')) return Promise.resolve(response({payment_url:'https://qr.finik.kg/lifetime-999',expires_at_ms:Date.now()+300000}));
+    if (path.endsWith('/prepare')) return Promise.resolve(response({payment_url:'https://qr.finik.kg/month-999',expires_at_ms:Date.now()+300000}));
     if (path.endsWith('/start')) {
-      assert.equal(body.plan, 'lifetime');
-      return Promise.resolve(response({status:'awaiting_receipt',plan:'lifetime',price:999,payment_url:'https://qr.finik.kg/lifetime-999'}));
+      assert.equal(body.plan, 'month');
+      return Promise.resolve(response({status:'awaiting_receipt',plan:'month',price:999,payment_url:'https://qr.finik.kg/month-999'}));
     }
     return Promise.resolve(response({status:'unpaid'}));
   });
@@ -58,8 +58,8 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
   assert.equal(forever.opened.length, 0);
   await forever.node('pay-forever').onclick();
   await forever.node('pay-now').onclick();
-  assert.deepEqual(forever.opened, ['https://qr.finik.kg/lifetime-999']);
-  assert.equal(forever.node('intro').textContent, 'Навсегда · 999 сом');
+  assert.deepEqual(forever.opened, ['https://qr.finik.kg/month-999']);
+  assert.equal(forever.node('intro').textContent, '30 дней · 999 сом');
   assert.equal(forever.node('pay-lifetime').hidden, true);
   assert.equal(forever.node('pay-forever').hidden, true);
   const unavailable = setup(null, () => Promise.resolve({ok: false, status: 404,

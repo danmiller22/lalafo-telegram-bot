@@ -664,7 +664,7 @@ async def test_miniapp_page_is_public_but_session_requires_telegram_auth(
     payload = accepted.json()
     assert payload["status"] == "unpaid"
     assert payload["price"] == 499
-    assert payload["monthly_available"] is False
+    assert payload["monthly_available"] is True
     assert "terms_accepted" not in payload
     assert "terms_text" not in payload
     assert payload["privacy_url"].endswith("?start=privacy")
@@ -738,7 +738,7 @@ async def test_miniapp_starts_a_checkout_bound_to_the_selected_apartment(
     assert response.status_code == 200
     assert response.json()["payment_url"] == "https://qr.finik.kg/request-73"
     assert response.json()["automatic_payment"] is True
-    assert response.json()["monthly_available"] is False
+    assert response.json()["monthly_available"] is True
     service.begin_payment.assert_awaited_once_with(
         user_id=778899,
         apartment_id=42,

@@ -5,6 +5,51 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 PAGE_SIZE = 8
 
+DISTRICT_PRESETS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    (
+        "center",
+        "🏙 Центр",
+        (
+            "центр",
+            "золотой квадрат",
+            "цум",
+            "гум",
+            "филармон",
+            "моссовет",
+            "медакадем",
+            "ошский рынок",
+        ),
+    ),
+    (
+        "upper",
+        "⛰ Верхние районы",
+        (
+            "асанбай",
+            "южная магистраль",
+            "орто-сай",
+            "ататюрк",
+            "ботанический сад",
+            "верхний джал",
+            "юг-2",
+        ),
+    ),
+    ("micro", "🏢 Микрорайоны", ("мкр", "микрорайон")),
+    ("jal", "🏠 Джал", ("джал", "политех")),
+    ("east", "🌅 Восточные районы", ("восток", "тунгуч", "аламедин")),
+)
+
+
+def district_preset_members(options: list[str], key: str) -> set[str]:
+    preset = next((item for item in DISTRICT_PRESETS if item[0] == key), None)
+    if preset is None:
+        return set()
+    needles = preset[2]
+    return {
+        option
+        for option in options
+        if any(needle in option.casefold().replace("ё", "е") for needle in needles)
+    }
+
 
 def hot_start_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
@@ -35,10 +80,41 @@ def rooms_keyboard(selected: set[str]) -> InlineKeyboardMarkup:
                     callback_data="matching:room:1",
                 ),
             ],
+            [InlineKeyboardButton(
+                text=label("2", "2-комнатная"), callback_data="matching:room:2"
+            )],
             [
                 InlineKeyboardButton(
                     text="Далее →",
                     callback_data="matching:rooms:done",
+                )
+            ],
+        ]
+    )
+
+
+def seller_types_keyboard(selected: set[str]) -> InlineKeyboardMarkup:
+    def label(value: str, text: str) -> str:
+        return f"✅ {text}" if value in selected else text
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=label("owner", "👤 От собственников"),
+                    callback_data="matching:seller:owner",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=label("realtor", "🏢 От агентств недвижимости"),
+                    callback_data="matching:seller:realtor",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Далее →",
+                    callback_data="matching:sellers:done",
                 )
             ],
         ]
@@ -59,6 +135,17 @@ def districts_keyboard(
             )
         ]
     ]
+    for key, title, _ in DISTRICT_PRESETS:
+        members = district_preset_members(options, key)
+        active = bool(members) and members.issubset(selected)
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=("✅ " if active else "") + title,
+                    callback_data=f"matching:preset:{key}",
+                )
+            ]
+        )
     for index in range(start, min(start + PAGE_SIZE, len(options))):
         value = options[index]
         rows.append(
@@ -92,14 +179,15 @@ def budget_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="23 000", callback_data="matching:budget:23000"),
-                InlineKeyboardButton(text="25 000", callback_data="matching:budget:25000"),
+                InlineKeyboardButton(text="до 25 000 сом", callback_data="matching:budget:25000"),
+                InlineKeyboardButton(text="до 30 000 сом", callback_data="matching:budget:30000"),
             ],
             [
-                InlineKeyboardButton(text="30 000", callback_data="matching:budget:30000"),
-                InlineKeyboardButton(text="35 000", callback_data="matching:budget:35000"),
+                InlineKeyboardButton(text="до 35 000 сом", callback_data="matching:budget:35000"),
+                InlineKeyboardButton(text="до 40 000 сом", callback_data="matching:budget:40000"),
             ],
-            [InlineKeyboardButton(text="40 000", callback_data="matching:budget:40000")],
+            [InlineKeyboardButton(text="до 50 000 сом", callback_data="matching:budget:50000")],
+            [InlineKeyboardButton(text="до 60 000 сом", callback_data="matching:budget:60000")],
             [InlineKeyboardButton(text="Указать свой", callback_data="matching:budget:custom")],
         ]
     )

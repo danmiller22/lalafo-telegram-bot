@@ -277,7 +277,9 @@ class ApartmentRepository:
         """Resolve original source cards behind ads created on our Lalafo profile."""
         return [item.apartment for item in await self.managed_lalafo_sources()]
 
-    async def managed_lalafo_sources(self) -> list[ManagedLalafoSource]:
+    async def managed_lalafo_sources(
+        self, *, deduplicate_sources: bool = True
+    ) -> list[ManagedLalafoSource]:
         """Return active managed ads together with their original source cards."""
         async with self.sessions() as session:
             references = (
@@ -314,7 +316,6 @@ class ApartmentRepository:
                                 Apartment.id.in_(apartment_ids),
                                 Apartment.lalafo_id.in_(lalafo_ids),
                             ),
-                            Apartment.rooms.in_(("1", "2", "studio")),
                             Apartment.active.is_(True),
                             Apartment.phone != "",
                         )
@@ -327,7 +328,9 @@ class ApartmentRepository:
         used_source_ids: set[int] = set()
         for source_id, source_lalafo_id, managed_id, managed_url in references:
             apartment = by_id.get(source_id) or by_lalafo_id.get(source_lalafo_id)
-            if apartment is None or apartment.id in used_source_ids:
+            if apartment is None or (
+                deduplicate_sources and apartment.id in used_source_ids
+            ):
                 continue
             selected.append(
                 ManagedLalafoSource(
@@ -336,7 +339,8 @@ class ApartmentRepository:
                     managed_lalafo_ad_url=managed_url,
                 )
             )
-            used_source_ids.add(apartment.id)
+            if deduplicate_sources:
+                used_source_ids.add(apartment.id)
         return selected
 
     async def verified_source_by_photos(
@@ -674,6 +678,20 @@ class PaymentRepository:
     def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
         self.sessions = sessions
 
+    async def is_active_managed_source(self, apartment_id: int) -> bool:
+        async with self.sessions() as session:
+            return bool(
+                await session.scalar(
+                    select(DailyFeaturedPublication.id)
+                    .where(
+                        DailyFeaturedPublication.source_apartment_id == apartment_id,
+                        DailyFeaturedPublication.managed_lalafo_ad_id.is_not(None),
+                        DailyFeaturedPublication.deactivated_at.is_(None),
+                    )
+                    .limit(1)
+                )
+            )
+
     async def get_access(self, user_id: int, apartment_id: int) -> PaymentRequest | None:
         async with self.sessions() as session:
             result = await session.execute(
@@ -785,11 +803,22 @@ class PaymentRepository:
     ) -> PaymentSubmission:
         async with self.sessions.begin() as session:
             apartment = await session.get(Apartment, apartment_id)
+            managed_source = False
+            if apartment is not None:
+                managed_source = bool(
+                    await session.scalar(
+                        select(DailyFeaturedPublication.id).where(
+                            DailyFeaturedPublication.source_apartment_id == apartment.id,
+                            DailyFeaturedPublication.managed_lalafo_ad_id.is_not(None),
+                            DailyFeaturedPublication.deactivated_at.is_(None),
+                        ).limit(1)
+                    )
+                )
             if (
                 apartment is None
                 or not apartment.phone
                 or apartment.availability_status == "unavailable"
-                or listing_expired(apartment)
+                or (listing_expired(apartment) and not managed_source)
             ):
                 raise LookupError("Apartment is unavailable")
             result = await session.execute(

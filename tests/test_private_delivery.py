@@ -29,6 +29,8 @@ def test_private_contact_contains_full_card_and_phone():
         deposit=None,
         no_subletting=True,
         phone="+996555123456",
+        source_url="https://lalafo.kg/bishkek/ads/example-id-123",
+        source_description="Длинное исходное описание",
     )
 
     text = format_private_contact(apartment)
@@ -36,6 +38,8 @@ def test_private_contact_contains_full_card_and_phone():
     assert "1-комнатная квартира" in text
     assert "25 000 сом" in text
     assert "+996 555 123 456" in text
+    assert "https://lalafo.kg/bishkek/ads/example-id-123" in text
+    assert "Длинное исходное описание" not in text
     assert "Оплата подтверждена" not in text
     assert "доступен только вам" not in text
 

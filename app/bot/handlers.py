@@ -21,7 +21,7 @@ from app.matching.repository import MatchingRepository
 from app.availability import AvailabilityService
 from app.payments.repository import PaymentRepository
 from app.payment_plans import (
-    LIFETIME_PLAN,
+    MONTH_PLAN,
     WEEK_PLAN,
     WEEK_PRICE,
     plan_label,
@@ -30,6 +30,7 @@ from app.payment_plans import (
 from app.payments.service import PaymentService
 from app.security import TokenSigner
 from app.support.handlers import begin_support
+from app.showcase import ShowcaseService
 from app.telegram.formatting import is_confirmed_owner, format_apartment
 from app.telegram.keyboards import (
     apartment_keyboard,
@@ -47,8 +48,12 @@ router = Router(name="user")
 
 
 def _payment_details(plan: str | None, settings: Settings, *, signer: TokenSigner | None = None, apartment_id: int | None = None) -> tuple[str, int]:
-    chosen = LIFETIME_PLAN if plan == LIFETIME_PLAN else WEEK_PLAN
-    url = settings.lifetime_finik_payment_url if chosen == LIFETIME_PLAN else settings.weekly_finik_payment_url
+    chosen = MONTH_PLAN if plan == MONTH_PLAN else WEEK_PLAN
+    url = (
+        settings.monthly_finik_payment_url or settings.lifetime_finik_payment_url
+        if chosen == MONTH_PLAN
+        else settings.weekly_finik_payment_url
+    )
     if not url and signer is not None and apartment_id is not None:
         token = signer.sign_start_id("miniapp-apartment", apartment_id)
         url = f"https://t.me/{settings.telegram_bot_username.lstrip('@')}/access?startapp={token}"
@@ -92,6 +97,7 @@ async def start_handler(
     state: FSMContext,
     terms_consents: TermsConsentRepository | None = None,
     matching: MatchingRepository | None = None,
+    showcase: ShowcaseService | None = None,
 ) -> None:
     payload = _start_payload(message)
     if payload == "want":
@@ -105,6 +111,10 @@ async def start_handler(
         await message.answer(PRIVACY_TEXT)
         return
     if not payload or payload == "lalafo":
+        if showcase is not None:
+            await state.clear()
+            showcase.start(bot, message.from_user.id)
+            return
         if matching is None:
             # Keep direct unit-level callers and emergency deployments usable
             # when the matching repository has not been wired yet.
@@ -184,14 +194,11 @@ async def plan_handler(
     terms_consents: TermsConsentRepository | None = None,
 ) -> None:
     parts = (callback.data or "").split(":", 2)
-    if len(parts) != 3 or parts[1] not in {"w", "l"}:
+    if len(parts) != 3 or parts[1] not in {"w", "m"}:
         await callback.answer("Недействительная кнопка.", show_alert=True)
         return
-    plan = WEEK_PLAN if parts[1] == "w" else LIFETIME_PLAN
-    purpose = "plan-week" if plan == WEEK_PLAN else "plan-lifetime"
-    if plan == LIFETIME_PLAN and not settings.lifetime_finik_payment_url:
-        await callback.answer("Бессрочный тариф временно недоступен.", show_alert=True)
-        return
+    plan = WEEK_PLAN if parts[1] == "w" else MONTH_PLAN
+    purpose = "plan-week" if plan == WEEK_PLAN else "plan-month"
     payment_url, price = _payment_details(plan, settings)
     apartment_id = signer.verify_id(purpose, parts[2])
     if apartment_id is None:
@@ -230,7 +237,7 @@ async def plan_handler(
                 apartment_id=apartment_id, plan=plan,
             )
         except Exception:
-            logger.exception("Could not create weekly Finik checkout")
+            logger.exception("Could not create Finik checkout")
             await callback.answer("Не удалось открыть оплату. Попробуйте ещё раз.", show_alert=True)
             return
     await callback.answer()
@@ -268,6 +275,8 @@ async def terms_accept_handler(
     signer: TokenSigner,
     settings: Settings,
     terms_consents: TermsConsentRepository,
+    service: PaymentService,
+    bot: Bot,
 ) -> None:
     token = (callback.data or "").removeprefix("terms:accept:")
     apartment_id = signer.verify_id("terms", token)
@@ -276,9 +285,20 @@ async def terms_accept_handler(
         return
     await terms_consents.accept(callback.from_user.id)
     await callback.answer("Условия приняты.")
+    access = await service.payments.active_weekly_access(callback.from_user.id)
+    apartment = await service.apartments.get(apartment_id)
+    if access is not None and apartment is not None and apartment.phone:
+        await send_private_contact(
+            bot,
+            user_id=callback.from_user.id,
+            apartment=apartment,
+            support_url=settings.support_bot_url,
+            max_photos=settings.max_photos_per_apartment,
+        )
+        return
     if callback.message:
         await callback.message.edit_text(
-            f"Доступ к контактам на 7 дней — {WEEK_PRICE} сом.",
+            "Выберите срок доступа ко всем контактам:",
             reply_markup=private_payment_keyboard(
                 apartment_id,
                 signer=signer,

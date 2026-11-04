@@ -10,10 +10,12 @@ from aiogram.types import CallbackQuery, Message
 from app.config import Settings
 from app.matching.keyboards import (
     budget_keyboard,
+    district_preset_members,
     districts_keyboard,
     feed_footer_keyboard,
     hot_start_keyboard,
     rooms_keyboard,
+    seller_types_keyboard,
 )
 from app.matching.repository import MAX_PRICE, MIN_PRICE, MatchingRepository
 from app.matching.states import ApartmentMatchForm
@@ -122,9 +124,10 @@ async def begin_matching_form(
         matching_source=previous.get("matching_source", source),
         hot_apartment_ids=hot_ids,
         matching_rooms=[],
+        matching_seller_types=[],
     )
     await message.answer(
-        "Какой тип квартиры вам подходит? Можно выбрать оба варианта.",
+        "Какой тип квартиры вам подходит? Можно выбрать несколько вариантов.",
         reply_markup=rooms_keyboard(set()),
     )
 
@@ -141,7 +144,7 @@ async def matching_start(callback: CallbackQuery, state: FSMContext) -> None:
 )
 async def matching_room(callback: CallbackQuery, state: FSMContext) -> None:
     value = (callback.data or "").rsplit(":", 1)[-1]
-    if value not in {"studio", "1"}:
+    if value not in {"studio", "1", "2"}:
         await callback.answer("Выберите вариант на кнопке.", show_alert=True)
         return
     data = await state.get_data()
@@ -159,11 +162,51 @@ async def matching_room(callback: CallbackQuery, state: FSMContext) -> None:
 async def matching_rooms_done(
     callback: CallbackQuery,
     state: FSMContext,
-    matching: MatchingRepository,
 ) -> None:
     data = await state.get_data()
     if not data.get("matching_rooms"):
         await callback.answer("Выберите хотя бы один тип квартиры.", show_alert=True)
+        return
+    await state.set_state(ApartmentMatchForm.seller_types)
+    await callback.answer()
+    if callback.message:
+        await callback.message.edit_text(
+            "От кого показывать варианты? Можно выбрать оба варианта.",
+            reply_markup=seller_types_keyboard(set()),
+        )
+
+
+@router.callback_query(
+    StateFilter(ApartmentMatchForm.seller_types),
+    F.data.startswith("matching:seller:"),
+)
+async def matching_seller_type(callback: CallbackQuery, state: FSMContext) -> None:
+    value = (callback.data or "").rsplit(":", 1)[-1]
+    if value not in {"owner", "realtor"}:
+        await callback.answer("Выберите вариант на кнопке.", show_alert=True)
+        return
+    data = await state.get_data()
+    selected = set(data.get("matching_seller_types", []))
+    selected.symmetric_difference_update({value})
+    await state.update_data(matching_seller_types=sorted(selected))
+    await callback.answer()
+    if callback.message:
+        await callback.message.edit_reply_markup(
+            reply_markup=seller_types_keyboard(selected)
+        )
+
+
+@router.callback_query(
+    StateFilter(ApartmentMatchForm.seller_types), F.data == "matching:sellers:done"
+)
+async def matching_seller_types_done(
+    callback: CallbackQuery,
+    state: FSMContext,
+    matching: MatchingRepository,
+) -> None:
+    data = await state.get_data()
+    if not data.get("matching_seller_types"):
+        await callback.answer("Выберите хотя бы один вариант.", show_alert=True)
         return
     options = await matching.available_districts()
     if not options:
@@ -225,6 +268,31 @@ async def matching_district(callback: CallbackQuery, state: FSMContext) -> None:
 
 
 @router.callback_query(
+    StateFilter(ApartmentMatchForm.districts), F.data.startswith("matching:preset:")
+)
+async def matching_district_preset(
+    callback: CallbackQuery, state: FSMContext
+) -> None:
+    key = (callback.data or "").rsplit(":", 1)[-1]
+    data = await state.get_data()
+    options = list(data.get("district_options", []))
+    selected = set(data.get("matching_districts", []))
+    members = district_preset_members(options, key)
+    if not members:
+        await callback.answer("В этой группе пока нет районов.", show_alert=True)
+        return
+    if members.issubset(selected):
+        selected.difference_update(members)
+    else:
+        selected.update(members)
+    await state.update_data(
+        matching_districts=sorted(selected), all_districts=False
+    )
+    await callback.answer()
+    await _render_districts(callback, state)
+
+
+@router.callback_query(
     StateFilter(ApartmentMatchForm.districts), F.data.startswith("matching:page:")
 )
 async def matching_district_page(callback: CallbackQuery, state: FSMContext) -> None:
@@ -266,7 +334,7 @@ async def matching_custom_budget(callback: CallbackQuery) -> None:
     await callback.answer()
     if callback.message:
         await callback.message.edit_text(
-            "Напишите максимальный бюджет числом от 23 000 до 40 000 сом."
+            "Напишите максимальный бюджет числом от 5 000 до 60 000 сом."
         )
 
 
@@ -289,6 +357,7 @@ async def _finish_profile(
         all_districts=bool(data.get("all_districts", False)),
         max_budget=budget,
         source=str(data.get("matching_source", "telegram")),
+        seller_types=list(data.get("matching_seller_types", [])),
     )
     excluded = {int(value) for value in data.get("hot_apartment_ids", [])}
     apartments = await matching.matching_apartments(
@@ -363,7 +432,7 @@ async def matching_budget_text(
     digits = re.sub(r"\D", "", message.text or "")
     budget = int(digits) if digits else 0
     if not MIN_PRICE <= budget <= MAX_PRICE:
-        await message.answer("Введите сумму от 23 000 до 40 000 сом.")
+        await message.answer("Введите сумму от 5 000 до 60 000 сом.")
         return
     await _finish_profile(
         message,

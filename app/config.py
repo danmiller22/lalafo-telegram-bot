@@ -221,6 +221,8 @@ class Settings(BaseSettings):
     lalafo_auto_reply_web_enabled: bool = False
     lalafo_login: str = ""
     lalafo_password: str = ""
+    lalafo_showcase_profile_id: int = 18225388
+    showcase_card_interval_seconds: float = 5.0
     lalafo_auto_reply_poll_seconds: float = 10.0
     lalafo_auto_reply_watchdog_seconds: float = 30.0
     lalafo_auto_reply_stale_seconds: float = 180.0
@@ -296,6 +298,18 @@ class Settings(BaseSettings):
     @classmethod
     def empty_admin_id(cls, value: object) -> object:
         return 0 if value in (None, "") else value
+
+    @field_validator("lalafo_showcase_profile_id", mode="before")
+    @classmethod
+    def fixed_showcase_profile(cls, value: object) -> int:
+        del value
+        return 18225388
+
+    @field_validator("showcase_card_interval_seconds", mode="before")
+    @classmethod
+    def fixed_showcase_interval(cls, value: object) -> float:
+        del value
+        return 5.0
 
     @field_validator("hosted_apartment_publish_interval_minutes", mode="before")
     @classmethod

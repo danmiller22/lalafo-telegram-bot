@@ -10,6 +10,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.bot import admin, handlers, lalafo_links
+from app.favorites import FavoriteRepository
 from app.availability import AvailabilityService
 from app.config import get_settings
 from app.database import create_engine_and_session, init_db
@@ -18,6 +19,8 @@ from app.matching.repository import MatchingRepository
 from app.payments.repository import ApartmentRepository, PaymentRepository
 from app.payments.service import PaymentService
 from app.security import TokenSigner
+from app.showcase import ShowcaseService
+from app.showcase import handlers as showcase_handlers
 from app.support import handlers as support_handlers
 from app.support.repository import SupportTicketRepository
 from app.terms import TermsConsentRepository
@@ -34,6 +37,9 @@ class BotRuntime:
     workflow_data: dict[str, Any]
 
     async def close(self) -> None:
+        showcase = self.workflow_data.get("showcase")
+        if showcase is not None:
+            await showcase.close()
         await self.bot.session.close()
         await self.engine.dispose()
 
@@ -47,9 +53,11 @@ async def create_runtime(*, bot_token: str | None = None, lalafo_only: bool = Fa
     payments = PaymentRepository(sessions)
     wanted_ads = WantedAdRepository(sessions)
     matching = MatchingRepository(sessions)
+    favorites = FavoriteRepository(sessions)
     support_tickets = SupportTicketRepository(sessions)
     terms_consents = TermsConsentRepository(sessions)
     service = PaymentService(apartments, payments, admin_user_id=settings.admin_user_id)
+    showcase = ShowcaseService(apartments, favorites, settings, signer)
     availability = AvailabilityService(apartments, settings)
     bot = Bot(token=bot_token or settings.require_bot_token())
     dispatcher = Dispatcher(storage=MemoryStorage())
@@ -61,6 +69,7 @@ async def create_runtime(*, bot_token: str | None = None, lalafo_only: bool = Fa
         # Global navigation and payment callbacks must win over stateful form
         # fallbacks so /start and menu buttons can always recover the chat.
         dispatcher.include_router(handlers.router)
+        dispatcher.include_router(showcase_handlers.router)
         dispatcher.include_router(matching_handlers.router)
         # Manual Lalafo fetching/proxy discovery must run in a separate service:
         # it can exhaust the payment web instance's CPU and memory.
@@ -76,6 +85,8 @@ async def create_runtime(*, bot_token: str | None = None, lalafo_only: bool = Fa
         "service": service,
         "wanted_ads": wanted_ads,
         "matching": matching,
+        "favorites": favorites,
+        "showcase": showcase,
         "support_tickets": support_tickets,
         "terms_consents": terms_consents,
         "availability": availability,

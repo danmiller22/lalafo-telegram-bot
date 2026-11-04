@@ -26,11 +26,15 @@ class PaymentService:
 
     async def contact_status(self, user_id: int, apartment_id: int) -> ContactResult:
         apartment = await self.apartments.get(apartment_id)
+        managed_source = bool(
+            apartment is not None
+            and await self.payments.is_active_managed_source(apartment.id)
+        )
         if (
             apartment is None
             or not apartment.phone
             or apartment.availability_status == "unavailable"
-            or listing_expired(apartment)
+            or (listing_expired(apartment) and not managed_source)
         ):
             return ContactResult("unavailable", apartment)
         weekly = await self.payments.active_weekly_access(user_id)

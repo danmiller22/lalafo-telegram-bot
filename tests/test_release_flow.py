@@ -51,6 +51,8 @@ def test_terms_explain_operator_support_and_partial_refunds() -> None:
     assert "ответ оператора" not in TERMS_TEXT
     assert "Возврат средств возможен только частично" in TERMS_TEXT
     assert "не ограничивает обязательные права пользователя" in TERMS_TEXT
+    assert "агентств недвижимости" in TERMS_TEXT
+    assert "может быть определён ошибочно" in TERMS_TEXT
 
 
 @pytest.mark.asyncio

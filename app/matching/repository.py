@@ -23,8 +23,9 @@ from app.listing_lifecycle import listing_expired
 
 
 FRESH_FOR = timedelta(days=2)
-MIN_PRICE = 23_000
-MAX_PRICE = 40_000
+MIN_PRICE = 5_000
+MAX_PRICE = 60_000
+SUPPORTED_ROOMS = ("studio", "1", "2")
 COMMON_DISTRICTS = (
     "Центр", "ЦУМ", "ГУМ", "Золотой квадрат", "Филармония", "Ошский рынок",
     "Восток-5", "Асанбай", "Джал", "Верхний Джал", "Тунгуч", "Юг-2",
@@ -44,7 +45,15 @@ def _aware(value: datetime | None) -> datetime | None:
 def apartment_matches(apartment: Apartment, profile: ApartmentSearchProfile) -> bool:
     if apartment.rooms not in set(profile.rooms or []):
         return False
-    if apartment.price < MIN_PRICE or apartment.price > profile.max_budget:
+    seller_types = set(
+        getattr(profile, "seller_types", None) or ("owner", "realtor")
+    )
+    seller_type = str(apartment.seller_type or "unknown")
+    if seller_type == "owner" and not apartment.owner_listing:
+        seller_type = "unknown"
+    if seller_type not in seller_types:
+        return False
+    if apartment.price <= 0 or apartment.price > profile.max_budget:
         return False
     if profile.all_districts:
         return True
@@ -80,14 +89,21 @@ class MatchingRepository:
         all_districts: bool,
         max_budget: int,
         source: str,
+        seller_types: list[str] | None = None,
     ) -> ApartmentSearchProfile:
         now = datetime.now(timezone.utc)
+        selected_sellers = [
+            value
+            for value in (seller_types or ["owner", "realtor"])
+            if value in {"owner", "realtor"}
+        ]
         async with self.sessions.begin() as session:
             profile = await session.get(ApartmentSearchProfile, user_id)
             if profile is None:
                 profile = ApartmentSearchProfile(
                     telegram_user_id=user_id,
                     rooms=rooms,
+                    seller_types=selected_sellers,
                     districts=[] if all_districts else districts,
                     all_districts=all_districts,
                     max_budget=max_budget,
@@ -98,6 +114,7 @@ class MatchingRepository:
                 session.add(profile)
             else:
                 profile.rooms = rooms
+                profile.seller_types = selected_sellers
                 profile.districts = [] if all_districts else districts
                 profile.all_districts = all_districts
                 profile.max_budget = max_budget
@@ -128,9 +145,12 @@ class MatchingRepository:
                         select(Apartment.district)
                         .where(
                             Apartment.active.is_(True),
-                            Apartment.published_at.is_not(None),
-                            Apartment.published_at >= cutoff,
-                            Apartment.rooms.in_(("studio", "1")),
+                            or_(
+                                Apartment.last_seen_at >= cutoff,
+                                Apartment.source_updated_at >= cutoff,
+                                Apartment.updated_at >= cutoff,
+                            ),
+                            Apartment.rooms.in_(SUPPORTED_ROOMS),
                             Apartment.price.between(MIN_PRICE, MAX_PRICE),
                             Apartment.district.is_not(None),
                         )
@@ -155,16 +175,19 @@ class MatchingRepository:
                         select(Apartment)
                         .where(
                             Apartment.active.is_(True),
-                            Apartment.publication_status == "published",
-                            Apartment.published_at.is_not(None),
-                            Apartment.published_at >= cutoff,
-                            Apartment.rooms.in_(("studio", "1")),
+                            or_(
+                                Apartment.last_seen_at >= cutoff,
+                                Apartment.source_updated_at >= cutoff,
+                                Apartment.updated_at >= cutoff,
+                            ),
+                            Apartment.rooms.in_(SUPPORTED_ROOMS),
                             Apartment.price.between(MIN_PRICE, MAX_PRICE),
                             Apartment.phone != "",
                             Apartment.availability_status != "unavailable",
                         )
                         .order_by(
-                            Apartment.published_at.desc(),
+                            Apartment.price.asc(),
+                            Apartment.last_seen_at.desc().nullslast(),
                             Apartment.discovery_priority.desc(),
                             Apartment.id.desc(),
                         )
@@ -277,7 +300,7 @@ class MatchingRepository:
                                     Apartment.lalafo_id.in_(lalafo_ids),
                                 ),
                                 Apartment.active.is_(True),
-                                Apartment.rooms.in_(("studio", "1")),
+                                Apartment.rooms.in_(SUPPORTED_ROOMS),
                                 Apartment.price.between(MIN_PRICE, MAX_PRICE),
                                 Apartment.phone != "",
                                 Apartment.availability_status != "unavailable",
@@ -457,7 +480,13 @@ class MatchingRepository:
             for profile in profiles:
                 after = _aware(profile.notifications_after) or now
                 for apartment in apartments:
-                    published_at = _aware(apartment.published_at)
+                    published_at = _aware(
+                        apartment.published_at
+                        or apartment.last_seen_at
+                        or apartment.source_updated_at
+                        or apartment.updated_at
+                        or apartment.created_at
+                    )
                     pair = (profile.telegram_user_id, apartment.id)
                     if (
                         pair in existing

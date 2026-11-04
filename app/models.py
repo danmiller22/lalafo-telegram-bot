@@ -104,6 +104,7 @@ class ApartmentSearchProfile(Base):
 
     telegram_user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     rooms: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    seller_types: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     districts: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     all_districts: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     max_budget: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -167,6 +168,27 @@ class CustomerFunnelEvent(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow
     )
+
+
+class SavedApartment(Base):
+    __tablename__ = "saved_apartments"
+    __table_args__ = (
+        UniqueConstraint(
+            "telegram_user_id", "apartment_id", name="uq_saved_user_apartment"
+        ),
+        Index("ix_saved_user_created", "telegram_user_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    telegram_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    apartment_id: Mapped[int] = mapped_column(
+        ForeignKey("apartments.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+
+    apartment: Mapped[Apartment] = relationship()
 
 
 class ApartmentInventoryQueue(Base):

@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import UTC
-from zoneinfo import ZoneInfo
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
@@ -11,7 +9,11 @@ from aiogram.types import InputMediaPhoto, URLInputFile
 
 from app.lalafo.phone import display_phone
 from app.models import Apartment
-from app.telegram.formatting import is_confirmed_owner, format_apartment
+from app.telegram.formatting import (
+    format_apartment,
+    format_showcase_apartment,
+    is_confirmed_owner,
+)
 from app.telegram.formatting import format_public_apartment
 from app.telegram.keyboards import apartment_keyboard
 from app.telegram.keyboards import matching_apartment_keyboard
@@ -19,7 +21,6 @@ from app.security import TokenSigner
 
 logger = logging.getLogger(__name__)
 TELEGRAM_ALBUM_LIMIT = 10
-BISHKEK_TIMEZONE = ZoneInfo("Asia/Bishkek")
 
 
 def public_description(value: str | None) -> str:
@@ -42,10 +43,10 @@ def public_description(value: str | None) -> str:
 
 def format_private_contact(apartment: Apartment) -> str:
     parts = [format_apartment(apartment)]
-    description = getattr(apartment, "source_description", None)
-    if description:
-        parts.extend(("", description.strip()[:2500]))
     parts.extend(("", f"📞 Контакт по объявлению: {display_phone(apartment.phone)}"))
+    source_url = (getattr(apartment, "source_url", None) or "").strip()
+    if source_url.startswith(("https://", "http://")):
+        parts.append(f"🔗 Исходное объявление: {source_url}")
     return "\n".join(parts)
 
 
@@ -165,23 +166,7 @@ async def send_matching_card(
         phone=apartment.phone, confirmed_owner=is_confirmed_owner(apartment), signer=signer,
         bot_username=bot_username,
     )
-    text = f"🆕 Новое объявление:\n\n{format_apartment(apartment)}"
-    description = public_description(apartment.source_description)
-    if description:
-        text = f"{text}\n\nОписание:\n{description[:2200]}"
-    checked_at = (
-        apartment.availability_checked_at
-        or apartment.last_seen_at
-        or apartment.published_at
-        or apartment.updated_at
-    )
-    if checked_at is not None:
-        if checked_at.tzinfo is None:
-            checked_at = checked_at.replace(tzinfo=UTC)
-        checked_text = checked_at.astimezone(BISHKEK_TIMEZONE).strftime(
-            "%d.%m.%Y %H:%M"
-        )
-        text = f"{text}\n\nПроверено: {checked_text}"
+    text = format_showcase_apartment(apartment)
     urls = list(dict.fromkeys(apartment.photo_urls))
     if len(urls) == 1 and len(text) <= 1024:
         try:

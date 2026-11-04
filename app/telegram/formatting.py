@@ -15,8 +15,24 @@ def room_title(rooms: str) -> str:
         "studio": "Студия",
         "1": "1-комнатная квартира",
         "2": "2-комнатная квартира",
+        "3": "3-комнатная квартира",
+        "4": "4-комнатная квартира",
+        "4+": "4+-комнатная квартира",
         "shared": "Подселение",
     }.get(rooms, "Квартира")
+
+
+def format_showcase_apartment(ad: LalafoAd | Apartment) -> str:
+    lines = [f"🏠 {room_title(ad.rooms)}"]
+    lines.append(f"📍 {ad.district or 'Центр'}")
+    lines.append("🏙 Бишкек")
+    lines.append(f"💰 {format_money(ad.price)} сом")
+    deposit = (
+        f"{format_money(ad.deposit)} сом" if ad.deposit is not None else "не указан"
+    )
+    lines.append(f"🔐 Депозит: {deposit}")
+    lines.append("✅ Актуально на момент публикации")
+    return "\n".join(lines)
 
 
 def unknown_author_label(*, phone: str, price: int, district: str | None, rooms: str) -> str:
