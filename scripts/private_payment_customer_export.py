@@ -63,10 +63,13 @@ async def main() -> None:
         Path("private-payment-customers.enc.json").write_text(
             json.dumps(envelope, separators=(",", ":")), encoding="utf-8"
         )
-        print(
-            "PAYMENT_CUSTOMERS_ENCRYPTED="
-            + base64.b64encode(json.dumps(envelope).encode()).decode()
-        )
+        encoded = base64.b64encode(json.dumps(envelope).encode()).decode()
+        for index in range(0, len(encoded), 8000):
+            print(
+                f"PAYMENT_CUSTOMERS_ENCRYPTED_{index // 8000:03d}="
+                + encoded[index : index + 8000],
+                flush=True,
+            )
         print(f"Encrypted {len(rows)} payment records")
     finally:
         await engine.dispose()
