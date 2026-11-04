@@ -175,7 +175,9 @@ async def test_operator_button_opens_message_entry():
 
     await support_operator(callback, state)
 
-    assert "Напишите вопрос" in message.edit_text.await_args.args[0]
+    prompt = message.edit_text.await_args.args[0]
+    assert prompt == "👩‍💻 Подключаем оператора. Напишите ваш вопрос одним сообщением."
+    assert "Бот передаст" not in prompt
 
 
 @pytest.mark.asyncio

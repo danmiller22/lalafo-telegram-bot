@@ -47,7 +47,8 @@ async def test_terms_must_be_reaccepted_after_version_change(repositories) -> No
 
 def test_terms_explain_operator_support_and_partial_refunds() -> None:
     assert "Помощь оператора" in TERMS_TEXT
-    assert "Бот передаст обращение оператору" in TERMS_TEXT
+    assert "Бот передаст" not in TERMS_TEXT
+    assert "ответ оператора" not in TERMS_TEXT
     assert "Возврат средств возможен только частично" in TERMS_TEXT
     assert "не ограничивает обязательные права пользователя" in TERMS_TEXT
 

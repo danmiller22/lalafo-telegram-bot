@@ -81,8 +81,7 @@ async def support_operator(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
     if callback.message:
         await callback.message.edit_text(
-            "👩‍💻 Напишите вопрос одним сообщением. Бот передаст его оператору, "
-            "а ответ придёт сюда.",
+            "👩‍💻 Подключаем оператора. Напишите ваш вопрос одним сообщением.",
             reply_markup=support_back_keyboard(),
         )
 
