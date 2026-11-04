@@ -14,6 +14,7 @@ from app.database import create_engine_and_session
 from app.managed_cards import managed_bindings
 from app.models import Apartment, RequestedCardPublication, DailyFeaturedPublication
 from app.security import TokenSigner
+from app.telegram.formatting import format_public_apartment
 from app.telegram.keyboards import apartment_keyboard
 
 
@@ -47,9 +48,10 @@ async def run():
             async with sessions() as session:
                 ids = list(await managed_bindings(session))
                 all_cards = os.environ.get('ALL_PUBLIC_CARDS') == 'true'
-                contacts = {aid: (phone, seller_type == 'owner' and bool(owner_listing))
-                    for aid, phone, seller_type, owner_listing in (await session.execute(select(
-                        Apartment.id, Apartment.phone, Apartment.seller_type, Apartment.owner_listing))).all()}
+                apartments = {
+                    apartment.id: apartment
+                    for apartment in (await session.scalars(select(Apartment))).all()
+                }
                 cutoff = datetime.now(timezone.utc) - timedelta(days=1)
                 rows = set((await session.execute(select(
                     RequestedCardPublication.apartment_id,
@@ -71,14 +73,42 @@ async def run():
                 key = (chat_id, message_id)
                 if chat_id != settings.telegram_group_id or not message_id or key in completed:
                     continue
-                phone, confirmed_owner = contacts.get(apartment_id, (None, False))
+                apartment = apartments.get(apartment_id)
+                phone = apartment.phone if apartment is not None else None
+                confirmed_owner = bool(apartment and apartment.seller_type == 'owner'
+                                       and apartment.owner_listing)
                 markup = apartment_keyboard(apartment_id, phone=phone, confirmed_owner=confirmed_owner, signer=signer,
                     bot_username=settings.telegram_bot_username, support_url=settings.support_bot_url)
                 try:
                     while True:
                         try:
-                            await bot.edit_message_reply_markup(chat_id=chat_id,
-                                message_id=message_id, reply_markup=markup)
+                            if apartment is None:
+                                await bot.edit_message_reply_markup(chat_id=chat_id,
+                                    message_id=message_id, reply_markup=markup)
+                            else:
+                                text = format_public_apartment(
+                                    apartment,
+                                    bot_username=settings.telegram_bot_username,
+                                    wanted_deep_link=True,
+                                )
+                                try:
+                                    await bot.edit_message_text(
+                                        chat_id=chat_id,
+                                        message_id=message_id,
+                                        text=text,
+                                        parse_mode='HTML',
+                                        reply_markup=markup,
+                                    )
+                                except TelegramBadRequest as exc:
+                                    if 'there is no text' not in str(exc).lower():
+                                        raise
+                                    await bot.edit_message_caption(
+                                        chat_id=chat_id,
+                                        message_id=message_id,
+                                        caption=text,
+                                        parse_mode='HTML',
+                                        reply_markup=markup,
+                                    )
                             break
                         except TelegramRetryAfter as exc:
                             await asyncio.sleep(exc.retry_after + 1)
@@ -92,14 +122,14 @@ async def run():
                         continue
                 completed.add(key)
                 failed.discard(key)
-                print(f'BUTTONS_RESTORED apartment_id={apartment_id} message_id={message_id}', flush=True)
+                print(f'CARD_PRESENTATION_RESTORED apartment_id={apartment_id} message_id={message_id}', flush=True)
                 await asyncio.sleep(0.05)
             if done:
                 break
             if datetime.now(timezone.utc) >= deadline:
                 raise RuntimeError('Followed publication run still active; repair deadline reached')
             await asyncio.sleep(30)
-        print(f'BUTTON_REPAIR_COMPLETE restored={len(completed)} removed={len(removed)} failed={len(failed)}', flush=True)
+        print(f'CARD_PRESENTATION_REPAIR_COMPLETE restored={len(completed)} removed={len(removed)} failed={len(failed)}', flush=True)
         return 1 if failed else 0
     finally:
         await bot.session.close()

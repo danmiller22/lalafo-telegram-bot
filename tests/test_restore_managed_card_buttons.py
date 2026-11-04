@@ -27,6 +27,8 @@ async def test_repair_restores_both_historical_and_latest_card_buttons(repositor
     await apartments.mark_published(apartment.id, chat_id=-1004389602150,
                                     message_id=101, acknowledged_at=NOW)
     bot = SimpleNamespace(edit_message_reply_markup=AsyncMock(),
+                          edit_message_text=AsyncMock(),
+                          edit_message_caption=AsyncMock(),
                           session=SimpleNamespace(close=AsyncMock()))
     engine = SimpleNamespace(dispose=AsyncMock())
     monkeypatch.setattr(repair, 'create_engine_and_session', lambda _: (engine, sessions))
@@ -41,11 +43,14 @@ async def test_repair_restores_both_historical_and_latest_card_buttons(repositor
         await apartments.mark_published(ordinary.id, chat_id=-1004389602150,
                                         message_id=102, acknowledged_at=NOW)
     assert await repair.run() == 0
-    calls = bot.edit_message_reply_markup.await_args_list
+    calls = bot.edit_message_text.await_args_list
     assert {call.kwargs['message_id'] for call in calls} == ({100, 101, 102} if all_cards else {100, 101})
     for call in calls:
         rows = call.kwargs['reply_markup'].inline_keyboard
         expected = '+996555999***' if call.kwargs['message_id'] == 102 else '+996555123***'
         assert rows[0][0].text == expected and '/access?startapp=' in rows[0][0].url
-        assert rows[1][0].text == '🔄 Проверить актуальность'
-        assert rows[1][0].callback_data.startswith('availability:')
+        assert rows[1][0].text == '🛟 Техподдержка'
+        assert all(button.text != '🔄 Проверить актуальность'
+                   for row in rows for button in row)
+        assert '✅ Актуально на момент публикации' in call.kwargs['text']
+    bot.edit_message_caption.assert_not_awaited()

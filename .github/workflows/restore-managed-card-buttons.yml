@@ -1,9 +1,9 @@
-name: Restore standard managed card buttons
+name: Restore standard public card presentation
 on:
   workflow_dispatch:
     inputs:
       all_public_cards:
-        description: Update all recorded public card buttons (no new messages)
+        description: Update all recorded public card text and buttons (no new messages)
         type: boolean
         default: false
       follow_publication_run:

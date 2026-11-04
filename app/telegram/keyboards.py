@@ -8,7 +8,7 @@ from app.security import TokenSigner
 from app.payment_plans import WEEK_PRICE, LIFETIME_PRICE
 
 
-APARTMENT_KEYBOARD_VERSION = 19
+APARTMENT_KEYBOARD_VERSION = 20
 MINI_APP_SHORT_NAME = "access"
 
 
@@ -44,17 +44,13 @@ def apartment_keyboard(
     bot_url = f"https://t.me/{bot_username.lstrip('@')}"
     mini_app_url = f"{bot_url}/{MINI_APP_SHORT_NAME}?startapp={payment_token}"
     rows = [
-            [
-                InlineKeyboardButton(
-                    text=masked_contact_label(phone) if confirmed_owner else "Получить номер",
-                    url=mini_app_url,
-                )
-            ],
-            [InlineKeyboardButton(
-                text="🔄 Проверить актуальность",
-                callback_data=f"availability:{signer.sign_id('availability', apartment_id)}",
-            )],
+        [
+            InlineKeyboardButton(
+                text=masked_contact_label(phone) if confirmed_owner else "Получить номер",
+                url=mini_app_url,
+            )
         ]
+    ]
     if include_duplicate:
         rows.append(
             [
@@ -104,7 +100,6 @@ def terms_keyboard(apartment_id: int, *, signer: TokenSigner, bot_username: str)
             text="✅ Я ознакомлен(а) с условиями и согласен(на) со всеми пунктами",
             callback_data=f"terms:accept:{signer.sign_id('terms', apartment_id)}",
         )],
-        [InlineKeyboardButton(text="🔄 Проверить актуальность", callback_data=f"availability:{signer.sign_id('availability', apartment_id)}")],
         [InlineKeyboardButton(text="🔒 Политика конфиденциальности", url=f"{bot_url}?start=privacy")],
         [InlineKeyboardButton(text="🛟 Техподдержка", url=f"{bot_url}?start=support")],
     ])

@@ -66,6 +66,7 @@ def format_apartment(ad: LalafoAd | Apartment) -> str:
         lines.append("👥 Совместное проживание")
     if ad.deposit is not None:
         lines.append(f"🔐 Депозит: {format_money(ad.deposit)} сом")
+    lines.append("✅ Актуально на момент публикации")
     return "\n".join(lines)
 
 
