@@ -1,0 +1,33 @@
+name: Private encrypted payment customer export
+
+on:
+  workflow_dispatch:
+    inputs:
+      public_key_b64:
+        description: One-time RSA public key in base64 PEM form
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      AUDIT_PUBLIC_KEY_B64: ${{ inputs.public_key_b64 }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Create encrypted audit artifact
+        run: python -m scripts.private_payment_customer_export
+      - uses: actions/upload-artifact@v6
+        with:
+          name: private-payment-customers
+          path: private-payment-customers.enc.json
+          retention-days: 1
