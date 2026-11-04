@@ -53,6 +53,12 @@ def test_payment_faq_gives_only_customer_facing_instructions():
     assert "Finik" in FAQ_BY_KEY["review"].answer
 
 
+def test_service_name_is_not_auto_linked_as_a_domain():
+    answer = FAQ_BY_KEY["about"].answer
+    assert "Arenda.\u2060KG" in answer
+    assert "Arenda.KG" not in answer
+
+
 def test_support_menu_contains_every_faq_and_operator_as_last_button():
     keyboard = support_menu_keyboard()
     callbacks = [row[0].callback_data for row in keyboard.inline_keyboard]
