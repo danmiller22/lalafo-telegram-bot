@@ -9,6 +9,10 @@ on:
       target_phone_hashes:
         description: Comma-separated SHA-256 hashes of normalized target phones
         required: false
+      requests_only:
+        description: Export payment requests without receipt OCR
+        required: false
+        default: "false"
 
 permissions:
   contents: read
@@ -31,7 +35,12 @@ jobs:
       - run: pip install -r requirements.txt
       - run: command -v tesseract >/dev/null || (sudo apt-get update && sudo apt-get install -y tesseract-ocr)
       - name: Create encrypted audit artifact
-        run: python -m scripts.private_payment_customer_export
+        run: |
+          if [ "${{ inputs.requests_only }}" = "true" ]; then
+            python -m scripts.private_payment_request_users_export
+          else
+            python -m scripts.private_payment_customer_export
+          fi
       - uses: actions/upload-artifact@v6
         with:
           name: private-payment-customers
