@@ -25,10 +25,12 @@ from app.models import PaymentHistory, PaymentRequest
 
 def _phone_candidates_from_text(text: str) -> list[str]:
     candidates: set[str] = set()
-    for value in re.findall(r"(?:\+?996|0)[\d\s()\-]{8,20}", text):
+    for value in re.findall(r"(?:\+?996|0|[2579])[\d\s()\-]{8,20}", text):
         digits = re.sub(r"\D", "", value)
         if len(digits) == 10 and digits.startswith("0"):
             digits = "996" + digits[1:]
+        if len(digits) == 9 and digits[0] in "2579":
+            digits = "996" + digits
         if len(digits) == 12 and digits.startswith("996"):
             candidates.add(digits)
     compact = re.sub(r"\D", "", text)
@@ -36,6 +38,11 @@ def _phone_candidates_from_text(text: str) -> list[str]:
         compact[index : index + 12]
         for index in range(max(0, len(compact) - 11))
         if compact[index : index + 3] == "996"
+    )
+    candidates.update(
+        "996" + compact[index : index + 9]
+        for index in range(max(0, len(compact) - 8))
+        if compact[index] in "2579"
     )
     return sorted(candidates)
 
