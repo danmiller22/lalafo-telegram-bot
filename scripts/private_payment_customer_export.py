@@ -24,7 +24,7 @@ async def _current_telegram_profiles(user_ids: list[int]) -> dict[int, dict[str,
         return {}
     profiles: dict[int, dict[str, object]] = {}
     async with httpx.AsyncClient(timeout=15) as client:
-        for user_id in user_ids:
+        async def fetch(user_id: int) -> tuple[int, dict[str, object] | None]:
             response = await client.post(
                 f"https://api.telegram.org/bot{token}/getChat",
                 json={"chat_id": user_id},
@@ -32,12 +32,19 @@ async def _current_telegram_profiles(user_ids: list[int]) -> dict[int, dict[str,
             payload = response.json()
             if payload.get("ok") and isinstance(payload.get("result"), dict):
                 chat = payload["result"]
-                profiles[user_id] = {
+                return user_id, {
                     "current_first_name": chat.get("first_name"),
                     "current_last_name": chat.get("last_name"),
                     "current_username": chat.get("username"),
                 }
-            await asyncio.sleep(0.04)
+            return user_id, None
+
+        for start in range(0, len(user_ids), 20):
+            results = await asyncio.gather(
+                *(fetch(user_id) for user_id in user_ids[start : start + 20])
+            )
+            profiles.update({user_id: value for user_id, value in results if value})
+            await asyncio.sleep(0.75)
     return profiles
 
 
@@ -58,8 +65,9 @@ async def main() -> None:
                     .order_by(PaymentHistory.paid_at)
                 )
             ).all()
-        recent_ids = [history.telegram_user_id for history, _ in rows[-100:]]
-        profiles = await _current_telegram_profiles(recent_ids)
+        profiles = await _current_telegram_profiles(
+            [history.telegram_user_id for history, _ in rows]
+        )
         payload = json.dumps(
             [
                 {
