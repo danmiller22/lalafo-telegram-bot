@@ -1,0 +1,24 @@
+name: Send customer refund notice once
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      CUSTOMER_NOTICE_TARGETS_ONCE: ${{ secrets.CUSTOMER_NOTICE_TARGETS_ONCE }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install httpx
+      - name: Send approved notice and record receipts
+        run: python -m scripts.send_customer_refund_notice_once
