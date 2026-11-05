@@ -19,23 +19,17 @@ async def process_payment_reviews(runtime) -> int:
     settings = runtime.workflow_data["settings"]
     if settings.finik_auto_enabled:
         retired = 0
-        for request in await payments.active_manual_review_notifications():
+        signer = runtime.workflow_data["signer"]
+        for request in await payments.pending_notifications():
             try:
-                await runtime.bot.edit_message_reply_markup(
-                    chat_id=settings.admin_user_id,
-                    message_id=request.admin_message_id,
-                    reply_markup=None,
-                )
-            except TelegramBadRequest:
-                # Deleted and already-edited messages are terminal as well.
-                pass
+                retired += bool(await notify_payment_admin(
+                    runtime.bot, payments, settings, signer, request
+                ))
             except Exception:
                 logger.exception(
-                    "Could not retire manual payment review %s", request.id
+                    "Could not notify administrator about recovery payment %s",
+                    request.id,
                 )
-                continue
-            await payments.set_admin_message(request.id, -2)
-            retired += 1
         for request in await payments.pending_provider_admin_notifications():
             try:
                 retired += bool(await notify_verified_payment_admin(

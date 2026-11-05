@@ -804,7 +804,7 @@ async def test_miniapp_uses_personal_checkout_when_finik_api_is_ready(
 
 
 @pytest.mark.asyncio
-async def test_miniapp_access_rejects_manual_claim_when_finik_is_automatic(
+async def test_miniapp_access_allows_recovery_claim_when_finik_is_automatic(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     bot_token = "123456:telegram-test-token"
@@ -876,11 +876,9 @@ async def test_miniapp_access_rejects_manual_claim_when_finik_is_automatic(
             },
         )
 
-    assert response.status_code == 409
-    assert "автоматически" in response.json()["detail"]
-    payments.mark_payment_claimed.assert_not_awaited()
-    payments.claim_admin_notification.assert_not_awaited()
-    bot.send_message.assert_not_awaited()
+    assert response.status_code == 200
+    assert response.json()["status"] == "pending"
+    payments.mark_payment_claimed.assert_awaited_once()
 
 
 @pytest.mark.asyncio

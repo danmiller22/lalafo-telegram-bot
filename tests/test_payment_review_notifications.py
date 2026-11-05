@@ -118,7 +118,7 @@ async def test_review_worker_recovers_failed_notification_without_duplicates(rep
 
 
 @pytest.mark.asyncio
-async def test_review_worker_skips_manual_notifications_in_automatic_mode(
+async def test_review_worker_sends_recovery_notifications_in_automatic_mode(
     repositories, service
 ):
     apartment, request, runtime = await review_setup(repositories, service)
@@ -130,13 +130,13 @@ async def test_review_worker_skips_manual_notifications_in_automatic_mode(
         telegram_webhook_url="https://example.test/telegram/webhook",
     )
 
-    assert await process_payment_reviews(runtime) == 0
-    runtime.bot.send_message.assert_not_awaited()
+    assert await process_payment_reviews(runtime) == 1
+    runtime.bot.send_message.assert_awaited_once()
     assert (await service.contact_status(121, apartment.id)).status == "pending"
 
 
 @pytest.mark.asyncio
-async def test_automatic_mode_removes_legacy_admin_review_buttons(
+async def test_automatic_mode_keeps_existing_recovery_review_buttons(
     repositories, service
 ):
     apartment, request, runtime = await review_setup(repositories, service)
@@ -150,11 +150,9 @@ async def test_automatic_mode_removes_legacy_admin_review_buttons(
         telegram_webhook_url="https://example.test/telegram/webhook",
     )
 
-    assert await process_payment_reviews(runtime) == 1
-    runtime.bot.edit_message_reply_markup.assert_awaited_once_with(
-        chat_id=999, message_id=515, reply_markup=None
-    )
-    assert (await repositories[1].get_request(request.id)).admin_message_id == -2
+    assert await process_payment_reviews(runtime) == 0
+    runtime.bot.edit_message_reply_markup.assert_not_awaited()
+    assert (await repositories[1].get_request(request.id)).admin_message_id == 515
     assert await process_payment_reviews(runtime) == 0
 
 

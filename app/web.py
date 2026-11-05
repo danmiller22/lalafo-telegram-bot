@@ -1615,10 +1615,13 @@ async def _record_funnel(
 @app.get("/miniapp", response_class=HTMLResponse, include_in_schema=False)
 async def telegram_mini_app() -> HTMLResponse:
     settings = get_settings()
+    payment_urls = {} if settings.finik_auto_enabled else {
+        WEEK_PLAN: _finik_payment_url(settings, WEEK_PLAN),
+        LIFETIME_PLAN: _finik_payment_url(settings, LIFETIME_PLAN)
+        or _finik_payment_url(settings, MONTH_PLAN),
+    }
     return HTMLResponse(
-        mini_app_html(payment_urls={WEEK_PLAN: _finik_payment_url(settings, WEEK_PLAN),
-                                   LIFETIME_PLAN: _finik_payment_url(settings, LIFETIME_PLAN)
-                                   or _finik_payment_url(settings, MONTH_PLAN)}),
+        mini_app_html(payment_urls=payment_urls),
         headers={
             "Cache-Control": "no-store",
             "Content-Security-Policy": (
@@ -1868,11 +1871,6 @@ async def miniapp_issue_access(
     current = await service.contact_status(user.id, apartment_id)
     if current.status == "approved":
         return _miniapp_result_payload(current)
-    if settings.finik_auto_enabled:
-        raise HTTPException(
-            status_code=409,
-            detail="Оплата подтверждается Finik автоматически. Подождите несколько секунд.",
-        )
     if not settings.admin_user_id:
         raise HTTPException(status_code=503, detail="Проверка оплаты временно недоступна. Обратитесь в поддержку.")
     if current.status not in {"awaiting_receipt", "pending"}:

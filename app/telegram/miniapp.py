@@ -293,7 +293,8 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
     show("pay-now", canPay);
     show("resume-payment", serverWaiting && tariffsView && !approved);
     updatePlanSelection();
-    show("access", waiting && data.status === "awaiting_receipt" && !automaticPayment);
+    show("access", waiting && data.status === "awaiting_receipt");
+    el("access").textContent = automaticPayment ? "Уже оплатил(а), но доступ не открылся" : "Я оплатил(а)";
     show("reopen-payment", waiting && data.status === "awaiting_receipt");
     if (serverWaiting) startPaymentPolling();
     if (!approved) {{
@@ -391,7 +392,7 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
       if (data.status === "approved" || data.status === "unavailable" || data.status === "pending") return;
       startPaymentPolling();
       if (navigation !== navigationVersion) return;
-      const targetUrl = readyUrl || data.payment_url;
+      const targetUrl = data.payment_url || readyUrl;
       if (!targetUrl) throw new Error("Не удалось открыть оплату. Попробуйте ещё раз.");
       const current = telegramContext();
       if (current) current.openLink(targetUrl); else location.href = targetUrl;
