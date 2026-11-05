@@ -293,8 +293,8 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
     show("pay-now", canPay);
     show("resume-payment", serverWaiting && tariffsView && !approved);
     updatePlanSelection();
-    show("access", waiting && data.status === "awaiting_receipt");
-    el("access").textContent = automaticPayment ? "Уже оплатил(а), но доступ не открылся" : "Я оплатил(а)";
+    show("access", waiting && data.status === "awaiting_receipt" && !automaticPayment);
+    el("access").textContent = "Я оплатил(а)";
     show("reopen-payment", waiting && data.status === "awaiting_receipt");
     if (serverWaiting) startPaymentPolling();
     if (!approved) {{

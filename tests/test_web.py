@@ -693,6 +693,29 @@ def test_personal_checkout_takes_priority_when_finik_api_is_configured(
 
 
 @pytest.mark.asyncio
+async def test_automatic_miniapp_never_embeds_shared_payment_links(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("WEEKLY_FINIK_PAYMENT_URL", "https://qr.finik.kg/shared-week")
+    monkeypatch.setenv("LIFETIME_FINIK_PAYMENT_URL", "https://qr.finik.kg/shared-life")
+    monkeypatch.setenv("FINIK_API_KEY", "configured")
+    monkeypatch.setenv("FINIK_ACCOUNT_ID", "corporate")
+    monkeypatch.setenv("FINIK_PRIVATE_KEY_PEM", "configured")
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_URL", "https://example.test/telegram/webhook")
+    get_settings.cache_clear()
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=web.app), base_url="http://test"
+    ) as client:
+        response = await client.get("/miniapp")
+
+    assert response.status_code == 200
+    assert "const paymentUrls = {};" in response.text
+    assert "shared-week" not in response.text
+    assert "shared-life" not in response.text
+
+
+@pytest.mark.asyncio
 async def test_miniapp_starts_a_checkout_bound_to_the_selected_apartment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -804,7 +827,7 @@ async def test_miniapp_uses_personal_checkout_when_finik_api_is_ready(
 
 
 @pytest.mark.asyncio
-async def test_miniapp_access_allows_recovery_claim_when_finik_is_automatic(
+async def test_miniapp_access_rejects_manual_claim_when_finik_is_automatic(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     bot_token = "123456:telegram-test-token"
@@ -876,9 +899,9 @@ async def test_miniapp_access_allows_recovery_claim_when_finik_is_automatic(
             },
         )
 
-    assert response.status_code == 200
-    assert response.json()["status"] == "pending"
-    payments.mark_payment_claimed.assert_awaited_once()
+    assert response.status_code == 409
+    assert "автоматически" in response.json()["detail"]
+    payments.mark_payment_claimed.assert_not_awaited()
 
 
 @pytest.mark.asyncio

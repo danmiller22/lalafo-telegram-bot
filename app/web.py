@@ -1844,6 +1844,11 @@ async def miniapp_issue_access(
     current = await service.contact_status(user.id, apartment_id)
     if current.status == "approved":
         return _miniapp_result_payload(current)
+    if settings.finik_auto_enabled:
+        raise HTTPException(
+            status_code=409,
+            detail="Оплата подтверждается Finik автоматически. Подождите несколько секунд.",
+        )
     if not settings.admin_user_id:
         raise HTTPException(status_code=503, detail="Проверка оплаты временно недоступна. Обратитесь в поддержку.")
     if current.status not in {"awaiting_receipt", "pending"}:

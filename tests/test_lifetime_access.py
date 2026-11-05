@@ -131,8 +131,8 @@ async def test_weekly_miniapp_checkout_and_automatic_access_end_to_end(repositor
             assert again.json()["payment_url"] == started.json()["payment_url"]
             assert len(captured) == 1
             granted = await client.post("/miniapp/api/access", json=payload)
-            assert granted.status_code == 200
-            assert granted.json()["status"] == "pending"
+            assert granted.status_code == 409
+            assert "автоматически" in granted.json()["detail"]
             assert "phone" not in granted.json()
             checkout = await payments.get_access(880, first.id)
             assert checkout.payment_claimed_at is None
