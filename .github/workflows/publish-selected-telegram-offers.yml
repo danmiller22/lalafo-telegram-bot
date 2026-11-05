@@ -1,0 +1,43 @@
+name: Publish selected Telegram offers to group
+
+on:
+  workflow_dispatch:
+    inputs:
+      offers:
+        description: JSON manifest of the ten authorized public offers
+        required: true
+        type: string
+      confirm_public_send:
+        description: Confirm publication to the production Telegram group
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-selected-telegram-offers
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: inputs.confirm_public_send
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_GROUP_ID: "-1004389602150"
+      CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SELECTED_TELEGRAM_OFFERS: ${{ inputs.offers }}
+      LOG_LEVEL: INFO
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --disable-pip-version-check --quiet -r requirements.txt
+      - run: alembic upgrade head
+      - run: python -m tools.publish_selected_telegram_offers
