@@ -1,0 +1,30 @@
+name: Grant lifetime access by username
+
+on:
+  workflow_dispatch:
+    inputs:
+      usernames:
+        description: Comma-separated Telegram usernames
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  grant:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      ADMIN_USER_ID: ${{ secrets.ADMIN_USER_ID }}
+      LIFETIME_GRANT_USERNAMES: ${{ inputs.usernames }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Grant lifetime access and notify users
+        run: python -m scripts.grant_lifetime_by_username_once
