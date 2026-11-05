@@ -1654,11 +1654,6 @@ async def miniapp_session(payload: MiniAppRequest, background_tasks: BackgroundT
     response["privacy_url"] = f"{bot_url}?start=privacy"
     if payload.track_open:
         background_tasks.add_task(_record_miniapp_open, runtime, user.id, apartment_id)
-        if result.status == "approved":
-            background_tasks.add_task(
-                _notify_contact_delivery_admin,
-                runtime, settings, user, apartment_id,
-            )
     return response
 
 
@@ -1667,28 +1662,6 @@ async def _record_miniapp_open(runtime: Any, user_id: int, apartment_id: int) ->
         await _record_funnel(runtime, user_id, "card_opened", apartment_id=apartment_id)
     except Exception:
         logger.exception("Could not record Mini App open")
-
-
-async def _notify_contact_delivery_admin(
-    runtime: Any, settings: Any, user: Any, apartment_id: int
-) -> None:
-    matching = runtime.workflow_data.get("matching")
-    if matching is None or not settings.admin_user_id:
-        return
-    if not await matching.claim_contact_admin_notification(user.id, apartment_id):
-        return
-    try:
-        username = f"@{user.username}" if user.username else "без username"
-        await runtime.bot.send_message(
-            settings.admin_user_id,
-            "📞 Автовыдача контакта\n"
-            f"Клиент: {user.first_name or 'Имя не указано'} — {username}\n"
-            f"Telegram ID: {user.id}\n"
-            f"Квартира ID: {apartment_id}",
-        )
-    except Exception:
-        await matching.release_contact_admin_notification(user.id, apartment_id)
-        logger.exception("Could not notify administrator about contact delivery")
 
 
 async def _record_payment_funnel_safely(

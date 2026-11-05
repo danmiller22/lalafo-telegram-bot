@@ -1246,21 +1246,3 @@ async def test_unavailable_contact_never_creates_a_checkout(monkeypatch, handler
     assert 'payment_url' not in result
     payments.submit.assert_not_awaited()
     service.begin_payment.assert_not_awaited()
-
-@pytest.mark.asyncio
-async def test_contact_autodelivery_notifies_admin_once() -> None:
-    matching = SimpleNamespace(
-        claim_contact_admin_notification=AsyncMock(side_effect=[True, False]),
-        release_contact_admin_notification=AsyncMock(),
-    )
-    bot = SimpleNamespace(send_message=AsyncMock())
-    runtime = SimpleNamespace(workflow_data={"matching": matching}, bot=bot)
-    settings = Settings(_env_file=None, admin_user_id=999)
-    user = SimpleNamespace(id=123, username="buyer", first_name="Клиент")
-
-    await web._notify_contact_delivery_admin(runtime, settings, user, 42)
-    await web._notify_contact_delivery_admin(runtime, settings, user, 42)
-
-    bot.send_message.assert_awaited_once()
-    assert bot.send_message.await_args.args[0] == 999
-    assert "Автовыдача контакта" in bot.send_message.await_args.args[1]
