@@ -1,0 +1,29 @@
+name: Send payment recovery notice
+
+on:
+  workflow_dispatch:
+    inputs:
+      usernames:
+        description: Comma-separated Telegram usernames
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PAYMENT_RECOVERY_USERNAMES: ${{ inputs.usernames }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Resolve usernames and send recovery instruction
+        run: python -m scripts.send_payment_recovery_notice_once
