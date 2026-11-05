@@ -21,7 +21,7 @@ from app.matching.repository import MatchingRepository
 from app.availability import AvailabilityService
 from app.payments.repository import PaymentRepository
 from app.payment_plans import (
-    MONTH_PLAN,
+    LIFETIME_PLAN,
     WEEK_PLAN,
     WEEK_PRICE,
     plan_label,
@@ -48,10 +48,10 @@ router = Router(name="user")
 
 
 def _payment_details(plan: str | None, settings: Settings, *, signer: TokenSigner | None = None, apartment_id: int | None = None) -> tuple[str, int]:
-    chosen = MONTH_PLAN if plan == MONTH_PLAN else WEEK_PLAN
+    chosen = LIFETIME_PLAN if plan == LIFETIME_PLAN else WEEK_PLAN
     url = (
-        settings.monthly_finik_payment_url or settings.lifetime_finik_payment_url
-        if chosen == MONTH_PLAN
+        settings.lifetime_finik_payment_url or settings.monthly_finik_payment_url
+        if chosen == LIFETIME_PLAN
         else settings.weekly_finik_payment_url
     )
     if not url and signer is not None and apartment_id is not None:
@@ -194,11 +194,11 @@ async def plan_handler(
     terms_consents: TermsConsentRepository | None = None,
 ) -> None:
     parts = (callback.data or "").split(":", 2)
-    if len(parts) != 3 or parts[1] not in {"w", "m"}:
+    if len(parts) != 3 or parts[1] not in {"w", "l"}:
         await callback.answer("Недействительная кнопка.", show_alert=True)
         return
-    plan = WEEK_PLAN if parts[1] == "w" else MONTH_PLAN
-    purpose = "plan-week" if plan == WEEK_PLAN else "plan-month"
+    plan = WEEK_PLAN if parts[1] == "w" else LIFETIME_PLAN
+    purpose = "plan-week" if plan == WEEK_PLAN else "plan-lifetime"
     payment_url, price = _payment_details(plan, settings)
     apartment_id = signer.verify_id(purpose, parts[2])
     if apartment_id is None:

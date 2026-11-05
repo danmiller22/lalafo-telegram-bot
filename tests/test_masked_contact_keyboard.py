@@ -31,7 +31,7 @@ def test_card_buttons_only_expose_masked_phone_and_keep_signed_target():
         bot_username='testbot'
     )
     assert [row[0].text for row in matching.inline_keyboard] == [
-        '📞 Получить номер', '❤️ Сохранить'
+        '+996555123***', '❤️ Сохранить'
     ]
     assert '996555123456' not in matching.model_dump_json()
 

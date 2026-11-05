@@ -5,7 +5,7 @@ import re
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from app.security import TokenSigner
-from app.payment_plans import MONTH_PRICE, WEEK_PRICE
+from app.payment_plans import LIFETIME_PRICE, WEEK_PRICE
 
 
 APARTMENT_KEYBOARD_VERSION = 20
@@ -73,8 +73,10 @@ def matching_apartment_keyboard(
     confirmed_owner: bool = False,
 ) -> InlineKeyboardMarkup:
     """Compact card keyboard for the private personalized feed."""
-    del bot_username, phone, confirmed_owner
-    return showcase_apartment_keyboard(apartment_id, signer=signer)
+    return showcase_apartment_keyboard(
+        apartment_id, signer=signer, bot_username=bot_username,
+        phone=phone, confirmed_owner=confirmed_owner,
+    )
 
 
 def terms_keyboard(apartment_id: int, *, signer: TokenSigner, bot_username: str) -> InlineKeyboardMarkup:
@@ -151,8 +153,8 @@ def private_payment_keyboard(
         text=f"Недельный тариф — {WEEK_PRICE} сом",
         callback_data=f"plan:w:{signer.sign_id('plan-week', apartment_id)}",
     )], [InlineKeyboardButton(
-        text=f"Месячный тариф — {MONTH_PRICE} сом",
-        callback_data=f"plan:m:{signer.sign_id('plan-month', apartment_id)}",
+        text=f"Доступ навсегда — {LIFETIME_PRICE} сом",
+        callback_data=f"plan:l:{signer.sign_id('plan-lifetime', apartment_id)}",
     )]]
     rows.append(
         [
@@ -166,15 +168,19 @@ def private_payment_keyboard(
 
 
 def showcase_apartment_keyboard(
-    apartment_id: int, *, signer: TokenSigner, saved: bool = False
+    apartment_id: int, *, signer: TokenSigner, bot_username: str = "arenda312bot",
+    phone: str | None = None, confirmed_owner: bool = False, saved: bool = False
 ) -> InlineKeyboardMarkup:
+    payment_token = signer.sign_start_id("miniapp-apartment", apartment_id)
+    mini_app_url = (
+        f"https://t.me/{bot_username.lstrip('@')}/{MINI_APP_SHORT_NAME}"
+        f"?startapp={payment_token}"
+    )
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(
-                text="📞 Получить номер",
-                callback_data=(
-                    f"listing:contact:{signer.sign_id('listing-contact', apartment_id)}"
-                ),
+                text=masked_contact_label(phone) if confirmed_owner else "📞 Получить номер",
+                url=mini_app_url,
             )],
             [InlineKeyboardButton(
                 text="✅ Сохранено" if saved else "❤️ Сохранить",

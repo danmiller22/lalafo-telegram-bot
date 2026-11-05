@@ -163,7 +163,8 @@ async def test_new_customer_sees_two_hot_cards_before_filter_setup(repositories)
     assert "Описание:" not in first_card.kwargs["caption"]
     assert "Проверено:" not in first_card.kwargs["caption"]
     card_keyboard = first_card.kwargs["reply_markup"]
-    assert card_keyboard.inline_keyboard[0][0].text == "📞 Получить номер"
+    assert card_keyboard.inline_keyboard[0][0].text == "+996555123***"
+    assert "startapp=" in card_keyboard.inline_keyboard[0][0].url
     assert card_keyboard.inline_keyboard[1][0].text == "❤️ Сохранить"
     footer = message.answer.await_args_list[-1].kwargs["reply_markup"]
     assert footer.inline_keyboard[0][0].callback_data == "matching:start"

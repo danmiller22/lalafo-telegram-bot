@@ -18,7 +18,7 @@ def test_restored_lifetime_session_keeps_999_price():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('plan,price', [('week',499),('month',999)])
+@pytest.mark.parametrize('plan,price', [('week',499),('lifetime',999)])
 async def test_checkout_keeps_selected_plan_and_price(monkeypatch,plan,price):
     settings=Settings(_env_file=None,weekly_finik_payment_url='https://qr.finik.kg/weekly-499',monthly_finik_payment_url='https://qr.finik.kg/month-999')
     result=ContactResult('unpaid',SimpleNamespace(id=42))
@@ -28,7 +28,7 @@ async def test_checkout_keeps_selected_plan_and_price(monkeypatch,plan,price):
     monkeypatch.setattr(web,'_miniapp_context',lambda payload:(settings,runtime,user,42))
     response=await web.miniapp_start_payment(web.MiniAppRequest(init_data='test',start_param='test',plan=plan),BackgroundTasks())
     assert response['plan']==plan and response['price']==price
-    assert response['payment_url']==(settings.monthly_finik_payment_url if plan=='month' else settings.weekly_finik_payment_url)
+    assert response['payment_url']==(web._finik_payment_url(settings, plan))
     assert service.begin_payment.await_args.kwargs['plan']==plan
 
 
@@ -47,6 +47,6 @@ async def test_unoffered_plan_is_rejected_before_payment(monkeypatch):
     service=SimpleNamespace(contact_status=AsyncMock(return_value=ContactResult('unpaid',None)),begin_payment=AsyncMock())
     monkeypatch.setattr(web,'_miniapp_context',lambda payload:(Settings(_env_file=None),SimpleNamespace(workflow_data={'service':service}),SimpleNamespace(id=1),42))
     with pytest.raises(HTTPException) as error:
-        await web.miniapp_start_payment(web.MiniAppRequest(init_data='test',start_param='test',plan='lifetime'),BackgroundTasks())
+        await web.miniapp_start_payment(web.MiniAppRequest(init_data='test',start_param='test',plan='month'),BackgroundTasks())
     assert error.value.status_code==400
     service.begin_payment.assert_not_awaited()

@@ -12,6 +12,7 @@ from app.payments.service import PaymentService
 from app.security import TokenSigner
 from app.showcase.service import ShowcaseService
 from app.telegram.formatting import format_showcase_apartment
+from app.telegram.formatting import is_confirmed_owner
 from app.telegram.keyboards import (
     favorite_apartment_keyboard,
     private_payment_keyboard,
@@ -31,6 +32,7 @@ async def save_listing(
     signer: TokenSigner,
     favorites: FavoriteRepository,
     apartments: ApartmentRepository,
+    settings: Settings,
 ) -> None:
     token = (callback.data or "").removeprefix("listing:save:")
     apartment_id = signer.verify_id("listing-save", token)
@@ -43,7 +45,9 @@ async def save_listing(
     if callback.message:
         await callback.message.edit_reply_markup(
             reply_markup=showcase_apartment_keyboard(
-                apartment.id, signer=signer, saved=True
+                apartment.id, signer=signer, saved=True,
+                bot_username=settings.telegram_bot_username,
+                phone=apartment.phone, confirmed_owner=is_confirmed_owner(apartment),
             )
         )
 
@@ -124,7 +128,7 @@ async def about_service(callback: CallbackQuery) -> None:
         await callback.message.answer(
             "Arenda.\u2060KG помогает находить квартиры и получать контакты по объявлениям.\n\n"
             "Просмотр квартир и сохранение в избранное бесплатны. Доступ ко всем "
-            "контактам: 7 дней — 499 сом, 30 дней — 999 сом. Автоматического "
+            "контактам: 7 дней — 499 сом или навсегда — 999 сом. Автоматического "
             "продления нет."
         )
 

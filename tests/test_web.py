@@ -13,7 +13,7 @@ from urllib.parse import urlencode
 import httpx
 import pytest
 
-from app.config import get_settings
+from app.config import Settings, get_settings
 from app.payment_plans import LIFETIME_PLAN, MONTH_PLAN, WEEK_PLAN
 from app.security import TokenSigner
 from app.telegram.miniapp import mini_app_html
@@ -664,7 +664,8 @@ async def test_miniapp_page_is_public_but_session_requires_telegram_auth(
     payload = accepted.json()
     assert payload["status"] == "unpaid"
     assert payload["price"] == 499
-    assert payload["monthly_available"] is True
+    assert payload["lifetime_available"] is True
+    assert payload["monthly_available"] is False
     assert "terms_accepted" not in payload
     assert "terms_text" not in payload
     assert payload["privacy_url"].endswith("?start=privacy")
@@ -738,7 +739,8 @@ async def test_miniapp_starts_a_checkout_bound_to_the_selected_apartment(
     assert response.status_code == 200
     assert response.json()["payment_url"] == "https://qr.finik.kg/request-73"
     assert response.json()["automatic_payment"] is True
-    assert response.json()["monthly_available"] is True
+    assert response.json()["lifetime_available"] is True
+    assert response.json()["monthly_available"] is False
     service.begin_payment.assert_awaited_once_with(
         user_id=778899,
         apartment_id=42,
@@ -1246,3 +1248,21 @@ async def test_unavailable_contact_never_creates_a_checkout(monkeypatch, handler
     assert 'payment_url' not in result
     payments.submit.assert_not_awaited()
     service.begin_payment.assert_not_awaited()
+
+@pytest.mark.asyncio
+async def test_contact_autodelivery_notifies_admin_once() -> None:
+    matching = SimpleNamespace(
+        claim_contact_admin_notification=AsyncMock(side_effect=[True, False]),
+        release_contact_admin_notification=AsyncMock(),
+    )
+    bot = SimpleNamespace(send_message=AsyncMock())
+    runtime = SimpleNamespace(workflow_data={"matching": matching}, bot=bot)
+    settings = Settings(_env_file=None, admin_user_id=999)
+    user = SimpleNamespace(id=123, username="buyer", first_name="Клиент")
+
+    await web._notify_contact_delivery_admin(runtime, settings, user, 42)
+    await web._notify_contact_delivery_admin(runtime, settings, user, 42)
+
+    bot.send_message.assert_awaited_once()
+    assert bot.send_message.await_args.args[0] == 999
+    assert "Автовыдача контакта" in bot.send_message.await_args.args[1]

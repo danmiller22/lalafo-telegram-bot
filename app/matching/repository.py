@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import and_, func, or_, select, update
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -413,6 +413,29 @@ class MatchingRepository:
                     source=source,
                     apartment_id=apartment_id,
                 )
+            )
+
+    async def claim_contact_admin_notification(
+        self, user_id: int, apartment_id: int
+    ) -> bool:
+        key = f"contact-admin-notice:{user_id}:{apartment_id}"
+        statement = (
+            postgresql_insert(LalafoAutoReplyMeta)
+            if self.dialect == "postgresql"
+            else sqlite_insert(LalafoAutoReplyMeta)
+        ).values(key=key, value="claimed")
+        statement = statement.on_conflict_do_nothing(index_elements=["key"])
+        async with self.sessions.begin() as session:
+            result = await session.execute(statement)
+            return bool(result.rowcount)
+
+    async def release_contact_admin_notification(
+        self, user_id: int, apartment_id: int
+    ) -> None:
+        key = f"contact-admin-notice:{user_id}:{apartment_id}"
+        async with self.sessions.begin() as session:
+            await session.execute(
+                delete(LalafoAutoReplyMeta).where(LalafoAutoReplyMeta.key == key)
             )
 
     async def stats(self, *, days: int = 7) -> dict[str, int]:

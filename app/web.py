@@ -144,7 +144,7 @@ class LalafoIngestRequest(BaseModel):
 
 def _finik_payment_url(settings: Any, plan: str) -> str:
     if plan == LIFETIME_PLAN:
-        return settings.lifetime_finik_payment_url
+        return settings.lifetime_finik_payment_url or settings.monthly_finik_payment_url
     return (
         settings.monthly_finik_payment_url or settings.lifetime_finik_payment_url
         if plan == MONTH_PLAN
@@ -1617,7 +1617,8 @@ async def telegram_mini_app() -> HTMLResponse:
     settings = get_settings()
     return HTMLResponse(
         mini_app_html(payment_urls={WEEK_PLAN: _finik_payment_url(settings, WEEK_PLAN),
-                                   MONTH_PLAN: _finik_payment_url(settings, MONTH_PLAN)}),
+                                   LIFETIME_PLAN: _finik_payment_url(settings, LIFETIME_PLAN)
+                                   or _finik_payment_url(settings, MONTH_PLAN)}),
         headers={
             "Cache-Control": "no-store",
             "Content-Security-Policy": (
@@ -1644,11 +1645,17 @@ async def miniapp_session(payload: MiniAppRequest, background_tasks: BackgroundT
     response["automatic_payment"] = bool(
         getattr(settings, "finik_auto_enabled", False)
     )
-    response["monthly_available"] = True
+    response["lifetime_available"] = True
+    response["monthly_available"] = False
     bot_url = f"https://t.me/{settings.telegram_bot_username.lstrip('@')}"
     response["privacy_url"] = f"{bot_url}?start=privacy"
     if payload.track_open:
         background_tasks.add_task(_record_miniapp_open, runtime, user.id, apartment_id)
+        if result.status == "approved":
+            background_tasks.add_task(
+                _notify_contact_delivery_admin,
+                runtime, settings, user, apartment_id,
+            )
     return response
 
 
@@ -1657,6 +1664,28 @@ async def _record_miniapp_open(runtime: Any, user_id: int, apartment_id: int) ->
         await _record_funnel(runtime, user_id, "card_opened", apartment_id=apartment_id)
     except Exception:
         logger.exception("Could not record Mini App open")
+
+
+async def _notify_contact_delivery_admin(
+    runtime: Any, settings: Any, user: Any, apartment_id: int
+) -> None:
+    matching = runtime.workflow_data.get("matching")
+    if matching is None or not settings.admin_user_id:
+        return
+    if not await matching.claim_contact_admin_notification(user.id, apartment_id):
+        return
+    try:
+        username = f"@{user.username}" if user.username else "без username"
+        await runtime.bot.send_message(
+            settings.admin_user_id,
+            "📞 Автовыдача контакта\n"
+            f"Клиент: {user.first_name or 'Имя не указано'} — {username}\n"
+            f"Telegram ID: {user.id}\n"
+            f"Квартира ID: {apartment_id}",
+        )
+    except Exception:
+        await matching.release_contact_admin_notification(user.id, apartment_id)
+        logger.exception("Could not notify administrator about contact delivery")
 
 
 async def _record_payment_funnel_safely(
@@ -1695,7 +1724,8 @@ async def miniapp_consent(payload: MiniAppRequest) -> dict[str, Any]:
     await runtime.workflow_data["terms_consents"].accept(user.id)
     result = await runtime.workflow_data["service"].contact_status(user.id, apartment_id)
     response = _miniapp_result_payload(result)
-    response["monthly_available"] = True
+    response["lifetime_available"] = True
+    response["monthly_available"] = False
     response["terms_accepted"] = True
     response["terms_text"] = TERMS_TEXT
     bot_url = f"https://t.me/{settings.telegram_bot_username.lstrip('@')}"
@@ -1715,14 +1745,14 @@ async def miniapp_availability(payload: MiniAppRequest) -> dict[str, Any]:
 async def miniapp_prepare_payment(payload: MiniAppRequest) -> dict[str, Any]:
     settings, runtime, user, apartment_id = _miniapp_context(payload)
     plan = payload.plan or WEEK_PLAN
-    if plan not in {WEEK_PLAN, MONTH_PLAN}:
+    if plan not in {WEEK_PLAN, LIFETIME_PLAN}:
         raise HTTPException(status_code=400, detail="Неизвестный тариф.")
     if (
-        plan == MONTH_PLAN
+        plan == LIFETIME_PLAN
         and not _finik_payment_url(settings, plan)
         and not _uses_dynamic_finik(settings, plan)
     ):
-        raise HTTPException(status_code=503, detail="Месячный тариф временно недоступен.")
+        raise HTTPException(status_code=503, detail="Бессрочный тариф временно недоступен.")
     result = await runtime.workflow_data["service"].contact_status(user.id, apartment_id)
     if result.status in {"approved", "unavailable", "pending"}:
         return _miniapp_result_payload(result)
@@ -1760,14 +1790,14 @@ async def miniapp_start_payment(
     if result.status in {"approved", "unavailable", "pending"}:
         return _miniapp_result_payload(result)
     plan = payload.plan or WEEK_PLAN
-    if plan not in {WEEK_PLAN, MONTH_PLAN}:
+    if plan not in {WEEK_PLAN, LIFETIME_PLAN}:
         raise HTTPException(status_code=400, detail="Неизвестный тариф.")
     if (
-        plan == MONTH_PLAN
+        plan == LIFETIME_PLAN
         and not _finik_payment_url(settings, plan)
         and not _uses_dynamic_finik(settings, plan)
     ):
-        raise HTTPException(status_code=503, detail="Месячный тариф временно недоступен.")
+        raise HTTPException(status_code=503, detail="Бессрочный тариф временно недоступен.")
     payment_url = (
         "" if _uses_dynamic_finik(settings, plan) else _finik_payment_url(settings, plan)
     )
@@ -1817,7 +1847,8 @@ async def miniapp_start_payment(
     response["payment_url"] = payment_url
     response["price"] = plan_price(response.get("plan") or plan)
     response["automatic_payment"] = _uses_dynamic_finik(settings, plan)
-    response["monthly_available"] = True
+    response["lifetime_available"] = True
+    response["monthly_available"] = False
     background_tasks.add_task(
         _record_payment_funnel_safely,
         runtime,

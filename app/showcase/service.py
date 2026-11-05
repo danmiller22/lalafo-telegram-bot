@@ -14,6 +14,7 @@ from app.models import Apartment
 from app.payments.repository import ApartmentRepository
 from app.security import TokenSigner
 from app.telegram.formatting import format_showcase_apartment
+from app.telegram.formatting import is_confirmed_owner
 from app.telegram.keyboards import customer_menu_keyboard, showcase_apartment_keyboard
 
 
@@ -68,7 +69,9 @@ class ShowcaseService:
     ) -> None:
         text = format_showcase_apartment(apartment)
         keyboard = showcase_apartment_keyboard(
-            apartment.id, signer=self.signer, saved=saved
+            apartment.id, signer=self.signer, saved=saved,
+            bot_username=self.settings.telegram_bot_username,
+            phone=apartment.phone, confirmed_owner=is_confirmed_owner(apartment),
         )
         photo = next(iter(dict.fromkeys(apartment.photo_urls)), None)
         if photo:

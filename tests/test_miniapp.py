@@ -63,7 +63,7 @@ def test_telegram_init_data_rejects_tampering_and_stale_payload():
     ) is None
 
 
-def test_mini_app_page_has_weekly_and_monthly_tariffs_and_privacy_link():
+def test_mini_app_page_has_weekly_and_lifetime_tariffs_and_privacy_link():
     html = mini_app_html()
 
     assert "/miniapp/api/session" in html
@@ -76,9 +76,9 @@ def test_mini_app_page_has_weekly_and_monthly_tariffs_and_privacy_link():
     assert ">Оплата</button>" in html
     assert "500 сом" not in html and "699" not in html
     assert ">999 сом</span>" in html
-    assert "30 дней" in html
-    assert "Месячный доступ" in html
-    assert "Навсегда" not in html
+    assert "Без ограничения срока" in html
+    assert "Доступ навсегда" in html
+    assert "Месячный доступ" not in html
     assert 'id="hero"' not in html
     assert 'id="apartment"' in html
     assert 'id="photos"' in html
