@@ -12,6 +12,11 @@ on:
         required: true
         type: boolean
         default: false
+      reset_messages:
+        description: Exact source URL to text-only Telegram message ID mapping to replace
+        required: false
+        type: string
+        default: '{}'
 
 permissions:
   contents: read
@@ -31,6 +36,7 @@ jobs:
       CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SELECTED_TELEGRAM_OFFERS: ${{ inputs.offers }}
+      RESET_TELEGRAM_MESSAGES: ${{ inputs.reset_messages }}
       LOG_LEVEL: INFO
     steps:
       - uses: actions/checkout@v7
