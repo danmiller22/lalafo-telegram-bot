@@ -271,6 +271,38 @@ async def test_open_checkout_is_kept_on_the_selected_apartment(
 
 
 @pytest.mark.asyncio
+async def test_one_customer_reuses_checkout_across_apartment_cards(
+    repositories, service
+):
+    apartments, payments, _ = repositories
+    first_apartment = await apartments.upsert_discovered(make_ad(lalafo_id=9311))
+    second_apartment = await apartments.upsert_discovered(make_ad(lalafo_id=9312))
+    first = await service.begin_payment(
+        user_id=9310, apartment_id=first_apartment.id,
+        username="same_customer", first_name="Same", plan=WEEK_PLAN,
+    )
+    await payments.prepare_provider_payment(
+        first.request.id, "shared-payment", configuration_id="merchant"
+    )
+    await payments.set_provider_payment_url(
+        first.request.id, "https://qr.finik.kg/shared",
+        configuration_id="merchant", payment_id="shared-payment",
+    )
+    await service.begin_payment(
+        user_id=9310, apartment_id=second_apartment.id,
+        username="same_customer", first_name="Same", plan=WEEK_PLAN,
+    )
+
+    reusable = await payments.reusable_provider_checkout(
+        user_id=9310, plan=WEEK_PLAN, configuration_id="merchant"
+    )
+
+    assert reusable is not None
+    assert reusable.id == first.request.id
+    assert reusable.provider_payment_url == "https://qr.finik.kg/shared"
+
+
+@pytest.mark.asyncio
 async def test_finik_link_is_rotated_after_merchant_change(repositories, service):
     apartments, payments, _ = repositories
     apartment = await apartments.upsert_discovered(make_ad(lalafo_id=9292))

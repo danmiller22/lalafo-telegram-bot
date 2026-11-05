@@ -1334,6 +1334,26 @@ class PaymentRepository:
             raise LookupError("Payment request is unavailable")
         return request
 
+    async def reusable_provider_checkout(
+        self, *, user_id: int, plan: str, configuration_id: str
+    ) -> PaymentRequest | None:
+        """Return the single still-valid checkout shared across apartment cards."""
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
+        async with self.sessions() as session:
+            return await session.scalar(
+                select(PaymentRequest)
+                .where(
+                    PaymentRequest.telegram_user_id == user_id,
+                    PaymentRequest.plan == plan,
+                    PaymentRequest.status.in_(("prepared", "awaiting_receipt")),
+                    PaymentRequest.provider_payment_url.is_not(None),
+                    PaymentRequest.provider_status == f"waiting:{configuration_id}",
+                    PaymentRequest.created_at >= cutoff,
+                )
+                .order_by(PaymentRequest.created_at.desc())
+                .limit(1)
+            )
+
     async def set_provider_payment_url(
         self,
         request_id: int,

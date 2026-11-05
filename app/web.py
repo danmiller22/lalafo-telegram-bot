@@ -179,6 +179,18 @@ async def _finik_checkout_url(
         api_url=settings.finik_api_url,
         account_id=settings.finik_account_id,
     )
+    reusable_lookup = getattr(payments, "reusable_provider_checkout", None)
+    reusable = (
+        await reusable_lookup(
+            user_id=payment_request.telegram_user_id,
+            plan=plan,
+            configuration_id=configuration_id,
+        )
+        if reusable_lookup is not None
+        else None
+    )
+    if reusable is not None and reusable.provider_payment_url:
+        return reusable.provider_payment_url
     prepared = await payments.prepare_provider_payment(
         payment_request.id,
         f"arenda-{payment_request.id}-{secrets.token_hex(8)}",
