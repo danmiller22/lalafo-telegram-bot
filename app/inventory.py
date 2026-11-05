@@ -40,6 +40,7 @@ TARGET_NON_OWNERS_PER_PERIOD = (MAX_NON_OWNERS_PER_DAY + 1) // 2
 REPOST_AFTER_HOURS = 48
 MAX_REPOSTS_PER_PERIOD = MAX_PUBLICATIONS_PER_DAY // 2
 MAX_FRESH_STOCK_LOAD = 600
+HISTORICAL_STOCK_DAYS = 30
 # A blocked source must not leave the channel empty for half an hour.  The
 # workflow itself is concurrency-limited, so a short retry is safe and lets
 # Telegram reserve sources recover the queue on the next cloud tick.
@@ -51,7 +52,7 @@ DISCOVERY_PERIOD_TARGET = (MAX_PUBLICATIONS_PER_DAY + 1) // 2
 PUBLICATION_SPACING_MINUTES = 10.5
 MIN_PUBLICATION_GAP_MINUTES = 10
 INVENTORY_CLAIM_LOCK_ID = 731_290_512
-PUBLICATION_POLICY_VERSION = "publication-owner-only-25-40-v17"
+PUBLICATION_POLICY_VERSION = "publication-owner-historical-25-40-v18"
 # Two equal 10.5-hour periods cover 05:00 through 02:00 the next day.
 PUBLICATION_PERIOD_MINUTES = 630
 
@@ -744,6 +745,28 @@ class InventoryRepository:
                 )
                 .order_by(Apartment.published_at.asc())
             )
+            historical_stock = await _balanced_stock(
+                session,
+                select(Apartment).where(
+                    or_(
+                        Apartment.active.is_(False),
+                        Apartment.availability_status == "unavailable",
+                    ),
+                    Apartment.publication_status == "discovered",
+                    Apartment.fingerprint.not_in(select(Apartment.fingerprint).where(
+                        Apartment.publication_status == "published")),
+                    _supported_source_filter(),
+                    Apartment.id.not_in(active_queue_ids),
+                    Apartment.fingerprint.not_in(queued_fingerprints),
+                    Apartment.price.between(25_000, OWNER_MAX_PRICE),
+                    Apartment.rooms.in_(("studio", "1")),
+                    Apartment.last_seen_at >= now - timedelta(days=HISTORICAL_STOCK_DAYS),
+                )
+                .order_by(
+                    Apartment.last_seen_at.desc(),
+                    Apartment.price.asc(),
+                )
+            )
             # A newly discovered source ID may be the same apartment already
             # sent from another source. Filter before reserving its time slot;
             # send-time checks remain necessary for concurrent publications.
@@ -760,6 +783,9 @@ class InventoryRepository:
                 if item.published_at is None or as_utc(item.published_at) > now - timedelta(hours=REPOST_AFTER_HOURS))
             fresh_stock = [item for item in fresh_stock if not published_index.contains(item)]
             repeat_stock = [item for item in repeat_stock if not recent_index.contains(item)]
+            historical_stock = [
+                item for item in historical_stock if not published_index.contains(item)
+            ]
             chooser = rng or random.SystemRandom()
             period_target, period_central_target = period_publication_targets(period)
             period_target = await self._period_stock_target(session, now)
@@ -785,7 +811,7 @@ class InventoryRepository:
             non_owner_target = min(remaining_non_owners, target_override,
                                    max(0, realtor_period_target - period_realtors))
             planned = plan_period(
-                fresh_stock + repeat_stock,
+                fresh_stock + repeat_stock + historical_stock,
                 period_start=period,
                 non_owner_target=non_owner_target,
                 non_owner_limit=remaining_non_owners,

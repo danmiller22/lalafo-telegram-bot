@@ -731,6 +731,41 @@ async def test_schedule_repeats_only_after_forty_eight_hours(repositories):
 
 
 @pytest.mark.asyncio
+async def test_recently_unavailable_owner_can_fill_telegram_stock(repositories):
+    apartments, _, sessions = repositories
+    now = datetime(2026, 11, 5, 10, 0, tzinfo=timezone.utc)
+    apartment = await apartments.upsert_discovered(
+        make_ad(
+            lalafo_id=32_010,
+            price=30_000,
+            seller_type="owner",
+            owner_listing=True,
+            photo_urls=["https://img.example/historical-owner-flat.jpg"],
+        )
+    )
+    async with sessions.begin() as session:
+        await session.execute(
+            update(Apartment)
+            .where(Apartment.id == apartment.id)
+            .values(
+                active=False,
+                availability_status="unavailable",
+                last_seen_at=now - timedelta(days=10),
+            )
+        )
+
+    await InventoryRepository(sessions).schedule_period(
+        now=now, rng=random.Random(53)
+    )
+
+    async with sessions() as session:
+        queued_ids = set(
+            (await session.scalars(select(ApartmentInventoryQueue.apartment_id))).all()
+        )
+    assert apartment.id in queued_ids
+
+
+@pytest.mark.asyncio
 @pytest.mark.usefixtures("publication_clock")
 async def test_owner_at_maximum_price_is_scheduled_and_claimable(repositories):
     apartments, _, sessions = repositories

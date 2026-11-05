@@ -35,7 +35,7 @@ ITEM_PUBLISH_TIMEOUT_SECONDS = 25.0
 # Bound one hosted tick so a run cannot spend many minutes walking stale
 # Lalafo rows. The next minute resumes from the durable queue.
 MAX_TERMINAL_SKIPS_PER_RUN = 12
-STORED_FALLBACK_MAX_AGE_HOURS = 48
+STORED_FALLBACK_MAX_AGE_HOURS = 30 * 24
 
 
 def _valid(ad, settings, *, allow_chat_contact=False) -> tuple[bool, str]:
@@ -156,7 +156,7 @@ async def _publish_item(settings, sessions, inventory, apartments, item) -> int 
             return None
     elif apartment.source_url.startswith("https://t.me/"):
         source_updated = as_utc(apartment.source_updated_at or apartment.updated_at)
-        max_source_age = 48 if stored.rooms == SHARED_ROOMS else 168
+        max_source_age = 48 if stored.rooms == SHARED_ROOMS else STORED_FALLBACK_MAX_AGE_HOURS
         if not is_requested and source_updated < datetime.now(timezone.utc) - timedelta(hours=max_source_age):
             return await _skip(inventory, item.id, "stale_telegram")
         if is_requested:
@@ -183,9 +183,16 @@ async def _publish_item(settings, sessions, inventory, apartments, item) -> int 
             if is_requested:
                 await apartments.set_availability(apartment.id, status="unavailable",
                     checked_at=datetime.now(timezone.utc), reason="source_removed")
+                return await _skip(inventory, item.id, "not_found")
+            last_seen = as_utc(apartment.last_seen_at or apartment.updated_at)
+            if last_seen >= datetime.now(timezone.utc) - timedelta(
+                hours=STORED_FALLBACK_MAX_AGE_HOURS
+            ):
+                ad = stored
+                stored_fallback = True
             else:
                 await apartments.mark_inactive(apartment.id)
-            return await _skip(inventory, item.id, "not_found")
+                return await _skip(inventory, item.id, "not_found")
         except (LalafoError, LalafoParseError, ValueError, TimeoutError) as exc:
             last_seen = as_utc(apartment.last_seen_at or apartment.updated_at)
             if last_seen >= datetime.now(timezone.utc) - timedelta(
