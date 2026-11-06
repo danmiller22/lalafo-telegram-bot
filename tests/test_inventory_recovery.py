@@ -34,13 +34,13 @@ async def test_age_expired_listing_needs_revalidation_before_repost(repositories
     # A successful source refresh revives stock; it does not revive the old card.
     refreshed = await apartments.upsert_discovered(ad)
     assert refreshed.active and refreshed.availability_status == "active"
-    assert await InventoryRepository(sessions).schedule_period(now=now) == 1
+    assert await InventoryRepository(sessions).schedule_period(now=now) == 0
     assert await apartments.expire_published_before(cutoff=now-timedelta(hours=48),checked_at=now) == 0
     result = await AvailabilityService(apartments,Settings()).check(apartment.id,force=True)
     assert result.status == "unavailable"  # the old Telegram card still expired
     assert (await apartments.get(apartment.id)).active  # keep the validated repeat queued
     claimed = await InventoryRepository(sessions).claim_due(now=now+timedelta(minutes=1))
-    assert claimed is not None and claimed.apartment_id == apartment.id
+    assert claimed is None
 
 
 @pytest.mark.asyncio

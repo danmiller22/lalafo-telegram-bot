@@ -28,17 +28,18 @@ BISHKEK = ZoneInfo("Asia/Bishkek")
 ALLOWED_ROOMS = frozenset({"studio", "1"})
 CENTRAL_DAILY_SHARE = 0.50
 REALTOR_DAILY_SHARE = 0.0
-MIN_PUBLICATIONS_PER_DAY = 120
-MAX_PUBLICATIONS_PER_DAY = 120
+MIN_PUBLICATIONS_PER_DAY = 35
+MAX_PUBLICATIONS_PER_DAY = 35
 # The daily target is chosen once per Bishkek date, then split across the two
 # discovery periods so retries cannot increase the day's publication volume.
 # Public inventory is restricted to confirmed owners.
 MIN_NON_OWNERS_PER_DAY = math.ceil(MAX_PUBLICATIONS_PER_DAY * REALTOR_DAILY_SHARE)
 MAX_NON_OWNERS_PER_DAY = MIN_NON_OWNERS_PER_DAY
 TARGET_NON_OWNERS_PER_PERIOD = (MAX_NON_OWNERS_PER_DAY + 1) // 2
-# Fresh cards win. Listings may fill a shortage only after 48 hours.
+# Ordinary daily slots are fresh-only. Managed promotions have their own
+# explicitly requested repeat schedule and do not turn an old card into new.
 REPOST_AFTER_HOURS = 48
-MAX_REPOSTS_PER_PERIOD = MAX_PUBLICATIONS_PER_DAY // 2
+MAX_REPOSTS_PER_PERIOD = 0
 MAX_FRESH_STOCK_LOAD = 600
 HISTORICAL_STOCK_DAYS = 30
 # A blocked source must not leave the channel empty for half an hour.  The
@@ -46,13 +47,13 @@ HISTORICAL_STOCK_DAYS = 30
 # Telegram reserve sources recover the queue on the next cloud tick.
 DISCOVERY_RETRY_MINUTES = 3
 MIN_HEALTHY_PERIOD_QUEUE = 12
-# Scheduling a small stock densely is separate from filling the 60-card plan.
+# Scheduling a small stock densely is separate from filling the daily plan.
 DISCOVERY_PERIOD_TARGET = (MAX_PUBLICATIONS_PER_DAY + 1) // 2
-# Spread 120 cards evenly through the 21-hour publication window.
+# Keep the proven dispatch cadence; the fresh-only daily cap stops at 35.
 PUBLICATION_SPACING_MINUTES = 10.5
 MIN_PUBLICATION_GAP_MINUTES = 10
 INVENTORY_CLAIM_LOCK_ID = 731_290_512
-PUBLICATION_POLICY_VERSION = "publication-owner-historical-25-40-v18"
+PUBLICATION_POLICY_VERSION = "publication-owner-fresh-35-per-day-v19"
 # Two equal 10.5-hour periods cover 05:00 through 02:00 the next day.
 PUBLICATION_PERIOD_MINUTES = 630
 
@@ -811,13 +812,13 @@ class InventoryRepository:
             non_owner_target = min(remaining_non_owners, target_override,
                                    max(0, realtor_period_target - period_realtors))
             planned = plan_period(
-                fresh_stock + repeat_stock + historical_stock,
+                fresh_stock + historical_stock,
                 period_start=period,
                 non_owner_target=non_owner_target,
                 non_owner_limit=remaining_non_owners,
                 target_count_override=target_override,
                 central_target_override=central_override,
-                repeat_apartment_ids={item.id for item in repeat_stock},
+                repeat_apartment_ids=set(),
                 rng=chooser,
             )
             # A late refill uses only the remaining slots, never shifts cards
