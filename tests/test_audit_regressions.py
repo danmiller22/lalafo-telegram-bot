@@ -351,7 +351,7 @@ async def test_timed_out_source_skips_old_snapshot_and_publishes_next_card(repos
     from scripts import publish_inventory as publisher
     apartments,_,sessions=repositories
     old=await apartments.upsert_discovered(make_ad(lalafo_id=230001))
-    old.last_seen_at=datetime.now(timezone.utc)-timedelta(days=3)
+    old.last_seen_at=datetime.now(timezone.utc)-timedelta(days=31)
     fresh=await apartments.upsert_discovered(make_ad(lalafo_id=230002,source_url='https://t.me/apartments/230002',phone='+996555987654'))
     class SlowSource:
         async def __aenter__(self):return self
