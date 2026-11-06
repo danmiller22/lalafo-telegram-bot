@@ -91,13 +91,11 @@ TELEGRAM_SOURCE_CHANNELS: tuple[str, ...] = (
     "https://t.me/s/bishkektunduk",
     "https://t.me/s/arenda_kvartiry_kg",
     "https://t.me/s/bishkekarendakv",
-    "https://t.me/s/house_kg_official",
     "https://t.me/s/apartbishkek",
     "https://t.me/s/kvartirabish",
     "https://t.me/s/wellcometoKGboard",
     "https://t.me/s/Bishkek_kvartira312",
     "https://t.me/s/rental_property_bishkek",
-    "https://t.me/s/housekg",
     # Active public long-term rental feed found outside the older source set.
     # It exposes full text, photos and direct contact numbers in the web preview.
     "https://t.me/s/renthousebish",
@@ -123,6 +121,34 @@ TELEGRAM_SOURCE_CHANNELS: tuple[str, ...] = (
     "https://t.me/s/apartment_bishkek",
     "https://t.me/s/apartments_bishkek",
     "https://t.me/s/kg_kvartira",
+    # Additional public Bishkek/Kyrgyzstan supply feeds. These include the
+    # upstream boards used by local agents, but every individual post still
+    # has to pass the owner, photo, price, room and duplicate checks. House.kg
+    # feeds are deliberately excluded because their photos are watermarked.
+    "https://t.me/s/arenda_bishkek312",
+    "https://t.me/s/kvartiry312",
+    "https://t.me/s/property_kg",
+    "https://t.me/s/apartmentskgz",
+    "https://t.me/s/bishkek_arenda312",
+    "https://t.me/s/batir_bishkek",
+    "https://t.me/s/bishkek_estate",
+    "https://t.me/s/ned_kg",
+    "https://t.me/s/zolotoi_kg",
+    "https://t.me/s/kvartira_kgstan",
+    "https://t.me/s/homestaybishkek",
+    "https://t.me/s/rent_kg",
+    "https://t.me/s/elitehousekg",
+    "https://t.me/s/businesskgz",
+    "https://t.me/s/kgprojects",
+    "https://t.me/s/bulbulkg",
+    "https://t.me/s/blackspisokkg",
+    "https://t.me/s/arendakvartirreklama",
+    "https://t.me/s/kvartira_bishkekt",
+    "https://t.me/s/arendakvartirbishkek",
+    "https://t.me/s/kvartirkg",
+    "https://t.me/s/arenda312",
+    "https://t.me/s/bishkekarenda1",
+    "https://t.me/s/realestatekg",
 )
 
 # Public web previews supplement Lalafo; only posts with the required
