@@ -113,6 +113,8 @@ class TelegramPublisher:
         # A compact single album gives renters enough context and keeps one
         # listing from blocking the publication queue.
         urls = list(dict.fromkeys(ad.photo_urls))[: self.max_photos]
+        if not urls:
+            raise TelegramPublishError("Apartment photos are required")
         album_messages: list[Message] = []
         for offset in range(0, len(urls), TELEGRAM_ALBUM_LIMIT):
             chunk = urls[offset : offset + TELEGRAM_ALBUM_LIMIT]
@@ -148,10 +150,12 @@ class TelegramPublisher:
                 # Telegram and cannot be downloaded as public URLs.
                 if not all(url.startswith(("http://", "https://")) for url in chunk):
                     logger.warning(
-                        "Telegram rejected apartment photo file IDs; publishing text: %s",
+                        "Telegram rejected apartment photo file IDs; skipping card: %s",
                         type(direct_error).__name__,
                     )
-                    break
+                    raise TelegramPublishError(
+                        "Telegram could not publish apartment photos"
+                    ) from direct_error
                 logger.warning(
                     "Direct Telegram photo batch failed; trying photos individually: %s",
                     type(direct_error).__name__,
@@ -180,11 +184,15 @@ class TelegramPublisher:
                         last_error = exc
                 if not sent:
                     logger.warning(
-                        "Telegram could not publish apartment photos; publishing text: %s",
+                        "Telegram could not publish apartment photos; skipping card: %s",
                         type(last_error).__name__,
                     )
-                    break
+                    raise TelegramPublishError(
+                        "Telegram could not publish apartment photos"
+                    ) from last_error
             album_messages.extend(sent)
+        if not self._photos_acknowledged(album_messages):
+            raise TelegramPublishError("Apartment photos are required")
         try:
             return await self._retry(
                 self.bot.send_message,

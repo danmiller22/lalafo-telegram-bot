@@ -202,7 +202,7 @@ async def test_non_owner_author_types_are_rejected(seller_type, owner_listing) -
 
 
 @pytest.mark.asyncio
-async def test_empty_album_acknowledgement_falls_back_to_text_card() -> None:
+async def test_empty_album_acknowledgement_never_falls_back_to_text_card() -> None:
     bot = SimpleNamespace(
         send_media_group=AsyncMock(return_value=[]),
         send_photo=AsyncMock(return_value=None),
@@ -217,13 +217,13 @@ async def test_empty_album_acknowledgement_falls_back_to_text_card() -> None:
         support_url="https://t.me/support",
     )
 
-    result = await publisher.publish(77, make_ad())
-    assert result.message_id == 3
-    bot.send_message.assert_awaited_once()
+    with pytest.raises(TelegramPublishError, match="photos"):
+        await publisher.publish(77, make_ad())
+    bot.send_message.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_manual_file_id_publish_error_falls_back_to_text() -> None:
+async def test_manual_file_id_publish_error_never_falls_back_to_text() -> None:
     bot = SimpleNamespace(
         send_media_group=AsyncMock(side_effect=RuntimeError("Telegram rejected file ID")),
         send_message=AsyncMock(return_value=SimpleNamespace(message_id=3)),
@@ -239,11 +239,34 @@ async def test_manual_file_id_publish_error_falls_back_to_text() -> None:
         support_url="https://t.me/support",
     )
 
-    result = await publisher.publish(77, ad)
-    assert result.message_id == 3
+    with pytest.raises(TelegramPublishError, match="photos"):
+        await publisher.publish(77, ad)
 
     bot.send_media_group.assert_awaited_once()
-    bot.send_message.assert_awaited_once()
+    bot.send_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_photo_less_apartment_is_never_sent_to_channel() -> None:
+    bot = SimpleNamespace(
+        send_media_group=AsyncMock(),
+        send_photo=AsyncMock(),
+        send_message=AsyncMock(),
+    )
+    publisher = TelegramPublisher(
+        bot,
+        chat_id=-1001,
+        signer=TokenSigner("s" * 32),
+        bot_username="testbot",
+        support_url="https://t.me/support",
+    )
+
+    with pytest.raises(TelegramPublishError, match="photos"):
+        await publisher.publish(77, make_ad().model_copy(update={"photo_urls": []}))
+
+    bot.send_media_group.assert_not_awaited()
+    bot.send_photo.assert_not_awaited()
+    bot.send_message.assert_not_awaited()
 
 
 @pytest.mark.asyncio

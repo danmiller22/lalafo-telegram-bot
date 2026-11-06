@@ -5,6 +5,7 @@ import pytest
 from aiogram.types import URLInputFile
 
 from app.telegram.private_delivery import (
+    PrivatePhotoDeliveryError,
     format_private_contact,
     public_description,
     send_private_contact,
@@ -62,7 +63,7 @@ def test_private_contact_uses_labeled_demo_location_when_district_is_missing():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("photo_count", [1, 8])
-async def test_private_contact_delivers_number_before_downloading_photos(photo_count):
+async def test_private_contact_delivers_photos_before_number(photo_count):
     apartment = SimpleNamespace(
         rooms="1",
         district="Центр",
@@ -74,13 +75,17 @@ async def test_private_contact_delivers_number_before_downloading_photos(photo_c
         photo_urls=[f"https://img.example/{index}.jpg" for index in range(photo_count)],
     )
     bot = SimpleNamespace(
-        send_media_group=AsyncMock(),
-        send_photo=AsyncMock(),
+        send_media_group=AsyncMock(
+            return_value=[SimpleNamespace(message_id=index + 1) for index in range(photo_count)]
+        ),
+        send_photo=AsyncMock(return_value=SimpleNamespace(message_id=1)),
         send_message=AsyncMock(),
     )
     async def photos_started(*args, **kwargs):
-        bot.send_message.assert_awaited_once()
-        assert "+996 555 123 456" in bot.send_message.await_args.args[1]
+        bot.send_message.assert_not_awaited()
+        if photo_count == 1:
+            return SimpleNamespace(message_id=1)
+        return [SimpleNamespace(message_id=index + 1) for index in range(photo_count)]
 
     bot.send_media_group.side_effect = photos_started
     bot.send_photo.side_effect = photos_started
@@ -119,7 +124,12 @@ async def test_private_contact_splits_more_than_ten_photos_without_dropping_any(
         photo_urls=[f"https://img.example/{index}.jpg" for index in range(12)],
     )
     bot = SimpleNamespace(
-        send_media_group=AsyncMock(),
+        send_media_group=AsyncMock(
+            side_effect=[
+                [SimpleNamespace(message_id=index + 1) for index in range(10)],
+                [SimpleNamespace(message_id=11), SimpleNamespace(message_id=12)],
+            ]
+        ),
         send_photo=AsyncMock(),
         send_message=AsyncMock(),
     )
@@ -140,3 +150,59 @@ async def test_private_contact_splits_more_than_ten_photos_without_dropping_any(
     ]
     assert sent_urls == apartment.photo_urls
     bot.send_photo.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_private_contact_without_photos_sends_no_text() -> None:
+    apartment = SimpleNamespace(
+        rooms="1",
+        district="Центр",
+        city="Бишкек",
+        price=25_000,
+        deposit=None,
+        phone="+996555123456",
+        photo_urls=[],
+    )
+    bot = SimpleNamespace(
+        send_media_group=AsyncMock(),
+        send_photo=AsyncMock(),
+        send_message=AsyncMock(),
+    )
+
+    with pytest.raises(PrivatePhotoDeliveryError, match="photos"):
+        await send_private_contact(
+            bot,
+            user_id=123,
+            apartment=apartment,
+            support_url="https://t.me/support",
+        )
+
+    bot.send_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_private_photo_failure_sends_no_text() -> None:
+    apartment = SimpleNamespace(
+        rooms="1",
+        district="Центр",
+        city="Бишкек",
+        price=25_000,
+        deposit=None,
+        phone="+996555123456",
+        photo_urls=["https://img.example/broken.jpg"],
+    )
+    bot = SimpleNamespace(
+        send_media_group=AsyncMock(),
+        send_photo=AsyncMock(side_effect=RuntimeError("broken photo")),
+        send_message=AsyncMock(),
+    )
+
+    with pytest.raises(PrivatePhotoDeliveryError):
+        await send_private_contact(
+            bot,
+            user_id=123,
+            apartment=apartment,
+            support_url="https://t.me/support",
+        )
+
+    bot.send_message.assert_not_awaited()
