@@ -102,9 +102,9 @@ MAX_REPOSTS_PER_RUN = 18
 CENTRAL_BATCH_SHARE = 0.50
 OWNER_OTHER_BATCH_SHARE = 0.50
 MAX_CANDIDATE_POOL = 300
-# Discovery must retain enough unique stock for the 35-card daily schedule
+# Discovery must retain enough unique stock for the 60-card daily schedule
 # and its 48-hour no-repeat window.
-DISCOVERY_CANDIDATE_TARGET = 80
+DISCOVERY_CANDIDATE_TARGET = 120
 DISCOVERY_COLLECTION_BUDGET_SECONDS = 300
 # Realtor inventory is never collected or published.
 REALTOR_CANDIDATE_RESERVE_SHARE = 0.0

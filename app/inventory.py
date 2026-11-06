@@ -28,8 +28,8 @@ BISHKEK = ZoneInfo("Asia/Bishkek")
 ALLOWED_ROOMS = frozenset({"studio", "1"})
 CENTRAL_DAILY_SHARE = 0.50
 REALTOR_DAILY_SHARE = 0.0
-MIN_PUBLICATIONS_PER_DAY = 35
-MAX_PUBLICATIONS_PER_DAY = 35
+MIN_PUBLICATIONS_PER_DAY = 60
+MAX_PUBLICATIONS_PER_DAY = 60
 # The daily target is chosen once per Bishkek date, then split across the two
 # discovery periods so retries cannot increase the day's publication volume.
 # Public inventory is restricted to confirmed owners.
@@ -53,7 +53,7 @@ DISCOVERY_PERIOD_TARGET = (MAX_PUBLICATIONS_PER_DAY + 1) // 2
 PUBLICATION_SPACING_MINUTES = 10.5
 MIN_PUBLICATION_GAP_MINUTES = 10
 INVENTORY_CLAIM_LOCK_ID = 731_290_512
-PUBLICATION_POLICY_VERSION = "publication-owner-fresh-35-per-day-v19"
+PUBLICATION_POLICY_VERSION = "publication-owner-fresh-60-per-day-v20"
 # Two equal 10.5-hour periods cover 05:00 through 02:00 the next day.
 PUBLICATION_PERIOD_MINUTES = 630
 
