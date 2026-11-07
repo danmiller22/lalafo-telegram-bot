@@ -53,11 +53,14 @@ async def publish():
  engine,sessions=create_engine_and_session(settings.database_url);repo=ApartmentRepository(sessions)
  bot=Bot(settings.require_bot_token())
  try:
+  await seed_confirmed_sources(sessions)
   rows=await resolve(sessions)
   if len(rows)!=11:raise ValueError('Unexpected requested batch')
   rows=[r for r in rows if r[2]]
   if not rows:raise ValueError('No verified original contacts')
-  if len({a.id for _,a,_ in rows})!=len(rows):raise ValueError('Duplicate original source in requested batch')
+  async with sessions() as session:
+   task_markers=list((await session.scalars(select(LalafoAutoReplyMeta).where(LalafoAutoReplyMeta.key.startswith('authorized_active_20261107:')))).all())
+   task_messages={int(m.value.split(':')[1]) for m in task_markers if m.value.startswith('published:')}
   publisher=TelegramPublisher(bot,chat_id=settings.telegram_group_id,signer=TokenSigner(settings.require_callback_secret()),bot_username=settings.telegram_bot_username,support_url=settings.support_bot_url,max_photos=settings.max_photos_per_apartment,request_timeout_seconds=35,allow_requested_realtors=True)
   for row,a,_ in rows:
    key=f'authorized_active_20261107:{row["managed_id"]}'
@@ -70,11 +73,45 @@ async def publish():
     s.add(LalafoAutoReplyMeta(key=key,value='sending'))
    ad=apartment_to_ad(a).model_copy(update={'price':row['price'],'rooms':row['rooms'],'district':row['district'],'deposit':row['deposit'],'photo_urls':row['photo_urls'],'source_description':row['description']})
    await repo.upsert_discovered(ad,discovery_priority=True)
+   if a.telegram_message_id in task_messages:
+    from app.telegram.formatting import format_public_apartment,is_confirmed_owner
+    from app.telegram.keyboards import apartment_keyboard
+    from aiogram.exceptions import TelegramBadRequest
+    try:
+     await bot.edit_message_text(chat_id=settings.telegram_group_id,message_id=a.telegram_message_id,text=format_public_apartment(ad,bot_username=settings.telegram_bot_username,wanted_deep_link=True),parse_mode='HTML',reply_markup=apartment_keyboard(a.id,phone=ad.phone,confirmed_owner=is_confirmed_owner(ad),signer=publisher.signer,bot_username=publisher.bot_username,support_url=publisher.support_url))
+    except TelegramBadRequest as exc:
+     if 'message is not modified' not in str(exc):raise
+    await repo.save_managed_lalafo_source(managed_lalafo_ad_id=row['managed_id'],managed_lalafo_ad_url=row['url'],apartment=a)
+    async with sessions.begin() as session:
+     marker=await session.get(LalafoAutoReplyMeta,key);marker.value=f'published:{a.telegram_message_id}'
+    print('ACTIVE_ALREADY_PUBLISHED='+json.dumps({'managed_id':row['managed_id'],'message_id':a.telegram_message_id,'duplicate_reused':True}),flush=True)
+    continue
    sent=await publisher.publish(a.id,ad)
+   task_messages.add(sent.message_id)
    await repo.mark_published(a.id,chat_id=settings.telegram_group_id,message_id=sent.message_id,acknowledged_at=sent.date)
    await repo.save_managed_lalafo_source(managed_lalafo_ad_id=row['managed_id'],managed_lalafo_ad_url=row['url'],apartment=a)
    async with sessions.begin() as s:
     marker=await s.get(LalafoAutoReplyMeta,key);marker.value=f'published:{sent.message_id}'
-   print('ACTIVE_PUBLISHED='+json.dumps({'managed_id':row['managed_id'],'message_id':sent.message_id,'chat_id':settings.telegram_group_id,'photos':min(len(row['photo_urls']),settings.max_photos_per_apartment)}),flush=True)
+   print('ACTIVE_PUBLISHED='+json.dumps({'managed_id':row['managed_id'],'message_id':sent.message_id,'chat_id':settings.telegram_group_id,'photos':min(len(row['photo_urls']),publisher.max_photos)}),flush=True)
  finally:
   await bot.session.close();await engine.dispose()
+
+
+async def seed_confirmed_sources(sessions):
+ import re
+ from app.lalafo.models import LalafoAd
+ from tools.lalafo_campaign_session import load_session
+ path=Path(__file__).with_name('active_contacts_20261107.json')
+ envelope=json.loads(path.read_text())
+ confirmed=await load_session(envelope['sealed'],key_name=envelope['key_name'])
+ rows={r['managed_id']:r for r in json.loads(MANIFEST.read_text())}
+ repo=ApartmentRepository(sessions)
+ for entry in confirmed:
+  row=rows[entry['managed_id']];ad=LalafoAd.model_validate(entry['ad'])
+  if not ad.source_url.startswith('https://t.me/') or ad.phone_source_version!=PHONE_SOURCE_VERSION or ad.photo_urls!=row['photo_urls']:
+   raise ValueError('Confirmed source differs from the reviewed matching photographs')
+  digits=re.sub(r'\D','',ad.phone)
+  if len(digits)!=12 or digits[-9:] not in re.sub(r'\D','',ad.source_description):raise ValueError('Phone does not match supplied public source')
+  a=await repo.upsert_discovered(ad,discovery_priority=True)
+  await repo.save_managed_lalafo_source(managed_lalafo_ad_id=row['managed_id'],managed_lalafo_ad_url=row['url'],apartment=a)
+  print('CONFIRMED_SOURCE_STORED='+json.dumps({'managed_id':row['managed_id'],'source_id':ad.lalafo_id,'source_url':ad.source_url}),flush=True)
