@@ -41,15 +41,3 @@ jobs:
         run: python -m pytest tests/test_lalafo_greeting_once.py tests/test_lalafo_auto_reply.py -q
       - name: Monitor new conversations and reply once
         run: python -m scripts.lalafo_reply_unanswered_once
-      - name: Diagnose the existing hosted chat route after a failed preflight
-        if: failure()
-        run: |
-          python - <<'PYCODE'
-          import os,httpx,json
-          response=httpx.post('https://statutory-mallissa-2danmiller-f1c1b08d.koyeb.app/internal/lalafo/auto-reply-preflight',headers={'Authorization':'Bearer '+os.environ['CALLBACK_SECRET']},timeout=55)
-          try:
-              data=response.json()
-          except ValueError:
-              data={}
-          print(json.dumps({'hosted_http_status':response.status_code,**{k:data[k] for k in ['status','error','owner_verified','chats_readable','socket_ready'] if k in data}}))
-          PYCODE
