@@ -31,6 +31,48 @@ async def resolve(sessions):
  return resolved
 async def main():
  engine,sessions=create_engine_and_session(get_settings().database_url)
- try:await resolve(sessions)
+ try:
+  await resolve(sessions)
+  rows=json.loads(MANIFEST.read_text()); prices={r['price'] for r in rows}
+  async with sessions() as session:
+   candidates=list((await session.scalars(select(Apartment).where(Apartment.phone!='',Apartment.phone_source_version==PHONE_SOURCE_VERSION,Apartment.rooms=='1',Apartment.price.between(min(prices)-5000,max(prices)+5000)))).all())
+   for a in candidates:
+    print('PHOTO_CANDIDATE='+json.dumps({'apartment_id':a.id,'source_id':a.lalafo_id,'source_url':a.source_url,'price':a.price,'district':a.district,'photo_urls':a.photo_urls,'seller_type':a.seller_type,'owner_listing':a.owner_listing},ensure_ascii=False),flush=True)
  finally:await engine.dispose()
 if __name__=='__main__':asyncio.run(main())
+
+async def publish():
+ import os
+ from aiogram import Bot
+ from app.security import TokenSigner
+ from app.telegram.publisher import TelegramPublisher
+ from scripts.scrape_publish import apartment_to_ad
+ if os.environ.get('CONFIRM_CHAT_CARD_PUBLIC_SEND')!='true':raise ValueError('Explicit requested public send required')
+ settings=get_settings()
+ if settings.telegram_group_id!=-1004389602150:raise ValueError('Unexpected destination')
+ engine,sessions=create_engine_and_session(settings.database_url);repo=ApartmentRepository(sessions)
+ bot=Bot(settings.require_bot_token())
+ try:
+  rows=await resolve(sessions)
+  if len(rows)!=11 or not all(v for _,_,v in rows):raise ValueError('Resolve and verify all eleven original contacts before publishing')
+  if len({a.id for _,a,_ in rows})!=11:raise ValueError('Duplicate original source in requested batch')
+  publisher=TelegramPublisher(bot,chat_id=settings.telegram_group_id,signer=TokenSigner(settings.require_callback_secret()),bot_username=settings.telegram_bot_username,support_url=settings.support_bot_url,max_photos=settings.max_photos_per_apartment,request_timeout_seconds=35)
+  for row,a,_ in rows:
+   key=f'authorized_active_20261107:{row["managed_id"]}'
+   async with sessions.begin() as s:
+    prior=await s.get(LalafoAutoReplyMeta,key)
+    if prior:
+     if prior.value.startswith('published:'):
+      print('ACTIVE_ALREADY_PUBLISHED='+json.dumps({'managed_id':row['managed_id'],'message_id':int(prior.value.split(':')[1])}),flush=True);continue
+     raise RuntimeError('Reconcile earlier ambiguous send before retry')
+    s.add(LalafoAutoReplyMeta(key=key,value='sending'))
+   ad=apartment_to_ad(a).model_copy(update={'price':row['price'],'rooms':row['rooms'],'district':row['district'],'deposit':row['deposit'],'photo_urls':row['photo_urls'],'source_description':row['description']})
+   await repo.upsert_discovered(ad,discovery_priority=True)
+   sent=await publisher.publish(a.id,ad)
+   await repo.mark_published(a.id,chat_id=settings.telegram_group_id,message_id=sent.message_id,acknowledged_at=sent.date)
+   await repo.save_managed_lalafo_source(managed_lalafo_ad_id=row['managed_id'],managed_lalafo_ad_url=row['url'],apartment=a)
+   async with sessions.begin() as s:
+    marker=await s.get(LalafoAutoReplyMeta,key);marker.value=f'published:{sent.message_id}'
+   print('ACTIVE_PUBLISHED='+json.dumps({'managed_id':row['managed_id'],'message_id':sent.message_id,'chat_id':settings.telegram_group_id,'photos':min(len(row['photo_urls']),settings.max_photos_per_apartment)}),flush=True)
+ finally:
+  await bot.session.close();await engine.dispose()
