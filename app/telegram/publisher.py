@@ -38,6 +38,7 @@ class TelegramPublisher:
         support_url: str,
         max_photos: int = 5,
         include_duplicate: bool = False,
+        allow_requested_realtors: bool = False,
         request_timeout_seconds: float | None = None,
     ) -> None:
         self.bot = bot
@@ -47,6 +48,7 @@ class TelegramPublisher:
         self.support_url = support_url
         self.max_photos = max(1, min(max_photos, 5))
         self.include_duplicate = include_duplicate
+        self.allow_requested_realtors = allow_requested_realtors
         self.request_timeout_seconds = (TELEGRAM_REQUEST_TIMEOUT_SECONDS
                                         if request_timeout_seconds is None else request_timeout_seconds)
         self._retry_not_before = 0.0
@@ -103,7 +105,9 @@ class TelegramPublisher:
     async def publish(self, apartment_id: int, ad: LalafoAd, *, reply_markup: InlineKeyboardMarkup | None = None) -> Message:
         if not is_supported_source(ad):
             raise TelegramPublishError("Unsupported apartment source")
-        if not is_confirmed_owner(ad):
+        if not is_confirmed_owner(ad) and not (
+            self.allow_requested_realtors and ad.seller_type == "realtor"
+        ):
             raise TelegramPublishError("Only confirmed owner listings are allowed")
         if is_excluded_agency(ad):
             raise TelegramPublishError("Excluded agency source")

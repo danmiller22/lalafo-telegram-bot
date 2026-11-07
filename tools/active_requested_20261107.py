@@ -25,7 +25,7 @@ async def resolve(sessions):
     a=await s.get(Apartment,featured.source_apartment_id) if featured.source_apartment_id else await s.scalar(select(Apartment).where(Apartment.lalafo_id==featured.source_lalafo_id));method='managed_binding'
    if a is None and row['managed_id'] in bindings:a=await s.get(Apartment,bindings[row['managed_id']]);method='requested_binding'
    if a is None:a=await repo.verified_source_by_photos(row['photo_urls'],excluded_lalafo_ids={r['managed_id'] for r in rows});method='identical_photos'
-   valid=bool(a and a.phone and a.phone_source_version==PHONE_SOURCE_VERSION and a.owner_listing and a.seller_type=='owner' and a.rooms=='1')
+   valid=bool(a and a.phone and a.phone_source_version==PHONE_SOURCE_VERSION and a.seller_type in {'owner','realtor'} and a.rooms=='1')
    print('ACTIVE_REQUESTED='+json.dumps({'managed_id':row['managed_id'],'resolved':a is not None,'valid':valid,'method':method,'source_id':a.lalafo_id if a else None,'apartment_id':a.id if a else None,'source_url':a.source_url if a else None,'source_phone_verified':bool(a and a.phone and a.phone_source_version==PHONE_SOURCE_VERSION),'seller_type':a.seller_type if a else None,'owner_listing':a.owner_listing if a else None,'message_id':a.telegram_message_id if a else None},ensure_ascii=False),flush=True)
    resolved.append((row,a,valid))
  return resolved
@@ -54,9 +54,11 @@ async def publish():
  bot=Bot(settings.require_bot_token())
  try:
   rows=await resolve(sessions)
-  if len(rows)!=11 or not all(v for _,_,v in rows):raise ValueError('Resolve and verify all eleven original contacts before publishing')
-  if len({a.id for _,a,_ in rows})!=11:raise ValueError('Duplicate original source in requested batch')
-  publisher=TelegramPublisher(bot,chat_id=settings.telegram_group_id,signer=TokenSigner(settings.require_callback_secret()),bot_username=settings.telegram_bot_username,support_url=settings.support_bot_url,max_photos=settings.max_photos_per_apartment,request_timeout_seconds=35)
+  if len(rows)!=11:raise ValueError('Unexpected requested batch')
+  rows=[r for r in rows if r[2]]
+  if not rows:raise ValueError('No verified original contacts')
+  if len({a.id for _,a,_ in rows})!=len(rows):raise ValueError('Duplicate original source in requested batch')
+  publisher=TelegramPublisher(bot,chat_id=settings.telegram_group_id,signer=TokenSigner(settings.require_callback_secret()),bot_username=settings.telegram_bot_username,support_url=settings.support_bot_url,max_photos=settings.max_photos_per_apartment,request_timeout_seconds=35,allow_requested_realtors=True)
   for row,a,_ in rows:
    key=f'authorized_active_20261107:{row["managed_id"]}'
    async with sessions.begin() as s:

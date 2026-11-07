@@ -348,3 +348,13 @@ async def test_two_room_apartment_is_never_sent_to_channel():
     bot.send_photo.assert_not_awaited()
     bot.send_media_group.assert_not_awaited()
     bot.send_message.assert_not_awaited()
+
+@pytest.mark.asyncio
+async def test_explicit_requested_realtor_keeps_truthful_contact_button():
+    bot = SimpleNamespace(send_media_group=AsyncMock(return_value=[SimpleNamespace(message_id=1)]),send_message=AsyncMock(return_value=SimpleNamespace(message_id=2)),send_photo=AsyncMock(),delete_message=AsyncMock())
+    publisher=TelegramPublisher(bot,chat_id=-1001,signer=TokenSigner('s'*32),bot_username='testbot',support_url='https://t.me/support',allow_requested_realtors=True)
+    ad=make_ad().model_copy(update={'seller_type':'realtor','owner_listing':False})
+    await publisher.publish(77,ad)
+    keyboard=bot.send_message.await_args.kwargs['reply_markup']
+    assert keyboard.inline_keyboard[0][0].text=='Получить номер'
+    assert ad.seller_type=='realtor' and ad.owner_listing is False
