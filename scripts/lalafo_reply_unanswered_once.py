@@ -133,8 +133,19 @@ async def preflight_once(
         await client.close()
 
 
+async def http_failure_diagnostic(response):
+    if response.is_error:
+        await response.aread()
+        print(json.dumps({'lalafo_http_status': response.status_code,
+            'content_type': response.headers.get('content-type'),
+            'server': response.headers.get('server'),
+            'challenge': response.headers.get('cf-mitigated'),
+            'html_title': __import__('re').search(r'<title>([^<]{0,100})', response.text).group(1)
+                if __import__('re').search(r'<title>([^<]{0,100})', response.text) else None}), flush=True)
+
+
 def chat_http():
-    return httpx.AsyncClient(base_url="https://lalafo.kg", proxy=os.getenv("LALAFO_PROXY_URL") or None, timeout=25, follow_redirects=True)
+    return httpx.AsyncClient(event_hooks={'response': [http_failure_diagnostic]},base_url="https://lalafo.kg", proxy=os.getenv("LALAFO_PROXY_URL") or None, timeout=25, follow_redirects=True)
 
 
 def eligible_latest(messages, chat, owner_id, since):
@@ -265,6 +276,8 @@ async def run_once() -> dict[str, int | bool | str]:
                     await claims.finish(expected_owner, chat.chat_key, "verified")
                 else:
                     await claims.finish(expected_owner, chat.chat_key, "uncertain" if exc.ambiguous else "failed")
+                if exc.kind in {"auth", "security_challenge"}:
+                    raise
             await asyncio.sleep(0.7)
     finally:
         if socket.connected:
