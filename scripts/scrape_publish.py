@@ -102,9 +102,9 @@ MAX_REPOSTS_PER_RUN = 18
 CENTRAL_BATCH_SHARE = 0.50
 OWNER_OTHER_BATCH_SHARE = 0.50
 MAX_CANDIDATE_POOL = 300
-# Discovery must retain enough unique stock for the 60-card daily schedule
+# Discovery must retain enough unique stock for the 70-card daily schedule
 # and its 48-hour no-repeat window.
-DISCOVERY_CANDIDATE_TARGET = 120
+DISCOVERY_CANDIDATE_TARGET = 140
 DISCOVERY_COLLECTION_BUDGET_SECONDS = 300
 # Realtor inventory is never collected or published.
 REALTOR_CANDIDATE_RESERVE_SHARE = 0.0
@@ -477,7 +477,7 @@ def insert_randomly(
 
 
 def rotate_inventory_sources(urls, *, now=None):
-    """Always read full-budget owner and agency feeds, then rotate districts."""
+    """Read broad owner and unclassified feeds before rotating districts."""
     current = now or datetime.now(timezone.utc)
     # Thin owner inventory retries after three minutes. Rotate on that same
     # clock so retries inspect a new district slice instead of repeating the
@@ -487,7 +487,7 @@ def rotate_inventory_sources(urls, *, now=None):
     agencies = [url for url in urls if 'real-estate-agency' in url]
     hot_owners = [
         url for url in owners
-        if '/1-bedroom/owner?' in url
+        if ('/1-bedroom/owner?' in url or '/1-bedroom/?' in url)
         and 'price[from]=25000' in url
         and 'price[to]=40000' in url
     ]
@@ -686,14 +686,13 @@ def select_owners_then_realtors(
     candidates: list[LalafoAd],
     limit: int,
 ) -> list[LalafoAd]:
-    """Select only confirmed owner cards."""
+    """Select eligible owners and unknown authors without realtor fallback."""
     if limit <= 0:
         return []
     eligible = deduplicate_candidates(
         [ad for ad in candidates if listing_policy_eligible(ad)]
     )
-    owners = [ad for ad in eligible if ad.seller_type == "owner"]
-    return mix_prices(select_publish_batch_with_reposts(owners, {}, limit))
+    return mix_prices(select_publish_batch_with_reposts(eligible, {}, limit))
 
 
 async def run(

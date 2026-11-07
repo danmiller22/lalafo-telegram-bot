@@ -12,6 +12,7 @@ from app.security import TokenSigner
 from app.telegram.formatting import is_confirmed_owner, format_public_apartment, is_supported_source
 from app.telegram.keyboards import apartment_keyboard
 
+from app.listing_policy import author_policy_eligible
 from app.lalafo.exclusions import is_excluded_agency
 
 logger = logging.getLogger(__name__)
@@ -103,8 +104,8 @@ class TelegramPublisher:
     async def publish(self, apartment_id: int, ad: LalafoAd, *, reply_markup: InlineKeyboardMarkup | None = None) -> Message:
         if not is_supported_source(ad):
             raise TelegramPublishError("Unsupported apartment source")
-        if not is_confirmed_owner(ad):
-            raise TelegramPublishError("Only confirmed owner listings are allowed")
+        if not author_policy_eligible(seller_type=ad.seller_type, owner_listing=ad.owner_listing):
+            raise TelegramPublishError("Confirmed realtor or inconsistent owner metadata")
         if is_excluded_agency(ad):
             raise TelegramPublishError("Excluded agency source")
         if ad.rooms not in ("studio", "1"):

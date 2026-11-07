@@ -205,8 +205,8 @@ def test_realtors_are_never_eligible():
         ))
 
 
-def test_unclassified_listings_do_not_enter_public_selection():
-    assert not listing_policy_eligible(make_ad(
+def test_unclassified_listings_enter_public_selection():
+    assert listing_policy_eligible(make_ad(
         price=30_000, district="ЦУМ", owner_listing=False,
         seller_type="unknown",
     ))
@@ -799,7 +799,7 @@ def test_kyrgyz_wanted_ad_still_rejected():
     assert is_substandard_structure(make_ad(source_description="Квартира арендага керек"))
 
 
-def test_owner_price_searches_cover_fifty_explicit_owner_sources():
+def test_searches_cover_owner_and_unknown_author_inventory():
     from app.config import (
         INVENTORY_OWNER_DISTRICTS,
         INVENTORY_SEARCH_URLS,
@@ -815,23 +815,21 @@ def test_owner_price_searches_cover_fifty_explicit_owner_sources():
     assert set(INVENTORY_OWNER_DISTRICTS) == {
         slug for slug, _ in LALAFO_DISTRICT_FILTERS
     }
-    assert len(INVENTORY_SEARCH_URLS) == 50
-    assert all('/owner?' in url for url in INVENTORY_SEARCH_URLS)
+    assert len(INVENTORY_SEARCH_URLS) == 55
+    assert sum('/owner?' not in url for url in INVENTORY_SEARCH_URLS) == 5
     assert all('real-estate-agency' not in url for url in INVENTORY_SEARCH_URLS)
 
 
-def test_source_rotation_covers_all_owner_sources():
+def test_source_rotation_covers_owner_and_unknown_sources():
     from scripts.scrape_publish import rotate_inventory_sources
     from app.config import INVENTORY_SEARCH_URLS
-    owners = [u for u in INVENTORY_SEARCH_URLS if 'real-estate-agency' not in u]
-    hot = next(u for u in owners if '/1-bedroom/owner?' in u and 'price[from]=25000' in u and 'price[to]=40000' in u)
-    rotating_owners = [u for u in owners if u != hot]
-    second_owners = set()
-    for cycle in range(len(owners)):
-        now = datetime.fromtimestamp(cycle*180, timezone.utc)
-        urls = rotate_inventory_sources(INVENTORY_SEARCH_URLS, now=now)
+    hot = {u for u in INVENTORY_SEARCH_URLS if 'price[from]=25000' in u and 'price[to]=40000' in u and ('/1-bedroom/owner?' in u or '/1-bedroom/?' in u)}
+    assert len(hot) == 2
+    rotating = set(INVENTORY_SEARCH_URLS) - hot
+    first_rotating = set()
+    for cycle in range(len(INVENTORY_SEARCH_URLS)):
+        urls = rotate_inventory_sources(INVENTORY_SEARCH_URLS, now=datetime.fromtimestamp(cycle*180, timezone.utc))
         assert set(urls) == set(INVENTORY_SEARCH_URLS)
-        assert all('real-estate-agency' not in u for u in urls[:len(owners)])
-        assert urls[0] == hot
-        second_owners.add(urls[1])
-    assert second_owners == set(rotating_owners)
+        assert set(urls[:2]) == hot
+        first_rotating.add(urls[2])
+    assert first_rotating == rotating

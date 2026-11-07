@@ -49,14 +49,14 @@ def test_parses_fresh_owner_apartment_with_album_and_contact() -> None:
     assert len(ad.photo_urls) == 2
 
 
-@pytest.mark.parametrize("seller", ["Собственник", "Агентство"])
+@pytest.mark.parametrize("seller", ["Собственник", "Агентство", "Автор не указан"])
 @pytest.mark.parametrize("price,eligible", [(24_999,False),(25_000,True),(40_000,True),(40_001,False),(45_000,False),(45_001,False)])
 def test_telegram_whole_apartments_share_the_exact_25_to_45k_range(seller, price, eligible):
     from app.config import Settings
     from scripts.publish_inventory import _valid
     html=_post(f"Сдам 1-комнатную квартиру. Район: ЦУМ. Цена {price} сом. {seller}. 0705 123 456")
     ads=parse_telegram_apartments(html,now=datetime(2026,9,23,7,tzinfo=timezone.utc))
-    expected = eligible and seller == "Собственник"
+    expected = eligible and seller != "Агентство"
     assert bool(ads)==expected
     if expected:
         assert _valid(ads[0],Settings()) == (True,"ok")
@@ -267,3 +267,13 @@ async def test_slow_channel_keeps_partial_results_and_does_not_delay_other_sourc
     ads=await asyncio.wait_for(sources.fetch_telegram_apartments(('https://t.me/s/owners','https://t.me/s/agencies'),pages_per_channel=30),timeout=0.5)
     assert len(ads)==1
     assert {ad.seller_type for ad in ads}=={'owner'}
+
+@pytest.mark.parametrize('author', ['Собственник. Агентство, комиссия 50%', 'Риэлтор. Собственник не оплачивает услуги', 'Агентство недвижимости'])
+def test_confirmed_realtor_is_rejected_even_if_owner_is_mentioned(author):
+    ads=parse_telegram_apartments(_post(f'Сдам 1-комнатную квартиру. Цена 30 000 сом. {author}. 0705 123 456'),now=datetime(2026,9,23,7,tzinfo=timezone.utc))
+    assert ads==[]
+
+@pytest.mark.parametrize('author', ['Собственник, не агентство, без комиссии', 'Собственник. Риэлторам не беспокоить', 'Без посредников'])
+def test_negative_agency_mentions_do_not_exclude_actual_owners(author):
+    ads=parse_telegram_apartments(_post(f'Сдам 1-комнатную квартиру. Цена 30 000 сом. {author}. 0705 123 456'),now=datetime(2026,9,23,7,tzinfo=timezone.utc))
+    assert len(ads)==1 and ads[0].seller_type=='owner'

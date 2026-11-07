@@ -44,13 +44,15 @@ def is_central_realtor_area(district: str | None) -> bool:
     return any(term in area for term in CENTRAL_REALTOR_TERMS)
 
 
+def author_policy_eligible(*, seller_type: str | None, owner_listing: bool) -> bool:
+    """Accept unknown authors and confirmed owners, never confirmed realtors."""
+    return seller_type in {None, "unknown"} or (seller_type == "owner" and owner_listing)
+
+
 def seller_policy_eligible(
     *, seller_type: str | None, owner_listing: bool, price: int, district: str | None
 ) -> bool:
-    """Allow only confirmed owner listings in the public feed."""
-    if seller_type == "owner" and owner_listing:
-        return OWNER_MIN_PRICE <= price <= OWNER_MAX_PRICE
-    return False
+    return author_policy_eligible(seller_type=seller_type, owner_listing=owner_listing) and OWNER_MIN_PRICE <= price <= OWNER_MAX_PRICE
 
 
 def listing_policy_eligible(ad: Any) -> bool:

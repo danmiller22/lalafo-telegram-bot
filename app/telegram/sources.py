@@ -341,16 +341,17 @@ def parse_telegram_apartments(
                 photo_urls.append(match.group(1))
         data_post = str(message.get("data-post"))
         owner = is_owner_offer(text)
-        if not owner:
+        # Negative agency mentions must not turn genuine owner posts into agents.
+        author_text = re.sub(r"(?:ри[еэ]лтор\w*|агент\w*)\s+не\s+беспокоить", "", normalized)
+        author_text = re.sub(r"\b(?:без|не)\s+(?:ри[еэ]лтор\w*|агент\w*|агенств\w*|комисси\w*|посредник\w*)", "", author_text)
+        if shared and not owner:
             note("not_confirmed_owner")
             continue
-        seller_type = (
-            "owner"
-            if owner
-            else "realtor"
-            if any(term in normalized for term in REALTOR_TERMS)
-            else "unknown"
-        )
+        realtor = any(term in author_text for term in (*REALTOR_TERMS, "агенств"))
+        if realtor:
+            note("confirmed_realtor")
+            continue
+        seller_type = "owner" if owner else "unknown"
         district = _telegram_district(lines, text)
         if not district:
             district = "Бишкек" if shared else "Центр"
