@@ -1,9 +1,4 @@
-"""Reply once to each new, unread Lalafo conversation.
-
-The hourly job is intentionally stateless: Lalafo's own chat history is the
-source of truth. A conversation that already contains any owner message is
-left alone, so a scheduled rerun cannot repeat the greeting.
-"""
+"""Send the requested greeting once per new conversation, with durable claims."""
 from __future__ import annotations
 
 import asyncio
@@ -11,6 +6,9 @@ import json
 import os
 import time
 import uuid
+from datetime import datetime
+
+import httpx
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -28,7 +26,9 @@ from app.lalafo.chat_protocol import (
     is_eligible_incoming,
     socket_connection_id,
 )
-from app.lalafo.cloud_reply_schedule import cloud_reply_allowed
+from app.config import get_settings
+from app.database import create_engine_and_session
+from app.lalafo.greeting_claims import GreetingClaims
 from tools.lalafo_campaign_session import load_session
 
 
@@ -73,7 +73,8 @@ async def preflight_once(
     client = LalafoChatClient(
         login="sealed-session",
         password="sealed-session",
-        fingerprint=f"preflight-{expected_owner}",
+        fingerprint=str(session.get("device_fingerprint") or f"preflight-{expected_owner}"),
+        http=chat_http(),
         timeout=25,
     )
     client._session = LalafoSession(
@@ -128,14 +129,25 @@ async def preflight_once(
         if socket.connected:
             await socket.disconnect()
         await socket_http.close()
+        await client._http.aclose()
         await client.close()
 
 
+def chat_http():
+    return httpx.AsyncClient(base_url="https://lalafo.kg", proxy=os.getenv("LALAFO_PROXY_URL") or None, timeout=25, follow_redirects=True)
+
+
+def eligible_latest(messages, chat, owner_id, since):
+    if not messages or any(message.origin_id == owner_id for message in messages):
+        return None
+    latest = messages[-1]
+    if latest.created_at < since:
+        return None
+    return latest if is_eligible_incoming(latest, owner_id, can_send_text=chat.can_send_text, is_blocked=chat.is_blocked) else None
+
+
 async def run_once() -> dict[str, int | bool | str]:
-    # This guard precedes credentials, session renewal and all Lalafo requests.
-    if not cloud_reply_allowed():
-        return {'status': 'skipped', 'reason': 'pc_auto_reply_window',
-                'sent': 0, 'verified': 0}
+    since = int(datetime.fromisoformat(required("LALAFO_GREETING_SINCE").replace("Z", "+00:00")).timestamp())
     envelope = json.loads(Path(required("LALAFO_SESSION_ENVELOPE")).read_text())
     session = await load_session(
         envelope["sealed_session"], key_name=envelope["key_name"]
@@ -147,7 +159,8 @@ async def run_once() -> dict[str, int | bool | str]:
     client = LalafoChatClient(
         login="sealed-session",
         password="sealed-session",
-        fingerprint=f"hourly-{expected_owner}",
+        fingerprint=str(session.get("device_fingerprint") or f"half-hour-{expected_owner}"),
+        http=chat_http(),
         timeout=25,
     )
     client._session = LalafoSession(
@@ -180,7 +193,9 @@ async def run_once() -> dict[str, int | bool | str]:
         payload = {**(data if isinstance(data, dict) else {}), "ref": "SocketConnection"}
         await accept_socket(payload)
 
-    scanned = candidates = sent = verified = 0
+    engine, sessions = create_engine_and_session(get_settings().database_url)
+    claims = GreetingClaims(sessions)
+    scanned = candidates = sent = verified = skipped_claims = 0
     try:
         chats = await client.list_chats()
         scanned = len(chats)
@@ -188,19 +203,11 @@ async def run_once() -> dict[str, int | bool | str]:
         for chat in chats:
             if chat.unread_count <= 0 or not chat.can_send_text or chat.is_blocked:
                 continue
+            if chat.bottom is not None and chat.bottom.created_at < since:
+                continue
             messages = await all_messages(client, chat)
-            if not messages:
-                continue
-            # A human or the bot has already handled this conversation.
-            if any(message.origin_id == expected_owner for message in messages):
-                continue
-            latest = messages[-1]
-            if not is_eligible_incoming(
-                latest,
-                expected_owner,
-                can_send_text=chat.can_send_text,
-                is_blocked=chat.is_blocked,
-            ):
+            latest = eligible_latest(messages, chat, expected_owner, since)
+            if latest is None:
                 continue
             pending.append((chat, latest))
         candidates = len(pending)
@@ -217,8 +224,6 @@ async def run_once() -> dict[str, int | bool | str]:
             await asyncio.wait_for(socket_ready.wait(), timeout=20)
 
         for chat, inbound in pending:
-            if not cloud_reply_allowed():
-                break
             timestamp = int(time.time() * 1000)
             job = AutoReplyJob(
                 inbound_key=f"{chat.chat_key}:{inbound.id}",
@@ -226,7 +231,7 @@ async def run_once() -> dict[str, int | bool | str]:
                 inbound_id=inbound.id,
                 inbound_time=inbound.created_at,
                 ack=str(uuid.uuid4()),
-                source="hourly",
+                source="half-hour",
                 status="sending",
                 attempts=0,
                 next_attempt_at=timestamp,
@@ -235,24 +240,39 @@ async def run_once() -> dict[str, int | bool | str]:
                 created_at=timestamp,
                 updated_at=timestamp,
             )
+            # Re-read history after reserving, before any outgoing message.
+            if not await claims.claim(expected_owner, chat.chat_key, job.ack):
+                skipped_claims += 1
+                continue
+            latest_messages = await all_messages(client, chat)
+            if any(message.origin_id == expected_owner for message in latest_messages):
+                await claims.finish(expected_owner, chat.chat_key, "already_handled")
+                continue
             try:
                 await client.send_reply(job)
                 sent += 1
                 await asyncio.sleep(0.8)
-                if await client.reconcile_reply(job):
+                confirmed = await client.reconcile_reply(job)
+                if confirmed:
                     verified += 1
+                await claims.finish(expected_owner, chat.chat_key, "verified" if confirmed else "sent")
             except LalafoGatewayError as exc:
                 # A send may have reached Lalafo even if its response was lost.
                 # Reconcile once and never resend blindly in this run.
                 if exc.ambiguous and await client.reconcile_reply(job):
                     sent += 1
                     verified += 1
+                    await claims.finish(expected_owner, chat.chat_key, "verified")
+                else:
+                    await claims.finish(expected_owner, chat.chat_key, "uncertain" if exc.ambiguous else "failed")
             await asyncio.sleep(0.7)
     finally:
         if socket.connected:
             await socket.disconnect()
         await socket_http.close()
+        await client._http.aclose()
         await client.close()
+        await engine.dispose()
 
     return {
         "owner_verified": True,
@@ -260,13 +280,16 @@ async def run_once() -> dict[str, int | bool | str]:
         "new_conversations": candidates,
         "sent": sent,
         "verified": verified,
+        "skipped_already_reserved": skipped_claims,
     }
 
 
 async def main() -> None:
     print(
         json.dumps(
-            await run_once(), ensure_ascii=False, separators=(",", ":")
+            await preflight_once(envelope_path=required("LALAFO_SESSION_ENVELOPE"), expected_owner=required("LALAFO_EXPECTED_OWNER_ID"))
+            if os.getenv("LALAFO_GREETING_VERIFY_ONLY", "false").lower() == "true"
+            else await run_once(), ensure_ascii=False, separators=(",", ":")
         ),
         flush=True,
     )

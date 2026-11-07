@@ -1,18 +1,21 @@
-name: Hourly Lalafo greeting
+name: Lalafo greeting every 30 minutes
 
 on:
   workflow_dispatch:
+    inputs:
+      verify_only:
+        description: Verify account and chat access without sending replies
+        type: boolean
+        default: true
   schedule:
-    # Union of nighttime UTC hours for Chicago standard and daylight time.
-    # The local-time gate below removes the extra hour in either season.
-    - cron: "7 0-12,22-23 * * *"
+    - cron: "*/30 * * * *"
 
 permissions:
   contents: read
 
 concurrency:
-  group: lalafo-hourly-greeting
-  cancel-in-progress: true
+  group: lalafo-half-hour-greeting-18225388
+  cancel-in-progress: false
 
 jobs:
   responder:
@@ -21,31 +24,20 @@ jobs:
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
-      LALAFO_EXPECTED_OWNER_ID: "18209276"
-      LALAFO_SESSION_ENVELOPE: "tools/lalafo_hourly_session_20261024.json"
+      LALAFO_PROXY_URL: ${{ secrets.LALAFO_PROXY_URL }}
+      LALAFO_EXPECTED_OWNER_ID: "18225388"
+      LALAFO_SESSION_ENVELOPE: "tools/lalafo_half_hour_session_18225388.json"
+      LALAFO_GREETING_SINCE: "2026-11-07T08:52:34Z"
+      LALAFO_GREETING_VERIFY_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_only }}
       LOG_LEVEL: INFO
     steps:
-      - name: Defer to the PC during Chicago daytime
-        id: reply_window
-        run: |
-          python3 - <<'PY'
-          import os
-          from datetime import datetime
-          from zoneinfo import ZoneInfo
-          allowed = not 7 <= datetime.now(ZoneInfo('America/Chicago')).hour < 17
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
-              output.write(f'allowed={str(allowed).lower()}\n')
-          print('Cloud reply window open' if allowed else 'Skipped: PC auto-reply window')
-          PY
       - uses: actions/checkout@v7
-        if: steps.reply_window.outputs.allowed == 'true'
       - uses: actions/setup-python@v7
-        if: steps.reply_window.outputs.allowed == 'true'
         with:
           python-version: "3.12"
           cache: pip
       - run: python -m pip install --disable-pip-version-check --quiet -r requirements.txt
-        if: steps.reply_window.outputs.allowed == 'true'
-      - name: Reply once to new conversations
-        if: steps.reply_window.outputs.allowed == 'true'
+      - name: Verify duplicate protection and new-message selection
+        run: python -m pytest tests/test_lalafo_greeting_once.py tests/test_lalafo_auto_reply.py -q
+      - name: Monitor new conversations and reply once
         run: python -m scripts.lalafo_reply_unanswered_once
