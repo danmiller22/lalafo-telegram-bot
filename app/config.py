@@ -187,9 +187,11 @@ INVENTORY_OWNER_DISTRICTS = (
         if slug not in INVENTORY_PRIORITY_DISTRICTS
     ),
 )
-# Five broad price routes plus 45 district routes provide 50 explicit owner
-# sources without relying on unclassified or agency search results.
+# Broad mixed-author searches make unknown authors discoverable.
+# Every detail is classified before it can enter publication.
 INVENTORY_SEARCH_URLS: tuple[str, ...] = (
+    *(f"{_INVENTORY_BASE}?price[from]={low}&price[to]={high}"
+      for low, high in ((25000,40000),(25000,27999),(28000,31999),(32000,35999),(36000,40000))),
     # Read the entire owner price range on every cycle. Rotating dozens of
     # district searches used to leave this broad 30–35k query untouched for
     # hours whenever the cloud collection budget expired early.

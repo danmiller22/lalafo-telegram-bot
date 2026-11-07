@@ -181,7 +181,7 @@ async def test_manual_telegram_file_ids_form_album_with_working_card_keyboard() 
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("seller_type,owner_listing", [("unknown", False), ("realtor", False), ("owner", False)])
+@pytest.mark.parametrize("seller_type,owner_listing", [("realtor", False), ("realtor", True), ("owner", False)])
 async def test_non_owner_author_types_are_rejected(seller_type, owner_listing) -> None:
     bot = SimpleNamespace(
         send_media_group=AsyncMock(
@@ -195,7 +195,7 @@ async def test_non_owner_author_types_are_rejected(seller_type, owner_listing) -
     )
     ad = make_ad().model_copy(update={"seller_type": seller_type, "owner_listing": owner_listing})
 
-    with pytest.raises(TelegramPublishError, match="confirmed owner"):
+    with pytest.raises(TelegramPublishError, match="realtor|inconsistent"):
         await publisher.publish(77, ad)
     bot.send_media_group.assert_not_awaited()
     bot.send_message.assert_not_awaited()
@@ -348,3 +348,14 @@ async def test_two_room_apartment_is_never_sent_to_channel():
     bot.send_photo.assert_not_awaited()
     bot.send_media_group.assert_not_awaited()
     bot.send_message.assert_not_awaited()
+
+@pytest.mark.asyncio
+async def test_unknown_author_publishes_without_false_owner_label():
+    bot=SimpleNamespace(send_media_group=AsyncMock(return_value=[SimpleNamespace(message_id=1)]),send_message=AsyncMock(return_value=SimpleNamespace(message_id=2)))
+    publisher=TelegramPublisher(bot,chat_id=-1001,signer=TokenSigner('s'*32),bot_username='testbot',support_url='https://t.me/support')
+    ad=make_ad().model_copy(update={'seller_type':'unknown','owner_listing':False})
+    await publisher.publish(77,ad)
+    args=bot.send_message.await_args.kwargs
+    assert args['reply_markup'].inline_keyboard[0][0].text=='Получить номер'
+    assert 'Собственник' not in args['text']
+    assert ad.seller_type=='unknown' and ad.owner_listing is False

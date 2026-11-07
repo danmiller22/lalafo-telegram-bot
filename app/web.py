@@ -1483,7 +1483,7 @@ async def health() -> JSONResponse:
             "publication_policy": {
                 "daily_target": MAX_PUBLICATIONS_PER_DAY, "start": "05:00", "end": "02:00",
                 "timezone": "Asia/Bishkek", "spacing_minutes": PUBLICATION_SPACING_MINUTES, "watermark_check": False,
-                "seller_mix": {"owner": 1 - REALTOR_DAILY_SHARE, "realtor": REALTOR_DAILY_SHARE},
+                "seller_mix": {"owner_or_unknown": 1.0, "realtor": 0.0},
                 "single_photo_duplicate_guard": True,
                 "requested_cards": {"total_publications": 3, "duration_hours": 24, "minimum_gap_hours": 6, "included_in_daily_target": True},
                 "telegram_source_channels": len(settings.telegram_source_channels),

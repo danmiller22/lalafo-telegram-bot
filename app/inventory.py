@@ -28,11 +28,11 @@ BISHKEK = ZoneInfo("Asia/Bishkek")
 ALLOWED_ROOMS = frozenset({"studio", "1"})
 CENTRAL_DAILY_SHARE = 0.50
 REALTOR_DAILY_SHARE = 0.0
-MIN_PUBLICATIONS_PER_DAY = 60
-MAX_PUBLICATIONS_PER_DAY = 60
+MIN_PUBLICATIONS_PER_DAY = 70
+MAX_PUBLICATIONS_PER_DAY = 70
 # The daily target is chosen once per Bishkek date, then split across the two
 # discovery periods so retries cannot increase the day's publication volume.
-# Public inventory is restricted to confirmed owners.
+# Confirmed realtors are excluded; unknown authors share the owner stock.
 MIN_NON_OWNERS_PER_DAY = math.ceil(MAX_PUBLICATIONS_PER_DAY * REALTOR_DAILY_SHARE)
 MAX_NON_OWNERS_PER_DAY = MIN_NON_OWNERS_PER_DAY
 TARGET_NON_OWNERS_PER_PERIOD = (MAX_NON_OWNERS_PER_DAY + 1) // 2
@@ -49,11 +49,11 @@ DISCOVERY_RETRY_MINUTES = 3
 MIN_HEALTHY_PERIOD_QUEUE = 12
 # Scheduling a small stock densely is separate from filling the daily plan.
 DISCOVERY_PERIOD_TARGET = (MAX_PUBLICATIONS_PER_DAY + 1) // 2
-# Keep the proven dispatch cadence; the fresh-only daily cap stops at 35.
+# Keep the proven dispatch cadence with the requested fresh daily cap.
 PUBLICATION_SPACING_MINUTES = 10.5
 MIN_PUBLICATION_GAP_MINUTES = 10
 INVENTORY_CLAIM_LOCK_ID = 731_290_512
-PUBLICATION_POLICY_VERSION = "publication-owner-fresh-60-per-day-v20"
+PUBLICATION_POLICY_VERSION = "publication-owner-unknown-fresh-70-per-day-v21"
 # Two equal 10.5-hour periods cover 05:00 through 02:00 the next day.
 PUBLICATION_PERIOD_MINUTES = 630
 
@@ -199,6 +199,13 @@ def _seller_type(item: Apartment) -> str:
     return value if value in {"owner", "realtor", "unknown"} else "unknown"
 
 
+def _allowed_seller_filter():
+    return or_(
+        func.coalesce(Apartment.seller_type, "unknown") == "unknown",
+        and_(Apartment.seller_type == "owner", Apartment.owner_listing.is_(True)),
+    )
+
+
 def _supported_source_filter():
     return (
         Apartment.source_url.like("https://lalafo.kg/%")
@@ -264,7 +271,7 @@ def plan_period(
     repeat_apartment_ids: set[int] | None = None,
     rng: random.Random | None = None,
 ) -> list[PlannedApartment]:
-    """Create half of a 120-card day in evenly spaced slots."""
+    """Create one half of the daily target in evenly spaced slots."""
     rng = rng or random.SystemRandom()
     if non_owner_target is None:
         non_owner_target = period_realtor_target(period_start)
@@ -305,22 +312,12 @@ def plan_period(
         target_count = max(0, target_count_override)
     if central_target_override is not None:
         central_target = max(0, min(target_count, central_target_override))
-    owner_count = target_count
     available = {
         kind: sum(_seller_type(item) == kind for item in apartments)
         for kind in ("owner", "realtor", "unknown")
     }
-    seller_remaining = {
-        "owner": min(owner_count, available["owner"]),
-        "realtor": 0,
-        "unknown": 0,
-    }
-    missing = target_count - sum(seller_remaining.values())
-    for kind in ("owner",):
-        extra = min(missing, available[kind] - seller_remaining[kind])
-        seller_remaining[kind] += extra
-        missing -= extra
-    target_count = sum(seller_remaining.values())
+    seller_remaining = {"owner": available["owner"], "unknown": available["unknown"], "realtor": 0}
+    target_count = min(target_count, sum(seller_remaining.values()))
     central_target = min(central_target, round(target_count * CENTRAL_DAILY_SHARE))
     room_counts: dict[str, int] = {}
     district_counts: dict[str, int] = {}
@@ -386,20 +383,19 @@ def plan_period(
 
 
 def mix_sellers(items: list[Apartment]) -> list[Apartment]:
-    """Keep only confirmed owners while preserving the quality ordering."""
+    """Keep allowed authors without changing quality ordering or their labels."""
     return [
         item
         for item in items
-        if _seller_type(item) == "owner" and item.owner_listing
+        if _seller_type(item) == "unknown" or (_seller_type(item) == "owner" and item.owner_listing)
     ]
 
 
 async def _balanced_stock(session: AsyncSession, statement) -> list[Apartment]:
-    """Load only confirmed owner inventory."""
+    """Load confirmed owners and unclassified authors from fresh inventory."""
     return list((await session.scalars(
         statement.where(
-            Apartment.seller_type == "owner",
-            Apartment.owner_listing.is_(True),
+            _allowed_seller_filter(),
         ).limit(MAX_FRESH_STOCK_LOAD)
     )).all())
 
@@ -618,18 +614,14 @@ class InventoryRepository:
                     ApartmentInventoryQueue.status == "queued",
                 )
             )
-            non_owner_ids = select(Apartment.id).where(or_(
-                Apartment.seller_type != "owner",
-                Apartment.seller_type.is_(None),
-                Apartment.owner_listing.is_(False),
-            ))
+            non_owner_ids = select(Apartment.id).where(~_allowed_seller_filter())
             await session.execute(
                 update(ApartmentInventoryQueue)
                 .where(
                     ApartmentInventoryQueue.apartment_id.in_(non_owner_ids),
                     ApartmentInventoryQueue.status == "queued",
                 )
-                .values(status="skipped", last_error="owner_only_policy")
+                .values(status="skipped", last_error="excluded_author_policy")
             )
             day_events = await publications_in_window(
                 session, day_start, day_end, include_external_repeats=False)
@@ -906,18 +898,14 @@ class InventoryRepository:
                 )
                 .values(status="queued", claimed_at=None, last_error="stale_claim")
             )
-            non_owner_ids = select(Apartment.id).where(or_(
-                Apartment.seller_type != "owner",
-                Apartment.seller_type.is_(None),
-                Apartment.owner_listing.is_(False),
-            ))
+            non_owner_ids = select(Apartment.id).where(~_allowed_seller_filter())
             await session.execute(
                 update(ApartmentInventoryQueue)
                 .where(
                     ApartmentInventoryQueue.status == "queued",
                     ApartmentInventoryQueue.apartment_id.in_(non_owner_ids),
                 )
-                .values(status="skipped", last_error="owner_only_policy")
+                .values(status="skipped", last_error="excluded_author_policy")
             )
             unconfirmed_apartment_ids = select(Apartment.id).where(~_supported_source_filter())
             await session.execute(
