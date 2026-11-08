@@ -130,7 +130,7 @@ def test_missing_district_uses_labeled_demo_location_and_omits_deposit():
 def test_expanded_source_keeps_reposts_strictly_limited():
     settings = Settings(_env_file=None)
 
-    assert SOURCE_ALLOWED_ROOMS == ("studio", "1")
+    assert SOURCE_ALLOWED_ROOMS == ("studio", "1", "2")
     assert SOURCE_MAX_POSTS_PER_RUN == 18
     assert SOURCE_PUBLISH_SPACING_SECONDS == 150
     assert SOURCE_MAX_SEARCH_PAGES == 30
@@ -143,7 +143,7 @@ def test_expanded_source_keeps_reposts_strictly_limited():
     assert TWO_BEDROOM_MAX_PRICE == 40_000
     assert TWO_BEDROOM_DAILY_LIMIT == 20
     assert TWO_BEDROOM_MAX_PER_RUN == 2
-    assert settings.rooms == "studio,1"
+    assert settings.rooms == "studio,1,2"
     assert settings.min_price == 25_000
     assert settings.max_price == 40_000
     assert settings.max_new_posts_per_run == 18
@@ -154,7 +154,7 @@ def test_expanded_source_keeps_reposts_strictly_limited():
 def test_source_urls_follow_the_operator_filters():
     assert "/1-bedroom/" in DEFAULT_SEARCH_URL
     assert "/owner" in DEFAULT_SEARCH_URL
-    assert "/studio/1-bedroom/owner/" in DEFAULT_SEARCH_URL
+    assert "/studio/1-bedroom/2-bedrooms/owner/" in DEFAULT_SEARCH_URL
     assert "/semeynym/param-bez-detey/studentam/" in DEFAULT_SEARCH_URL
     assert "/bez-podseleniya/mozhno-s-zhivotnymi" in DEFAULT_SEARCH_URL
     assert "bez-zhivotnyh" not in DEFAULT_SEARCH_URL
@@ -808,7 +808,7 @@ def test_searches_cover_owner_and_unknown_author_inventory():
     from urllib.parse import parse_qs,urlsplit
     owner_ranges=[]
     for url in INVENTORY_SEARCH_URLS:
-        if urlsplit(url).path.endswith('/studio/1-bedroom/owner'):
+        if urlsplit(url).path.endswith('/studio/1-bedroom/2-bedrooms/owner'):
             q=parse_qs(urlsplit(url).query)
             owner_ranges.append((int(q['price[from]'][0]),int(q['price[to]'][0])))
     assert owner_ranges==[(25000,40000),(25000,27999),(28000,31999),(32000,35999),(36000,40000)]
@@ -823,7 +823,7 @@ def test_searches_cover_owner_and_unknown_author_inventory():
 def test_source_rotation_covers_owner_and_unknown_sources():
     from scripts.scrape_publish import rotate_inventory_sources
     from app.config import INVENTORY_SEARCH_URLS
-    hot = {u for u in INVENTORY_SEARCH_URLS if 'price[from]=25000' in u and 'price[to]=40000' in u and ('/1-bedroom/owner?' in u or '/1-bedroom/?' in u)}
+    hot = {u for u in INVENTORY_SEARCH_URLS if 'price[from]=25000' in u and 'price[to]=40000' in u and ('/2-bedrooms/owner?' in u or '/2-bedrooms/?' in u)}
     assert len(hot) == 2
     rotating = set(INVENTORY_SEARCH_URLS) - hot
     first_rotating = set()

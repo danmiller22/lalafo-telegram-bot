@@ -12,7 +12,7 @@ from app.security import TokenSigner
 from app.telegram.formatting import is_confirmed_owner, format_public_apartment, is_supported_source
 from app.telegram.keyboards import apartment_keyboard
 
-from app.listing_policy import author_policy_eligible
+from app.listing_policy import PUBLIC_ROOMS, author_policy_eligible
 from app.lalafo.exclusions import is_excluded_agency
 
 logger = logging.getLogger(__name__)
@@ -108,8 +108,8 @@ class TelegramPublisher:
             raise TelegramPublishError("Confirmed realtor or inconsistent owner metadata")
         if is_excluded_agency(ad):
             raise TelegramPublishError("Excluded agency source")
-        if ad.rooms not in ("studio", "1"):
-            raise TelegramPublishError("Only studios and one-room apartments are allowed")
+        if ad.rooms not in PUBLIC_ROOMS:
+            raise TelegramPublishError("Only studios, one-room and two-room apartments are allowed")
         # A bad remote image can hold Telegram's media fetch open for minutes.
         # A compact single album gives renters enough context and keeps one
         # listing from blocking the publication queue.

@@ -5,6 +5,8 @@ import re
 from typing import Any
 
 
+PUBLIC_ROOMS = ("studio", "1", "2")
+
 RENT_MIN_PRICE = 25_000
 RENT_MAX_PRICE = 40_000
 OWNER_MIN_PRICE = REALTOR_MIN_PRICE = RENT_MIN_PRICE

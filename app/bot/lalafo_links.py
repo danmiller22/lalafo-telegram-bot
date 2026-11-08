@@ -137,6 +137,7 @@ def _manual_rooms_keyboard(nonce: str) -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton(text="Студия", callback_data=f"manual:room:studio:{nonce}"),
             InlineKeyboardButton(text="1 комната", callback_data=f"manual:room:1:{nonce}"),
+            InlineKeyboardButton(text="2 комнаты", callback_data=f"manual:room:2:{nonce}"),
         ],
         [InlineKeyboardButton(text="❌ Отмена", callback_data=f"manual:cancel:{nonce}")],
     ])
@@ -179,7 +180,7 @@ async def _manual_callback_is_current(
 
 
 def _manual_preview(data: dict) -> str:
-    title = "Студия" if data["rooms"] == "studio" else "1-комнатная квартира"
+    title = "Студия" if data["rooms"] == "studio" else f"{data['rooms']}-комнатная квартира"
     author = {
         "owner": "собственник",
     }.get(data["seller_type"])
@@ -625,6 +626,10 @@ async def manual_card_rooms(
         return
     value = (message.text or "").strip().casefold()
     rooms = {
+        "2": "2",
+        "2 комнаты": "2",
+        "2-комнатная": "2",
+        "двухкомнатная": "2",
         "студия": "studio",
         "studio": "studio",
         "1": "1",
@@ -640,7 +645,7 @@ async def manual_card_rooms(
     if rooms is None:
         data = await state.get_data()
         await message.answer(
-            "Выберите «Студия» или «1-комнатная».",
+            "Выберите студию, 1-комнатную или 2-комнатную квартиру.",
             reply_markup=_manual_rooms_keyboard(data["nonce"]),
         )
         return
@@ -658,7 +663,7 @@ async def manual_card_rooms_button(
     callback: CallbackQuery, state: FSMContext, settings: Settings
 ) -> None:
     parts = (callback.data or "").split(":")
-    if len(parts) != 4 or parts[2] not in {"studio", "1"}:
+    if len(parts) != 4 or parts[2] not in {"studio", "1", "2"}:
         await callback.answer("Недопустимый тип квартиры.", show_alert=True)
         return
     rooms, nonce = parts[2], parts[3]

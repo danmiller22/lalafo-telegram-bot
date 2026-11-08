@@ -215,6 +215,7 @@ async def test_manual_form_can_use_buttons_for_every_choice():
     assert [button.text for button in rooms_markup.inline_keyboard[0]] == [
         "Студия",
         "1 комната",
+        "2 комнаты",
     ]
     room_data = rooms_markup.inline_keyboard[0][1].callback_data
     assert room_data == f"manual:room:1:{state.data['nonce']}"
