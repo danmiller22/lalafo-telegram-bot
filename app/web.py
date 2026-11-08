@@ -1940,7 +1940,7 @@ async def _deliver_verified_finik_access(
             bot_url = f"https://t.me/{settings.telegram_bot_username.lstrip('@')}"
             await runtime.bot.send_message(
                 payment_request.telegram_user_id,
-                "✅ Индивидуальный подбор активен на 1 месяц (30 дней). "
+                "✅ Тариф «Под меня» активен на 1 месяц (30 дней). "
                 "До 20 новых квартир под ваши требования будут приходить в личный чат. "
                 "Укажите бюджет, районы и число комнат. Доступ к контактам открыт.",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[[

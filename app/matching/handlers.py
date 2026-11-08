@@ -35,7 +35,7 @@ async def personal_offer(callback: CallbackQuery, matching: MatchingRepository) 
         return
     grant, used = await matching.personal_status(callback.from_user.id)
     text = (
-        f"✨ Индивидуальный подбор — {PERSONAL_PRICE:,} сом\n\n".replace(",", " ")
+        f"✨ Под меня — {PERSONAL_PRICE:,} сом\n\n".replace(",", " ")
         + "1 месяц (30 дней) с подтверждения оплаты. До 20 новых квартир "
         "по вашим бюджету, районам и числу комнат — в личном чате бота. "
         "Доступ к контактам на этот срок включён.\n\n"
@@ -83,7 +83,7 @@ async def personal_buy(callback: CallbackQuery, matching: MatchingRepository,
     url = f"https://t.me/{settings.telegram_bot_username.lstrip('@')}/access?startapp=personal_{token}"
     await callback.answer()
     await callback.message.answer(
-        "Откройте оплату тарифа «Индивидуальный подбор»: 1 499 сом, 1 месяц (30 дней), до 20 новых квартир.",
+        "Откройте оплату тарифа «Под меня»: 1 499 сом, 1 месяц (30 дней), до 20 новых квартир.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(text="💳 Перейти к оплате", url=url)
         ]]),
@@ -126,7 +126,7 @@ async def show_hot_start(
     grant, used = await matching.personal_status(user_id)
     if grant is not None:
         await message.answer(
-            f"✨ Индивидуальный подбор: {used}/{PERSONAL_LIMIT} вариантов. "
+            f"✨ Под меня: {used}/{PERSONAL_LIMIT} вариантов. "
             "Новые квартиры приходят автоматически в течение срока тарифа. "
             "Параметры и состояние тарифа доступны по кнопке ниже.",
             reply_markup=feed_footer_keyboard(has_more=False),
@@ -550,7 +550,7 @@ async def matching_feed(
         await callback.answer()
         if callback.message:
             await callback.message.answer(
-                f"✨ Индивидуальный подбор: {used}/{PERSONAL_LIMIT} вариантов. "
+                f"✨ Под меня: {used}/{PERSONAL_LIMIT} вариантов. "
                 "Новые совпадения приходят автоматически до окончания тарифа.",
                 reply_markup=feed_footer_keyboard(has_more=False),
             )

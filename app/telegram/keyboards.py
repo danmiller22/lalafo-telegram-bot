@@ -156,7 +156,7 @@ def private_payment_keyboard(
         text=f"Доступ навсегда — {LIFETIME_PRICE} сом",
         callback_data=f"plan:l:{signer.sign_id('plan-lifetime', apartment_id)}",
     )]]
-    rows.append([InlineKeyboardButton(text="✨ Индивидуальный подбор — 1 499 сом", callback_data="personal:offer")])
+    rows.append([InlineKeyboardButton(text="✨ Под меня — 1 499 сом", callback_data="personal:offer")])
     rows.append(
         [
             InlineKeyboardButton(
@@ -217,7 +217,7 @@ def customer_menu_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(
             text="🔎 Найти выгодные и дешевые квартиры", callback_data="menu:cheap"
         )],
-        [InlineKeyboardButton(text="✨ Индивидуальный подбор — 1 499 сом", callback_data="personal:offer")],
+        [InlineKeyboardButton(text="✨ Под меня — 1 499 сом", callback_data="personal:offer")],
         [InlineKeyboardButton(text="❤️ Избранные", callback_data="menu:favorites")],
         [InlineKeyboardButton(text="🛟 Техподдержка", callback_data="menu:support")],
         [InlineKeyboardButton(text="ℹ️ О сервисе и услугах", callback_data="menu:about")],
