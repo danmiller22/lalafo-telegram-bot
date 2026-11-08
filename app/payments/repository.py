@@ -15,7 +15,7 @@ from sqlalchemy.orm import selectinload
 from app.lalafo.models import PHONE_SOURCE_VERSION, LalafoAd
 from app.listing_lifecycle import listing_expired
 from app.models import Apartment, ApartmentInventoryQueue, DailyFeaturedPublication, PaymentHistory, PaymentRequest
-from app.payment_plans import LIFETIME_PLAN, MONTH_PLAN, WEEK_PLAN, expires_at_for, plan_price
+from app.payment_plans import LIFETIME_PLAN, MONTH_PLAN, WEEK_PLAN, PERSONAL_PLAN, expires_at_for, plan_price
 from app.state import ListingIndex, ad_fingerprint
 from app.telegram.keyboards import APARTMENT_KEYBOARD_VERSION
 
@@ -723,7 +723,7 @@ class PaymentRepository:
                     PaymentRequest.status == "approved",
                     or_(
                         and_(PaymentRequest.plan == LIFETIME_PLAN, PaymentRequest.access_expires_at.is_(None)),
-                        and_(PaymentRequest.plan.in_((WEEK_PLAN, MONTH_PLAN)), PaymentRequest.access_expires_at > now),
+                        and_(PaymentRequest.plan.in_((WEEK_PLAN, MONTH_PLAN, PERSONAL_PLAN)), PaymentRequest.access_expires_at > now),
                     ),
                 )
                 .order_by((PaymentRequest.plan == LIFETIME_PLAN).desc(), PaymentRequest.access_expires_at.desc())
@@ -745,18 +745,27 @@ class PaymentRepository:
                             PaymentHistory.access_expires_at.is_(None),
                         ),
                         and_(
-                            PaymentHistory.plan.in_((WEEK_PLAN, MONTH_PLAN)),
+                            PaymentHistory.plan.in_((WEEK_PLAN, MONTH_PLAN, PERSONAL_PLAN)),
                             PaymentHistory.access_expires_at > now,
                         ),
                     ),
                     ~select(PaymentRequest.id).where(
                         PaymentRequest.id == PaymentHistory.payment_request_id,
+                        PaymentRequest.plan == PaymentHistory.plan,
                         PaymentRequest.status.in_(("approved", "rejected")),
                     ).exists(),
                 )
                 .order_by(PaymentHistory.paid_at.desc())
                 .limit(1)
             )
+
+    async def active_personal_access(self, user_id: int) -> PaymentHistory | None:
+        async with self.sessions() as session:
+            return await session.scalar(select(PaymentHistory).where(
+                PaymentHistory.telegram_user_id == user_id,
+                PaymentHistory.plan == PERSONAL_PLAN,
+                PaymentHistory.access_expires_at > datetime.now(timezone.utc),
+            ).order_by(PaymentHistory.paid_at.desc(), PaymentHistory.id.desc()).limit(1))
 
     async def submit(
         self,
@@ -768,7 +777,7 @@ class PaymentRepository:
         plan: str = LIFETIME_PLAN,
         prepare_only: bool = False,
     ) -> PaymentSubmission:
-        if plan not in {WEEK_PLAN, MONTH_PLAN, LIFETIME_PLAN}:
+        if plan not in {WEEK_PLAN, MONTH_PLAN, LIFETIME_PLAN, PERSONAL_PLAN}:
             raise ValueError("Unsupported access plan")
         try:
             return await self._submit_once(
@@ -842,10 +851,10 @@ class PaymentRepository:
                 )
                 session.add(request)
                 outcome = "created"
-            elif request.status == "approved" and (
+            elif request.status == "approved" and (request.plan == plan or plan != PERSONAL_PLAN) and (
                 (request.plan == LIFETIME_PLAN and expires_at is None)
                 or (
-                    request.plan in (WEEK_PLAN, MONTH_PLAN)
+                    request.plan in (WEEK_PLAN, MONTH_PLAN, PERSONAL_PLAN)
                     and expires_at is not None
                     and expires_at > datetime.now(timezone.utc)
                 )

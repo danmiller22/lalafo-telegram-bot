@@ -28,7 +28,7 @@ from app.config import INVENTORY_SEARCH_URLS, get_settings
 from app.inventory import REALTOR_DAILY_SHARE, MAX_PUBLICATIONS_PER_DAY, PUBLICATION_SPACING_MINUTES
 from app.lalafo.auto_reply import LalafoAutoResponder
 from app.lalafo.models import LalafoAd
-from app.payment_plans import LIFETIME_PLAN, MONTH_PLAN, WEEK_PLAN, WEEK_PRICE, plan_price
+from app.payment_plans import LIFETIME_PLAN, MONTH_PLAN, WEEK_PLAN, WEEK_PRICE, PERSONAL_PLAN, plan_price
 from app.finik import (
     FinikClient,
     PRODUCTION_WEBHOOK_PUBLIC_KEY,
@@ -143,6 +143,8 @@ class LalafoIngestRequest(BaseModel):
 
 
 def _finik_payment_url(settings: Any, plan: str) -> str:
+    if plan == PERSONAL_PLAN:
+        return ""  # Never charge this product through a differently priced shared QR.
     if plan == LIFETIME_PLAN:
         return settings.lifetime_finik_payment_url or settings.monthly_finik_payment_url
     return (
@@ -157,7 +159,7 @@ def _uses_dynamic_finik(settings: Any, plan: str) -> bool:
     # acquiring API is configured, create a request-bound checkout so its
     # signed webhook can grant access automatically. Static links remain the
     # fallback only while provider credentials are unavailable.
-    return plan in {LIFETIME_PLAN, WEEK_PLAN, MONTH_PLAN} and settings.finik_auto_enabled
+    return plan in {LIFETIME_PLAN, WEEK_PLAN, MONTH_PLAN, PERSONAL_PLAN} and settings.finik_auto_enabled
 
 
 async def _finik_checkout_url(
@@ -1559,15 +1561,39 @@ def _miniapp_context(payload: MiniAppRequest):
             detail="Не удалось подтвердить пользователя Telegram.",
         )
     signer = TokenSigner(settings.require_callback_secret())
-    apartment_id = signer.verify_start_id("miniapp-apartment", payload.start_param)
+    start_param = payload.start_param
+    if start_param.startswith("personal_"):
+        payload.plan = PERSONAL_PLAN
+        start_param = start_param[len("personal_"):]
+    apartment_id = signer.verify_start_id("miniapp-apartment", start_param)
     if apartment_id is None:
-        apartment_id = signer.decode_public_start_id(payload.start_param)
+        apartment_id = signer.decode_public_start_id(start_param)
     if apartment_id is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Ссылка на квартиру недействительна.",
         )
     return settings, runtime, user, apartment_id
+
+
+async def _miniapp_contact_status(runtime, user_id: int, apartment_id: int, plan: str | None):
+    result = await runtime.workflow_data["service"].contact_status(user_id, apartment_id)
+    if plan != PERSONAL_PLAN or result.status == "unavailable":
+        return result
+    from app.payments.service import ContactResult
+    grant = await runtime.workflow_data["payments"].active_personal_access(user_id)
+    if grant is not None:
+        return ContactResult("approved", result.apartment, PERSONAL_PLAN, grant.access_expires_at)
+    request = await runtime.workflow_data["payments"].get_access(user_id, apartment_id)
+    if request is not None and request.plan == PERSONAL_PLAN:
+        expiry = request.access_expires_at
+        if expiry is not None and expiry.tzinfo is None:
+            expiry = expiry.replace(tzinfo=UTC)
+        if request.status == "approved" and expiry and expiry > datetime.now(UTC):
+            return ContactResult("approved", result.apartment, PERSONAL_PLAN, expiry)
+        if request.status in {"pending", "awaiting_receipt"}:
+            return ContactResult(request.status, result.apartment, PERSONAL_PLAN)
+    return ContactResult("unpaid", result.apartment, PERSONAL_PLAN)
 
 
 def _miniapp_result_payload(result) -> dict[str, Any]:
@@ -1650,7 +1676,7 @@ async def telegram_mini_app() -> HTMLResponse:
 @app.post("/miniapp/api/session", include_in_schema=False)
 async def miniapp_session(payload: MiniAppRequest, background_tasks: BackgroundTasks) -> dict[str, Any]:
     settings, runtime, user, apartment_id = _miniapp_context(payload)
-    result = await runtime.workflow_data["service"].contact_status(user.id, apartment_id)
+    result = await _miniapp_contact_status(runtime, user.id, apartment_id, payload.plan)
     if result.status == "unavailable":
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1664,6 +1690,7 @@ async def miniapp_session(payload: MiniAppRequest, background_tasks: BackgroundT
     response["monthly_available"] = False
     bot_url = f"https://t.me/{settings.telegram_bot_username.lstrip('@')}"
     response["privacy_url"] = f"{bot_url}?start=privacy"
+    response["personal_setup_url"] = f"{bot_url}?start=personal"
     if payload.track_open:
         background_tasks.add_task(_record_miniapp_open, runtime, user.id, apartment_id)
     return response
@@ -1710,7 +1737,7 @@ async def _notify_payment_admin_safely(
 async def miniapp_consent(payload: MiniAppRequest) -> dict[str, Any]:
     settings, runtime, user, apartment_id = _miniapp_context(payload)
     await runtime.workflow_data["terms_consents"].accept(user.id)
-    result = await runtime.workflow_data["service"].contact_status(user.id, apartment_id)
+    result = await _miniapp_contact_status(runtime, user.id, apartment_id, payload.plan)
     response = _miniapp_result_payload(result)
     response["lifetime_available"] = True
     response["monthly_available"] = False
@@ -1718,6 +1745,7 @@ async def miniapp_consent(payload: MiniAppRequest) -> dict[str, Any]:
     response["terms_text"] = TERMS_TEXT
     bot_url = f"https://t.me/{settings.telegram_bot_username.lstrip('@')}"
     response["privacy_url"] = f"{bot_url}?start=privacy"
+    response["personal_setup_url"] = f"{bot_url}?start=personal"
     response["support_url"] = f"{bot_url}?start=support"
     return response
 
@@ -1733,7 +1761,7 @@ async def miniapp_availability(payload: MiniAppRequest) -> dict[str, Any]:
 async def miniapp_prepare_payment(payload: MiniAppRequest) -> dict[str, Any]:
     settings, runtime, user, apartment_id = _miniapp_context(payload)
     plan = payload.plan or WEEK_PLAN
-    if plan not in {WEEK_PLAN, LIFETIME_PLAN}:
+    if plan not in {WEEK_PLAN, LIFETIME_PLAN, PERSONAL_PLAN}:
         raise HTTPException(status_code=400, detail="Неизвестный тариф.")
     if (
         plan == LIFETIME_PLAN
@@ -1741,7 +1769,7 @@ async def miniapp_prepare_payment(payload: MiniAppRequest) -> dict[str, Any]:
         and not _uses_dynamic_finik(settings, plan)
     ):
         raise HTTPException(status_code=503, detail="Бессрочный тариф временно недоступен.")
-    result = await runtime.workflow_data["service"].contact_status(user.id, apartment_id)
+    result = await _miniapp_contact_status(runtime, user.id, apartment_id, payload.plan)
     if result.status in {"approved", "unavailable", "pending"}:
         return _miniapp_result_payload(result)
     payments = runtime.workflow_data["payments"]
@@ -1751,9 +1779,9 @@ async def miniapp_prepare_payment(payload: MiniAppRequest) -> dict[str, Any]:
             first_name=user.first_name, plan=plan, prepare_only=True,
         )
         if submission.outcome == "approved":
-            return _miniapp_result_payload(await runtime.workflow_data["service"].contact_status(user.id, apartment_id))
+            return _miniapp_result_payload(await _miniapp_contact_status(runtime, user.id, apartment_id, plan))
         if getattr(submission.request, "plan", plan) != plan:
-            return _miniapp_result_payload(await runtime.workflow_data["service"].contact_status(user.id, apartment_id))
+            return _miniapp_result_payload(await _miniapp_contact_status(runtime, user.id, apartment_id, plan))
         url = await _finik_checkout_url(settings, payments, submission.request,
                                         apartment_id=apartment_id, plan=plan)
         prepared = await payments.get_request(submission.request.id)
@@ -1774,11 +1802,11 @@ async def miniapp_start_payment(
 ) -> dict[str, Any]:
     settings, runtime, user, apartment_id = _miniapp_context(payload)
     service = runtime.workflow_data["service"]
-    result = await service.contact_status(user.id, apartment_id)
+    plan = payload.plan or WEEK_PLAN
+    result = await _miniapp_contact_status(runtime, user.id, apartment_id, plan)
     if result.status in {"approved", "unavailable", "pending"}:
         return _miniapp_result_payload(result)
-    plan = payload.plan or WEEK_PLAN
-    if plan not in {WEEK_PLAN, LIFETIME_PLAN}:
+    if plan not in {WEEK_PLAN, LIFETIME_PLAN, PERSONAL_PLAN}:
         raise HTTPException(status_code=400, detail="Неизвестный тариф.")
     if (
         plan == LIFETIME_PLAN
@@ -1812,7 +1840,7 @@ async def miniapp_start_payment(
                 detail="Квартира больше недоступна.",
             ) from exc
     if payment_request is not None and payment_request.status == "approved":
-        return _miniapp_result_payload(await service.contact_status(user.id, apartment_id))
+        return _miniapp_result_payload(await _miniapp_contact_status(runtime, user.id, apartment_id, plan))
     if payment_request is not None and not payment_url:
         try:
             payment_url = await _finik_checkout_url(
@@ -1853,7 +1881,7 @@ async def miniapp_issue_access(
 ) -> dict[str, Any]:
     settings, runtime, user, apartment_id = _miniapp_context(payload)
     service = runtime.workflow_data["service"]
-    current = await service.contact_status(user.id, apartment_id)
+    current = await _miniapp_contact_status(runtime, user.id, apartment_id, payload.plan)
     if current.status == "approved":
         return _miniapp_result_payload(current)
     if settings.finik_auto_enabled:
@@ -1879,7 +1907,7 @@ async def miniapp_issue_access(
     background_tasks.add_task(
         _notify_payment_admin_safely, runtime, settings, payments, request
     )
-    return _miniapp_result_payload(await service.contact_status(user.id, apartment_id))
+    return _miniapp_result_payload(await _miniapp_contact_status(runtime, user.id, apartment_id, payload.plan))
 
 
 async def _deliver_verified_finik_access(
@@ -1907,10 +1935,23 @@ async def _deliver_verified_finik_access(
                 "Could not notify administrator about verified payment %s",
                 request_id,
             )
-        await runtime.bot.send_message(
-            payment_request.telegram_user_id,
-            "Оплата подтверждена автоматически. Доступ ко всем контактам открыт.",
-        )
+        if payment_request.plan == PERSONAL_PLAN:
+            from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+            bot_url = f"https://t.me/{settings.telegram_bot_username.lstrip('@')}"
+            await runtime.bot.send_message(
+                payment_request.telegram_user_id,
+                "✅ Индивидуальный подбор активен на 1 месяц (30 дней). "
+                "До 20 новых квартир под ваши требования будут приходить в личный чат. "
+                "Укажите бюджет, районы и число комнат. Доступ к контактам открыт.",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                    InlineKeyboardButton(text="⚙️ Указать требования", url=f"{bot_url}?start=personal")
+                ]]),
+            )
+        else:
+            await runtime.bot.send_message(
+                payment_request.telegram_user_id,
+                "Оплата подтверждена автоматически. Доступ ко всем контактам открыт.",
+            )
         if payment_request.apartment is not None:
             from app.telegram.private_delivery import send_private_contact
 

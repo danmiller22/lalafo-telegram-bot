@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from app.payment_plans import WEEK_PRICE, WANTED_SEARCH_PRICE
+from app.payment_plans import WEEK_PRICE, WANTED_SEARCH_PRICE, PERSONAL_PRICE
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,6 +45,10 @@ FAQ_ITEMS = (
         ),
         answer=(
             f"💳 Доступ к контактам на 7 дней — {WEEK_PRICE} сом.\n\n"
+            f"✨ Индивидуальный подбор — {PERSONAL_PRICE} сом на 1 месяц (30 дней): "
+            "до 20 новых квартир под ваши бюджет, районы и число комнат в личном чате. "
+            "Контакты включены. Откройте «Индивидуальный подбор» в меню и настройте требования. "
+            "Количество зависит от появления подходящих квартир; автопродления нет.\n\n"
             f"Нажмите «Получить номер», затем «Оплатить {WEEK_PRICE} сом» "
             "и оплатите по открывшейся ссылке. Оплата предоставляет доступ к "
             "контактам объявлений, а не гарантию аренды или актуальности квартиры. "

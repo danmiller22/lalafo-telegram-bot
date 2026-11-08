@@ -91,6 +91,7 @@ async def test_showcase_sends_all_cards_five_seconds_apart_then_menu(
     menu = bot.send_message.await_args.kwargs["reply_markup"]
     assert [row[0].text for row in menu.inline_keyboard] == [
         "🔎 Найти выгодные и дешевые квартиры",
+        "✨ Индивидуальный подбор — 1 499 сом",
         "❤️ Избранные",
         "🛟 Техподдержка",
         "ℹ️ О сервисе и услугах",
@@ -140,7 +141,7 @@ def test_showcase_card_is_compact_and_has_two_buttons() -> None:
         "📞 Получить номер",
         "❤️ Сохранить",
     ]
-    assert len(customer_menu_keyboard().inline_keyboard) == 5
+    assert len(customer_menu_keyboard().inline_keyboard) == 6
 
 
 @pytest.mark.asyncio

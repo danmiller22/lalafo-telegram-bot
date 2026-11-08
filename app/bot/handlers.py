@@ -16,7 +16,7 @@ from app.bot.callbacks import (
     VIEW_PREFIX,
 )
 from app.config import Settings
-from app.matching.handlers import show_hot_start
+from app.matching.handlers import show_hot_start, begin_matching_form
 from app.matching.repository import MatchingRepository
 from app.availability import AvailabilityService
 from app.payments.repository import PaymentRepository
@@ -100,6 +100,9 @@ async def start_handler(
     showcase: ShowcaseService | None = None,
 ) -> None:
     payload = _start_payload(message)
+    if payload == "personal":
+        await begin_matching_form(message, state, source="personal")
+        return
     if payload == "want":
         await begin_wanted_form(message, state)
         return

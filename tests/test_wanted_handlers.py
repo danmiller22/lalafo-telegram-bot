@@ -310,6 +310,7 @@ async def test_apartment_start_link_survives_cloud_signer_mismatch():
     assert [row[0].text for row in markup.inline_keyboard] == [
         "Недельный тариф — 499 сом",
         "Доступ навсегда — 999 сом",
+        "✨ Индивидуальный подбор — 1 499 сом",
         "🔒 Политика конфиденциальности",
     ]
 

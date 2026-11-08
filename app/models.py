@@ -548,3 +548,15 @@ class LalafoAutoReplyMeta(Base):
 
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     value: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class PersonalMatchReservation(Base):
+    __tablename__ = "personal_match_reservations"
+    __table_args__ = (UniqueConstraint("delivery_id", name="uq_personal_delivery"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    payment_history_id: Mapped[int] = mapped_column(
+        ForeignKey("payment_history.id"), nullable=False, index=True
+    )
+    delivery_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
