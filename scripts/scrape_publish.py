@@ -28,7 +28,7 @@ from app.lalafo.phone import mask_phone
 from app.models import Apartment
 from app.state import PostedState, ad_fingerprint, normalized_district
 from app.listing_quality import district_priority, mix_prices, rental_value_band
-from app.listing_policy import OWNER_MAX_PRICE, listing_policy_eligible
+from app.listing_policy import OWNER_MAX_PRICE, PUBLIC_ROOMS, listing_policy_eligible
 from app.telegram.formatting import format_apartment
 from app.telegram.source_filter import is_lodging_offer
 from app.telegram.sources import (
@@ -91,7 +91,7 @@ CENTRAL_DISTRICT_TERMS = (
 # Every discovery route and every detail-level policy check requires an owner.
 SOURCE_MIN_PRICE = 25_000
 SOURCE_MAX_PRICE = OWNER_MAX_PRICE
-SOURCE_ALLOWED_ROOMS = ("studio", "1")
+SOURCE_ALLOWED_ROOMS = PUBLIC_ROOMS
 SOURCE_MIN_PHOTOS = 0
 SOURCE_MAX_POSTS_PER_RUN = 18
 SOURCE_PUBLISH_SPACING_SECONDS = 150
@@ -487,7 +487,7 @@ def rotate_inventory_sources(urls, *, now=None):
     agencies = [url for url in urls if 'real-estate-agency' in url]
     hot_owners = [
         url for url in owners
-        if ('/1-bedroom/owner?' in url or '/1-bedroom/?' in url)
+        if ('/2-bedrooms/owner?' in url or '/2-bedrooms/?' in url)
         and 'price[from]=25000' in url
         and 'price[to]=40000' in url
     ]

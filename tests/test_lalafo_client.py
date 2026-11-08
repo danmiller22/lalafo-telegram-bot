@@ -40,11 +40,11 @@ def test_search_params_preserve_configured_filters():
     assert params["parameters[946][0]"] == "81537"
 
 
-def test_primary_search_uses_owner_studio_one_bedroom_and_price_filters():
+def test_primary_search_includes_studios_one_and_two_room_apartments():
     params = dict(LalafoClient._search_params(DEFAULT_SEARCH_URL, 1))
     assert set(
       params[key] for key in params if key.startswith("parameters[69]")
-    ) == {"15496", "2773"}
+    ) == {"15496", "2773", "2774"}
     assert [
         params[key] for key in params if key.startswith("parameters[2149]")
     ] == ["19057"]
@@ -81,7 +81,7 @@ def test_supplementary_search_uses_central_owner_pool():
         params = dict(LalafoClient._search_params(url, 1))
         assert set(
             params[key] for key in params if key.startswith("parameters[69]")
-        ) == {"15496", "2773"}
+        ) == {"15496", "2773", "2774"}
         assert {
             params[key] for key in params if key.startswith("parameters[2149]")
         } == {"19057"}
@@ -281,10 +281,10 @@ async def test_detail_api_fallback_rejects_mismatched_id():
 
 
 
-def test_inventory_search_is_limited_to_studios_and_one_room():
+def test_inventory_search_includes_studios_one_and_two_rooms():
     for url in INVENTORY_SEARCH_URLS:
         params = LalafoClient._search_params(url, 1)
-        assert {value for key,value in params if key.startswith("parameters[69]")} == {"15496", "2773"}
+        assert {value for key,value in params if key.startswith("parameters[69]")} == {"15496", "2773", "2774"}
 
 @pytest.mark.asyncio
 async def test_detail_html_parser_does_not_block_customer_event_loop(monkeypatch):

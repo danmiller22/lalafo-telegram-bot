@@ -25,7 +25,7 @@ from pydantic import BaseModel
 from app.bot.main import BotRuntime, configure_bot_profile, create_runtime
 from app.availability import MAX_LISTING_AGE_DAYS
 from app.config import INVENTORY_SEARCH_URLS, get_settings
-from app.inventory import REALTOR_DAILY_SHARE, MAX_PUBLICATIONS_PER_DAY, PUBLICATION_SPACING_MINUTES
+from app.inventory import ALLOWED_ROOMS, REALTOR_DAILY_SHARE, MAX_PUBLICATIONS_PER_DAY, PUBLICATION_SPACING_MINUTES
 from app.lalafo.auto_reply import LalafoAutoResponder
 from app.lalafo.models import LalafoAd
 from app.payment_plans import LIFETIME_PLAN, MONTH_PLAN, WEEK_PLAN, WEEK_PRICE, PERSONAL_PLAN, plan_price
@@ -792,7 +792,7 @@ async def _inventory_queue_status(*, whole_apartments_only: bool = False) -> tup
                     func.min(ApartmentInventoryQueue.scheduled_at),
                 ).join(Apartment).where(
                     ApartmentInventoryQueue.status == "queued",
-                    Apartment.rooms.in_(("studio", "1")) if whole_apartments_only else True,
+                    Apartment.rooms.in_(ALLOWED_ROOMS) if whole_apartments_only else True,
                 )
             )).one()
             from app.promotions import publication_counts_in_window

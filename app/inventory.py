@@ -19,13 +19,13 @@ from app.models import (
 )
 from app.state import normalized_district, ListingIndex
 from app.listing_quality import district_priority, price_bucket, mix_prices, rental_value_band, price_mix_rank
-from app.listing_policy import OWNER_MAX_PRICE, seller_policy_eligible
+from app.listing_policy import OWNER_MAX_PRICE, PUBLIC_ROOMS, seller_policy_eligible
 from app.telegram.formatting import is_supported_source
 from app.promotions import publications_in_window, queue_due_promotions, REQUESTED_WINDOW_PREFIX
 
 
 BISHKEK = ZoneInfo("Asia/Bishkek")
-ALLOWED_ROOMS = frozenset({"studio", "1"})
+ALLOWED_ROOMS = frozenset(PUBLIC_ROOMS)
 CENTRAL_DAILY_SHARE = 0.50
 REALTOR_DAILY_SHARE = 0.0
 MIN_PUBLICATIONS_PER_DAY = 70
@@ -232,7 +232,7 @@ def _pick_for_window(
             break
         def selection_key(item: Apartment) -> tuple[object, ...]:
             base = _candidate_key(item, central=central)
-            room_rank = {"1": 0, "studio": 1}.get(item.rooms, 2)
+            room_rank = {"1": 0, "studio": 1, "2": 2}.get(item.rooms, 2)
             district = normalized_district(item.district) or "unknown"
             bucket = price_bucket(item.price)
             return (
@@ -278,7 +278,7 @@ def plan_period(
     apartments = [
         item
         for item in apartments
-        if item.rooms in {"studio", "1"}
+        if item.rooms in ALLOWED_ROOMS
         and is_supported_source(item)
         and seller_policy_eligible(
             seller_type=item.seller_type,
@@ -713,7 +713,7 @@ class InventoryRepository:
                     Apartment.id.not_in(active_queue_ids),
                     Apartment.fingerprint.not_in(queued_fingerprints),
                     Apartment.price.between(25_000, OWNER_MAX_PRICE),
-                    Apartment.rooms.in_(("studio", "1")),
+                    Apartment.rooms.in_(ALLOWED_ROOMS),
                     Apartment.last_seen_at >= now - timedelta(days=2),
                 )
                 .order_by(
@@ -733,7 +733,7 @@ class InventoryRepository:
                     Apartment.id.not_in(active_queue_ids),
                     Apartment.fingerprint.not_in(queued_fingerprints),
                     Apartment.price.between(25_000, OWNER_MAX_PRICE),
-                    Apartment.rooms.in_(("studio", "1")),
+                    Apartment.rooms.in_(ALLOWED_ROOMS),
                     Apartment.last_seen_at >= now - timedelta(days=2),
                 )
                 .order_by(Apartment.published_at.asc())
@@ -752,7 +752,7 @@ class InventoryRepository:
                     Apartment.id.not_in(active_queue_ids),
                     Apartment.fingerprint.not_in(queued_fingerprints),
                     Apartment.price.between(25_000, OWNER_MAX_PRICE),
-                    Apartment.rooms.in_(("studio", "1")),
+                    Apartment.rooms.in_(ALLOWED_ROOMS),
                     Apartment.last_seen_at >= now - timedelta(days=HISTORICAL_STOCK_DAYS),
                 )
                 .order_by(
@@ -765,7 +765,7 @@ class InventoryRepository:
             # send-time checks remain necessary for concurrent publications.
             published = list((await session.scalars(select(Apartment).where(
                 Apartment.publication_status == "published",
-                Apartment.rooms.in_(("studio", "1")),
+                Apartment.rooms.in_(ALLOWED_ROOMS),
             ).options(load_only(
                 Apartment.lalafo_id, Apartment.rooms, Apartment.district,
                 Apartment.price, Apartment.phone, Apartment.photo_urls,
@@ -918,7 +918,7 @@ class InventoryRepository:
             )
             ineligible_apartment_ids = select(Apartment.id).where(
                 ~or_(
-                    (Apartment.rooms.in_(("studio", "1"))) & Apartment.price.between(25_000, OWNER_MAX_PRICE),
+                    (Apartment.rooms.in_(ALLOWED_ROOMS)) & Apartment.price.between(25_000, OWNER_MAX_PRICE),
                 )
             )
             await session.execute(
@@ -1011,7 +1011,7 @@ class InventoryRepository:
                         ),
                         or_(
                             ApartmentInventoryQueue.window_key.startswith(REQUESTED_WINDOW_PREFIX),
-                            Apartment.rooms.in_(("studio", "1")) & Apartment.price.between(25_000, OWNER_MAX_PRICE),
+                            Apartment.rooms.in_(ALLOWED_ROOMS) & Apartment.price.between(25_000, OWNER_MAX_PRICE),
                         ),
                         _supported_source_filter(),
                     )
