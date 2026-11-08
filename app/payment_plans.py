@@ -27,7 +27,7 @@ def plan_price(plan: str) -> int:
 
 
 def plan_label(plan: str) -> str:
-    labels = {PERSONAL_PLAN: "Индивидуальный подбор: 1 месяц, до 20 новых квартир", WEEK_PLAN: "Базовая: 7 дней", MONTH_PLAN: "Премиум: 30 дней", LIFETIME_PLAN: "Доступ к контактам навсегда"}
+    labels = {PERSONAL_PLAN: "Под меня: 1 месяц, до 20 новых квартир", WEEK_PLAN: "Базовая: 7 дней", MONTH_PLAN: "Премиум: 30 дней", LIFETIME_PLAN: "Доступ к контактам навсегда"}
     return labels.get(plan, "Неизвестный тариф")
 
 

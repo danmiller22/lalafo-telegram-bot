@@ -137,7 +137,7 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
   </div>
   <div id="personal-offer">
     <button id="pay-personal" class="tariff-button" aria-pressed="false">
-      <span class="plan-heading">Индивидуальный подбор</span>
+      <span class="plan-heading">Под меня</span>
       <span class="plan-price">{PERSONAL_PRICE} сом</span>
       <span class="plan-note">1 месяц (30 дней) · до 20 новых квартир в личку<br>По вашему бюджету, районам и числу комнат. Контакты включены.<br>Варианты приходят по мере появления совпадений.</span>
     </button>
@@ -316,7 +316,7 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
       if (paymentPoll) clearTimeout(paymentPoll);
       paymentPoll = null;
       Object.values(refreshCheckoutTimer).forEach(clearTimeout);
-      message(data.plan === "personal" ? "Индивидуальный подбор активен: до 20 новых квартир за 30 дней. Укажите требования кнопкой ниже." : "");
+      message(data.plan === "personal" ? "Тариф «Под меня» активен: до 20 новых квартир за 30 дней. Укажите требования кнопкой ниже." : "");
       const apartment = data.apartment || {{}};
       const photos = el("photos");
       photos.replaceChildren();

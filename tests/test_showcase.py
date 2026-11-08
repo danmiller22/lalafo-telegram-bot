@@ -91,7 +91,7 @@ async def test_showcase_sends_all_cards_five_seconds_apart_then_menu(
     menu = bot.send_message.await_args.kwargs["reply_markup"]
     assert [row[0].text for row in menu.inline_keyboard] == [
         "🔎 Найти выгодные и дешевые квартиры",
-        "✨ Индивидуальный подбор — 1 499 сом",
+        "✨ Под меня — 1 499 сом",
         "❤️ Избранные",
         "🛟 Техподдержка",
         "ℹ️ О сервисе и услугах",
