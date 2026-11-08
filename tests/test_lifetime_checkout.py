@@ -26,6 +26,12 @@ async def test_checkout_keeps_selected_plan_and_price(monkeypatch,plan,price):
     runtime=SimpleNamespace(workflow_data={'service':service,'terms_consents':SimpleNamespace(accept=AsyncMock()),'payments':object()})
     user=SimpleNamespace(id=123,username=None,first_name='Test')
     monkeypatch.setattr(web,'_miniapp_context',lambda payload:(settings,runtime,user,42))
+    if plan != 'week':
+        with pytest.raises(HTTPException) as error:
+            await web.miniapp_start_payment(web.MiniAppRequest(init_data='test',start_param='test',plan=plan),BackgroundTasks())
+        assert error.value.status_code == 400
+        service.begin_payment.assert_not_awaited()
+        return
     response=await web.miniapp_start_payment(web.MiniAppRequest(init_data='test',start_param='test',plan=plan),BackgroundTasks())
     assert response['plan']==plan and response['price']==price
     assert response['payment_url']==(web._finik_payment_url(settings, plan))
@@ -43,10 +49,11 @@ async def test_background_preparation_cannot_replace_selected_lifetime_plan(repo
 
 
 @pytest.mark.asyncio
-async def test_unoffered_plan_is_rejected_before_payment(monkeypatch):
+@pytest.mark.parametrize("plan", ["month", "lifetime", "personal"])
+async def test_unoffered_plan_is_rejected_before_payment(monkeypatch, plan):
     service=SimpleNamespace(contact_status=AsyncMock(return_value=ContactResult('unpaid',None)),begin_payment=AsyncMock())
     monkeypatch.setattr(web,'_miniapp_context',lambda payload:(Settings(_env_file=None),SimpleNamespace(workflow_data={'service':service}),SimpleNamespace(id=1),42))
     with pytest.raises(HTTPException) as error:
-        await web.miniapp_start_payment(web.MiniAppRequest(init_data='test',start_param='test',plan='month'),BackgroundTasks())
+        await web.miniapp_start_payment(web.MiniAppRequest(init_data='test',start_param='test',plan=plan),BackgroundTasks())
     assert error.value.status_code==400
     service.begin_payment.assert_not_awaited()

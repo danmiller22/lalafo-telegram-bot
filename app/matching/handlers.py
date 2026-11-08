@@ -33,61 +33,14 @@ async def personal_offer(callback: CallbackQuery, matching: MatchingRepository) 
     await callback.answer()
     if callback.message is None:
         return
-    grant, used = await matching.personal_status(callback.from_user.id)
-    text = (
-        f"✨ Под меня — {PERSONAL_PRICE:,} сом\n\n".replace(",", " ")
-        + "1 месяц (30 дней) с подтверждения оплаты. До 20 новых квартир "
-        "по вашим бюджету, районам и числу комнат — в личном чате бота. "
-        "Доступ к контактам на этот срок включён.\n\n"
-        "Настройте требования. Новые совпадения будут приходить по мере появления. "
-        "Изменение фильтров не обнуляет лимит. Автопродления нет."
-    )
-    if grant is not None:
-        expiry = grant.access_expires_at
-        if expiry.tzinfo is None:
-            expiry = expiry.replace(tzinfo=timezone.utc)
-        active = expiry > datetime.now(timezone.utc)
-        text += f"\n\nВаш тариф: {'активен' if active else 'завершён'}. Вариантов в подборе: {used}/{PERSONAL_LIMIT}."
-    await callback.message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⚙️ Указать требования", callback_data="matching:start")],
-        [InlineKeyboardButton(text=f"💳 Оплатить {PERSONAL_PRICE} сом", callback_data="personal:buy")],
-    ]))
+    await callback.message.answer(
+        "Для новых клиентов доступен недельный тариф — 499 сом на 7 дней. "
+        "Откройте карточку квартиры и нажмите «Получить номер».")
 
 
 @router.callback_query(F.data == "personal:buy")
-async def personal_buy(callback: CallbackQuery, matching: MatchingRepository,
-                       signer: TokenSigner, settings: Settings) -> None:
-    if callback.message is None:
-        await callback.answer()
-        return
-    profile = await matching.profile(callback.from_user.id)
-    if profile is None:
-        await callback.answer("Сначала нажмите «Указать требования» и заполните анкету.", show_alert=True)
-        return
-    if not settings.finik_auto_enabled:
-        await callback.answer("Оплата подбора временно недоступна. Обратитесь в поддержку.", show_alert=True)
-        return
-    grant, _ = await matching.personal_status(callback.from_user.id)
-    if grant is not None:
-        expiry = grant.access_expires_at
-        if expiry.tzinfo is None:
-            expiry = expiry.replace(tzinfo=timezone.utc)
-        if expiry > datetime.now(timezone.utc):
-            await callback.answer("Тариф уже активен. Повторная оплата не требуется.", show_alert=True)
-            return
-    apartments = await matching.current_apartments(limit=1)
-    if not apartments:
-        await callback.answer("Сейчас нет доступных квартир. Попробуйте позже.", show_alert=True)
-        return
-    token = signer.sign_start_id("miniapp-apartment", apartments[0].id)
-    url = f"https://t.me/{settings.telegram_bot_username.lstrip('@')}/access?startapp=personal_{token}"
-    await callback.answer()
-    await callback.message.answer(
-        "Откройте оплату тарифа «Под меня»: 1 499 сом, 1 месяц (30 дней), до 20 новых квартир.",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="💳 Перейти к оплате", url=url)
-        ]]),
-    )
+async def personal_buy(callback: CallbackQuery) -> None:
+    await callback.answer("Доступен только недельный тариф — 499 сом. Откройте карточку квартиры.", show_alert=True)
 
 
 

@@ -664,7 +664,7 @@ async def test_miniapp_page_is_public_but_session_requires_telegram_auth(
     payload = accepted.json()
     assert payload["status"] == "unpaid"
     assert payload["price"] == 499
-    assert payload["lifetime_available"] is True
+    assert payload["lifetime_available"] is False
     assert payload["monthly_available"] is False
     assert "terms_accepted" not in payload
     assert "terms_text" not in payload
@@ -687,9 +687,9 @@ def test_personal_checkout_takes_priority_when_finik_api_is_configured(
 
     assert settings.finik_auto_enabled
     assert web._uses_dynamic_finik(settings, WEEK_PLAN)
-    assert web._uses_dynamic_finik(settings, MONTH_PLAN)
+    assert not web._uses_dynamic_finik(settings, MONTH_PLAN)
     assert web._finik_payment_url(settings, WEEK_PLAN).endswith("/weekly")
-    assert web._finik_payment_url(settings, MONTH_PLAN).endswith("/monthly")
+    assert web._finik_payment_url(settings, MONTH_PLAN) == ""
 
 
 @pytest.mark.asyncio
@@ -762,7 +762,7 @@ async def test_miniapp_starts_a_checkout_bound_to_the_selected_apartment(
     assert response.status_code == 200
     assert response.json()["payment_url"] == "https://qr.finik.kg/request-73"
     assert response.json()["automatic_payment"] is True
-    assert response.json()["lifetime_available"] is True
+    assert response.json()["lifetime_available"] is False
     assert response.json()["monthly_available"] is False
     service.begin_payment.assert_awaited_once_with(
         user_id=778899,
@@ -983,11 +983,12 @@ async def test_old_payment_redirect_opens_current_miniapp_tariff(
 
 
 @pytest.mark.asyncio
-async def test_default_lifetime_checkout_uses_ready_link_even_with_api_credentials():
+async def test_retired_lifetime_checkout_cannot_create_new_invoices():
     from app.config import Settings
     settings = Settings(_env_file=None, lifetime_finik_payment_url="https://qr.finik.kg/e0c9972e-0f05-4dc3-99fd-96ec1debea1f?type=t", finik_api_key="configured", finik_account_id="configured", finik_private_key_pem="configured")
     assert not web._uses_dynamic_finik(settings, LIFETIME_PLAN)
-    assert await web._finik_checkout_url(settings, object(), object(), apartment_id=42, plan=LIFETIME_PLAN) == settings.lifetime_finik_payment_url
+    with pytest.raises(ValueError, match="Only the weekly plan"):
+        await web._finik_checkout_url(settings, object(), object(), apartment_id=42, plan=LIFETIME_PLAN)
 
 
 @pytest.mark.asyncio
