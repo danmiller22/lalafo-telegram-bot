@@ -194,7 +194,9 @@ def budget_keyboard() -> InlineKeyboardMarkup:
 
 
 def feed_footer_keyboard(*, has_more: bool = True) -> InlineKeyboardMarkup:
-    rows: list[list[InlineKeyboardButton]] = []
+    rows: list[list[InlineKeyboardButton]] = [[InlineKeyboardButton(
+        text="✨ Индивидуальный подбор — 1 499 сом", callback_data="personal:offer"
+    )]]
     if has_more:
         rows.append(
             [InlineKeyboardButton(text="Показать ещё", callback_data="matching:more")]

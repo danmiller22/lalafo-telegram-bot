@@ -12,6 +12,8 @@ from sqlalchemy.orm import selectinload
 
 from app.models import (
     Apartment,
+    PaymentHistory,
+    PersonalMatchReservation,
     ApartmentMatchDelivery,
     ApartmentSearchProfile,
     CustomerFunnelEvent,
@@ -20,6 +22,9 @@ from app.models import (
 )
 from app.state import normalized_district
 from app.listing_lifecycle import listing_expired
+
+
+from app.payment_plans import PERSONAL_PLAN, PERSONAL_LIMIT
 
 
 FRESH_FOR = timedelta(days=2)
@@ -452,6 +457,18 @@ class MatchingRepository:
             )
             return counts
 
+    async def personal_status(self, user_id: int) -> tuple[PaymentHistory | None, int]:
+        async with self.sessions() as session:
+            grant = await session.scalar(select(PaymentHistory).where(
+                PaymentHistory.telegram_user_id == user_id,
+                PaymentHistory.plan == PERSONAL_PLAN,
+            ).order_by(PaymentHistory.paid_at.desc(), PaymentHistory.id.desc()).limit(1))
+            used = 0 if grant is None else int(await session.scalar(
+                select(func.count()).select_from(PersonalMatchReservation).where(
+                    PersonalMatchReservation.payment_history_id == grant.id
+                )) or 0)
+            return grant, used
+
     async def seed_notifications(self) -> int:
         apartments = await self._fresh_apartments()
         if not apartments:
@@ -486,8 +503,24 @@ class MatchingRepository:
             )
             now = datetime.now(timezone.utc)
             for profile in profiles:
+                # Lock the paid grant before counting/reserving slots. Multiple
+                # workers must not enqueue more than the purchased allowance.
+                grant = await session.scalar(select(PaymentHistory).where(
+                    PaymentHistory.telegram_user_id == profile.telegram_user_id,
+                    PaymentHistory.plan == PERSONAL_PLAN,
+                ).order_by(PaymentHistory.paid_at.desc(), PaymentHistory.id.desc()).limit(1).with_for_update())
                 after = _aware(profile.notifications_after) or now
+                used = 0
+                if grant is not None:
+                    if (_aware(grant.access_expires_at) or now) <= now:
+                        continue
+                    after = max(after, _aware(grant.paid_at))
+                    used = int(await session.scalar(select(func.count()).select_from(
+                        PersonalMatchReservation).where(
+                        PersonalMatchReservation.payment_history_id == grant.id)) or 0)
                 for apartment in apartments:
+                    if grant is not None and used >= PERSONAL_LIMIT:
+                        break
                     published_at = _aware(
                         apartment.published_at
                         or apartment.last_seen_at
@@ -531,6 +564,16 @@ class MatchingRepository:
                             continue
                     else:
                         session.add(ApartmentMatchDelivery(**values))
+                    await session.flush()
+                    if grant is not None:
+                        delivery_id = await session.scalar(select(ApartmentMatchDelivery.id).where(
+                            ApartmentMatchDelivery.telegram_user_id == profile.telegram_user_id,
+                            ApartmentMatchDelivery.apartment_id == apartment.id,
+                        ))
+                        session.add(PersonalMatchReservation(
+                            payment_history_id=grant.id, delivery_id=delivery_id, created_at=now,
+                        ))
+                        used += 1
                     existing.add(pair)
                     created += 1
         return created
@@ -576,7 +619,24 @@ class MatchingRepository:
                     ApartmentSearchProfile, delivery.telegram_user_id
                 )
                 apartment = delivery.apartment
-                if (profile is None or not profile.notifications_enabled
+                reservation = await session.scalar(select(PersonalMatchReservation).where(
+                    PersonalMatchReservation.delivery_id == delivery.id))
+                personal_grant = await session.scalar(select(PaymentHistory).where(
+                    PaymentHistory.telegram_user_id == delivery.telegram_user_id,
+                    PaymentHistory.plan == PERSONAL_PLAN,
+                ).order_by(PaymentHistory.paid_at.desc(), PaymentHistory.id.desc()).limit(1))
+                paid_delivery_invalid = False
+                if reservation is not None:
+                    reserved_grant = await session.get(PaymentHistory, reservation.payment_history_id)
+                    paid_delivery_invalid = (
+                        reserved_grant is None
+                        or (_aware(reserved_grant.access_expires_at) or now) <= now
+                    )
+                elif personal_grant is not None:
+                    # A free notification queued before the purchase cannot
+                    # bypass the paid allowance or deliver an old backlog.
+                    paid_delivery_invalid = True
+                if (paid_delivery_invalid or profile is None or not profile.notifications_enabled
                     or apartment is None or not apartment.active or not apartment.phone
                     or apartment.availability_status == "unavailable"
                     or listing_expired(apartment, now=now)

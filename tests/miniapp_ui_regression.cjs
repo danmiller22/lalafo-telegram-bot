@@ -317,5 +317,20 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
   await new Promise(setImmediate);
   assert.equal(olderTelegram.node('back').hidden, false);
   assert.equal(olderTelegram.node('pay-now').hidden, false);
+  const personal = setup(null, (path, options) => {
+    const body = JSON.parse(options.body);
+    assert.equal(body.plan, 'personal');
+    if (path.endsWith('/prepare')) return Promise.resolve(response({payment_url:'https://qr.finik.kg/personal-1499',expires_at_ms:Date.now()+300000}));
+    if (path.endsWith('/start')) return Promise.resolve(response({status:'awaiting_receipt',plan:'personal',price:1499,automatic_payment:true,payment_url:'https://qr.finik.kg/personal-1499'}));
+    return Promise.resolve(response({status:'unpaid',automatic_payment:true}));
+  }, true, {location:{search:'?tgWebAppData=test&tgWebAppStartParam=personal_test',hash:''}});
+  await new Promise(setImmediate);
+  assert.equal(personal.node('tariff-description').hidden, true);
+  assert.equal(personal.node('forever-offer').hidden, true);
+  await personal.node('pay-lifetime').onclick();
+  assert.equal(personal.node('pay-personal').attributes['aria-pressed'], 'true');
+  await personal.node('pay-now').onclick();
+  assert.deepEqual(personal.opened, ['https://qr.finik.kg/personal-1499']);
+  assert.equal(personal.node('intro').textContent, '1 месяц · до 20 новых квартир · 1499 сом');
   console.log('Mini App UI regression checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

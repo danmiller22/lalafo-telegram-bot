@@ -5,7 +5,9 @@ import re
 from aiogram import Bot, F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.filters import StateFilter
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, InlineKeyboardButton, InlineKeyboardMarkup
+from datetime import datetime, timezone
+from app.payment_plans import PERSONAL_LIMIT, PERSONAL_PRICE
 
 from app.config import Settings
 from app.matching.keyboards import (
@@ -24,6 +26,69 @@ from app.telegram.private_delivery import send_matching_card
 
 
 router = Router(name="apartment-matching")
+
+
+@router.callback_query(F.data == "personal:offer")
+async def personal_offer(callback: CallbackQuery, matching: MatchingRepository) -> None:
+    await callback.answer()
+    if callback.message is None:
+        return
+    grant, used = await matching.personal_status(callback.from_user.id)
+    text = (
+        f"✨ Индивидуальный подбор — {PERSONAL_PRICE:,} сом\n\n".replace(",", " ")
+        + "1 месяц (30 дней) с подтверждения оплаты. До 20 новых квартир "
+        "по вашим бюджету, районам и числу комнат — в личном чате бота. "
+        "Доступ к контактам на этот срок включён.\n\n"
+        "Настройте требования. Новые совпадения будут приходить по мере появления. "
+        "Изменение фильтров не обнуляет лимит. Автопродления нет."
+    )
+    if grant is not None:
+        expiry = grant.access_expires_at
+        if expiry.tzinfo is None:
+            expiry = expiry.replace(tzinfo=timezone.utc)
+        active = expiry > datetime.now(timezone.utc)
+        text += f"\n\nВаш тариф: {'активен' if active else 'завершён'}. Вариантов в подборе: {used}/{PERSONAL_LIMIT}."
+    await callback.message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⚙️ Указать требования", callback_data="matching:start")],
+        [InlineKeyboardButton(text=f"💳 Оплатить {PERSONAL_PRICE} сом", callback_data="personal:buy")],
+    ]))
+
+
+@router.callback_query(F.data == "personal:buy")
+async def personal_buy(callback: CallbackQuery, matching: MatchingRepository,
+                       signer: TokenSigner, settings: Settings) -> None:
+    if callback.message is None:
+        await callback.answer()
+        return
+    profile = await matching.profile(callback.from_user.id)
+    if profile is None:
+        await callback.answer("Сначала нажмите «Указать требования» и заполните анкету.", show_alert=True)
+        return
+    if not settings.finik_auto_enabled:
+        await callback.answer("Оплата подбора временно недоступна. Обратитесь в поддержку.", show_alert=True)
+        return
+    grant, _ = await matching.personal_status(callback.from_user.id)
+    if grant is not None:
+        expiry = grant.access_expires_at
+        if expiry.tzinfo is None:
+            expiry = expiry.replace(tzinfo=timezone.utc)
+        if expiry > datetime.now(timezone.utc):
+            await callback.answer("Тариф уже активен. Повторная оплата не требуется.", show_alert=True)
+            return
+    apartments = await matching.current_apartments(limit=1)
+    if not apartments:
+        await callback.answer("Сейчас нет доступных квартир. Попробуйте позже.", show_alert=True)
+        return
+    token = signer.sign_start_id("miniapp-apartment", apartments[0].id)
+    url = f"https://t.me/{settings.telegram_bot_username.lstrip('@')}/access?startapp=personal_{token}"
+    await callback.answer()
+    await callback.message.answer(
+        "Откройте оплату тарифа «Индивидуальный подбор»: 1 499 сом, 1 месяц (30 дней), до 20 новых квартир.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="💳 Перейти к оплате", url=url)
+        ]]),
+    )
+
 
 
 async def _send_cards(
@@ -58,6 +123,15 @@ async def show_hot_start(
     profile = await matching.profile(user_id)
     await state.clear()
     await matching.event(user_id, "start", source=source)
+    grant, used = await matching.personal_status(user_id)
+    if grant is not None:
+        await message.answer(
+            f"✨ Индивидуальный подбор: {used}/{PERSONAL_LIMIT} вариантов. "
+            "Новые квартиры приходят автоматически в течение срока тарифа. "
+            "Параметры и состояние тарифа доступны по кнопке ниже.",
+            reply_markup=feed_footer_keyboard(has_more=False),
+        )
+        return
     if profile is not None:
         apartments = await matching.matching_apartments(
             profile, limit=3, exclude_delivered=False
@@ -359,6 +433,15 @@ async def _finish_profile(
         source=str(data.get("matching_source", "telegram")),
         seller_types=list(data.get("matching_seller_types", [])),
     )
+    grant, used = await matching.personal_status(user_id)
+    if grant is not None:
+        await state.clear()
+        await message.answer(
+            f"✅ Требования сохранены. Вариантов в подборе: {used}/{PERSONAL_LIMIT}. "
+            "Новые совпадения будут приходить автоматически в течение срока тарифа.",
+            reply_markup=feed_footer_keyboard(has_more=False),
+        )
+        return
     excluded = {int(value) for value in data.get("hot_apartment_ids", [])}
     apartments = await matching.matching_apartments(
         profile, limit=3, exclude_ids=excluded, exclude_delivered=True
@@ -460,6 +543,16 @@ async def matching_feed(
         if callback.message:
             await callback.message.answer(
                 "Выберите параметры квартиры.", reply_markup=hot_start_keyboard()
+            )
+        return
+    grant, used = await matching.personal_status(callback.from_user.id)
+    if grant is not None:
+        await callback.answer()
+        if callback.message:
+            await callback.message.answer(
+                f"✨ Индивидуальный подбор: {used}/{PERSONAL_LIMIT} вариантов. "
+                "Новые совпадения приходят автоматически до окончания тарифа.",
+                reply_markup=feed_footer_keyboard(has_more=False),
             )
         return
     apartments = await matching.matching_apartments(profile, limit=3)
