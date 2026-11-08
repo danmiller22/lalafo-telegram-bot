@@ -58,6 +58,9 @@ async def process_checkout_recoveries(runtime) -> int:
     signer = runtime.workflow_data["signer"]
     sent = 0
     for request in await payments.claim_payment_reminders():
+        if request.plan != WEEK_PLAN:
+            await payments.finish_payment_reminder(request.id, include_siblings=False)
+            continue
         apartment = request.apartment
         if (
             apartment is None

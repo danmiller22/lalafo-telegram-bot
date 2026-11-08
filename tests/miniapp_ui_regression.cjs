@@ -40,28 +40,22 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
 }
 
 (async () => {
-  const forever = setup(null, (path, options) => {
+  const weekly = setup(null, (path, options) => {
     const body = JSON.parse(options.body);
-    if (path.endsWith('/prepare')) return Promise.resolve(response({payment_url:'https://qr.finik.kg/lifetime-999',expires_at_ms:Date.now()+300000}));
+    if (path.endsWith('/prepare')) return Promise.resolve(response({payment_url:'https://qr.finik.kg/week-499',expires_at_ms:Date.now()+300000}));
     if (path.endsWith('/start')) {
-      assert.equal(body.plan, 'lifetime');
-      return Promise.resolve(response({status:'awaiting_receipt',plan:'lifetime',price:999,payment_url:'https://qr.finik.kg/lifetime-999'}));
+      assert.equal(body.plan, 'week');
+      return Promise.resolve(response({status:'awaiting_receipt',plan:'week',price:499,payment_url:'https://qr.finik.kg/week-499'}));
     }
     return Promise.resolve(response({status:'unpaid'}));
   });
   await new Promise(setImmediate);
-  await forever.node('pay-forever').onclick();
-  assert.equal(forever.opened.length, 0, 'Selecting a plan must not open checkout');
-  assert.equal(forever.node('pay-forever').attributes['aria-pressed'], 'true');
-  await forever.node('pay-lifetime').onclick();
-  assert.equal(forever.node('pay-lifetime').attributes['aria-pressed'], 'true');
-  assert.equal(forever.opened.length, 0);
-  await forever.node('pay-forever').onclick();
-  await forever.node('pay-now').onclick();
-  assert.deepEqual(forever.opened, ['https://qr.finik.kg/lifetime-999']);
-  assert.equal(forever.node('intro').textContent, 'Навсегда · 999 сом');
-  assert.equal(forever.node('pay-lifetime').hidden, true);
-  assert.equal(forever.node('pay-forever').hidden, true);
+  await weekly.node('pay-lifetime').onclick();
+  assert.equal(weekly.opened.length, 0, 'Selecting the weekly tariff must not open checkout');
+  await weekly.node('pay-now').onclick();
+  assert.deepEqual(weekly.opened, ['https://qr.finik.kg/week-499']);
+  assert.equal(weekly.node('intro').textContent, '7 дней · 499 сом');
+  assert.equal(weekly.node('pay-lifetime').hidden, true);
   const unavailable = setup(null, () => Promise.resolve({ok: false, status: 404,
     json: async () => ({detail: 'Квартира больше недоступна.'})}));
   await new Promise(setImmediate);
@@ -317,20 +311,9 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
   await new Promise(setImmediate);
   assert.equal(olderTelegram.node('back').hidden, false);
   assert.equal(olderTelegram.node('pay-now').hidden, false);
-  const personal = setup(null, (path, options) => {
-    const body = JSON.parse(options.body);
-    assert.equal(body.plan, 'personal');
-    if (path.endsWith('/prepare')) return Promise.resolve(response({payment_url:'https://qr.finik.kg/personal-1499',expires_at_ms:Date.now()+300000}));
-    if (path.endsWith('/start')) return Promise.resolve(response({status:'awaiting_receipt',plan:'personal',price:1499,automatic_payment:true,payment_url:'https://qr.finik.kg/personal-1499'}));
-    return Promise.resolve(response({status:'unpaid',automatic_payment:true}));
-  }, true, {location:{search:'?tgWebAppData=test&tgWebAppStartParam=personal_test',hash:''}});
+  const legacyLifetime = setup({status:'approved',plan:'lifetime',phone:'+996555000000',apartment:{}});
   await new Promise(setImmediate);
-  assert.equal(personal.node('tariff-description').hidden, true);
-  assert.equal(personal.node('forever-offer').hidden, true);
-  await personal.node('pay-lifetime').onclick();
-  assert.equal(personal.node('pay-personal').attributes['aria-pressed'], 'true');
-  await personal.node('pay-now').onclick();
-  assert.deepEqual(personal.opened, ['https://qr.finik.kg/personal-1499']);
-  assert.equal(personal.node('intro').textContent, '1 месяц · до 20 новых квартир · 1499 сом');
+  assert.equal(legacyLifetime.node('phone').hidden, false, 'Existing lifetime access remains usable');
+  assert.equal(legacyLifetime.node('pay-now').hidden, true);
   console.log('Mini App UI regression checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

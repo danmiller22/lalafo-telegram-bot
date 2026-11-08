@@ -72,6 +72,7 @@ def test_old_deployment_qr_is_replaced_with_requested_shared_link(monkeypatch):
     )
     monkeypatch.setenv("WEEKLY_FINIK_PAYMENT_URL", legacy)
     settings = Settings()
-    assert settings.weekly_finik_payment_url == "https://qr.finik.kg/bbfd79c8-38a6-483e-b57b-c42ea362fa81?type=t"
+    from app.payment_plans import WEEK_FINIK_QR
+    assert settings.weekly_finik_payment_url == WEEK_FINIK_QR
     # Future explicit configuration must keep working.
     assert Settings(weekly_finik_payment_url="https://qr.finik.kg/custom").weekly_finik_payment_url.endswith("/custom")

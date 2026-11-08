@@ -143,15 +143,7 @@ class LalafoIngestRequest(BaseModel):
 
 
 def _finik_payment_url(settings: Any, plan: str) -> str:
-    if plan == PERSONAL_PLAN:
-        return ""  # Never charge this product through a differently priced shared QR.
-    if plan == LIFETIME_PLAN:
-        return settings.lifetime_finik_payment_url or settings.monthly_finik_payment_url
-    return (
-        settings.monthly_finik_payment_url or settings.lifetime_finik_payment_url
-        if plan == MONTH_PLAN
-        else settings.weekly_finik_payment_url
-    )
+    return settings.weekly_finik_payment_url if plan == WEEK_PLAN else ""
 
 
 def _uses_dynamic_finik(settings: Any, plan: str) -> bool:
@@ -159,7 +151,7 @@ def _uses_dynamic_finik(settings: Any, plan: str) -> bool:
     # acquiring API is configured, create a request-bound checkout so its
     # signed webhook can grant access automatically. Static links remain the
     # fallback only while provider credentials are unavailable.
-    return plan in {LIFETIME_PLAN, WEEK_PLAN, MONTH_PLAN, PERSONAL_PLAN} and settings.finik_auto_enabled
+    return plan == WEEK_PLAN and settings.finik_auto_enabled
 
 
 async def _finik_checkout_url(
@@ -171,6 +163,8 @@ async def _finik_checkout_url(
     plan: str,
 ) -> str:
     """Create a checkout whose PaymentId maps back to this exact request."""
+    if plan != WEEK_PLAN:
+        raise ValueError("Only the weekly plan is available for new checkouts")
     if not _uses_dynamic_finik(settings, plan):
         fallback = _finik_payment_url(settings, plan)
         if not fallback:
@@ -1563,7 +1557,6 @@ def _miniapp_context(payload: MiniAppRequest):
     signer = TokenSigner(settings.require_callback_secret())
     start_param = payload.start_param
     if start_param.startswith("personal_"):
-        payload.plan = PERSONAL_PLAN
         start_param = start_param[len("personal_"):]
     apartment_id = signer.verify_start_id("miniapp-apartment", start_param)
     if apartment_id is None:
@@ -1577,23 +1570,7 @@ def _miniapp_context(payload: MiniAppRequest):
 
 
 async def _miniapp_contact_status(runtime, user_id: int, apartment_id: int, plan: str | None):
-    result = await runtime.workflow_data["service"].contact_status(user_id, apartment_id)
-    if plan != PERSONAL_PLAN or result.status == "unavailable":
-        return result
-    from app.payments.service import ContactResult
-    grant = await runtime.workflow_data["payments"].active_personal_access(user_id)
-    if grant is not None:
-        return ContactResult("approved", result.apartment, PERSONAL_PLAN, grant.access_expires_at)
-    request = await runtime.workflow_data["payments"].get_access(user_id, apartment_id)
-    if request is not None and request.plan == PERSONAL_PLAN:
-        expiry = request.access_expires_at
-        if expiry is not None and expiry.tzinfo is None:
-            expiry = expiry.replace(tzinfo=UTC)
-        if request.status == "approved" and expiry and expiry > datetime.now(UTC):
-            return ContactResult("approved", result.apartment, PERSONAL_PLAN, expiry)
-        if request.status in {"pending", "awaiting_receipt"}:
-            return ContactResult(request.status, result.apartment, PERSONAL_PLAN)
-    return ContactResult("unpaid", result.apartment, PERSONAL_PLAN)
+    return await runtime.workflow_data["service"].contact_status(user_id, apartment_id)
 
 
 def _miniapp_result_payload(result) -> dict[str, Any]:
@@ -1653,11 +1630,7 @@ async def _record_funnel(
 @app.get("/miniapp", response_class=HTMLResponse, include_in_schema=False)
 async def telegram_mini_app() -> HTMLResponse:
     settings = get_settings()
-    payment_urls = {} if settings.finik_auto_enabled else {
-        WEEK_PLAN: _finik_payment_url(settings, WEEK_PLAN),
-        LIFETIME_PLAN: _finik_payment_url(settings, LIFETIME_PLAN)
-        or _finik_payment_url(settings, MONTH_PLAN),
-    }
+    payment_urls = {} if settings.finik_auto_enabled else {WEEK_PLAN: _finik_payment_url(settings, WEEK_PLAN)}
     return HTMLResponse(
         mini_app_html(payment_urls=payment_urls),
         headers={
@@ -1686,7 +1659,7 @@ async def miniapp_session(payload: MiniAppRequest, background_tasks: BackgroundT
     response["automatic_payment"] = bool(
         getattr(settings, "finik_auto_enabled", False)
     )
-    response["lifetime_available"] = True
+    response["lifetime_available"] = False
     response["monthly_available"] = False
     bot_url = f"https://t.me/{settings.telegram_bot_username.lstrip('@')}"
     response["privacy_url"] = f"{bot_url}?start=privacy"
@@ -1739,7 +1712,7 @@ async def miniapp_consent(payload: MiniAppRequest) -> dict[str, Any]:
     await runtime.workflow_data["terms_consents"].accept(user.id)
     result = await _miniapp_contact_status(runtime, user.id, apartment_id, payload.plan)
     response = _miniapp_result_payload(result)
-    response["lifetime_available"] = True
+    response["lifetime_available"] = False
     response["monthly_available"] = False
     response["terms_accepted"] = True
     response["terms_text"] = TERMS_TEXT
@@ -1761,7 +1734,7 @@ async def miniapp_availability(payload: MiniAppRequest) -> dict[str, Any]:
 async def miniapp_prepare_payment(payload: MiniAppRequest) -> dict[str, Any]:
     settings, runtime, user, apartment_id = _miniapp_context(payload)
     plan = payload.plan or WEEK_PLAN
-    if plan not in {WEEK_PLAN, LIFETIME_PLAN, PERSONAL_PLAN}:
+    if plan != WEEK_PLAN:
         raise HTTPException(status_code=400, detail="Неизвестный тариф.")
     if (
         plan == LIFETIME_PLAN
@@ -1806,7 +1779,7 @@ async def miniapp_start_payment(
     result = await _miniapp_contact_status(runtime, user.id, apartment_id, plan)
     if result.status in {"approved", "unavailable", "pending"}:
         return _miniapp_result_payload(result)
-    if plan not in {WEEK_PLAN, LIFETIME_PLAN, PERSONAL_PLAN}:
+    if plan != WEEK_PLAN:
         raise HTTPException(status_code=400, detail="Неизвестный тариф.")
     if (
         plan == LIFETIME_PLAN
@@ -1863,7 +1836,7 @@ async def miniapp_start_payment(
     response["payment_url"] = payment_url
     response["price"] = plan_price(response.get("plan") or plan)
     response["automatic_payment"] = _uses_dynamic_finik(settings, plan)
-    response["lifetime_available"] = True
+    response["lifetime_available"] = False
     response["monthly_available"] = False
     background_tasks.add_task(
         _record_payment_funnel_safely,

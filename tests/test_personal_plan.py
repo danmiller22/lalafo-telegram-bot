@@ -118,7 +118,7 @@ async def test_finik_personal_requires_1499_and_callback_is_idempotent(repositor
 
 
 @pytest.mark.asyncio
-async def test_lifetime_customer_personal_checkout_and_polling(repositories, service, monkeypatch):
+async def test_lifetime_customer_retains_access_without_new_checkout(repositories, service, monkeypatch):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
     from fastapi import BackgroundTasks
@@ -126,28 +126,15 @@ async def test_lifetime_customer_personal_checkout_and_polling(repositories, ser
     from app.config import Settings
     apartments, payments, sessions = repositories
     apartment = await purchase(apartments, payments, plan="lifetime")
-    settings = Settings(finik_api_key="test", finik_account_id="test", finik_private_key_pem="test", telegram_webhook_url="https://example.test/telegram/webhook")
-    runtime = SimpleNamespace(workflow_data={"service": service, "payments": payments,
-        "terms_consents": SimpleNamespace(accept=AsyncMock())})
+    runtime = SimpleNamespace(workflow_data={"service": service, "payments": payments})
     user = SimpleNamespace(id=123, username=None, first_name="Test")
-    monkeypatch.setattr(web, "_miniapp_context", lambda payload: (settings, runtime, user, apartment.id))
-    checkout = AsyncMock(return_value="https://qr.finik.kg/personal-test")
+    monkeypatch.setattr(web, "_miniapp_context", lambda payload: (Settings(), runtime, user, apartment.id))
+    checkout = AsyncMock()
     monkeypatch.setattr(web, "_finik_checkout_url", checkout)
-    payload = web.MiniAppRequest(init_data="test", start_param="test", plan=PERSONAL_PLAN)
+    payload = web.MiniAppRequest(init_data="test", start_param="test", plan="week")
     started = await web.miniapp_start_payment(payload, BackgroundTasks())
-    assert started["plan"] == PERSONAL_PLAN and started["price"] == 1499
-    assert checkout.await_args.kwargs["plan"] == PERSONAL_PLAN
-    request = await payments.get_access(123, apartment.id)
-    await payments.prepare_provider_payment(request.id, "personal-upgrade")
-    await payments.apply_provider_result("personal-upgrade", succeeded=True, amount=1499)
+    assert started["status"] == "approved" and started["plan"] == "lifetime"
+    checkout.assert_not_awaited()
     polled = await web.miniapp_session(payload, BackgroundTasks())
-    assert polled["status"] == "approved" and polled["plan"] == PERSONAL_PLAN
-    assert polled["personal_setup_url"].endswith("?start=personal")
-    async with sessions.begin() as session:
-        await session.execute(update(PaymentHistory).where(PaymentHistory.plan == PERSONAL_PLAN).values(
-            access_expires_at=datetime.now(timezone.utc) - timedelta(seconds=1)))
-        from app.models import PaymentRequest
-        await session.execute(update(PaymentRequest).where(PaymentRequest.plan == PERSONAL_PLAN).values(
-            access_expires_at=datetime.now(timezone.utc) - timedelta(seconds=1)))
-    # Buying the personal add-on never consumes the original lifetime grant.
-    assert (await payments.active_weekly_access(123)).plan == "lifetime"
+    assert polled["status"] == "approved" and polled["lifetime_available"] is False
+    assert (await payments.active_weekly_access(123)).access_expires_at is None

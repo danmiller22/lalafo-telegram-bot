@@ -45,7 +45,6 @@ def main_menu_keyboard(
                 InlineKeyboardButton(text="✅ Проверить бота", callback_data="menu:status"),
             ],
         ]
-    rows.append([InlineKeyboardButton(text="✨ Под меня — 1 499 сом", callback_data="personal:offer")])
     if include_admin:
         rows.insert(
             0,

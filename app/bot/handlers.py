@@ -48,16 +48,13 @@ router = Router(name="user")
 
 
 def _payment_details(plan: str | None, settings: Settings, *, signer: TokenSigner | None = None, apartment_id: int | None = None) -> tuple[str, int]:
-    chosen = LIFETIME_PLAN if plan == LIFETIME_PLAN else WEEK_PLAN
-    url = (
-        settings.lifetime_finik_payment_url or settings.monthly_finik_payment_url
-        if chosen == LIFETIME_PLAN
-        else settings.weekly_finik_payment_url
-    )
+    # New purchases use the weekly tariff. Dynamic checkout creation must not
+    # be skipped merely because a shared QR remains in deployment settings.
+    url = "" if settings.finik_auto_enabled else settings.weekly_finik_payment_url
     if not url and signer is not None and apartment_id is not None:
         token = signer.sign_start_id("miniapp-apartment", apartment_id)
         url = f"https://t.me/{settings.telegram_bot_username.lstrip('@')}/access?startapp={token}"
-    return url, plan_price(chosen)
+    return url, plan_price(WEEK_PLAN)
 
 
 def _start_payload(message: Message) -> str:
@@ -101,7 +98,8 @@ async def start_handler(
 ) -> None:
     payload = _start_payload(message)
     if payload == "personal":
-        await begin_matching_form(message, state, source="personal")
+        await state.clear()
+        await _show_main_menu(message, settings)
         return
     if payload == "want":
         await begin_wanted_form(message, state)
@@ -217,6 +215,13 @@ async def plan_handler(
             max_photos=settings.max_photos_per_apartment,
         )
         await callback.answer("✅ Карточка с номером отправлена вам.")
+        return
+    if plan != WEEK_PLAN:
+        await callback.answer("Для новых клиентов доступен только недельный тариф — 499 сом.", show_alert=True)
+        if callback.message:
+            await callback.message.answer("Выберите недельный доступ.", reply_markup=private_payment_keyboard(
+                apartment_id, signer=signer, payment_url=settings.weekly_finik_payment_url,
+                support_url=settings.support_bot_url))
         return
     try:
         submission = await service.begin_payment(

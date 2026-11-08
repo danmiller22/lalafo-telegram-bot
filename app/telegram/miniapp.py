@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from html import escape
 from urllib.parse import parse_qsl
 
-from app.payment_plans import LIFETIME_PRICE, WEEK_PRICE, PERSONAL_PRICE
+from app.payment_plans import WEEK_PRICE
 from app.terms import TERMS_TEXT
 
 
@@ -129,20 +129,6 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
       <span class="plan-price">{WEEK_PRICE} сом</span><span class="plan-note">7 дней</span>
     </button>
   </div>
-  <div id="forever-offer" class="forever-offer">
-    <button id="pay-forever" class="tariff-button" aria-pressed="false">
-      <span class="plan-heading"><svg class="plan-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 12c-2-3-3-5-5.5-5a5 5 0 0 0 0 10c2.5 0 3.5-2 5.5-5s3-5 5.5-5a5 5 0 0 1 0 10c-2.5 0-3.5-2-5.5-5Z"/></svg>Доступ навсегда</span>
-      <span class="plan-price">{LIFETIME_PRICE} сом</span><span class="plan-note">Без ограничения срока</span>
-    </button>
-  </div>
-  <div id="personal-offer">
-    <button id="pay-personal" class="tariff-button" aria-pressed="false">
-      <span class="plan-heading">Под меня</span>
-      <span class="plan-price">{PERSONAL_PRICE} сом</span>
-      <span class="plan-note">1 месяц (30 дней) · до 20 новых квартир в личку<br>По вашему бюджету, районам и числу комнат. Контакты включены.<br>Варианты приходят по мере появления совпадений.</span>
-    </button>
-  </div>
-  <a id="personal-setup" class="button secondary hidden">Настроить требования к квартире</a>
   <button id="resume-payment" class="secondary hidden" style="margin-top:14px">Вернуться к оплате</button>
   <button id="pay-now" class="primary"{'' if payment_urls else ' disabled'}>Оплата</button>
   <p id="agreement-caption" class="agreement-caption">Оплачивая доступ, вы соглашаетесь с <a id="terms-link" class="terms-link" href="#agreement">пользовательским договором</a>.</p>
@@ -184,14 +170,14 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
   let pollingVersion = 0;
   let initializedWebApp = null;
   const paymentUrls = {checkout_json};
-  const preparedUntil = {{week: Infinity, lifetime: Infinity, personal: 0}};
+  const preparedUntil = {{week: Infinity}};
   const checkoutPreparation = {{}};
   const refreshCheckoutTimer = {{}};
 
   function prepareCheckout(plan = "week") {{
     if (accessApproved || checkoutPreparation[plan]) return checkoutPreparation[plan];
     if (paymentUrls[plan] && preparedUntil[plan] > Date.now()) return Promise.resolve();
-    const buttonId = plan === "personal" ? "pay-personal" : plan === "lifetime" ? "pay-forever" : "pay-lifetime";
+    const buttonId = "pay-lifetime";
     el(buttonId).disabled = true;
     el("reopen-payment").disabled = true;
     checkoutPreparation[plan] = api("/miniapp/api/prepare", {{plan}}).then(data => {{
@@ -256,7 +242,7 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
       const response = await fetch(path, {{
         method: "POST",
         headers: {{"Content-Type": "application/json"}},
-        body: JSON.stringify({{init_data: initData, start_param: startParam, plan: selectedPlan, ...body, ...(startParam.startsWith("personal_") ? {{plan: "personal"}} : {{}})}}),
+        body: JSON.stringify({{init_data: initData, start_param: startParam, plan: selectedPlan, ...body}}),
         signal: controller.signal
       }});
       const data = await response.json().catch(() => ({{detail: "Ошибка сервиса"}}));
@@ -279,28 +265,23 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
     const approved = data.status === "approved";
     apartmentUnavailable = data.status === "unavailable";
     show("other-apartments", apartmentUnavailable);
-    const serverWaiting = (data.plan === "week" || data.plan === "lifetime" || data.plan === "personal") && (data.status === "awaiting_receipt" || data.status === "pending");
+    const serverWaiting = (data.plan === "week") && (data.status === "awaiting_receipt" || data.status === "pending");
     if (serverWaiting) paymentExpected = true;
     if (approved || apartmentUnavailable || data.status === "rejected") {{ paymentExpected = false; pausePaymentPolling(); }}
     const waiting = serverWaiting && !tariffsView;
     if (waiting) selectedPlan = data.plan;
     el("title").textContent = approved ? "Квартира" : waiting ? "Оплата" : "Получить доступ";
     show("title", !apartmentUnavailable);
-    el("intro").textContent = approved ? "" : waiting ? (selectedPlan === "personal" ? "1 месяц · до 20 новых квартир · {PERSONAL_PRICE} сом" : selectedPlan === "lifetime" ? "Навсегда · {LIFETIME_PRICE} сом" : "7 дней · {WEEK_PRICE} сом") : "Доступ ко всем контактам для прямой связи";
+    el("intro").textContent = approved ? "" : waiting ? "7 дней · {WEEK_PRICE} сом" : "Доступ ко всем контактам для прямой связи";
     show("intro", !approved && !apartmentUnavailable);
     show("apartment", approved);
     show("phone", approved);
     const canPay = !approved && !waiting && !apartmentUnavailable;
-    show("tariff-description", canPay && !startParam.startsWith("personal_"));
+    show("tariff-description", canPay);
     show("checkout", waiting);
     show("privacy", !approved);
     show("agreement-caption", !approved && !apartmentUnavailable);
     show("pay-lifetime", canPay);
-    show("forever-offer", canPay && !startParam.startsWith("personal_"));
-    show("personal-offer", canPay);
-    show("personal-setup", approved && data.plan === "personal");
-    el("personal-setup").href = data.personal_setup_url || "https://t.me/arenda312bot?start=personal";
-    show("pay-forever", canPay);
     show("pay-now", canPay);
     show("resume-payment", serverWaiting && tariffsView && !approved);
     updatePlanSelection();
@@ -316,7 +297,7 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
       if (paymentPoll) clearTimeout(paymentPoll);
       paymentPoll = null;
       Object.values(refreshCheckoutTimer).forEach(clearTimeout);
-      message(data.plan === "personal" ? "Тариф «Под меня» активен: до 20 новых квартир за 30 дней. Укажите требования кнопкой ниже." : "");
+      message("");
       const apartment = data.apartment || {{}};
       const photos = el("photos");
       photos.replaceChildren();
@@ -360,7 +341,6 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
         return;
       }}
       message("");
-      if (startParam.startsWith("personal_")) selectedPlan = "personal";
       const preparation = prepareCheckout(selectedPlan);
       render(await api("/miniapp/api/session", {{}}));
       sessionReady = true;
@@ -376,6 +356,7 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
   }}
   async function startPayment(plan, buttonId) {{
     if (paymentOpening || accessApproved || apartmentUnavailable || (!sessionReady && !paymentUrls[plan])) return;
+    if (plan !== "week") return;
     telegramContext();
     selectedPlan = plan;
     tariffsView = false;
@@ -485,17 +466,13 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
   }};
   function updatePlanSelection() {{
     el("pay-lifetime").setAttribute("aria-pressed", String(selectedPlan === "week"));
-    el("pay-forever").setAttribute("aria-pressed", String(selectedPlan === "lifetime"));
-    el("pay-personal").setAttribute("aria-pressed", String(selectedPlan === "personal"));
   }}
   function selectPlan(plan) {{
-    if (accessApproved || apartmentUnavailable || paymentOpening || (startParam.startsWith("personal_") && plan !== "personal")) return;
+    if (accessApproved || apartmentUnavailable || paymentOpening || plan !== "week") return;
     selectedPlan = plan;
     updatePlanSelection();
   }}
   el("pay-lifetime").onclick = () => selectPlan("week");
-  el("pay-forever").onclick = () => selectPlan("lifetime");
-  el("pay-personal").onclick = () => selectPlan("personal");
   el("pay-now").onclick = () => startPayment(selectedPlan, "pay-now");
   el("reopen-payment").onclick = () => {{
     if (accessApproved) return;
