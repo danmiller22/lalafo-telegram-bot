@@ -26,5 +26,5 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -r requirements.txt
-      - name: Grant lifetime access and notify users
+      - name: Grant lifetime access without notifications
         run: python -m scripts.grant_lifetime_by_username_once
