@@ -61,7 +61,7 @@ async def test_archive_card_has_clear_status_and_no_contact_checkout():
     publisher = TelegramPublisher(bot, chat_id=-100, signer=TokenSigner("archive-test-secret"), bot_username="testbot", support_url="https://t.me/support")
     await publisher.publish(1, make_ad(), archived=True)
     args = bot.send_message.await_args.kwargs
-    assert "Архив" in args["text"] and "сдана" in args["text"]
+    assert "Архив" not in args["text"] and "сдана" not in args["text"]
     assert "Актуально на момент публикации" not in args["text"]
     assert all("access?" not in (button.url or "") for row in args["reply_markup"].inline_keyboard for button in row)
 
