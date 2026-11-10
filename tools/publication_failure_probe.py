@@ -5,7 +5,7 @@ import httpx
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from scripts.scrape_publish import apartment_to_ad
-from app.telegram.publisher import TelegramPublisher
+from app.telegram.publisher import TelegramPublisher, TelegramPublishError
 from app.security import TokenSigner
 from sqlalchemy import select
 from app.config import get_settings
@@ -32,7 +32,7 @@ async def main():
                     await TelegramPublisher(bot,chat_id=-1,signer=TokenSigner('s'*32),bot_username='probe_bot',support_url='https://t.me/probe').publish(a.id,apartment_to_ad(a))
                     validation['publisher_passed']+=1
                 except Exception as exc:
-                    validation[type(exc).__name__+':'+str(exc)[:100]]+=1
+                    validation[type(exc).__name__+(':'+str(exc)[:100] if isinstance(exc,TelegramPublishError) else '')]+=1
                 if a.photo_urls:
                     try:
                         async with h.stream('GET',a.photo_urls[0]) as r:
