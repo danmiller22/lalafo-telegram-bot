@@ -15,8 +15,8 @@ async def test_recovery_requeues_only_definite_failure_once(repositories,monkeyp
     uncertain=await apartments.upsert_discovered(make_ad(lalafo_id=998811))
     async with sessions.begin() as s:
         s.add_all([
-            ApartmentInventoryQueue(apartment_id=first.id,status='skipped',last_error='TelegramPublishError',attempts=3,scheduled_at=now,window_key='test'),
-            ApartmentInventoryQueue(apartment_id=uncertain.id,status='uncertain',last_error='TelegramPublishAmbiguousError',attempts=1,scheduled_at=now,window_key='test'),
+            ApartmentInventoryQueue(apartment_id=first.id,status='skipped',last_error='TelegramPublishError',attempts=3,scheduled_at=now,window_key='test',sequence=1),
+            ApartmentInventoryQueue(apartment_id=uncertain.id,status='uncertain',last_error='TelegramPublishAmbiguousError',attempts=1,scheduled_at=now,window_key='test',sequence=1),
         ])
     monkeypatch.setattr(recovery,'get_settings',lambda:SimpleNamespace(database_url='unused'))
     monkeypatch.setattr(recovery,'create_engine_and_session',lambda url:(SimpleNamespace(dispose=AsyncMock()),sessions))
