@@ -31,7 +31,7 @@ from scripts.scrape_publish import (
 
 logger = logging.getLogger(__name__)
 PUBLIC_DETAIL_REFRESH_SECONDS = 10.0
-ITEM_PUBLISH_TIMEOUT_SECONDS = 25.0
+ITEM_PUBLISH_TIMEOUT_SECONDS = 60.0
 # Bound one hosted tick so a run cannot spend many minutes walking stale
 # Lalafo rows. The next minute resumes from the durable queue.
 MAX_TERMINAL_SKIPS_PER_RUN = 12
@@ -285,7 +285,7 @@ async def _publish_item(settings, sessions, inventory, apartments, item) -> int 
         logger.warning('Telegram send requires reconciliation; continuing with another apartment')
         return None
     except TelegramPublishError as exc:
-        logger.warning("Queued publication will retry: %s", type(exc).__name__)
+        logger.warning("Queued publication will retry: category=%s cause=%s", str(exc), type(exc.__cause__).__name__ if exc.__cause__ else "validation")
         if binding:
             await inventory.finish_item(item.id, status='skipped', error=type(exc).__name__)
         else:

@@ -19,7 +19,7 @@ async def main():
         counts=Counter();photos=Counter()
         async with httpx.AsyncClient(timeout=8,follow_redirects=True) as h:
             for a in rows:
-                counts['shared_rejected_by_publisher' if a.rooms not in PUBLIC_ROOMS else 'whole_apartment']+=1
+                counts['shared_offers' if a.rooms == 'shared' else 'whole_apartment']+=1
                 if a.photo_urls:
                     try:
                         async with h.stream('GET',a.photo_urls[0]) as r:
