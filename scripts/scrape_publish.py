@@ -1024,6 +1024,11 @@ async def run(
                     or state.contains(telegram_ad.lalafo_id, ad_fingerprint(telegram_ad))
                 ):
                     continue
+                if telegram_ad.rooms == "shared":
+                    from app.shared_housing import valid_shared
+                    if apartments is not None and valid_shared(telegram_ad, city=settings.city)[0]:
+                        await apartments.upsert_discovered(telegram_ad)
+                    continue
                 allowed, _ = is_allowed(
                     telegram_ad,
                     city=settings.city,

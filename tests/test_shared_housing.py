@@ -22,10 +22,10 @@ def shared_ad(index=1, **kwargs):
         phone=f"+996700{index:06d}", photo_urls=[f"https://img.example/shared-{index}.jpg"]).model_copy(update=kwargs)
 
 
-def test_shared_posts_without_confirmed_owner_are_rejected():
+def test_shared_posts_accept_unknown_authors():
     text = "Подселение для девушек | Юг-2<br>Цена 12000 сом.<br>0705 123 456"
     ads = parse_telegram_apartments(_post(text), now=datetime(2026, 9, 23, 7, tzinfo=timezone.utc))
-    assert ads == []
+    assert len(ads) == 1 and ads[0].seller_type == "unknown"
 
 
 @pytest.mark.parametrize("text", [
@@ -87,7 +87,7 @@ async def test_catchup_cannot_cluster_shared_cards_and_requires_whole_card_betwe
     async with sessions.begin() as s:
         await s.execute(update(Apartment).where(Apartment.id==whole.id).values(publication_status="published", published_at=now+timedelta(minutes=30)))
     row=await inventory.claim_due(now=now+timedelta(hours=2))
-    assert row is None
+    assert row is not None and row.apartment_id == second.id
 
 
 @pytest.mark.asyncio
@@ -123,3 +123,19 @@ async def test_new_plan_keeps_uncertain_shared_receipt_for_reconciliation(reposi
             ApartmentInventoryQueue.apartment_id == ad.id))
         assert row is not None and row.status == "uncertain"
         assert row.last_error == "TelegramPublishAmbiguousError"
+
+
+@pytest.mark.asyncio
+async def test_shared_queue_is_capped_at_six_and_spaced(repositories):
+    from app.shared_housing import schedule_shared
+    apartments, _, sessions = repositories
+    now = datetime.now(BISHKEK).replace(hour=5, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+    for i in range(12):
+        await apartments.upsert_discovered(shared_ad(200+i))
+    async with sessions.begin() as session:
+        assert await schedule_shared(session, now=now, day_start=now, day_end=now+timedelta(days=1)) == 6
+    async with sessions.begin() as session:
+        assert await schedule_shared(session, now=now, day_start=now, day_end=now+timedelta(days=1)) == 0
+        rows = list((await session.scalars(select(ApartmentInventoryQueue).order_by(ApartmentInventoryQueue.scheduled_at))).all())
+        assert len(rows) == 6
+        assert all(as_utc(b.scheduled_at)-as_utc(a.scheduled_at) >= timedelta(hours=2) for a,b in zip(rows,rows[1:]))

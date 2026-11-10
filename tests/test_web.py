@@ -175,7 +175,7 @@ async def test_health_and_authentication() -> None:
                                            "telegram_sources": 11,
                                            "lalafo_search_routes": 55,
                                        },
-                                   "shared_housing": {"daily_target": 0, "minimum_gap_minutes": 120, "mixed_with_whole_apartments": False}},
+                                   "shared_housing": {"daily_target": 6, "minimum_gap_minutes": 120, "mixed_with_whole_apartments": True}},
             "apartment_scheduler": "disabled",
         }
         assert (await client.post("/run")).status_code == 401
