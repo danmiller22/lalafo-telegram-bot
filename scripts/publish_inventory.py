@@ -137,6 +137,7 @@ async def _publish_item(settings, sessions, inventory, apartments, item) -> int 
     stored = apartment_to_ad(apartment)
     ad = None
     stored_fallback = False
+    archived = False
     binding = None
     if is_requested:
         from app.managed_cards import managed_bindings
@@ -154,6 +155,12 @@ async def _publish_item(settings, sessions, inventory, apartments, item) -> int 
         except (LalafoError, ValueError, TimeoutError):
             await inventory.finish_item(item.id, status='skipped', error='managed_public_check_unknown')
             return None
+    elif (not is_requested and stored.rooms == "1" and
+          (not apartment.active or apartment.availability_status == "unavailable")):
+        if as_utc(apartment.last_seen_at or apartment.updated_at) < datetime.now(timezone.utc) - timedelta(hours=STORED_FALLBACK_MAX_AGE_HOURS):
+            return await _skip(inventory, item.id, "stale_archive")
+        ad = stored
+        archived = True
     elif apartment.source_url.startswith("https://t.me/"):
         source_updated = as_utc(apartment.source_updated_at or apartment.updated_at)
         max_source_age = 48 if stored.rooms == SHARED_ROOMS else STORED_FALLBACK_MAX_AGE_HOURS
@@ -190,6 +197,7 @@ async def _publish_item(settings, sessions, inventory, apartments, item) -> int 
             ):
                 ad = stored
                 stored_fallback = True
+                archived = stored.rooms == "1"
             else:
                 await apartments.mark_inactive(apartment.id)
                 return await _skip(inventory, item.id, "not_found")
@@ -226,7 +234,7 @@ async def _publish_item(settings, sessions, inventory, apartments, item) -> int 
     # endpoint temporarily omits it.
     if not ad.phone:
         ad = ad.model_copy(update={"phone": stored.phone})
-    if not binding and not (is_requested and stored_fallback):
+    if not archived and not binding and not (is_requested and stored_fallback):
         apartment = await apartments.upsert_discovered(
             ad, discovery_priority=apartment.discovery_priority
         )
@@ -248,7 +256,7 @@ async def _publish_item(settings, sessions, inventory, apartments, item) -> int 
         max_photos=settings.max_photos_per_apartment,
     )
     try:
-        message = await publisher.publish(apartment.id, ad)
+        message = await publisher.publish(apartment.id, ad, **({"archived": True} if archived else {}))
         # A Telegram acknowledgement is the point of no return. Mark the queue
         # terminal first so a later DB metadata error can never resend the card.
         await inventory.finish_item(item.id, status="published")
@@ -258,6 +266,7 @@ async def _publish_item(settings, sessions, inventory, apartments, item) -> int 
                 chat_id=settings.telegram_group_id,
                 message_id=message.message_id,
                 acknowledged_at=getattr(message, "date", None),
+                archived=archived,
             )
         except Exception:
             logger.exception(

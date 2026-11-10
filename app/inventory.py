@@ -53,7 +53,7 @@ DISCOVERY_PERIOD_TARGET = (MAX_PUBLICATIONS_PER_DAY + 1) // 2
 PUBLICATION_SPACING_MINUTES = 10.5
 MIN_PUBLICATION_GAP_MINUTES = 10
 INVENTORY_CLAIM_LOCK_ID = 731_290_512
-PUBLICATION_POLICY_VERSION = "publication-owner-unknown-fresh-70-per-day-v21"
+PUBLICATION_POLICY_VERSION = "publication-balanced-rooms-archive-v22"
 # Two equal 10.5-hour periods cover 05:00 through 02:00 the next day.
 PUBLICATION_PERIOD_MINUTES = 630
 
@@ -236,6 +236,8 @@ def _pick_for_window(
             district = normalized_district(item.district) or "unknown"
             bucket = price_bucket(item.price)
             return (
+                room_counts.get(item.rooms, 0),
+                not getattr(item, "active", True) or getattr(item, "availability_status", None) == "unavailable",
                 price_mix_rank(bucket, price_counts),
                 rental_value_band(item.price, item.rooms, getattr(item, "source_description", None)),
                 -district_priority(item.district),
@@ -392,12 +394,17 @@ def mix_sellers(items: list[Apartment]) -> list[Apartment]:
 
 
 async def _balanced_stock(session: AsyncSession, statement) -> list[Apartment]:
-    """Load confirmed owners and unclassified authors from fresh inventory."""
-    return list((await session.scalars(
-        statement.where(
-            _allowed_seller_filter(),
-        ).limit(MAX_FRESH_STOCK_LOAD)
-    )).all())
+    """Keep a busy room type from crowding the other types out of the stock."""
+    base = statement.where(_allowed_seller_filter())
+    rows = []
+    share = max(1, MAX_FRESH_STOCK_LOAD // len(ALLOWED_ROOMS))
+    for rooms in ("1", "studio", "2"):
+        rows.extend((await session.scalars(base.where(Apartment.rooms == rooms).limit(share))).all())
+    if len(rows) < MAX_FRESH_STOCK_LOAD:
+        rows.extend((await session.scalars(base.where(Apartment.id.not_in([row.id for row in rows]))
+            .limit(MAX_FRESH_STOCK_LOAD - len(rows)))).all())
+    return rows
+
 
 
 class InventoryRepository:
@@ -999,6 +1006,8 @@ class InventoryRepository:
                         ApartmentInventoryQueue.window_key,
                         Apartment.rooms,
                         Apartment.source_description,
+                        Apartment.active,
+                        Apartment.availability_status,
                     )
                     .join(Apartment)
                     .where(
@@ -1061,8 +1070,20 @@ class InventoryRepository:
                 if as_utc(event.published_at) <= now:
                     bucket = price_bucket(event.price)
                     day_price_counts[bucket] = day_price_counts.get(bucket, 0) + 1
+            published_ids = [event.apartment_id for event in day_publications if as_utc(event.published_at) <= now]
+            room_by_id = dict((await session.execute(select(Apartment.id, Apartment.rooms).where(
+                Apartment.id.in_(published_ids)))).all())
+            recent_rooms = [room_by_id.get(apartment_id) for apartment_id in published_ids[:2]]
+            day_room_counts = {}
+            for apartment_id in published_ids:
+                room = room_by_id.get(apartment_id)
+                day_room_counts[room] = day_room_counts.get(room, 0) + 1
             selected_id = min(due_rows, key=lambda row: (
                 not row[4].startswith(REQUESTED_WINDOW_PREFIX),
+                row[5] in recent_rooms,
+                bool(recent_rooms) and row[5] == recent_rooms[0],
+                day_room_counts.get(row[5], 0),
+                not row[7] or row[8] == "unavailable",
                 price_mix_rank(price_bucket(row[3]), day_price_counts),
                 bool(recent_buckets) and price_bucket(row[3]) == recent_buckets[0],
                 rental_value_band(row[3], row[5], row[6]),

@@ -7,7 +7,7 @@ from collections import Counter
 from sqlalchemy import select, text
 from app.config import get_settings
 from app.database import create_engine_and_session
-from app.models import ApartmentInventoryQueue
+from app.models import Apartment, ApartmentInventoryQueue
 
 
 async def main():
@@ -19,6 +19,12 @@ async def main():
             rows = list((await session.scalars(select(ApartmentInventoryQueue))).all())
             def utc(value):
                 return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+            stock = list((await session.execute(select(Apartment.rooms, Apartment.active, Apartment.availability_status, Apartment.published_at))).all())
+            print('ROOM_DIAGNOSTICS=' + json.dumps({
+                'available': dict(Counter(row.rooms for row in stock if row.active and row.availability_status != 'unavailable')),
+                'recently_published': dict(Counter(row.rooms for row in stock if row.published_at and utc(row.published_at) > now - timedelta(hours=48))),
+                'unavailable': dict(Counter(row.rooms for row in stock if row.availability_status == 'unavailable')),
+            }), flush=True)
             print('QUEUE_DIAGNOSTICS=' + json.dumps({
                 'now': now.isoformat(),
                 'statuses': dict(Counter(row.status for row in rows)),

@@ -1,5 +1,4 @@
-"""Grant lifetime access to explicit bot users and notify them once."""
-
+"""Resolve explicit Telegram usernames and create idempotent complimentary grants."""
 from __future__ import annotations
 
 import asyncio
@@ -9,111 +8,77 @@ from datetime import datetime, timezone
 
 import httpx
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 from app.database import create_engine_and_session
-from app.models import PaymentHistory, PaymentRequest
+from app.models import PaymentHistory, PaymentRequest, SupportTicket, WantedAd
 from app.payment_plans import LIFETIME_PLAN
-from app.payments.repository import PaymentRepository
 
 
-MESSAGE = (
-    "✅ Доступ уже выдан. Теперь вы можете открыть Mini App и получить номера квартир."
-)
+async def grant_user(sessions, user_id: int, *, admin_id: int, username: str) -> str:
+    if admin_id <= 0 or user_id <= 0:
+        raise ValueError("An explicit administrator and user are required")
+    try:
+        async with sessions.begin() as session:
+            existing = await session.scalar(select(PaymentHistory.id).where(
+                PaymentHistory.telegram_user_id == user_id,
+                PaymentHistory.plan == LIFETIME_PLAN,
+                PaymentHistory.access_expires_at.is_(None),
+            ).limit(1))
+            active_request = await session.scalar(select(PaymentRequest.id).where(
+                PaymentRequest.telegram_user_id == user_id,
+                PaymentRequest.plan == LIFETIME_PLAN,
+                PaymentRequest.status == "approved",
+                PaymentRequest.access_expires_at.is_(None),
+            ).limit(1))
+            if existing is not None or active_request is not None:
+                return "already_active"
+            session.add(PaymentHistory(
+                payment_request_id=0, telegram_user_id=user_id, username=username,
+                apartment_id=0, plan=LIFETIME_PLAN, amount=0,
+                provider_payment_id=f"admin-lifetime-{user_id}",
+                paid_at=datetime.now(timezone.utc), access_expires_at=None,
+            ))
+        return "granted"
+    except IntegrityError:
+        # The unique grant ID serializes concurrent invocations for this user.
+        return "already_active"
 
 
-async def main() -> None:
-    requested = {
-        value.strip().lstrip("@").casefold()
-        for value in os.environ["LIFETIME_GRANT_USERNAMES"].split(",")
-        if value.strip()
-    }
+async def main():
+    requested = {v.strip().lstrip("@").casefold() for v in os.environ["LIFETIME_GRANT_USERNAMES"].split(",") if v.strip()}
     admin_id = int(os.environ["ADMIN_USER_ID"])
     engine, sessions = create_engine_and_session(os.environ["DATABASE_URL"])
-    resolved: dict[str, set[int]] = {name: set() for name in requested}
-    async with sessions() as session:
-        rows = (
-            await session.execute(
-                select(PaymentRequest.username, PaymentRequest.telegram_user_id)
-                .where(func.lower(PaymentRequest.username).in_(requested))
-            )
-        ).all()
-    for username, user_id in rows:
-        if username:
-            resolved.setdefault(username.casefold(), set()).add(int(user_id))
-    targets = [next(iter(ids)) for ids in resolved.values() if len(ids) == 1]
-    granted = 0
-    already_active = 0
-    now = datetime.now(timezone.utc)
+    candidates = {admin_id}
     try:
-        for user_id in targets:
-            async with sessions.begin() as session:
-                existing = await session.scalar(
-                    select(PaymentRequest.id).where(
-                        PaymentRequest.telegram_user_id == user_id,
-                        PaymentRequest.status == "approved",
-                        PaymentRequest.plan == LIFETIME_PLAN,
-                        PaymentRequest.access_expires_at.is_(None),
-                    ).limit(1)
-                )
-                if existing is None:
-                    existing = await session.scalar(
-                        select(PaymentHistory.id).where(
-                            PaymentHistory.telegram_user_id == user_id,
-                            PaymentHistory.plan == LIFETIME_PLAN,
-                            PaymentHistory.access_expires_at.is_(None),
-                        ).limit(1)
-                    )
-                if existing is not None:
-                    already_active += 1
+        async with sessions() as session:
+            for model in (PaymentRequest, PaymentHistory, SupportTicket, WantedAd):
+                candidates.update((await session.scalars(select(model.telegram_user_id).where(
+                    func.lower(model.username).in_(requested)))).all())
+        resolved = {name: set() for name in requested}
+        token = os.environ["TELEGRAM_BOT_TOKEN"].strip()
+        async with httpx.AsyncClient(timeout=20) as client:
+            for user_id in candidates:
+                try:
+                    result = (await client.post(f"https://api.telegram.org/bot{token}/getChat", json={"chat_id":int(user_id)})).json()
+                except Exception:
                     continue
-                request = await session.scalar(
-                    select(PaymentRequest)
-                    .where(PaymentRequest.telegram_user_id == user_id)
-                    .order_by(PaymentRequest.created_at.desc())
-                    .limit(1)
-                    .with_for_update()
-                )
-                if request is None:
-                    continue
-                request.plan = LIFETIME_PLAN
-                PaymentRepository._grant_access(
-                    session, request, now=now, approved_by=admin_id
-                )
-                await PaymentRepository._close_sibling_requests(
-                    session, request, now=now, approved_by=admin_id
-                )
-                granted += 1
+                chat = result.get("result", {}) if result.get("ok") else {}
+                name = str(chat.get("username") or "").casefold()
+                if name in resolved and chat.get("type") == "private" and int(chat.get("id",0)) == int(user_id):
+                    resolved[name].add(int(user_id))
+        outcomes = []
+        for name, ids in resolved.items():
+            if len(ids) == 1:
+                outcomes.append(await grant_user(sessions, next(iter(ids)), admin_id=admin_id, username=name))
+        summary = {"requested":len(requested), "resolved":len(outcomes),
+            "granted":outcomes.count("granted"), "already_active":outcomes.count("already_active"),
+            "missing_or_ambiguous":len(requested)-len(outcomes), "notifications_sent":0}
+        print(json.dumps(summary))
+        if summary["missing_or_ambiguous"]:
+            raise SystemExit(2)
     finally:
         await engine.dispose()
-
-    receipts: list[dict[str, object]] = []
-    token = os.environ["TELEGRAM_BOT_TOKEN"].strip()
-    async with httpx.AsyncClient(timeout=20) as client:
-        for chat_id in targets:
-            payload = (
-                await client.post(
-                    f"https://api.telegram.org/bot{token}/sendMessage",
-                    json={"chat_id": chat_id, "text": MESSAGE},
-                )
-            ).json()
-            receipts.append({
-                "sent": bool(payload.get("ok")),
-                "error": None if payload.get("ok") else payload.get("description"),
-            })
-    sent = sum(bool(row["sent"]) for row in receipts)
-    summary = {
-        "status": "success" if len(targets) == len(requested) and sent == len(targets) else "partial",
-        "requested": len(requested),
-        "resolved": len(targets),
-        "granted": granted,
-        "already_active": already_active,
-        "notified": sent,
-        "missing_or_ambiguous": len(requested) - len(targets),
-        "receipts": receipts,
-    }
-    print(json.dumps(summary, ensure_ascii=False))
-    if summary["status"] != "success":
-        raise SystemExit(2)
 
 
 if __name__ == "__main__":

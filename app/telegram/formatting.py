@@ -91,7 +91,13 @@ def format_public_apartment(
     *,
     bot_username: str,
     wanted_deep_link: bool = False,
+    archived: bool = False,
 ) -> str:
+    if archived:
+        text = format_apartment(ad).replace("✅ Актуально на момент публикации", "⚪️ Архив: уже сдана или снята с публикации")
+        if wanted_deep_link:
+            text = escape(text)
+        return text + "\n\nЭто архивный пример. Для аренды смотрите актуальные объявления."
     username = bot_username.lstrip("@")
     if wanted_deep_link:
         apartment = escape(format_apartment(ad))

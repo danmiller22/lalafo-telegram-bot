@@ -1,0 +1,139 @@
+{
+  "checked_at": "2026-11-10T00:29:10.746364+00:00",
+  "method": "Public Telegram previews; latest visible page per feed. Audience is displayed subscriber count, not posting volume. Owner terms are self-claims, not verified identity. Eligible counts apply current budget, age and room filters, and do not measure total supply.",
+  "selected": [
+    {
+      "url": "https://t.me/s/apartbishkek",
+      "title": "Квартиры Бишкек | аренда и подселение",
+      "audience": "32.8K subscribers 672 photos 2 videos 36 links",
+      "sample_posts": 12,
+      "last_post": "2026-11-09T17:18:33+00:00",
+      "eligible": 0,
+      "eligible_owner_claims": 0,
+      "owner_claims": 8,
+      "agent_claims": 0,
+      "photos": 12
+    },
+    {
+      "url": "https://t.me/s/bishkekarendakv",
+      "title": "Аренда квартир | Бишкек",
+      "audience": "22.9K subscribers 24.2K photos 417 videos 5.41K links",
+      "sample_posts": 6,
+      "last_post": "2026-11-09T16:39:34+00:00",
+      "eligible": 0,
+      "eligible_owner_claims": 0,
+      "owner_claims": 0,
+      "agent_claims": 0,
+      "photos": 25
+    },
+    {
+      "url": "https://t.me/s/arenda_kvartiry_kg",
+      "title": "Аренда квартир в Бишкеке",
+      "audience": "5.18K subscribers 33.6K photos 376 videos 14 links",
+      "sample_posts": 4,
+      "last_post": "2026-11-09T13:28:57+00:00",
+      "eligible": 1,
+      "eligible_owner_claims": 0,
+      "owner_claims": 0,
+      "agent_claims": 0,
+      "photos": 26
+    },
+    {
+      "url": "https://t.me/s/kvartirabish",
+      "title": "Аренда квартир в Бишкеке",
+      "audience": "11.1K subscribers 318 photos 3 videos 60 links",
+      "sample_posts": 5,
+      "last_post": "2026-11-09T10:46:09+00:00",
+      "eligible": 0,
+      "eligible_owner_claims": 0,
+      "owner_claims": 0,
+      "agent_claims": 0,
+      "photos": 22
+    },
+    {
+      "url": "https://t.me/s/cosmoddom",
+      "title": "Космо дом",
+      "audience": "3.75K subscribers 307K photos 237 videos 1 file 44.8K links",
+      "sample_posts": 6,
+      "last_post": "2026-11-09T13:04:45+00:00",
+      "eligible": 0,
+      "eligible_owner_claims": 0,
+      "owner_claims": 0,
+      "agent_claims": 0,
+      "photos": 20
+    },
+    {
+      "url": "https://t.me/s/Bishkek_Batir_izhara",
+      "title": "Бишкек Квартира Аренда 🇰🇬",
+      "audience": "1.69K subscribers 572 photos 105 videos 99 links",
+      "sample_posts": 20,
+      "last_post": "2026-11-09T17:33:01+00:00",
+      "eligible": 1,
+      "eligible_owner_claims": 0,
+      "owner_claims": 1,
+      "agent_claims": 2,
+      "photos": 6
+    },
+    {
+      "url": "https://t.me/s/Bishkek_izhara_Batir",
+      "title": "Бишкек Квартира Аренда 🇰🇬",
+      "audience": "1.8K subscribers 558 photos 60 videos 67 links",
+      "sample_posts": 20,
+      "last_post": "2026-11-09T17:32:38+00:00",
+      "eligible": 0,
+      "eligible_owner_claims": 0,
+      "owner_claims": 0,
+      "agent_claims": 1,
+      "photos": 2
+    },
+    {
+      "url": "https://t.me/s/renthousebish",
+      "title": "Аренда квартир Бишкек 🇰🇬",
+      "audience": "299 subscribers 5.62K photos 41 videos 15 links",
+      "sample_posts": 6,
+      "last_post": "2026-11-09T10:13:06+00:00",
+      "eligible": 0,
+      "eligible_owner_claims": 0,
+      "owner_claims": 0,
+      "agent_claims": 0,
+      "photos": 20
+    },
+    {
+      "url": "https://t.me/s/wellcometoKGboard",
+      "title": "Доска объявлений Кыргызстан",
+      "audience": "7.38K subscribers 483 photos 13 videos 71 links",
+      "sample_posts": 6,
+      "last_post": "2026-11-09T18:22:11+00:00",
+      "eligible": 0,
+      "eligible_owner_claims": 0,
+      "owner_claims": 1,
+      "agent_claims": 0,
+      "photos": 17
+    },
+    {
+      "url": "https://t.me/s/kvartira_bishkek",
+      "title": "Аренда квартиры Бишкек 🇰🇬",
+      "audience": "11K subscribers 2 photos 1 link",
+      "sample_posts": 3,
+      "last_post": "2026-11-06T07:38:40+00:00",
+      "eligible": 0,
+      "eligible_owner_claims": 0,
+      "owner_claims": 0,
+      "agent_claims": 0,
+      "photos": 2
+    },
+    {
+      "url": "https://t.me/s/ned_kg",
+      "title": "Недвижимость КЫРГЫЗСТАН 🇰🇬",
+      "audience": "2.13K subscribers 4 photos 1 link",
+      "sample_posts": 6,
+      "last_post": "2026-11-06T07:38:30+00:00",
+      "eligible": 0,
+      "eligible_owner_claims": 0,
+      "owner_claims": 0,
+      "agent_claims": 0,
+      "photos": 4
+    }
+  ],
+  "removed_reason": "Duplicate, empty/unreadable public preview, stale latest post, or unrelated commercial/sales feed. No new owner-only channel was verified in this audit. Existing live large mixed boards retained; explicit realtors excluded per post."
+}
