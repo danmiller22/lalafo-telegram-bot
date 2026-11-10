@@ -588,6 +588,7 @@ class ApartmentRepository:
         self, apartment_id: int, *, chat_id: int, message_id: int,
         promote_requested: bool = False,
         acknowledged_at: datetime | None = None,
+        archived: bool = False,
     ) -> Apartment:
         async with self.sessions.begin() as session:
             apartment = await session.get(Apartment, apartment_id)
@@ -615,10 +616,10 @@ class ApartmentRepository:
             apartment.telegram_message_id = message_id
             apartment.published_at = now
             apartment.publication_status = "published"
-            apartment.active = True
-            apartment.availability_status = "active"
+            apartment.active = not archived
+            apartment.availability_status = "unavailable" if archived else "active"
             apartment.availability_checked_at = apartment.published_at
-            apartment.availability_reason = "publication_age_window"
+            apartment.availability_reason = "archived_publication" if archived else "publication_age_window"
             apartment.keyboard_version = APARTMENT_KEYBOARD_VERSION
             await session.flush()
             await session.refresh(apartment)

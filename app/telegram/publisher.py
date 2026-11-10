@@ -5,7 +5,7 @@ import logging
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramNetworkError, TelegramRetryAfter, TelegramServerError
-from aiogram.types import InlineKeyboardMarkup, InputMediaPhoto, Message
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, Message
 
 from app.lalafo.models import LalafoAd
 from app.security import TokenSigner
@@ -101,7 +101,11 @@ class TelegramPublisher:
             getattr(message, "message_id", None) is not None for message in messages
         )
 
-    async def publish(self, apartment_id: int, ad: LalafoAd, *, reply_markup: InlineKeyboardMarkup | None = None) -> Message:
+    async def publish(self, apartment_id: int, ad: LalafoAd, *, reply_markup: InlineKeyboardMarkup | None = None, archived: bool = False) -> Message:
+        if archived:
+            reply_markup = InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="🏠 Актуальные квартиры", url=f"https://t.me/{self.bot_username.lstrip('@')}")
+            ]])
         if not is_supported_source(ad):
             raise TelegramPublishError("Unsupported apartment source")
         if not author_policy_eligible(seller_type=ad.seller_type, owner_listing=ad.owner_listing):
@@ -203,6 +207,7 @@ class TelegramPublisher:
                     ad,
                     bot_username=self.bot_username,
                     wanted_deep_link=True,
+                    archived=archived,
                 ),
                 parse_mode="HTML",
                 reply_markup=reply_markup if reply_markup is not None else apartment_keyboard(
