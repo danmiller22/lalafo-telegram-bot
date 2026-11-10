@@ -3,9 +3,11 @@ from __future__ import annotations
 import asyncio
 import logging
 
+import httpx
+
 from aiogram import Bot
-from aiogram.exceptions import TelegramNetworkError, TelegramRetryAfter, TelegramServerError
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, Message
+from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError, TelegramRetryAfter, TelegramServerError
+from aiogram.types import BufferedInputFile, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, Message
 
 from app.lalafo.models import LalafoAd
 from app.security import TokenSigner
@@ -17,7 +19,7 @@ from app.lalafo.exclusions import is_excluded_agency
 
 logger = logging.getLogger(__name__)
 TELEGRAM_ALBUM_LIMIT = 10
-TELEGRAM_REQUEST_TIMEOUT_SECONDS = 7.0
+TELEGRAM_REQUEST_TIMEOUT_SECONDS = 15.0
 
 
 class TelegramPublishError(RuntimeError):
@@ -101,6 +103,49 @@ class TelegramPublisher:
             getattr(message, "message_id", None) is not None for message in messages
         )
 
+    async def _fresh_photo_url(self, ad, fallback: str) -> str:
+        if not ad.source_url.startswith("https://t.me/"):
+            return fallback
+        # Public preview image URLs expire. Re-read the same source post;
+        # preserve its description/price/contact snapshot and refresh media only.
+        from bs4 import BeautifulSoup
+        from app.telegram.sources import PHOTO_URL_RE
+        post = ad.source_url.removeprefix("https://t.me/")
+        try:
+            async with httpx.AsyncClient(timeout=5, follow_redirects=True) as client:
+                response = await client.get("https://t.me/s/" + post)
+                response.raise_for_status()
+            soup = BeautifulSoup(response.text, "html.parser")
+            for message in soup.select(".tgme_widget_message[data-post]"):
+                if message.get("data-post") != post:
+                    continue
+                wrapper = message.find_parent(class_="tgme_widget_message_wrap") or message
+                for photo in wrapper.select(".tgme_widget_message_photo_wrap[style]"):
+                    match = PHOTO_URL_RE.search(str(photo.get("style") or ""))
+                    if match:
+                        return match.group(1)
+        except Exception:
+            logger.warning("Source photo refresh failed; retaining existing media URL")
+        return fallback
+
+    async def _upload_photo(self, url: str):
+        # Telegram's URL fetcher cannot always read public CDN URLs. Download
+        # a bounded image locally only after a definite API rejection.
+        data = bytearray()
+        async with httpx.AsyncClient(timeout=5, follow_redirects=True) as client:
+            async with client.stream("GET", url) as response:
+                response.raise_for_status()
+                if not response.headers.get("content-type", "").startswith("image/"):
+                    raise TelegramPublishError("Photo source is not an image")
+                async for chunk in response.aiter_bytes():
+                    data.extend(chunk)
+                    if len(data) > 5 * 1024 * 1024:
+                        raise TelegramPublishError("Photo source exceeds upload limit")
+        if not data:
+            raise TelegramPublishError("Photo source is empty")
+        return await self._retry(self.bot.send_photo, is_send=True,
+            chat_id=self.chat_id, photo=BufferedInputFile(bytes(data), filename="apartment.jpg"))
+
     async def publish(self, apartment_id: int, ad: LalafoAd, *, reply_markup: InlineKeyboardMarkup | None = None, archived: bool = False) -> Message:
         if archived:
             reply_markup = InlineKeyboardMarkup(inline_keyboard=[[
@@ -112,7 +157,10 @@ class TelegramPublisher:
             raise TelegramPublishError("Confirmed realtor or inconsistent owner metadata")
         if is_excluded_agency(ad):
             raise TelegramPublishError("Excluded agency source")
-        if ad.rooms not in PUBLIC_ROOMS:
+        from app.shared_housing import SHARED_ROOMS, valid_shared
+        if ad.rooms == SHARED_ROOMS and not valid_shared(ad)[0]:
+            raise TelegramPublishError("Invalid shared housing offer")
+        if ad.rooms not in (*PUBLIC_ROOMS, SHARED_ROOMS):
             raise TelegramPublishError("Only studios, one-room and two-room apartments are allowed")
         # A bad remote image can hold Telegram's media fetch open for minutes.
         # A compact single album gives renters enough context and keeps one
@@ -187,6 +235,15 @@ class TelegramPublisher:
                         raise
                     except Exception as exc:
                         last_error = exc
+                if not sent and isinstance(last_error, TelegramBadRequest):
+                    try:
+                        photo_url = await self._fresh_photo_url(ad, chunk[0])
+                        uploaded = await self._upload_photo(photo_url)
+                        sent = [uploaded] if self._photos_acknowledged([uploaded]) else []
+                    except TelegramPublishAmbiguousError:
+                        raise
+                    except Exception as upload_error:
+                        last_error = upload_error
                 if not sent:
                     logger.warning(
                         "Telegram could not publish apartment photos; skipping card: %s",

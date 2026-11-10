@@ -92,7 +92,7 @@ async def test_stalled_telegram_send_requires_reconciliation_without_another_sen
         bot_username="testbot",
         support_url="https://t.me/support",
     )
-    monkeypatch.setattr(publisher_module, 'TELEGRAM_REQUEST_TIMEOUT_SECONDS', 0.001)
+    publisher.request_timeout_seconds = 0.001
 
     with pytest.raises(TelegramPublishAmbiguousError):
         await publisher.publish(77, make_ad())
@@ -372,3 +372,43 @@ async def test_publisher_sends_each_supported_room_type(rooms, label):
     result = await publisher.publish(77, make_ad().model_copy(update={"rooms": rooms}))
     assert result.message_id == 2
     assert label in bot.send_message.await_args.kwargs["text"]
+
+@pytest.mark.asyncio
+async def test_shared_offer_is_published_with_photos():
+    from tests.test_shared_housing import shared_ad
+    bot = SimpleNamespace(send_photo=AsyncMock(return_value=SimpleNamespace(message_id=1)),
+                          send_message=AsyncMock(return_value=SimpleNamespace(message_id=2)))
+    publisher = TelegramPublisher(bot, chat_id=-1001, signer=TokenSigner('s'*32),
+                                 bot_username='testbot', support_url='https://t.me/support')
+    result = await publisher.publish(1, shared_ad())
+    assert result.message_id == 2
+    assert 'Подселение' in bot.send_message.await_args.kwargs['text']
+
+@pytest.mark.asyncio
+async def test_definitely_rejected_remote_photo_is_uploaded(monkeypatch):
+    import httpx
+    from aiogram.exceptions import TelegramBadRequest
+    from aiogram.methods import SendPhoto
+    from aiogram.types import BufferedInputFile
+    original = httpx.AsyncClient
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, headers={'content-type':'image/jpeg'}, content=b'jpeg-test-bytes'))
+    monkeypatch.setattr('app.telegram.publisher.httpx.AsyncClient', lambda **kw: original(transport=transport, **kw))
+    rejected = TelegramBadRequest(method=SendPhoto(chat_id=-1001,photo='https://img.example/1.jpg'),message='failed to get HTTP URL content')
+    bot = SimpleNamespace(send_photo=AsyncMock(side_effect=[rejected,rejected,SimpleNamespace(message_id=1)]),
+                          send_message=AsyncMock(return_value=SimpleNamespace(message_id=2)))
+    publisher = TelegramPublisher(bot,chat_id=-1001,signer=TokenSigner('s'*32),bot_username='testbot',support_url='https://t.me/support')
+    result = await publisher.publish(1,make_ad().model_copy(update={'photo_urls':['https://img.example/1.jpg']}))
+    assert result.message_id == 2
+    uploaded = bot.send_photo.await_args.kwargs['photo']
+    assert isinstance(uploaded, BufferedInputFile) and uploaded.data == b'jpeg-test-bytes'
+
+@pytest.mark.asyncio
+async def test_expired_telegram_photo_uses_only_the_same_source_post(monkeypatch):
+    import httpx
+    original = httpx.AsyncClient
+    html = '''<div class="tgme_widget_message_wrap"><div class="tgme_widget_message" data-post="source/20"><a class="tgme_widget_message_photo_wrap" style="background-image:url('https://img.example/wrong.jpg')"></a></div></div><div class="tgme_widget_message_wrap"><div class="tgme_widget_message" data-post="source/21"><a class="tgme_widget_message_photo_wrap" style="background-image:url('https://img.example/refreshed.jpg')"></a></div></div>'''
+    transport=httpx.MockTransport(lambda request:httpx.Response(200,text=html))
+    monkeypatch.setattr('app.telegram.publisher.httpx.AsyncClient',lambda **kw:original(transport=transport,**kw))
+    publisher=TelegramPublisher(SimpleNamespace(),chat_id=-1001,signer=TokenSigner('s'*32),bot_username='testbot',support_url='https://t.me/support')
+    ad=make_ad().model_copy(update={'source_url':'https://t.me/source/21'})
+    assert await publisher._fresh_photo_url(ad,'https://img.example/expired.jpg') == 'https://img.example/refreshed.jpg'
