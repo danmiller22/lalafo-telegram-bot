@@ -25,5 +25,6 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       - run: python -m tools.recover_failed_publications
+      - run: python -m tools.publish_due_shared_once
       - run: python -m scripts.publish_if_due
       - run: python -m tools.rental_reserve_status
