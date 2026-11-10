@@ -9,7 +9,7 @@ from app.promotions import publication_window
 from app.telegram.source_filter import is_lodging_offer
 
 SHARED_ROOMS = "shared"
-SHARED_DAILY_TARGET = 10
+SHARED_DAILY_TARGET = 6
 SHARED_MIN_PRICE = 3_000
 SHARED_MAX_PRICE = 25_000
 SHARED_GAP = timedelta(minutes=120)
@@ -22,6 +22,8 @@ def shared_offer(text: str) -> bool:
 
 
 def valid_shared(ad, *, city="Бишкек") -> tuple[bool, str]:
+    if getattr(ad, "seller_type", "unknown") not in (None, "unknown", "owner"):
+        return False, "shared_realtor"
     if not str(ad.source_url).startswith("https://t.me/"):
         return False, "shared_source"
     if ad.city.casefold() != city.casefold() or getattr(ad, "currency", "KGS").upper() != "KGS":
@@ -45,7 +47,7 @@ async def shared_deliveries(session, start, end):
 
 
 async def schedule_shared(session, *, now, day_start, day_end) -> int:
-    """Keep ten separate slots; refills cannot add a second daily allowance."""
+    """Keep six spaced slots; refills cannot add a second daily allowance."""
     sent = await shared_deliveries(session, day_start, day_end)
     pending = list((await session.scalars(select(ApartmentInventoryQueue).join(Apartment).where(
         Apartment.rooms == SHARED_ROOMS,
@@ -70,8 +72,8 @@ async def schedule_shared(session, *, now, day_start, day_end) -> int:
         if not valid_shared(ad)[0]:
             continue
         index = len(sent) + len(pending) + scheduled
-        # Ten slots across the existing 21-hour publication day.
-        slot = day_start + timedelta(minutes=45 + 126 * index)
+        # Six slots across the existing 21-hour publication day.
+        slot = day_start + timedelta(minutes=45 + 200 * index)
         slot = max(now, slot)
         if slot >= day_start + timedelta(hours=21) or scheduled >= remaining:
             break

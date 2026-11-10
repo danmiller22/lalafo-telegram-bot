@@ -21,6 +21,7 @@ from app.state import normalized_district, ListingIndex
 from app.listing_quality import district_priority, price_bucket, mix_prices, rental_value_band, price_mix_rank
 from app.listing_policy import OWNER_MAX_PRICE, PUBLIC_ROOMS, seller_policy_eligible
 from app.telegram.formatting import is_supported_source
+from app.shared_housing import schedule_shared, SHARED_ROOMS, SHARED_MIN_PRICE, SHARED_MAX_PRICE
 from app.promotions import publications_in_window, queue_due_promotions, REQUESTED_WINDOW_PREFIX
 
 
@@ -53,7 +54,7 @@ DISCOVERY_PERIOD_TARGET = (MAX_PUBLICATIONS_PER_DAY + 1) // 2
 PUBLICATION_SPACING_MINUTES = 10.5
 MIN_PUBLICATION_GAP_MINUTES = 10
 INVENTORY_CLAIM_LOCK_ID = 731_290_512
-PUBLICATION_POLICY_VERSION = "publication-balanced-rooms-archive-v22"
+PUBLICATION_POLICY_VERSION = "publication-value-six-shared-v23"
 # Two equal 10.5-hour periods cover 05:00 through 02:00 the next day.
 PUBLICATION_PERIOD_MINUTES = 630
 
@@ -238,8 +239,9 @@ def _pick_for_window(
             return (
                 room_counts.get(item.rooms, 0),
                 not getattr(item, "active", True) or getattr(item, "availability_status", None) == "unavailable",
-                price_mix_rank(bucket, price_counts),
                 rental_value_band(item.price, item.rooms, getattr(item, "source_description", None)),
+                item.price,
+                price_mix_rank(bucket, price_counts),
                 -district_priority(item.district),
                 item.price > 35_000,
                 price_counts.get(bucket, 0),
@@ -613,7 +615,7 @@ class InventoryRepository:
                     {"lock_id": INVENTORY_CLAIM_LOCK_ID},
                 )
             invalid_room_ids = select(Apartment.id).where(
-                Apartment.rooms.not_in(ALLOWED_ROOMS)
+                Apartment.rooms.not_in((*ALLOWED_ROOMS, SHARED_ROOMS))
             )
             await session.execute(
                 delete(ApartmentInventoryQueue).where(
@@ -923,9 +925,11 @@ class InventoryRepository:
                 )
                 .values(status="skipped", last_error="unsupported_source")
             )
+            await schedule_shared(session, now=now, day_start=day_start, day_end=day_end)
             ineligible_apartment_ids = select(Apartment.id).where(
                 ~or_(
                     (Apartment.rooms.in_(ALLOWED_ROOMS)) & Apartment.price.between(25_000, OWNER_MAX_PRICE),
+                    (Apartment.rooms == SHARED_ROOMS) & Apartment.price.between(SHARED_MIN_PRICE, SHARED_MAX_PRICE),
                 )
             )
             await session.execute(
@@ -1021,6 +1025,7 @@ class InventoryRepository:
                         or_(
                             ApartmentInventoryQueue.window_key.startswith(REQUESTED_WINDOW_PREFIX),
                             Apartment.rooms.in_(ALLOWED_ROOMS) & Apartment.price.between(25_000, OWNER_MAX_PRICE),
+                            (Apartment.rooms == SHARED_ROOMS) & Apartment.price.between(SHARED_MIN_PRICE, SHARED_MAX_PRICE),
                         ),
                         _supported_source_filter(),
                     )
@@ -1031,11 +1036,20 @@ class InventoryRepository:
                     .limit(200)
                 )
             ).all()
+            from app.shared_housing import shared_deliveries, SHARED_DAILY_TARGET, SHARED_GAP
+            shared_sent = await shared_deliveries(session, day_start, day_end)
+            last_event = next((e for e in day_publications if as_utc(e.published_at) <= now), None)
+            last_apartment = await session.get(Apartment, last_event.apartment_id) if last_event else None
+            shared_blocked = (len(shared_sent) >= SHARED_DAILY_TARGET
+                or bool(shared_sent) and now - as_utc(shared_sent[-1]) < SHARED_GAP
+                or last_apartment is not None and last_apartment.rooms == SHARED_ROOMS)
+            if shared_blocked:
+                due_rows = [row for row in due_rows if row[5] != SHARED_ROOMS]
             if not due_rows:
                 return None
             due_rows = [
                 row for row in due_rows
-                if seller_policy_eligible(
+                if (row[5] == SHARED_ROOMS and row[2] in ("owner", "unknown", None)) or seller_policy_eligible(
                     seller_type=row[2],
                     owner_listing=row[2] == "owner",
                     price=row[3],
@@ -1084,6 +1098,8 @@ class InventoryRepository:
                 bool(recent_rooms) and row[5] == recent_rooms[0],
                 day_room_counts.get(row[5], 0),
                 not row[7] or row[8] == "unavailable",
+                rental_value_band(row[3], row[5], row[6]),
+                row[3],
                 price_mix_rank(price_bucket(row[3]), day_price_counts),
                 bool(recent_buckets) and price_bucket(row[3]) == recent_buckets[0],
                 rental_value_band(row[3], row[5], row[6]),

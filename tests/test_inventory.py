@@ -1264,7 +1264,7 @@ async def test_late_day_catchup_can_use_future_reserved_stock(repositories):
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("publication_clock")
 @pytest.mark.parametrize('previous_sends,expected_prices', [(1, {33_000}), (2, {33_000})])
-async def test_claim_prioritizes_thirty_to_thirty_five_thousand(repositories, previous_sends, expected_prices):
+async def test_claim_prioritizes_cheapest_suitable_rent(repositories, previous_sends, expected_prices):
     apartments, _, sessions = repositories
     now = datetime.now(timezone.utc)
     previous = await apartments.upsert_discovered(make_ad(lalafo_id=280000, price=25_000, district="ЦУМ", phone="+996555280000"))
@@ -1283,10 +1283,10 @@ async def test_claim_prioritizes_thirty_to_thirty_five_thousand(repositories, pr
             session.add(ApartmentInventoryQueue(apartment_id=card.id,scheduled_at=now-timedelta(minutes=3-index),window_key="mixed-prices",sequence=index))
     claimed=await InventoryRepository(sessions).claim_due(now=now)
     assert claimed is not None
-    assert claimed.apartment.price in expected_prices
+    assert claimed.apartment.price == 25_000
 
 
-def test_period_mixes_all_ranges_with_half_at_thirty_to_thirty_five_when_stock_allows():
+def test_period_prefers_cheapest_stock_when_available():
     from collections import Counter
     stock = _apartments(300, central=True, start_id=300000)
     for index, item in enumerate(stock):
@@ -1296,8 +1296,8 @@ def test_period_mixes_all_ranges_with_half_at_thirty_to_thirty_five_when_stock_a
     start = datetime(2026, 10, 16, 5, tzinfo=timezone(timedelta(hours=6)))
     planned = plan_period(stock, period_start=start, rng=random.Random(42))
     counts = Counter(item.apartment.price for item in planned)
-    assert counts == {25_000: 12, 32_000: 18, 39_000: 5}
-    assert {item.apartment.price for item in planned[:10]} == {25_000, 32_000, 39_000}
+    assert counts == {25_000: 35}
+    assert all(item.apartment.price == 25_000 for item in planned[:10])
 
 
 @pytest.mark.parametrize("owner_count,realtor_count,expected_owners", [(120, 120, 70), (10, 120, 10), (120, 5, 70)])
@@ -1364,5 +1364,6 @@ def test_seventy_card_day_includes_unknown_authors_and_excludes_confirmed_agents
     second=plan_period([a for a in stock if a.id not in used],period_start=start+timedelta(minutes=630),rng=random.Random(53))
     selected=[p.apartment for p in first+second]
     assert len(selected)==70 and len({a.id for a in selected})==70
-    assert {a.seller_type for a in selected}=={'owner','unknown'}
+    assert {a.seller_type for a in selected}=={'unknown'}
+    assert all(a.price == 25_000 for a in selected)
     assert all(not a.owner_listing for a in selected if a.seller_type=='unknown')

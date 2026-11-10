@@ -344,9 +344,6 @@ def parse_telegram_apartments(
         # Negative agency mentions must not turn genuine owner posts into agents.
         author_text = re.sub(r"(?:ри[еэ]лтор\w*|агент\w*)\s+не\s+беспокоить", "", normalized)
         author_text = re.sub(r"\b(?:без|не)\s+(?:ри[еэ]лтор\w*|агент\w*|агенств\w*|комисси\w*|посредник\w*)", "", author_text)
-        if shared and not owner:
-            note("not_confirmed_owner")
-            continue
         realtor = any(term in author_text for term in (*REALTOR_TERMS, "агенств"))
         if realtor:
             note("confirmed_realtor")
