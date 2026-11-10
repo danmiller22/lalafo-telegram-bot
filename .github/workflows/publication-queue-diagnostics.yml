@@ -17,3 +17,4 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       - run: python -m tools.publication_queue_diagnostics
+      - run: python -m tools.publication_failure_probe
