@@ -1,18 +1,27 @@
 """Aggregate queue coverage without exposing listing or customer contacts."""
 import asyncio
 import json
-import math
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from app.config import get_settings
 from app.database import create_engine_and_session
 from app.models import ApartmentInventoryQueue
-from app.inventory import publication_window_open, publication_slots_due, as_utc
+from app.inventory import (publication_window_open, publication_slots_due,
+                           InventoryRepository, discovery_period_start,
+                           PUBLICATION_PERIOD_MINUTES, as_utc)
 
 async def main():
     engine, sessions = create_engine_and_session(get_settings().database_url)
     now = datetime.now(timezone.utc)
     try:
+        inventory = InventoryRepository(sessions)
+        await inventory.schedule_period(now=now)
+        # Prepare the following discovery period before its start when it
+        # falls inside the reserve horizon. Queue locks and fingerprints
+        # protect this against concurrent current-period collectors.
+        boundary = as_utc(discovery_period_start(now)) + timedelta(minutes=PUBLICATION_PERIOD_MINUTES)
+        if boundary <= now + timedelta(hours=6) and publication_window_open(boundary):
+            await inventory.schedule_period(now=boundary)
         async with sessions() as session:
             rows = list((await session.scalars(select(ApartmentInventoryQueue).where(
                 ApartmentInventoryQueue.status == 'queued',
