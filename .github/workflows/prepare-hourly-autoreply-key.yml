@@ -22,7 +22,7 @@ jobs:
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
-      CAMPAIGN_SESSION_KEY_NAME: hourly_autoreply_18209276_20261024
+      CAMPAIGN_SESSION_KEY_NAME: hourly_18225388_restore_20261112
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
