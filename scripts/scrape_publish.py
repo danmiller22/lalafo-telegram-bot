@@ -27,7 +27,7 @@ from app.lalafo.parser import LalafoParseError, is_allowed
 from app.lalafo.phone import mask_phone
 from app.models import Apartment
 from app.state import PostedState, ad_fingerprint, normalized_district
-from app.listing_quality import district_priority, mix_prices, rental_value_band
+from app.listing_quality import central_intersection, district_priority, mix_prices, rental_value_band
 from app.listing_policy import OWNER_MAX_PRICE, PUBLIC_ROOMS, listing_policy_eligible
 from app.telegram.formatting import format_apartment
 from app.telegram.source_filter import is_lodging_offer
@@ -110,8 +110,7 @@ DISCOVERY_COLLECTION_BUDGET_SECONDS = 300
 REALTOR_CANDIDATE_RESERVE_SHARE = 0.0
 OWNER_SHORTAGE_SEARCH_SECONDS = 60.0
 REALTOR_BATCH_SHARE = REALTOR_DAILY_SHARE
-# Retained for historical reporting helpers; two-bedroom cards are no longer
-# eligible for discovery or publication.
+# Two-bedroom value range; retained limits are used by reporting helpers.
 TWO_BEDROOM_MIN_PRICE = 25_000
 TWO_BEDROOM_MAX_PRICE = 40_000
 TWO_BEDROOM_DAILY_LIMIT = 20
@@ -328,7 +327,7 @@ def is_preferred_district(district: str | None) -> bool:
 
 def is_central_district(district: str | None) -> bool:
     normalized = (district or "").casefold().replace("ё", "е")
-    return any(term in normalized for term in CENTRAL_DISTRICT_TERMS)
+    return central_intersection(district) or any(term in normalized for term in CENTRAL_DISTRICT_TERMS)
 
 
 def candidate_quality(ad: LalafoAd) -> tuple:
@@ -337,6 +336,7 @@ def candidate_quality(ad: LalafoAd) -> tuple:
     return (
         minimum_price_for_rooms(ad.rooms) <= ad.price <= (
             TWO_BEDROOM_MAX_PRICE if ad.rooms == '2' else SOURCE_MAX_PRICE),
+        district_priority(ad.district) > 0,
         -rental_value_band(ad.price, ad.rooms, ad.source_description),
         district_priority(ad.district),
         is_central_district(ad.district),

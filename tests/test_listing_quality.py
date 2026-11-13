@@ -54,3 +54,18 @@ def test_same_rent_furnished_one_room_beats_unfurnished_or_studio():
     studio = ready.model_copy(update={'rooms': 'studio'})
     assert candidate_quality(ready) > candidate_quality(empty)
     assert candidate_quality(ready) > candidate_quality(studio)
+
+@pytest.mark.parametrize('area',['Манаса / Токтогула','Ибраимова / Боконбаева','Гоголя / Огонбаева','Тыныстанова / Боконбаева'])
+def test_specific_central_intersections_keep_area_priority(area):
+    from scripts.scrape_publish import is_central_district
+    assert district_priority(area)>0 and is_central_district(area)
+
+
+def test_known_good_area_beats_cheaper_unknown_location():
+    assert candidate_quality(make_ad(district='ЦУМ',price=35_000)) > candidate_quality(make_ad(district='Арча-Бешик',price=25_000))
+
+
+def test_value_bands_account_for_two_room_space():
+    from app.listing_quality import rental_value_band
+    assert rental_value_band(35_000,'2') < rental_value_band(35_000,'1')
+    assert rental_value_band(40_000,'2') < rental_value_band(40_000,'1')
