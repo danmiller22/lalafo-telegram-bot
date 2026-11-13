@@ -128,8 +128,7 @@ def test_showcase_card_is_compact_and_has_two_buttons() -> None:
         "📍 Центр\n"
         "🏙 Бишкек\n"
         "💰 35 000 сом\n"
-        "🔐 Депозит: не указан\n"
-        "✅ Актуально на момент публикации"
+        "🔐 Депозит: не указан"
     )
     forbidden = ("задаток", "Ищете квартиру", "Lalafo", "Телеграм")
     assert not any(value in text for value in forbidden)

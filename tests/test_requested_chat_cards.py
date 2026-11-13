@@ -39,7 +39,7 @@ async def test_reviewed_delivery_keeps_standard_buttons_and_is_idempotent(reposi
     assert message['reply_markup'].inline_keyboard[0][0].text == 'Получить номер'
     assert '/access?startapp=' in message['reply_markup'].inline_keyboard[0][0].url
     assert message['reply_markup'].inline_keyboard[1][0].text == '🛟 Техподдержка'
-    assert '✅ Актуально на момент публикации' in message['text']
+    assert 'Актуально' not in message['text']
     assert 'Без мебели.' not in message['text']
 
 

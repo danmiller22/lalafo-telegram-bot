@@ -149,7 +149,7 @@ class TelegramPublisher:
     async def publish(self, apartment_id: int, ad: LalafoAd, *, reply_markup: InlineKeyboardMarkup | None = None, archived: bool = False) -> Message:
         if archived:
             reply_markup = InlineKeyboardMarkup(inline_keyboard=[[
-                InlineKeyboardButton(text="🏠 Актуальные квартиры", url=f"https://t.me/{self.bot_username.lstrip('@')}")
+                InlineKeyboardButton(text="🏠 Смотреть квартиры", url=f"https://t.me/{self.bot_username.lstrip('@')}")
             ]])
         if not is_supported_source(ad):
             raise TelegramPublishError("Unsupported apartment source")
