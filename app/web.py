@@ -25,7 +25,7 @@ from pydantic import BaseModel
 from app.bot.main import BotRuntime, configure_bot_profile, create_runtime
 from app.availability import MAX_LISTING_AGE_DAYS
 from app.config import INVENTORY_SEARCH_URLS, get_settings
-from app.inventory import ALLOWED_ROOMS, REALTOR_DAILY_SHARE, MAX_PUBLICATIONS_PER_DAY, PUBLICATION_SPACING_MINUTES
+from app.inventory import ALLOWED_ROOMS, MAX_PUBLICATIONS_PER_DAY, PUBLICATION_SPACING_MINUTES
 from app.lalafo.auto_reply import LalafoAutoResponder
 from app.lalafo.models import LalafoAd
 from app.payment_plans import LIFETIME_PLAN, MONTH_PLAN, WEEK_PLAN, WEEK_PRICE, PERSONAL_PLAN, plan_price
@@ -1492,7 +1492,7 @@ async def health() -> JSONResponse:
             "publication_policy": {
                 "daily_target": MAX_PUBLICATIONS_PER_DAY, "start": "05:00", "end": "02:00",
                 "timezone": "Asia/Bishkek", "spacing_minutes": PUBLICATION_SPACING_MINUTES, "watermark_check": False,
-                "seller_mix": {"owner_or_unknown": 0.85, "realtor": 0.15},
+                "seller_mix": {"mode": "owner_or_unknown_first", "realtor": "shortage_fallback"},
                 "single_photo_duplicate_guard": True,
                 "requested_cards": {"total_publications": 3, "duration_hours": 24, "minimum_gap_hours": 6, "included_in_daily_target": True},
                 "telegram_source_channels": len(settings.telegram_source_channels),
@@ -1502,7 +1502,7 @@ async def health() -> JSONResponse:
                     "telegram_sources": len(settings.telegram_source_channels),
                     "lalafo_search_routes": len(INVENTORY_SEARCH_URLS),
                 },
-                "shared_housing": {"daily_target": 6, "minimum_gap_minutes": 120, "mixed_with_whole_apartments": True},
+                "shared_housing": {"enabled": False, "daily_target": 0},
             },
             "apartment_scheduler": (
                 {

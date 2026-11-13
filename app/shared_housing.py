@@ -9,7 +9,7 @@ from app.promotions import publication_window
 from app.telegram.source_filter import is_lodging_offer
 
 SHARED_ROOMS = "shared"
-SHARED_DAILY_TARGET = 6
+SHARED_DAILY_TARGET = 0
 SHARED_MIN_PRICE = 3_000
 SHARED_MAX_PRICE = 25_000
 SHARED_GAP = timedelta(minutes=120)
@@ -47,7 +47,9 @@ async def shared_deliveries(session, start, end):
 
 
 async def schedule_shared(session, *, now, day_start, day_end) -> int:
-    """Keep six spaced slots; refills cannot add a second daily allowance."""
+    """Legacy scheduler retained for callers; new shared slots are disabled."""
+    if SHARED_DAILY_TARGET <= 0:
+        return 0
     sent = await shared_deliveries(session, day_start, day_end)
     pending = list((await session.scalars(select(ApartmentInventoryQueue).join(Apartment).where(
         Apartment.rooms == SHARED_ROOMS,

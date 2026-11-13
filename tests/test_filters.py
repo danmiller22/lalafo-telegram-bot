@@ -163,14 +163,15 @@ def test_source_urls_follow_the_operator_filters():
     assert all("price[from]=25000&price[to]=40000" in url for url in ADDITIONAL_SEARCH_URLS)
 
 
-def test_discovery_pool_uses_full_budget_for_owner_sources():
+def test_discovery_reserves_capacity_for_owner_shortage():
     targets = source_candidate_targets(300, source_count=3, batch_limit=18)
 
-    assert REALTOR_CANDIDATE_RESERVE_SHARE == 0.0
-    assert targets == [150, 300, 300]
+    assert REALTOR_CANDIDATE_RESERVE_SHARE == 0.20
+    assert targets == [120, 240, 300]
 
 
-def test_inventory_sources_use_owner_capacity_only():
+
+def test_inventory_sources_keep_fallback_capacity():
     targets = source_candidate_targets(
         240,
         source_count=4,
@@ -178,7 +179,8 @@ def test_inventory_sources_use_owner_capacity_only():
         owner_source_count=2,
     )
 
-    assert targets == [120, 240, 240, 240]
+    assert targets == [96, 192, 216, 240]
+
 
 
 def test_supported_room_types_have_twenty_five_thousand_price_floor():

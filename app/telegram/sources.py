@@ -284,6 +284,9 @@ def parse_telegram_apartments(
         text = " ".join(lines)
         normalized = text.casefold().replace("ё", "е")
         shared = shared_offer(text)
+        if shared:
+            note("shared_disabled")
+            continue
         structured_apartment = "квартир" in normalized and _telegram_rooms(text) is not None
         if not any(term in normalized for term in OFFER_TERMS) and not structured_apartment and not shared:
             note("not_a_rental_offer")
@@ -515,7 +518,6 @@ async def fetch_telegram_apartments(
     )
     normal = [ad for ad in ordered if ad.seller_type != "realtor"]
     agents = [ad for ad in ordered if ad.seller_type == "realtor"]
-    agent_limit = min(len(agents), max(0, int(limit * .15)))
-    selected = normal[:max(1, limit) - agent_limit]
-    selected.extend(agents[:min(agent_limit, int(len(selected) * .15 / .85))])
+    selected = normal[:max(1, limit)]
+    selected.extend(agents[:max(0, max(1, limit) - len(selected))])
     return selected

@@ -20,7 +20,6 @@ from app.config import (
     get_settings,
 )
 from app.lalafo.client import LalafoClient, LalafoError, LalafoNotFound
-from app.inventory import REALTOR_DAILY_SHARE
 from app.lalafo.exclusions import is_permanently_excluded, is_excluded_agency
 from app.lalafo.models import LalafoAd, SearchAd
 from app.lalafo.parser import LalafoParseError, is_allowed
@@ -104,12 +103,11 @@ OWNER_OTHER_BATCH_SHARE = 0.50
 MAX_CANDIDATE_POOL = 300
 # Discovery must retain enough unique stock for the 70-card daily schedule
 # and its 48-hour no-repeat window.
-DISCOVERY_CANDIDATE_TARGET = 140
+DISCOVERY_CANDIDATE_TARGET = 210
 DISCOVERY_COLLECTION_BUDGET_SECONDS = 300
-# Realtor inventory is never collected or published.
-REALTOR_CANDIDATE_RESERVE_SHARE = 0.0
+# Reserve part of the crawl for fallback sources when owner supply is thin.
+REALTOR_CANDIDATE_RESERVE_SHARE = 0.20
 OWNER_SHORTAGE_SEARCH_SECONDS = 60.0
-REALTOR_BATCH_SHARE = REALTOR_DAILY_SHARE
 # Two-bedroom value range; retained limits are used by reporting helpers.
 TWO_BEDROOM_MIN_PRICE = 25_000
 TWO_BEDROOM_MAX_PRICE = 40_000
@@ -686,7 +684,7 @@ def select_owners_then_realtors(
     candidates: list[LalafoAd],
     limit: int,
 ) -> list[LalafoAd]:
-    """Prefer ordinary authors with a bounded realtor supplement."""
+    """Use ordinary authors first and fill remaining slots with agents."""
     if limit <= 0:
         return []
     eligible = deduplicate_candidates(
@@ -694,10 +692,9 @@ def select_owners_then_realtors(
     )
     normal = [ad for ad in eligible if ad.seller_type != "realtor"]
     agents = [ad for ad in eligible if ad.seller_type == "realtor"]
-    cap = min(math.floor(limit * .15), math.floor(len(normal) * .15 / .85))
-    selected = select_publish_batch_with_reposts(normal, {}, max(0, limit - min(cap, len(agents))))
-    selected += select_publish_batch_with_reposts(agents, {}, min(cap, len(agents)))
-    return mix_prices(selected)
+    selected = select_publish_batch_with_reposts(normal, {}, limit)
+    selected += select_publish_batch_with_reposts(agents, {}, max(0, limit - len(selected)))
+    return selected
 
 
 async def run(
@@ -1030,9 +1027,6 @@ async def run(
                 ):
                     continue
                 if telegram_ad.rooms == "shared":
-                    from app.shared_housing import valid_shared
-                    if apartments is not None and valid_shared(telegram_ad, city=settings.city)[0]:
-                        await apartments.upsert_discovered(telegram_ad)
                     continue
                 allowed, _ = is_allowed(
                     telegram_ad,

@@ -35,11 +35,14 @@ def test_public_cards_never_display_authorship(kind):
     assert not any(word in text.casefold() for word in ('собственник','риелтор','риэлтор','автор:','возможно'))
 
 @pytest.mark.parametrize('ordinary_count',[0,1,5,6,10,30,100])
-def test_thin_stock_cannot_become_mostly_realtor(ordinary_count):
+def test_agents_fill_only_missing_ordinary_slots(ordinary_count):
     normal=_apartments(ordinary_count,central=True,start_id=10000)
     agents=_apartments(100,central=True,start_id=20000,owner=False)
     planned=plan_period(normal+agents,period_start=datetime(2026,11,13,5,tzinfo=timezone(timedelta(hours=6))),rng=random.Random(2))
-    assert sum(p.apartment.seller_type=='realtor' for p in planned)<=len(planned)*.15
+    assert len(planned) == 35
+    assert sum(p.apartment.seller_type=='realtor' for p in planned) == max(0, 35-ordinary_count)
+    assert all(p.apartment.seller_type != 'realtor' for p in planned[:min(ordinary_count,35)])
+
 
 @pytest.mark.asyncio
 async def test_due_queue_rejects_blocked_contact_from_old_inventory(repositories):
@@ -54,8 +57,8 @@ async def test_due_queue_rejects_blocked_contact_from_old_inventory(repositories
         assert row.status=='skipped'
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('prior_ordinary,prior_agents,allowed',[(5,0,False),(6,0,True),(12,1,True),(60,10,False)])
-async def test_dispatch_hard_limit_uses_actual_published_share(repositories,prior_ordinary,prior_agents,allowed):
+@pytest.mark.parametrize('prior_ordinary,prior_agents,allowed',[(5,0,True),(6,0,True),(12,1,True),(60,10,False)])
+async def test_fallback_dispatch_still_obeys_daily_cap(repositories,prior_ordinary,prior_agents,allowed):
     apartments,_,sessions=repositories
     now=publication_day_start(datetime.now(timezone.utc)).astimezone(timezone.utc)+timedelta(hours=19)
     for index in range(prior_ordinary+prior_agents):
