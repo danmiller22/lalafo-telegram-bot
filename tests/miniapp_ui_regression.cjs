@@ -244,6 +244,29 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
   await opening;
   assert.deepEqual(warm.opened, ['https://example.com/prepared']);
   assert.equal(warm.node('access').hidden, false);
+  // A slow warm-up must not freeze the loaded payment window. The click joins
+  // the existing preparation rather than issuing a second provider request.
+  let finishPreparation, prepareCalls = 0, startCalls = 0;
+  const slowWarmup = setup(null, path => {
+    if (path.endsWith('/prepare')) {
+      prepareCalls++;
+      return new Promise(resolve => { finishPreparation = resolve; });
+    }
+    if (path.endsWith('/start')) {
+      startCalls++;
+      return Promise.resolve(response({status: 'awaiting_receipt', plan: 'week', payment_url: 'https://example.com/fast'}));
+    }
+    return Promise.resolve(response({status: 'unpaid'}));
+  }, true);
+  await new Promise(setImmediate);
+  assert.equal(slowWarmup.node('pay-now').disabled, false);
+  const slowClick = slowWarmup.node('pay-now').onclick();
+  assert.equal(startCalls, 0);
+  finishPreparation(response({payment_url: 'https://example.com/fast', expires_at_ms: Date.now() + 300000}));
+  await slowClick;
+  assert.equal(prepareCalls, 1);
+  assert.equal(startCalls, 1);
+  assert.deepEqual(slowWarmup.opened, ['https://example.com/fast']);
   // Back returns to tariffs without cancelling or losing the payment request.
   restored.node('back').onclick();
   assert.equal(restored.node('tariff-description').hidden, false);

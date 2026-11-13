@@ -137,7 +137,8 @@ def test_ready_checkout_is_recorded_before_opening_finik():
     assert "if (paymentStart) await paymentStart" in html
     assert 'button.textContent = "Открываем Finik…"' in html
     assert "setInterval" not in html
-    assert "setTimeout(poll, 5000)" in html
+    assert "attempts < 15 ? 2000 : 5000" in html
+    assert "setTimeout(poll, immediate ? 0 : 2000)" in html
 
 
 def test_checkout_configuration_is_script_safe():
