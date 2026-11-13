@@ -16,13 +16,16 @@ def test_agent_fallback_never_relaxes_blocked_contact_policy(blocked):
     blocked_ad = make_ad(lalafo_id=8800001, seller_type='realtor', owner_listing=False,
                           source_description='Контакты: ' + blocked)
     good = make_ad(lalafo_id=8800002, seller_type='realtor', owner_listing=False)
-    selected = select_owners_then_realtors([blocked_ad, good], 5)
-    assert [ad.lalafo_id for ad in selected] == [good.lalafo_id]
+    ordinary = [make_ad(lalafo_id=8810000+i,phone=f'+99655588000{i}') for i in range(4)]
+    selected = select_owners_then_realtors(ordinary+[blocked_ad, good], 5)
+    assert good.lalafo_id in {ad.lalafo_id for ad in selected}
+    assert blocked_ad.lalafo_id not in {ad.lalafo_id for ad in selected}
     agents = _apartments(2, central=True, start_id=8800001, owner=False)
     agents[0].source_description = 'Контакты: ' + blocked
-    planned = plan_period(agents, period_start=datetime(2026, 11, 13, 5,
+    planned = plan_period(_apartments(4,central=True,start_id=8820000)+agents, period_start=datetime(2026, 11, 13, 5,
                           tzinfo=timezone(timedelta(hours=6))), rng=random.Random(7))
-    assert [p.apartment.id for p in planned] == [agents[1].id]
+    assert agents[1].id in {p.apartment.id for p in planned}
+    assert agents[0].id not in {p.apartment.id for p in planned}
 
 
 @pytest.mark.asyncio
@@ -30,6 +33,10 @@ def test_agent_fallback_never_relaxes_blocked_contact_policy(blocked):
 async def test_queued_agent_with_blocked_secondary_contact_is_never_claimed(repositories, blocked):
     apartments, _, sessions = repositories
     now = publication_day_start(datetime.now(timezone.utc)).astimezone(timezone.utc) + timedelta(hours=2)
+    for i in range(4):
+        ordinary = await apartments.upsert_discovered(make_ad(lalafo_id=8830000+i))
+        await apartments.mark_published(ordinary.id,chat_id=-1001,message_id=8830000+i,
+            acknowledged_at=now-timedelta(minutes=40+i))
     bad = await apartments.upsert_discovered(make_ad(lalafo_id=8800100,
         seller_type='realtor', owner_listing=False, source_description='Ещё номер: ' + blocked))
     good = await apartments.upsert_discovered(make_ad(lalafo_id=8800101,

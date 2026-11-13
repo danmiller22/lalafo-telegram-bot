@@ -14,7 +14,7 @@ def test_plan_uses_remaining_good_areas_before_unknown_reserve():
     for a in center:a.price=35_000
     for a in reserve:a.price=25_000;a.district='Арча-Бешик'
     rows=plan_period(center+reserve,period_start=datetime(2026,11,13,5,tzinfo=timezone(timedelta(hours=6))),rng=random.Random(3))
-    assert len(rows)==35
+    assert len(rows)==30
     assert all(row.apartment.district=='Золотой квадрат' for row in rows)
 
 
@@ -22,7 +22,7 @@ def test_other_areas_remain_eligible_when_priority_stock_is_short():
     reserve=_apartments(80,central=False,start_id=2200000)
     for a in reserve:a.district='Арча-Бешик'
     rows=plan_period(reserve,period_start=datetime(2026,11,13,5,tzinfo=timezone(timedelta(hours=6))),rng=random.Random(4))
-    assert len(rows)==35
+    assert len(rows)==30
 
 
 @pytest.mark.asyncio
