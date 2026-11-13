@@ -47,7 +47,7 @@ def is_central_realtor_area(district: str | None) -> bool:
 
 
 def author_policy_eligible(*, seller_type: str | None, owner_listing: bool) -> bool:
-    """Accept unknown authors and confirmed owners, realtors subject to the publication quota."""
+    """Accept ordinary authors and realtor fallback without falsifying ownership."""
     return seller_type in {None, "unknown", "realtor"} or (seller_type == "owner" and owner_listing)
 
 

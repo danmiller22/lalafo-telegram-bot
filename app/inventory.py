@@ -22,20 +22,20 @@ from app.state import normalized_district, ListingIndex
 from app.listing_quality import district_priority, price_bucket, mix_prices, rental_value_band, price_mix_rank
 from app.listing_policy import OWNER_MAX_PRICE, PUBLIC_ROOMS, seller_policy_eligible
 from app.telegram.formatting import is_supported_source
-from app.shared_housing import schedule_shared, SHARED_ROOMS, SHARED_MIN_PRICE, SHARED_MAX_PRICE
+from app.shared_housing import SHARED_ROOMS, SHARED_MIN_PRICE, SHARED_MAX_PRICE
 from app.promotions import publications_in_window, queue_due_promotions, REQUESTED_WINDOW_PREFIX
 
 
 BISHKEK = ZoneInfo("Asia/Bishkek")
 ALLOWED_ROOMS = frozenset(PUBLIC_ROOMS)
 CENTRAL_DAILY_SHARE = 0.50
-REALTOR_DAILY_SHARE = 0.15
+REALTOR_STOCK_RESERVE_SHARE = 0.15
 MIN_PUBLICATIONS_PER_DAY = 70
 MAX_PUBLICATIONS_PER_DAY = 70
 # The daily target is chosen once per Bishkek date, then split across the two
 # discovery periods so retries cannot increase the day's publication volume.
-# Owners and unknown authors form the majority; realtors are capped at 15%.
-MIN_NON_OWNERS_PER_DAY = math.floor(MAX_PUBLICATIONS_PER_DAY * REALTOR_DAILY_SHARE)
+# Realtors may fill missing whole-apartment supply after ordinary authors.
+MIN_NON_OWNERS_PER_DAY = MAX_PUBLICATIONS_PER_DAY
 MAX_NON_OWNERS_PER_DAY = MIN_NON_OWNERS_PER_DAY
 TARGET_NON_OWNERS_PER_PERIOD = (MAX_NON_OWNERS_PER_DAY + 1) // 2
 # Ordinary daily slots are fresh-only. Managed promotions have their own
@@ -55,7 +55,7 @@ DISCOVERY_PERIOD_TARGET = (MAX_PUBLICATIONS_PER_DAY + 1) // 2
 PUBLICATION_SPACING_MINUTES = 10.5
 MIN_PUBLICATION_GAP_MINUTES = 10
 INVENTORY_CLAIM_LOCK_ID = 731_290_512
-PUBLICATION_POLICY_VERSION = "publication-area-value-first-v25"
+PUBLICATION_POLICY_VERSION = "publication-whole-owner-first-fallback-v26"
 # Two equal 10.5-hour periods cover 05:00 through 02:00 the next day.
 PUBLICATION_PERIOD_MINUTES = 630
 
@@ -125,7 +125,7 @@ def daily_publication_target(period_start: datetime) -> int:
 
 
 def daily_realtor_target(period_start: datetime) -> int:
-    """Maximum realtor allowance, rounded down to stay within the share."""
+    """Fallback capacity; no agent slot is mandatory."""
     del period_start
     return MAX_NON_OWNERS_PER_DAY
 
@@ -241,6 +241,7 @@ def _pick_for_window(
             district = normalized_district(item.district) or "unknown"
             bucket = price_bucket(item.price)
             return (
+                _seller_type(item) == "realtor",
                 district_priority(item.district) == 0,
                 room_counts.get(item.rooms, 0),
                 not getattr(item, "active", True) or getattr(item, "availability_status", None) == "unavailable",
@@ -326,8 +327,8 @@ def plan_period(
         kind: sum(_seller_type(item) == kind for item in apartments)
         for kind in ("owner", "realtor", "unknown")
     }
-    agent_limit = min(non_owner_target, non_owner_limit, math.floor(target_count * REALTOR_DAILY_SHARE),
-                      math.floor((available["owner"] + available["unknown"]) * REALTOR_DAILY_SHARE / (1 - REALTOR_DAILY_SHARE)))
+    agent_limit = min(non_owner_target, non_owner_limit,
+                      max(0, target_count - available["owner"] - available["unknown"]))
     seller_remaining = {"owner": available["owner"], "unknown": available["unknown"], "realtor": min(available["realtor"], max(0, agent_limit))}
     target_count = min(target_count, sum(seller_remaining.values()))
     central_target = min(central_target, round(target_count * CENTRAL_DAILY_SHARE))
@@ -385,12 +386,12 @@ def plan_period(
 
 
 def mix_sellers(items: list[Apartment]) -> list[Apartment]:
-    """Keep allowed authors without changing quality ordering or their labels."""
-    return [
+    """Keep quality ordering within ordinary authors, then realtor fallback."""
+    return sorted([
         item
         for item in items
         if not is_excluded_contact(item) and (_seller_type(item) in ("unknown", "realtor") or (_seller_type(item) == "owner" and item.owner_listing))
-    ]
+    ], key=lambda item: _seller_type(item) == "realtor")
 
 
 async def _balanced_stock(session: AsyncSession, statement) -> list[Apartment]:
@@ -399,13 +400,16 @@ async def _balanced_stock(session: AsyncSession, statement) -> list[Apartment]:
     rows = []
     share = max(1, MAX_FRESH_STOCK_LOAD // len(ALLOWED_ROOMS))
     for rooms in ("1", "studio", "2"):
-        agent_share = math.floor(share * REALTOR_DAILY_SHARE)
+        agent_share = math.floor(share * REALTOR_STOCK_RESERVE_SHARE)
         rows.extend((await session.scalars(base.where(Apartment.rooms == rooms,
             func.coalesce(Apartment.seller_type, "unknown") != "realtor").limit(share - agent_share))).all())
         rows.extend((await session.scalars(base.where(Apartment.rooms == rooms,
             Apartment.seller_type == "realtor").limit(agent_share))).all())
     if len(rows) < MAX_FRESH_STOCK_LOAD:
         rows.extend((await session.scalars(base.where(Apartment.id.not_in([row.id for row in rows]), func.coalesce(Apartment.seller_type, "unknown") != "realtor")
+            .limit(MAX_FRESH_STOCK_LOAD - len(rows)))).all())
+    if len(rows) < MAX_FRESH_STOCK_LOAD:
+        rows.extend((await session.scalars(base.where(Apartment.id.not_in([row.id for row in rows]), Apartment.seller_type == "realtor")
             .limit(MAX_FRESH_STOCK_LOAD - len(rows)))).all())
     return rows
 
@@ -616,6 +620,10 @@ class InventoryRepository:
                     text("SELECT pg_advisory_xact_lock(:lock_id)"),
                     {"lock_id": INVENTORY_CLAIM_LOCK_ID},
                 )
+            await session.execute(update(ApartmentInventoryQueue).where(
+                ApartmentInventoryQueue.status == "queued",
+                ApartmentInventoryQueue.apartment_id.in_(select(Apartment.id).where(Apartment.rooms == SHARED_ROOMS)),
+            ).values(status="skipped", last_error="shared_disabled"))
             invalid_room_ids = select(Apartment.id).where(
                 Apartment.rooms.not_in((*ALLOWED_ROOMS, SHARED_ROOMS))
             )
@@ -695,7 +703,6 @@ class InventoryRepository:
                 ).all()
             )
             realtor_daily_target = daily_realtor_target(period)
-            realtor_period_target = period_realtor_target(period)
             remaining_non_owners = max(
                 0, realtor_daily_target - already_non_owners
             )
@@ -804,16 +811,7 @@ class InventoryRepository:
                 - reserved_central
                 - published_outside_queue_central,
             )
-            period_realtors = sum(event.seller_type == "realtor" for event in ordinary_events)
-            period_realtors += int(await session.scalar(
-                select(func.count()).select_from(ApartmentInventoryQueue).join(Apartment).where(
-                    Apartment.seller_type == "realtor",
-                    ApartmentInventoryQueue.window_key == period_window_key,
-                    ApartmentInventoryQueue.status.in_(("queued", "publishing")),
-                )
-            ) or 0)
-            non_owner_target = min(remaining_non_owners, target_override,
-                                   max(0, realtor_period_target - period_realtors))
+            non_owner_target = min(remaining_non_owners, target_override)
             planned = plan_period(
                 fresh_stock + historical_stock,
                 period_start=period,
@@ -927,7 +925,10 @@ class InventoryRepository:
                 )
                 .values(status="skipped", last_error="unsupported_source")
             )
-            await schedule_shared(session, now=now, day_start=day_start, day_end=day_end)
+            await session.execute(update(ApartmentInventoryQueue).where(
+                ApartmentInventoryQueue.status == "queued",
+                ApartmentInventoryQueue.apartment_id.in_(select(Apartment.id).where(Apartment.rooms == SHARED_ROOMS)),
+            ).values(status="skipped", last_error="shared_disabled"))
             ineligible_apartment_ids = select(Apartment.id).where(
                 ~or_(
                     (Apartment.rooms.in_(ALLOWED_ROOMS)) & Apartment.price.between(25_000, OWNER_MAX_PRICE),
@@ -1044,25 +1045,12 @@ class InventoryRepository:
             if rejected:
                 await session.execute(update(ApartmentInventoryQueue).where(ApartmentInventoryQueue.id.in_(rejected)).values(status="skipped",last_error="excluded_contact"))
                 due_rows = [row for row in due_rows if row[0] not in rejected]
-            # Enforce the share against actual acknowledged sends, including
-            # requested cards. A thin queue cannot become all-agent inventory.
-            agent_ceiling = min(MAX_NON_OWNERS_PER_DAY, math.floor((published_today + 1) * REALTOR_DAILY_SHARE))
-            if published_non_owners >= agent_ceiling:
-                due_rows = [row for row in due_rows if row[2] != "realtor"]
-            from app.shared_housing import shared_deliveries, SHARED_DAILY_TARGET, SHARED_GAP
-            shared_sent = await shared_deliveries(session, day_start, day_end)
-            last_event = next((e for e in day_publications if as_utc(e.published_at) <= now), None)
-            last_apartment = await session.get(Apartment, last_event.apartment_id) if last_event else None
-            shared_blocked = (len(shared_sent) >= SHARED_DAILY_TARGET
-                or bool(shared_sent) and now - as_utc(shared_sent[-1]) < SHARED_GAP
-                or last_apartment is not None and last_apartment.rooms == SHARED_ROOMS)
-            if shared_blocked:
-                due_rows = [row for row in due_rows if row[5] != SHARED_ROOMS]
+            due_rows = [row for row in due_rows if row[5] in ALLOWED_ROOMS]
             if not due_rows:
                 return None
             due_rows = [
                 row for row in due_rows
-                if (row[5] == SHARED_ROOMS and row[2] in ("owner", "unknown", None)) or seller_policy_eligible(
+                if seller_policy_eligible(
                     seller_type=row[2],
                     owner_listing=row[2] == "owner",
                     price=row[3],
@@ -1082,14 +1070,10 @@ class InventoryRepository:
             central_needed = published_central < math.ceil(
                 (published_today + 1) * CENTRAL_DAILY_SHARE
             )
+            ordinary_rows = [row for row in due_rows if row[2] != "realtor"]
+            due_rows = ordinary_rows or due_rows
             preferred_rows = [row for row in due_rows if district_priority(row[1]) > 0]
             due_rows = preferred_rows or due_rows
-            realtor_needed = published_non_owners < math.floor(
-                (published_today + 1) * REALTOR_DAILY_SHARE
-            )
-            desired_seller = "realtor" if realtor_needed else "owner"
-            balanced_rows = [row for row in due_rows if row[2] == desired_seller]
-            due_rows = balanced_rows or due_rows
             area_rows = [row for row in due_rows if is_central(row[1]) == central_needed]
             due_rows = area_rows or due_rows
             recent_prices = [row.price for row in day_publications if as_utc(row.published_at) <= now][:6]

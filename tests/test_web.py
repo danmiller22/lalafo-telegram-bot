@@ -165,7 +165,7 @@ async def test_health_and_authentication() -> None:
             "personal_matching": "disabled",
             "lalafo_auto_reply": "disabled",
             "publication_policy": {"daily_target": 70, "start": "05:00", "end": "02:00", "timezone": "Asia/Bishkek", "spacing_minutes": 10.5, "watermark_check": False,
-                                   "seller_mix": {"owner_or_unknown": 0.85, "realtor": 0.15},
+                                   "seller_mix": {"mode": "owner_or_unknown_first", "realtor": "shortage_fallback"},
                                    "single_photo_duplicate_guard": True,
                 "requested_cards": {"total_publications": 3, "duration_hours": 24, "minimum_gap_hours": 6, "included_in_daily_target": True},
                                            "telegram_source_channels": 11,
@@ -175,7 +175,7 @@ async def test_health_and_authentication() -> None:
                                            "telegram_sources": 11,
                                            "lalafo_search_routes": 55,
                                        },
-                                   "shared_housing": {"daily_target": 6, "minimum_gap_minutes": 120, "mixed_with_whole_apartments": True}},
+                                   "shared_housing": {"enabled": False, "daily_target": 0}},
             "apartment_scheduler": "disabled",
         }
         assert (await client.post("/run")).status_code == 401

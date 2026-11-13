@@ -374,15 +374,17 @@ async def test_publisher_sends_each_supported_room_type(rooms, label):
     assert label in bot.send_message.await_args.kwargs["text"]
 
 @pytest.mark.asyncio
-async def test_shared_offer_is_published_with_photos():
+async def test_shared_offer_is_rejected_before_any_telegram_send():
     from tests.test_shared_housing import shared_ad
     bot = SimpleNamespace(send_photo=AsyncMock(return_value=SimpleNamespace(message_id=1)),
                           send_message=AsyncMock(return_value=SimpleNamespace(message_id=2)))
     publisher = TelegramPublisher(bot, chat_id=-1001, signer=TokenSigner('s'*32),
                                  bot_username='testbot', support_url='https://t.me/support')
-    result = await publisher.publish(1, shared_ad())
-    assert result.message_id == 2
-    assert 'Подселение' in bot.send_message.await_args.kwargs['text']
+    with pytest.raises(TelegramPublishError):
+        await publisher.publish(1, shared_ad())
+    bot.send_photo.assert_not_awaited()
+    bot.send_message.assert_not_awaited()
+
 
 @pytest.mark.asyncio
 async def test_definitely_rejected_remote_photo_is_uploaded(monkeypatch):

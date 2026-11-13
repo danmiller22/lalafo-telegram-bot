@@ -157,10 +157,7 @@ class TelegramPublisher:
             raise TelegramPublishError("inconsistent owner metadata")
         if is_excluded_agency(ad):
             raise TelegramPublishError("Excluded agency source")
-        from app.shared_housing import SHARED_ROOMS, valid_shared
-        if ad.rooms == SHARED_ROOMS and not valid_shared(ad)[0]:
-            raise TelegramPublishError("Invalid shared housing offer")
-        if ad.rooms not in (*PUBLIC_ROOMS, SHARED_ROOMS):
+        if ad.rooms not in PUBLIC_ROOMS:
             raise TelegramPublishError("Only studios, one-room and two-room apartments are allowed")
         # A bad remote image can hold Telegram's media fetch open for minutes.
         # A compact single album gives renters enough context and keeps one
