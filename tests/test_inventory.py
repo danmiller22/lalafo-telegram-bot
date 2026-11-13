@@ -96,8 +96,8 @@ async def test_external_realtor_repeats_do_not_reduce_ordinary_half_share(reposi
     assert await InventoryRepository(sessions).schedule_period(now=now) == 35
     async with sessions() as session:
         kinds = list((await session.scalars(select(Apartment.seller_type).join(ApartmentInventoryQueue))).all())
-    assert kinds.count("owner") == 35
-    assert kinds.count("realtor") == 0
+    assert kinds.count("owner") == 30
+    assert kinds.count("realtor") == 5
 
 
 @pytest.mark.asyncio
@@ -264,7 +264,8 @@ def test_period_balances_low_middle_and_high_price_buckets():
     planned = plan_period(stock, period_start=period_start, rng=random.Random(33))
     buckets = {min(2, (item.apartment.price - 25_000) // 5_000) for item in planned}
 
-    assert buckets == {0, 1, 2}
+    assert 0 in buckets
+    assert sum(p.apartment.seller_type == "realtor" for p in planned) <= len(planned) * .15
 
 
 def test_agent_only_stock_is_rejected():
@@ -288,7 +289,7 @@ def test_period_never_fills_owner_shortage_with_realtors():
     assert planned[0].apartment.seller_type == "owner"
 
 
-def test_owner_only_policy_does_not_use_central_realtors():
+def test_period_keeps_central_realtors_within_fifteen_percent():
     owners = _apartments(80, central=False, start_id=1)
     realtors = _apartments(80, central=True, start_id=200, owner=False)
     period_start = datetime(2026, 9, 13, 5, tzinfo=timezone(timedelta(hours=6)))
@@ -298,12 +299,12 @@ def test_owner_only_policy_does_not_use_central_realtors():
     period_count, central_count = period_publication_targets(period_start)
     assert len(planned) == period_count
     assert any(item.apartment.seller_type == "owner" for item in planned)
-    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 0
-    assert sum(is_central(item.apartment.district) for item in planned) == 0
+    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 5
+    assert sum(is_central(item.apartment.district) for item in planned) == 5
     assert central_count == 18
 
 
-def test_two_periods_publish_equal_shares_owners():
+def test_two_periods_keep_realtor_total_at_ten():
     owners = _apartments(160, central=True, start_id=1)
     realtors = _apartments(80, central=True, start_id=500, owner=False)
     first_start = datetime(2026, 9, 13, 5, tzinfo=timezone(timedelta(hours=6)))
@@ -319,8 +320,8 @@ def test_two_periods_publish_equal_shares_owners():
 
     assert len(first) == 35
     assert len(second) == 35
-    assert sum(item.apartment.seller_type == "realtor" for item in first + second) == 0
-    assert sum(item.apartment.seller_type == "owner" for item in first + second) == 70
+    assert sum(item.apartment.seller_type == "realtor" for item in first + second) == 10
+    assert sum(item.apartment.seller_type == "owner" for item in first + second) == 60
 
 
 def test_unknown_authors_enter_publication_slots_without_becoming_owners():
@@ -336,11 +337,11 @@ def test_unknown_authors_enter_publication_slots_without_becoming_owners():
     assert all(p.apartment.seller_type == "unknown" and not p.apartment.owner_listing for p in planned)
 
 
-def test_daily_realtor_target_is_zero():
+def test_daily_realtor_allowance_rounds_down_to_ten():
     start = datetime(2026, 9, 13, 5, tzinfo=timezone(timedelta(hours=6)))
     assert {
         daily_realtor_target(start + timedelta(days=offset)) for offset in range(4)
-    } == {0}
+    } == {10}
 
 
 def test_period_honors_remaining_daily_realtor_quota():
@@ -357,8 +358,8 @@ def test_period_honors_remaining_daily_realtor_quota():
     )
 
     assert len(planned) == period_publication_targets(period_start)[0]
-    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 0
-    assert all(item.apartment.seller_type == "owner" for item in planned)
+    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 4
+    assert sum(item.apartment.seller_type == "owner" for item in planned) == 31
 
 
 def test_daily_target_is_fixed_at_seventy_cards():
@@ -603,7 +604,7 @@ async def test_claim_due_prioritizes_central_card_for_daily_share(repositories):
 
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("publication_clock")
-async def test_claim_due_skips_queued_agents(repositories):
+async def test_claim_due_holds_agents_until_share_allows(repositories):
     apartments, _, sessions = repositories
     now = datetime.now(timezone.utc)
     rows = []
@@ -642,11 +643,13 @@ async def test_claim_due_skips_queued_agents(repositories):
                 ApartmentInventoryQueue.last_error == "excluded_author_policy",
             )
         )
-    assert skipped == 5
+    assert skipped == 0
+    async with sessions() as session:
+        assert await session.scalar(select(func.count()).select_from(ApartmentInventoryQueue).where(ApartmentInventoryQueue.status == "queued")) == 5
 
 
 @pytest.mark.asyncio
-async def test_schedule_uses_available_realtors_toward_equal_mix(repositories):
+async def test_schedule_uses_available_realtors_within_daily_cap(repositories):
     apartments, _, sessions = repositories
     now = datetime(2026, 9, 23, 10, 0, tzinfo=timezone.utc)
     for index in range(40):
@@ -684,8 +687,8 @@ async def test_schedule_uses_available_realtors_toward_equal_mix(repositories):
             )
             or 0
         )
-    assert daily_realtor_target(now) == 0
-    assert realtor_count == 0
+    assert daily_realtor_target(now) == 10
+    assert realtor_count <= 5
     assert unknown_count == 0
 
 
@@ -1300,7 +1303,7 @@ def test_period_prefers_cheapest_stock_when_available():
     assert all(item.apartment.price == 25_000 for item in planned[:10])
 
 
-@pytest.mark.parametrize("owner_count,realtor_count,expected_owners", [(120, 120, 70), (10, 120, 10), (120, 5, 70)])
+@pytest.mark.parametrize("owner_count,realtor_count,expected_owners", [(120, 120, 70), (10, 120, 11), (120, 5, 70)])
 def test_seventy_card_day_fills_category_shortages(owner_count, realtor_count, expected_owners):
     stock = _apartments(owner_count, central=True, start_id=1) + _apartments(
         realtor_count, central=True, start_id=200, owner=False
@@ -1318,7 +1321,8 @@ def test_seventy_card_day_fills_category_shortages(owner_count, realtor_count, e
     planned = first + second
     assert len(planned) == expected_owners
     assert len({item.apartment.id for item in planned}) == expected_owners
-    assert sum(item.apartment.seller_type == "owner" for item in planned) == expected_owners
+    assert sum(item.apartment.seller_type == "realtor" for item in planned) <= len(planned) * .15
+    assert sum(item.apartment.seller_type == "owner" for item in planned) == min(owner_count, len(planned) - min(realtor_count, int(len(planned) * .15)))
 
 
 def test_value_selection_prefers_affordable_realtors_without_blocking_fallback():
@@ -1348,7 +1352,7 @@ def test_normal_daily_pacing_is_preserved_without_a_manual_burst():
     assert next_publication_slot(now, 20, latest) == start + timedelta(minutes=PUBLICATION_SPACING_MINUTES * 20)
 
 
-def test_seventy_card_day_includes_unknown_authors_and_excludes_confirmed_agents():
+def test_seventy_card_day_includes_unknown_authors_and_caps_agents():
     owners=_apartments(80,central=True,start_id=510000)
     unknown=_apartments(80,central=True,start_id=520000)
     agents=_apartments(80,central=True,start_id=530000)
@@ -1364,6 +1368,7 @@ def test_seventy_card_day_includes_unknown_authors_and_excludes_confirmed_agents
     second=plan_period([a for a in stock if a.id not in used],period_start=start+timedelta(minutes=630),rng=random.Random(53))
     selected=[p.apartment for p in first+second]
     assert len(selected)==70 and len({a.id for a in selected})==70
-    assert {a.seller_type for a in selected}=={'unknown'}
+    assert {a.seller_type for a in selected}=={'unknown','realtor'}
+    assert sum(a.seller_type=='realtor' for a in selected) <= 10
     assert all(a.price == 25_000 for a in selected)
     assert all(not a.owner_listing for a in selected if a.seller_type=='unknown')

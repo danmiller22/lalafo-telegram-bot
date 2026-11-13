@@ -208,6 +208,10 @@ def _telegram_rooms(text: str) -> str | None:
 
 
 def _telegram_district(lines: list[str], text: str) -> str | None:
+    from app.location import source_location
+    specific = source_location(None, "\n".join(lines))
+    if specific:
+        return specific
     labels = ("район", "адрес", "дареги", "локация", "микрорайон", "мкр")
     for index, raw_line in enumerate(lines):
         line = re.sub(r"^[^\wА-Яа-яЁё]+", "", raw_line).strip()
@@ -345,10 +349,12 @@ def parse_telegram_apartments(
         author_text = re.sub(r"(?:ри[еэ]лтор\w*|агент\w*)\s+не\s+беспокоить", "", normalized)
         author_text = re.sub(r"\b(?:без|не)\s+(?:ри[еэ]лтор\w*|агент\w*|агенств\w*|комисси\w*|посредник\w*)", "", author_text)
         realtor = any(term in author_text for term in (*REALTOR_TERMS, "агенств"))
-        if realtor:
-            note("confirmed_realtor")
+        seller_type = "realtor" if realtor else "owner" if owner else "unknown"
+        from types import SimpleNamespace
+        from app.lalafo.exclusions import is_excluded_contact
+        if is_excluded_contact(SimpleNamespace(phone=phone, source_description=text)):
+            note("excluded_contact")
             continue
-        seller_type = "owner" if owner else "unknown"
         district = _telegram_district(lines, text)
         if not district:
             district = "Бишкек" if shared else "Центр"
@@ -497,7 +503,7 @@ async def fetch_telegram_apartments(
             channel,
             len(batch),
         )
-    return sorted(
+    ordered = sorted(
         unique.values(),
         # High-volume agency channels must not push confirmed owner offers
         # out of the bounded discovery batch. Publication keeps its own mix.
@@ -506,4 +512,10 @@ async def fetch_telegram_apartments(
             ad.source_updated_at or datetime.min.replace(tzinfo=timezone.utc),
         ),
         reverse=True,
-    )[: max(1, limit)]
+    )
+    normal = [ad for ad in ordered if ad.seller_type != "realtor"]
+    agents = [ad for ad in ordered if ad.seller_type == "realtor"]
+    agent_limit = min(len(agents), max(0, int(limit * .15)))
+    selected = normal[:max(1, limit) - agent_limit]
+    selected.extend(agents[:min(agent_limit, int(len(selected) * .15 / .85))])
+    return selected

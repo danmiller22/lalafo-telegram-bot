@@ -1,0 +1,25 @@
+name: Refine recent locations and exclude blocked contacts
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: refine-public-locations
+  cancel-in-progress: false
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_GROUP_ID: '-1004389602150'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python -m tools.apply_precise_location_policy

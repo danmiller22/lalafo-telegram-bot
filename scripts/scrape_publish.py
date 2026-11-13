@@ -686,13 +686,18 @@ def select_owners_then_realtors(
     candidates: list[LalafoAd],
     limit: int,
 ) -> list[LalafoAd]:
-    """Select eligible owners and unknown authors without realtor fallback."""
+    """Prefer ordinary authors with a bounded realtor supplement."""
     if limit <= 0:
         return []
     eligible = deduplicate_candidates(
         [ad for ad in candidates if listing_policy_eligible(ad)]
     )
-    return mix_prices(select_publish_batch_with_reposts(eligible, {}, limit))
+    normal = [ad for ad in eligible if ad.seller_type != "realtor"]
+    agents = [ad for ad in eligible if ad.seller_type == "realtor"]
+    cap = min(math.floor(limit * .15), math.floor(len(normal) * .15 / .85))
+    selected = select_publish_batch_with_reposts(normal, {}, max(0, limit - min(cap, len(agents))))
+    selected += select_publish_batch_with_reposts(agents, {}, min(cap, len(agents)))
+    return mix_prices(selected)
 
 
 async def run(

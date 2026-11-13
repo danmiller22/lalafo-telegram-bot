@@ -130,6 +130,10 @@ _DISTRICT_ALIASES: tuple[tuple[str, tuple[str, ...]], ...] = (
 
 
 def _infer_district(raw: dict[str, Any], params: dict[str, Any]) -> str | None:
+    from app.location import source_location
+    specific = source_location(None, raw.get("description"), raw.get("title"))
+    if specific:
+        return specific
     explicit = next(
         (
             str(value).strip()
