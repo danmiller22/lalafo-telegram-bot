@@ -52,5 +52,5 @@ async def test_repair_restores_both_historical_and_latest_card_buttons(repositor
         assert rows[1][0].text == '🛟 Техподдержка'
         assert all(button.text != '🔄 Проверить актуальность'
                    for row in rows for button in row)
-        assert '✅ Актуально на момент публикации' in call.kwargs['text']
+        assert 'Актуально' not in call.kwargs['text']
     bot.edit_message_caption.assert_not_awaited()

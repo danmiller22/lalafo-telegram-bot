@@ -87,8 +87,7 @@ def test_allowed_and_format_has_no_source_or_description():
     text = format_apartment(ad)
     assert text == (
         "🏠 1-комнатная квартира\n📍 7 мкр\n🏙 Бишкек\n"
-        "💰 35 000 сом\n🔐 Депозит: 20 000 сом\n"
-        "✅ Актуально на момент публикации"
+        "💰 35 000 сом\n🔐 Депозит: 20 000 сом"
     )
     assert "lalafo" not in text.lower()
     assert ad.phone not in text
@@ -122,8 +121,7 @@ def test_missing_district_uses_labeled_demo_location_and_omits_deposit():
     text = format_apartment(make_ad(district=None, deposit=None, rooms="studio"))
     assert text == (
         "🏠 Студия\n📍 Район не указан\n"
-        "🏙 Бишкек\n💰 35 000 сом\n"
-        "✅ Актуально на момент публикации"
+        "🏙 Бишкек\n💰 35 000 сом"
     )
 
 

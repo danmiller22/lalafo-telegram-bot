@@ -32,7 +32,6 @@ def format_showcase_apartment(ad: LalafoAd | Apartment) -> str:
         f"{format_money(ad.deposit)} сом" if ad.deposit is not None else "не указан"
     )
     lines.append(f"🔐 Депозит: {deposit}")
-    lines.append("✅ Актуально на момент публикации")
     return "\n".join(lines)
 
 
@@ -80,7 +79,6 @@ def format_apartment(ad: LalafoAd | Apartment) -> str:
         lines.append("👥 Совместное проживание")
     if ad.deposit is not None:
         lines.append(f"🔐 Депозит: {format_money(ad.deposit)} сом")
-    lines.append("✅ Актуально на момент публикации")
     return "\n".join(lines)
 
 
@@ -92,7 +90,7 @@ def format_public_apartment(
     archived: bool = False,
 ) -> str:
     if archived:
-        text = format_apartment(ad).replace("✅ Актуально на момент публикации", "")
+        text = format_apartment(ad)
         if wanted_deep_link:
             text = escape(text)
         return text.rstrip()
