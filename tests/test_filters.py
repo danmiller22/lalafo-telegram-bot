@@ -121,7 +121,7 @@ def test_channel_source_always_marks_unknown_author():
 def test_missing_district_uses_labeled_demo_location_and_omits_deposit():
     text = format_apartment(make_ad(district=None, deposit=None, rooms="studio"))
     assert text == (
-        "🏠 Студия\n📍 Центр\n"
+        "🏠 Студия\n📍 Район не указан\n"
         "🏙 Бишкек\n💰 35 000 сом\n"
         "✅ Актуально на момент публикации"
     )
@@ -197,9 +197,9 @@ def test_confirmed_owners_are_eligible_in_every_district_through_40000(price):
     ))
 
 
-def test_realtors_are_never_eligible():
+def test_realtors_can_enter_quota_controlled_selection():
     for price, district in ((35_000, "Восток-5"), (30_000, "Арча-Бешик")):
-        assert not listing_policy_eligible(make_ad(
+        assert listing_policy_eligible(make_ad(
             price=price, district=district, owner_listing=False,
             seller_type="realtor",
         ))

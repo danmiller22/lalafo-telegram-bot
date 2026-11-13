@@ -47,8 +47,8 @@ def is_central_realtor_area(district: str | None) -> bool:
 
 
 def author_policy_eligible(*, seller_type: str | None, owner_listing: bool) -> bool:
-    """Accept unknown authors and confirmed owners, never confirmed realtors."""
-    return seller_type in {None, "unknown"} or (seller_type == "owner" and owner_listing)
+    """Accept unknown authors and confirmed owners, realtors subject to the publication quota."""
+    return seller_type in {None, "unknown", "realtor"} or (seller_type == "owner" and owner_listing)
 
 
 def seller_policy_eligible(
@@ -58,7 +58,8 @@ def seller_policy_eligible(
 
 
 def listing_policy_eligible(ad: Any) -> bool:
-    return seller_policy_eligible(
+    from app.lalafo.exclusions import is_excluded_contact
+    return not is_excluded_contact(ad) and seller_policy_eligible(
         seller_type=getattr(ad, "seller_type", "unknown"),
         owner_listing=bool(getattr(ad, "owner_listing", False)),
         price=int(getattr(ad, "price", 0) or 0),

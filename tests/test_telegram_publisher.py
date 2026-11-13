@@ -181,7 +181,7 @@ async def test_manual_telegram_file_ids_form_album_with_working_card_keyboard() 
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("seller_type,owner_listing", [("realtor", False), ("realtor", True), ("owner", False)])
+@pytest.mark.parametrize("seller_type,owner_listing", [("owner", False)])
 async def test_non_owner_author_types_are_rejected(seller_type, owner_listing) -> None:
     bot = SimpleNamespace(
         send_media_group=AsyncMock(

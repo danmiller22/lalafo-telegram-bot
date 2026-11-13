@@ -97,7 +97,7 @@ async def test_catalogue_refreshes_old_cards_skips_recent_and_batches_queue(repo
 
 
 @pytest.mark.asyncio
-async def test_exhausted_owner_search_rejects_realtor_fallback(repositories, monkeypatch, tmp_path):
+async def test_agent_only_discovery_stores_candidates_without_scheduling_agent_only_feed(repositories, monkeypatch, tmp_path):
     apartments, _, sessions = repositories
     ad = make_ad(lalafo_id=414930, price=32_000, district="ЦУМ", owner_listing=False)
     settings = Settings(_env_file=None, database_url="postgresql://placeholder/db", posted_state_path=tmp_path/"posted.json")
@@ -126,8 +126,8 @@ async def test_exhausted_owner_search_rejects_realtor_fallback(repositories, mon
     assert await scrape_publish.run(discovery_only=True, include_telegram_sources=False,
         collection_budget_seconds=10, discovery_stats=stats) == 0
     assert queries and stats["realtor_fallback_started"]
-    assert "realtor_candidates" not in stats
-    assert await apartments.get_by_lalafo(ad.lalafo_id) is None
+    assert stats["realtor_candidates"] == 1
+    assert await apartments.get_by_lalafo(ad.lalafo_id) is not None
     async with sessions() as s:
         from app.models import ApartmentInventoryQueue
         from sqlalchemy import select

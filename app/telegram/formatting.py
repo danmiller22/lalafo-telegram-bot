@@ -4,6 +4,7 @@ from html import escape
 
 from app.lalafo.models import LalafoAd
 from app.models import Apartment
+from app.location import public_location
 
 
 def format_money(value: int) -> str:
@@ -24,7 +25,7 @@ def room_title(rooms: str) -> str:
 
 def format_showcase_apartment(ad: LalafoAd | Apartment) -> str:
     lines = [f"🏠 {room_title(ad.rooms)}"]
-    lines.append(f"📍 {ad.district or 'Центр'}")
+    lines.append(f"📍 {public_location(ad)}")
     lines.append("🏙 Бишкек")
     lines.append(f"💰 {format_money(ad.price)} сом")
     deposit = (
@@ -59,7 +60,7 @@ def is_supported_source(ad: LalafoAd | Apartment) -> bool:
 
 
 def author_label(ad: LalafoAd | Apartment) -> str | None:
-    """Label confirmed owners; leave realtor and unknown cards unmarked."""
+    """Internal author label; public cards do not display authorship."""
     if is_confirmed_owner(ad):
         return "👤 Собственник"
     return None
@@ -72,10 +73,7 @@ def seller_status(ad: LalafoAd | Apartment) -> str:
 
 def format_apartment(ad: LalafoAd | Apartment) -> str:
     lines = [f"🏠 {room_title(ad.rooms)}"]
-    if ad.district:
-        lines.append(f"📍 {ad.district}")
-    else:
-        lines.append("📍 Центр")
+    lines.append(f"📍 {public_location(ad)}")
     lines.append(f"🏙 {ad.city}")
     lines.append(f"💰 {format_money(ad.price)} сом")
     if ad.rooms == "shared":

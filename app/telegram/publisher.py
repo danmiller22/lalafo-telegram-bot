@@ -154,7 +154,7 @@ class TelegramPublisher:
         if not is_supported_source(ad):
             raise TelegramPublishError("Unsupported apartment source")
         if not author_policy_eligible(seller_type=ad.seller_type, owner_listing=ad.owner_listing):
-            raise TelegramPublishError("Confirmed realtor or inconsistent owner metadata")
+            raise TelegramPublishError("inconsistent owner metadata")
         if is_excluded_agency(ad):
             raise TelegramPublishError("Excluded agency source")
         from app.shared_housing import SHARED_ROOMS, valid_shared
