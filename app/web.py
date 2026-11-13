@@ -175,6 +175,19 @@ async def _finik_checkout_url(
         api_url=settings.finik_api_url,
         account_id=settings.finik_account_id,
     )
+    # submit() already returned this user's request. Reuse its valid checkout
+    # without two more repository round trips or another provider request.
+    created_at = getattr(payment_request, "created_at", None)
+    if isinstance(created_at, datetime):
+        created_at = created_at.replace(tzinfo=UTC) if created_at.tzinfo is None else created_at
+        if (
+            payment_request.plan == plan
+            and payment_request.status in {"prepared", "awaiting_receipt"}
+            and getattr(payment_request, "provider_status", None) == f"waiting:{configuration_id}"
+            and getattr(payment_request, "provider_payment_url", None)
+            and datetime.now(UTC) - timedelta(minutes=4, seconds=50) < created_at <= datetime.now(UTC)
+        ):
+            return payment_request.provider_payment_url
     reusable_lookup = getattr(payments, "reusable_provider_checkout", None)
     reusable = (
         await reusable_lookup(

@@ -341,10 +341,9 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
         return;
       }}
       message("");
-      const preparation = prepareCheckout(selectedPlan);
+      prepareCheckout(selectedPlan);
       render(await api("/miniapp/api/session", {{}}));
       sessionReady = true;
-      await preparation;
       el("pay-lifetime").disabled = false;
       el("pay-now").disabled = false;
     }}
@@ -371,7 +370,9 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
     try {{
       if (!paymentUrls[plan] || preparedUntil[plan] <= Date.now()) {{
         paymentUrls[plan] = "";
-        await prepareCheckout(plan);
+        // Join an existing warm-up; otherwise /start creates the checkout in
+        // one request instead of a serial /prepare followed by /start.
+        if (checkoutPreparation[plan]) await checkoutPreparation[plan];
       }}
       if (navigation !== navigationVersion || accessApproved || apartmentUnavailable) return;
       const readyUrl = paymentUrls[plan];
@@ -407,9 +408,10 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
     if (paymentPoll) clearTimeout(paymentPoll);
     paymentPoll = null;
   }}
-  function startPaymentPolling() {{
+  function startPaymentPolling(immediate = false) {{
     if (paymentPoll || accessApproved || apartmentUnavailable || !paymentExpected || document.hidden) return;
     const version = pollingVersion;
+    let attempts = 0;
     const poll = async () => {{
       if (version !== pollingVersion || document.hidden) return;
       try {{
@@ -420,9 +422,10 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
           return;
         }}
       }} catch (_) {{}}
-      if (version === pollingVersion && paymentExpected && !accessApproved && !document.hidden) paymentPoll = setTimeout(poll, 5000);
+      attempts += 1;
+      if (version === pollingVersion && paymentExpected && !accessApproved && !document.hidden) paymentPoll = setTimeout(poll, attempts < 15 ? 2000 : 5000);
     }};
-    paymentPoll = setTimeout(poll, 5000);
+    paymentPoll = setTimeout(poll, immediate ? 0 : 2000);
   }}
   function goBack() {{
     const agreement = el("agreement");
@@ -448,7 +451,7 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
     if (document.hidden) {{ pausePaymentPolling(); return; }}
     if (!accessApproved) {{
       if (!sessionReady) {{ load(); return; }}
-      if (paymentExpected) startPaymentPolling();
+      if (paymentExpected) startPaymentPolling(true);
     }}
   }});
   el("telegram-sdk").addEventListener("load", () => {{
