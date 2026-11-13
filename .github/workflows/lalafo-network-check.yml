@@ -126,7 +126,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_GROUP_ID: "-1004389602150"
           MANUAL_CARD_ENVELOPE: ${{ inputs.manual_card_envelope }}
-        run: python -m tools.publish_manual_requested_card --envelope "$MANUAL_CARD_ENVELOPE"
+        run: python -m tools.edit_vostok5_no_deposit --envelope "$MANUAL_CARD_ENVELOPE"
       - name: Register only this explicit requested batch from actual receipts
         if: inputs.selected_promotion_ids != ''
         env:
