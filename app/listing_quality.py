@@ -9,18 +9,39 @@ from collections import Counter
 def rental_value_band(price: int, rooms: str, description: str | None = None) -> int:
     """A selection preference, not an estimate of market value or availability.
 
-    Prefer studios up to 28k and one-room flats up to 30k; use 30–35k
-    next, then the remaining allowed stock. Explicitly unfurnished flats
+    Prefer studios up to 28k, one-room flats up to 30k and two-room flats
+    up to 35k; use the next allowed band before remaining stock. Explicitly unfurnished flats
     need a lower rent to compete with furnished/unspecified alternatives.
     """
-    cheap_limit = 28_000 if rooms == 'studio' else 30_000
-    band = 0 if price <= cheap_limit else 1 if price <= 35_000 else 2
+    cheap_limit = 28_000 if rooms == 'studio' else 35_000 if rooms == '2' else 30_000
+    next_limit = 40_000 if rooms == '2' else 35_000
+    band = 0 if price <= cheap_limit else 1 if price <= next_limit else 2
     text = (description or '').casefold().replace('ё', 'е')
     unfurnished = bool(re.search(r'\bбез\s+мебели\b|\bпустая\s+квартира\b', text))
     return band + int(unfurnished)
 
 
+def central_intersection(district: str | None) -> bool:
+    """Recognize named central intersections after location text is refined."""
+    from app.location import PAIR
+    pair = PAIR.search(district or "")
+    if not pair:
+        return False
+    streets = {re.sub(r"\s+", " ", value.casefold()).strip() for value in pair.groups()}
+    central_pairs = (
+        ("манаса", "токтогула"), ("токтогула", "белинка"),
+        ("токтогула", "белинского"), ("токтогула", "суюмбаева"),
+        ("тыныстанова", "боконбаева"), ("боконбаева", "уметалиева"),
+        ("ибраимова", "боконбаева"), ("шопокова", "боконбаева"),
+        ("киевская", "уметалиева"), ("гоголя", "огонбаева"),
+        ("московская", "турусбекова"), ("токтогула", "тыныстанова"),
+    )
+    return any(streets == set(names) for names in central_pairs)
+
+
 def district_priority(district: str | None) -> int:
+    if central_intersection(district):
+        return 5
     text = re.sub(r"[-–—]", " ", (district or "").casefold().replace("ё", "е"))
     # Confirmed-payment leaders from both comparison weeks. District mixing
     # still limits repetition while these cards win equivalent price bands.
@@ -31,7 +52,7 @@ def district_priority(district: str | None) -> int:
     )):
         return 5
     if any(term in text for term in (
-        "цум", "гум", "политех", "дордой плаза", "аламедин 1",
+        "цум", "гум", "политех", "бгу", "дордой плаза", "аламедин 1", "ак эмир",
     )):
         return 4
     central = (

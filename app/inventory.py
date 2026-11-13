@@ -55,7 +55,7 @@ DISCOVERY_PERIOD_TARGET = (MAX_PUBLICATIONS_PER_DAY + 1) // 2
 PUBLICATION_SPACING_MINUTES = 10.5
 MIN_PUBLICATION_GAP_MINUTES = 10
 INVENTORY_CLAIM_LOCK_ID = 731_290_512
-PUBLICATION_POLICY_VERSION = "publication-precise-location-realtor15-v24"
+PUBLICATION_POLICY_VERSION = "publication-area-value-first-v25"
 # Two equal 10.5-hour periods cover 05:00 through 02:00 the next day.
 PUBLICATION_PERIOD_MINUTES = 630
 
@@ -166,10 +166,8 @@ def randomized_period_times(
 def is_central(district: str | None) -> bool:
     # Importing this constant keeps discovery and queue planning on exactly the
     # same definition of "center".
-    from scripts.scrape_publish import CENTRAL_DISTRICT_TERMS
-
-    text = (district or "").casefold().replace("ё", "е")
-    return any(term in text for term in CENTRAL_DISTRICT_TERMS)
+    from scripts.scrape_publish import is_central_district
+    return is_central_district(district)
 
 
 @dataclass(frozen=True)
@@ -185,6 +183,7 @@ def _candidate_key(item: Apartment, *, central: bool) -> tuple[object, ...]:
     last_seen = as_utc(item.last_seen_at or item.updated_at)
     hot = last_seen >= datetime.now(timezone.utc) - timedelta(hours=24)
     return (
+        district_priority(item.district) == 0,
         rental_value_band(item.price, item.rooms, getattr(item, "source_description", None)),
         -district_priority(item.district),
         not item.discovery_priority,
@@ -242,6 +241,7 @@ def _pick_for_window(
             district = normalized_district(item.district) or "unknown"
             bucket = price_bucket(item.price)
             return (
+                district_priority(item.district) == 0,
                 room_counts.get(item.rooms, 0),
                 not getattr(item, "active", True) or getattr(item, "availability_status", None) == "unavailable",
                 rental_value_band(item.price, item.rooms, getattr(item, "source_description", None)),
@@ -343,29 +343,19 @@ def plan_period(
         central=True,
         seller_remaining=seller_remaining,
     )
-    selected.extend(
-        _pick_for_window(
-            other_pool,
-            target_count - len(selected),
-            room_counts,
-            district_counts,
-            price_counts,
-            central=False,
-            seller_remaining=seller_remaining,
-        )
-    )
-    if len(selected) < target_count:
-        selected.extend(
-            _pick_for_window(
-                central_pool,
-                target_count - len(selected),
-                room_counts,
-                district_counts,
-                price_counts,
-                central=True,
-                seller_remaining=seller_remaining,
-            )
-        )
+    # Fill from recognized residential areas before falling back to locations
+    # outside the priority list. Keep all remaining areas eligible as reserve.
+    preferred_other = [item for item in other_pool if district_priority(item.district) > 0]
+    selected.extend(_pick_for_window(
+        preferred_other, target_count - len(selected), room_counts, district_counts,
+        price_counts, central=False, seller_remaining=seller_remaining,
+    ))
+    used_ids = {item.id for item in selected}
+    reserve_pool = [item for item in central_pool + other_pool if item.id not in used_ids]
+    selected.extend(_pick_for_window(
+        reserve_pool, target_count - len(selected), room_counts, district_counts,
+        price_counts, central=False, seller_remaining=seller_remaining,
+    ))
     if len(selected) < target_count and repeat_pool:
         rng.shuffle(repeat_pool)
         selected.extend(_pick_for_window(
@@ -1092,6 +1082,8 @@ class InventoryRepository:
             central_needed = published_central < math.ceil(
                 (published_today + 1) * CENTRAL_DAILY_SHARE
             )
+            preferred_rows = [row for row in due_rows if district_priority(row[1]) > 0]
+            due_rows = preferred_rows or due_rows
             realtor_needed = published_non_owners < math.floor(
                 (published_today + 1) * REALTOR_DAILY_SHARE
             )
