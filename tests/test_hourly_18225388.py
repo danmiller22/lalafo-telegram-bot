@@ -17,7 +17,7 @@ def test_reply_policy_preserves_old_history_and_owner_replies():
     assert len(ledger_key('chat'))<=64 and ledger_key('chat')==ledger_key('chat')
 
 def test_exact_reply_text():
-    assert AUTO_REPLY_TEXT=='Здравствуйте, да! 👋\nПодробнее про эту квартиру, а также наши услуги вы можете узнать по ссылке в нашем телеграм:\n\n\nhttps://t.me/bishkekarendakg'
+    assert AUTO_REPLY_TEXT=='Здравствуйте, да! 👋\nПодробнее про эту квартиру, а также наши услуги вы можете узнать по ссылке в нашем телеграм:\n\n\nhttps://t.me/rentifykg'
 
 @pytest.mark.asyncio
 async def test_history_pages_retain_older_owner_message():
