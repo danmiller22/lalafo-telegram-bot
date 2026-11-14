@@ -180,7 +180,7 @@ def test_fixed_text_exactly_matches_requested_greeting() -> None:
         "Здравствуйте, да! 👋\n"
         "Подробнее про эту квартиру, а также наши услуги вы можете узнать по ссылке "
         "в нашем телеграм:\n\n\n"
-        "https://t.me/bishkekarendakg"
+        "https://t.me/rentifykg"
     )
     assert AUTO_REPLY_TEXT.count("\n") == 4
 
