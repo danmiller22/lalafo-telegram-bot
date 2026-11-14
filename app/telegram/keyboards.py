@@ -61,6 +61,9 @@ def apartment_keyboard(
             ]
         )
     rows.append(_support_row(support_url))
+    rows.append([InlineKeyboardButton(
+        text="🔎 Подобрать по бюджету и району", url=f"{bot_url}?start=search"
+    )])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

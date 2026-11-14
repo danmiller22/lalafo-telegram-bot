@@ -122,7 +122,7 @@ async def test_hot_feed_includes_requested_ad_saved_in_profile_marker(repositori
 
 
 @pytest.mark.asyncio
-async def test_new_customer_sees_two_hot_cards_before_filter_setup(repositories):
+async def test_new_customer_sees_search_entry_before_any_cards(repositories):
     apartments, _, sessions = repositories
     matching = MatchingRepository(sessions)
     for index, district in enumerate(("Центр", "Асанбай"), start=1):
@@ -153,22 +153,11 @@ async def test_new_customer_sees_two_hot_cards_before_filter_setup(repositories)
         source="lalafo",
     )
 
-    assert message.answer.await_args_list[0].args[0] == (
-        "🔥 Вот самые выгодные свежие квартиры. Под подходящим вариантом "
-        "нажмите на кнопку с номером."
-    )
-    assert bot.send_photo.await_count == 2
-    first_card = bot.send_photo.await_args_list[0]
-    assert first_card.kwargs["caption"].startswith("🏠 1-комнатная квартира")
-    assert "Описание:" not in first_card.kwargs["caption"]
-    assert "Проверено:" not in first_card.kwargs["caption"]
-    card_keyboard = first_card.kwargs["reply_markup"]
-    assert card_keyboard.inline_keyboard[0][0].text == "+996555123***"
-    assert "startapp=" in card_keyboard.inline_keyboard[0][0].url
-    assert card_keyboard.inline_keyboard[1][0].text == "❤️ Сохранить"
-    footer = message.answer.await_args_list[-1].kwargs["reply_markup"]
+    assert "Выберите количество комнат, районы и бюджет" in message.answer.await_args.args[0]
+    assert "499 сом" in message.answer.await_args.args[0]
+    bot.send_photo.assert_not_awaited()
+    footer = message.answer.await_args.kwargs["reply_markup"]
     assert footer.inline_keyboard[0][0].callback_data == "matching:start"
-    assert footer.inline_keyboard[0][0].text == "🏠 Смотреть все"
 
 
 def test_matching_filters_offer_only_requested_rooms_quick_districts_and_60k():

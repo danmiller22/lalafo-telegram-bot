@@ -143,13 +143,14 @@ def test_showcase_card_is_compact_and_has_two_buttons() -> None:
 
 
 @pytest.mark.asyncio
-async def test_start_launches_showcase_without_intro_message() -> None:
+async def test_start_opens_search_instead_of_launching_showcase() -> None:
     message = SimpleNamespace(
         text="/start",
         from_user=SimpleNamespace(id=123),
         answer=AsyncMock(),
     )
-    state = SimpleNamespace(clear=AsyncMock())
+    state = SimpleNamespace(clear=AsyncMock(), update_data=AsyncMock())
+    matching = SimpleNamespace(profile=AsyncMock(return_value=None), event=AsyncMock())
     showcase = SimpleNamespace(start=Mock())
 
     await start_handler(
@@ -160,11 +161,12 @@ async def test_start_launches_showcase_without_intro_message() -> None:
         bot=SimpleNamespace(),
         state=state,
         showcase=showcase,
+        matching=matching,
     )
 
     state.clear.assert_awaited_once()
-    showcase.start.assert_called_once()
-    message.answer.assert_not_awaited()
+    showcase.start.assert_not_called()
+    assert message.answer.await_args.kwargs["reply_markup"].inline_keyboard[0][0].callback_data == "matching:start"
 
 
 @pytest.mark.asyncio
