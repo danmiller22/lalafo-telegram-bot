@@ -111,11 +111,13 @@ async def start_handler(
         await state.clear()
         await message.answer(PRIVACY_TEXT)
         return
+    if payload == "search" and matching is not None:
+        await begin_matching_form(
+            message, state, source="group",
+            profile=await matching.profile(message.from_user.id),
+        )
+        return
     if not payload or payload == "lalafo":
-        if showcase is not None:
-            await state.clear()
-            showcase.start(bot, message.from_user.id)
-            return
         if matching is None:
             # Keep direct unit-level callers and emergency deployments usable
             # when the matching repository has not been wired yet.

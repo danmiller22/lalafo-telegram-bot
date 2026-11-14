@@ -1,13 +1,9 @@
 from __future__ import annotations
 
-import re
-
 from aiogram import Bot, F, Router
-from aiogram.fsm.context import FSMContext
 from aiogram.filters import StateFilter
-from aiogram.types import CallbackQuery, Message, InlineKeyboardButton, InlineKeyboardMarkup
-from datetime import datetime, timezone
-from app.payment_plans import PERSONAL_LIMIT, PERSONAL_PRICE
+from aiogram.fsm.context import FSMContext
+from aiogram.types import CallbackQuery, Message
 
 from app.config import Settings
 from app.matching.keyboards import (
@@ -17,13 +13,16 @@ from app.matching.keyboards import (
     feed_footer_keyboard,
     hot_start_keyboard,
     rooms_keyboard,
+    search_home_keyboard,
     seller_types_keyboard,
 )
+from app.matching.presentation import parse_budget, profile_summary
 from app.matching.repository import MAX_PRICE, MIN_PRICE, MatchingRepository
 from app.matching.states import ApartmentMatchForm
+from app.models import ApartmentSearchProfile
+from app.payment_plans import PERSONAL_LIMIT
 from app.security import TokenSigner
 from app.telegram.private_delivery import send_matching_card
-
 
 router = Router(name="apartment-matching")
 
@@ -35,13 +34,15 @@ async def personal_offer(callback: CallbackQuery, matching: MatchingRepository) 
         return
     await callback.message.answer(
         "Для новых клиентов доступен недельный тариф — 499 сом на 7 дней. "
-        "Откройте карточку квартиры и нажмите «Получить номер».")
+        "Откройте карточку квартиры и нажмите «Получить номер»."
+    )
 
 
 @router.callback_query(F.data == "personal:buy")
 async def personal_buy(callback: CallbackQuery) -> None:
-    await callback.answer("Доступен только недельный тариф — 499 сом. Откройте карточку квартиры.", show_alert=True)
-
+    await callback.answer(
+        "Доступен только недельный тариф — 499 сом. Откройте карточку квартиры.", show_alert=True
+    )
 
 
 async def _send_cards(
@@ -75,66 +76,19 @@ async def show_hot_start(
     user_id = message.from_user.id
     profile = await matching.profile(user_id)
     await state.clear()
+    await state.update_data(matching_source=source)
     await matching.event(user_id, "start", source=source)
-    grant, used = await matching.personal_status(user_id)
-    if grant is not None:
-        await message.answer(
-            f"✨ Под меня: {used}/{PERSONAL_LIMIT} вариантов. "
-            "Новые квартиры приходят автоматически в течение срока тарифа. "
-            "Параметры и состояние тарифа доступны по кнопке ниже.",
-            reply_markup=feed_footer_keyboard(has_more=False),
-        )
-        return
-    if profile is not None:
-        apartments = await matching.matching_apartments(
-            profile, limit=3, exclude_delivered=False
-        )
-        await message.answer("🏠 Ваша свежая подборка")
-        await _send_cards(
-            bot,
-            user_id=user_id,
-            apartments=apartments,
-            signer=signer,
-            settings=settings,
-        )
-        if apartments:
-            await matching.event(user_id, "feed_shown", source=profile.source)
-        await message.answer(
-            "Новые подходящие квартиры будут приходить автоматически.",
-            reply_markup=feed_footer_keyboard(has_more=len(apartments) == 3),
-        )
-        return
-
-    hot, profile_count = await matching.profile_hot_apartments(limit=2)
-    if profile_count == len(hot) and profile_count:
-        intro = "🔥 Вот квартиры из нашего профиля Lalafo."
-    elif profile_count:
-        intro = (
-            "🔥 Сначала квартира из нашего профиля Lalafo, затем выгодный "
-            "свежий вариант."
+    if profile is None:
+        text = (
+            "🏠 Найдите квартиру под себя в Бишкеке\n\n"
+            "Выберите количество комнат, районы и бюджет. Бот покажет подходящие "
+            "квартиры и будет присылать новые совпадения.\n\n"
+            "Просмотр и подбор бесплатны. Контакты открываются по доступу: "
+            "499 сом на 7 дней. Ранее оплаченный бессрочный доступ сохраняется."
         )
     else:
-        intro = "🔥 Вот самые выгодные свежие квартиры."
-    intro += " Под подходящим вариантом нажмите на кнопку с номером."
-    await message.answer(intro)
-    await _send_cards(
-        bot,
-        user_id=user_id,
-        apartments=hot,
-        signer=signer,
-        settings=settings,
-    )
-    await state.update_data(
-        matching_source=source,
-        hot_apartment_ids=[item.id for item in hot],
-    )
-    if hot:
-        await matching.event(user_id, "hot_cards_shown", source=source)
-    await message.answer(
-        "✨ Нажмите «Смотреть все», настройте районы и бюджет — новые "
-        "подходящие квартиры будут приходить автоматически.",
-        reply_markup=hot_start_keyboard(),
-    )
+        text = profile_summary(profile)
+    await message.answer(text, reply_markup=search_home_keyboard(profile))
 
 
 async def begin_matching_form(
@@ -142,6 +96,7 @@ async def begin_matching_form(
     state: FSMContext,
     *,
     source: str = "telegram",
+    profile: ApartmentSearchProfile | None = None,
 ) -> None:
     previous = await state.get_data()
     hot_ids = previous.get("hot_apartment_ids", [])
@@ -150,25 +105,31 @@ async def begin_matching_form(
     await state.update_data(
         matching_source=previous.get("matching_source", source),
         hot_apartment_ids=hot_ids,
-        matching_rooms=[],
-        matching_seller_types=[],
+        matching_rooms=list(profile.rooms or []) if profile is not None else [],
+        matching_seller_types=list(profile.seller_types or [])
+        if profile is not None
+        else ["owner", "realtor"],
+        matching_districts=list(profile.districts or []) if profile is not None else [],
+        all_districts=bool(profile.all_districts) if profile is not None else False,
     )
     await message.answer(
-        "Какой тип квартиры вам подходит? Можно выбрать несколько вариантов.",
-        reply_markup=rooms_keyboard(set()),
+        "1/4 · Комнаты\nМожно выбрать несколько вариантов.",
+        reply_markup=rooms_keyboard(set(profile.rooms or []) if profile is not None else set()),
     )
 
 
 @router.callback_query(F.data == "matching:start")
-async def matching_start(callback: CallbackQuery, state: FSMContext) -> None:
+async def matching_start(
+    callback: CallbackQuery, state: FSMContext, matching: MatchingRepository
+) -> None:
     await callback.answer()
     if callback.message:
-        await begin_matching_form(callback.message, state)
+        await begin_matching_form(
+            callback.message, state, profile=await matching.profile(callback.from_user.id)
+        )
 
 
-@router.callback_query(
-    StateFilter(ApartmentMatchForm.rooms), F.data.startswith("matching:room:")
-)
+@router.callback_query(StateFilter(ApartmentMatchForm.rooms), F.data.startswith("matching:room:"))
 async def matching_room(callback: CallbackQuery, state: FSMContext) -> None:
     value = (callback.data or "").rsplit(":", 1)[-1]
     if value not in {"studio", "1", "2"}:
@@ -183,9 +144,7 @@ async def matching_room(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.message.edit_reply_markup(reply_markup=rooms_keyboard(selected))
 
 
-@router.callback_query(
-    StateFilter(ApartmentMatchForm.rooms), F.data == "matching:rooms:done"
-)
+@router.callback_query(StateFilter(ApartmentMatchForm.rooms), F.data == "matching:rooms:done")
 async def matching_rooms_done(
     callback: CallbackQuery,
     state: FSMContext,
@@ -198,8 +157,8 @@ async def matching_rooms_done(
     await callback.answer()
     if callback.message:
         await callback.message.edit_text(
-            "От кого показывать варианты? Можно выбрать оба варианта.",
-            reply_markup=seller_types_keyboard(set()),
+            "2/4 · Объявления\nМожно оставить оба варианта или выбрать один.",
+            reply_markup=seller_types_keyboard(set(data.get("matching_seller_types", []))),
         )
 
 
@@ -218,9 +177,7 @@ async def matching_seller_type(callback: CallbackQuery, state: FSMContext) -> No
     await state.update_data(matching_seller_types=sorted(selected))
     await callback.answer()
     if callback.message:
-        await callback.message.edit_reply_markup(
-            reply_markup=seller_types_keyboard(selected)
-        )
+        await callback.message.edit_reply_markup(reply_markup=seller_types_keyboard(selected))
 
 
 @router.callback_query(
@@ -241,16 +198,17 @@ async def matching_seller_types_done(
     await state.set_state(ApartmentMatchForm.districts)
     await state.update_data(
         district_options=options,
-        matching_districts=[],
-        all_districts=False,
         district_page=0,
     )
     await callback.answer()
     if callback.message:
         await callback.message.edit_text(
-            "Выберите нужные районы. Можно отметить любое количество.",
+            "3/4 · Районы\nВыберите конкретные районы или весь Бишкек.",
             reply_markup=districts_keyboard(
-                options, set(), page=0, all_districts=False
+                options,
+                set(data.get("matching_districts", [])),
+                page=0,
+                all_districts=bool(data.get("all_districts", False)),
             ),
         )
 
@@ -287,9 +245,7 @@ async def matching_district(callback: CallbackQuery, state: FSMContext) -> None:
             return
         all_districts = False
         selected.symmetric_difference_update({value})
-    await state.update_data(
-        matching_districts=sorted(selected), all_districts=all_districts
-    )
+    await state.update_data(matching_districts=sorted(selected), all_districts=all_districts)
     await callback.answer()
     await _render_districts(callback, state)
 
@@ -297,9 +253,7 @@ async def matching_district(callback: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(
     StateFilter(ApartmentMatchForm.districts), F.data.startswith("matching:preset:")
 )
-async def matching_district_preset(
-    callback: CallbackQuery, state: FSMContext
-) -> None:
+async def matching_district_preset(callback: CallbackQuery, state: FSMContext) -> None:
     key = (callback.data or "").rsplit(":", 1)[-1]
     data = await state.get_data()
     options = list(data.get("district_options", []))
@@ -312,9 +266,7 @@ async def matching_district_preset(
         selected.difference_update(members)
     else:
         selected.update(members)
-    await state.update_data(
-        matching_districts=sorted(selected), all_districts=False
-    )
+    await state.update_data(matching_districts=sorted(selected), all_districts=False)
     await callback.answer()
     await _render_districts(callback, state)
 
@@ -349,19 +301,18 @@ async def matching_districts_done(callback: CallbackQuery, state: FSMContext) ->
     await callback.answer()
     if callback.message:
         await callback.message.edit_text(
-            "Какой максимальный бюджет в месяц?",
+            "4/4 · Бюджет\nДо какой суммы в месяц ищем? Можно написать свою сумму.",
             reply_markup=budget_keyboard(),
         )
 
 
-@router.callback_query(
-    StateFilter(ApartmentMatchForm.budget), F.data == "matching:budget:custom"
-)
+@router.callback_query(StateFilter(ApartmentMatchForm.budget), F.data == "matching:budget:custom")
 async def matching_custom_budget(callback: CallbackQuery) -> None:
     await callback.answer()
     if callback.message:
         await callback.message.edit_text(
-            "Напишите максимальный бюджет числом от 5 000 до 60 000 сом."
+            "Напишите бюджет от 5 000 до 60 000 сом. Например: 30 000 или 30 тыс.",
+            reply_markup=budget_keyboard(),
         )
 
 
@@ -399,13 +350,12 @@ async def _finish_profile(
     apartments = await matching.matching_apartments(
         profile, limit=3, exclude_ids=excluded, exclude_delivered=True
     )
-    await matching.record_shown(user_id, apartments, kind="initial")
-    await matching.event(
-        user_id, "filter_saved", source=profile.source
-    )
+    await matching.event(user_id, "filter_saved", source=profile.source)
     await state.clear()
     if apartments:
-        await message.answer("✅ Подбор сохранён. Вот подходящие квартиры:")
+        await message.answer(
+            "✅ Подбор сохранён.\n\n" + profile_summary(profile) + "\n\nВот подходящие квартиры:"
+        )
         await _send_cards(
             bot,
             user_id=user_id,
@@ -413,13 +363,18 @@ async def _finish_profile(
             signer=signer,
             settings=settings,
         )
+        await matching.record_shown(user_id, apartments, kind="initial")
     else:
         await message.answer(
-            "✅ Подбор сохранён. Сейчас новых совпадений нет — бот пришлёт их сразу после появления."
+            "✅ Подбор сохранён.\n\n"
+            + profile_summary(profile)
+            + "\n\nСейчас совпадений нет. Можно расширить районы или бюджет — либо дождаться новых вариантов."
         )
     await message.answer(
         "Новые совпадения будут приходить автоматически.",
-        reply_markup=feed_footer_keyboard(has_more=len(apartments) == 3),
+        reply_markup=feed_footer_keyboard(
+            has_more=len(apartments) == 3, notifications_enabled=profile.notifications_enabled
+        ),
     )
 
 
@@ -441,6 +396,9 @@ async def matching_budget_button(
         budget = int(token)
     except ValueError:
         await callback.answer("Выберите бюджет на кнопке.", show_alert=True)
+        return
+    if not MIN_PRICE <= budget <= MAX_PRICE:
+        await callback.answer("Бюджет должен быть от 5 000 до 60 000 сом.", show_alert=True)
         return
     await callback.answer()
     if callback.message:
@@ -465,9 +423,8 @@ async def matching_budget_text(
     settings: Settings,
     bot: Bot,
 ) -> None:
-    digits = re.sub(r"\D", "", message.text or "")
-    budget = int(digits) if digits else 0
-    if not MIN_PRICE <= budget <= MAX_PRICE:
+    budget = parse_budget(message.text or "")
+    if budget is None or not MIN_PRICE <= budget <= MAX_PRICE:
         await message.answer("Введите сумму от 5 000 до 60 000 сом.")
         return
     await _finish_profile(
@@ -508,7 +465,9 @@ async def matching_feed(
                 reply_markup=feed_footer_keyboard(has_more=False),
             )
         return
-    apartments = await matching.matching_apartments(profile, limit=3)
+    apartments = await matching.matching_apartments(
+        profile, limit=3, exclude_delivered=callback.data == "matching:more"
+    )
     await callback.answer()
     if callback.message:
         if apartments:
@@ -519,25 +478,83 @@ async def matching_feed(
                 signer=signer,
                 settings=settings,
             )
-            await matching.record_shown(
-                callback.from_user.id, apartments, kind="manual"
-            )
+            await matching.record_shown(callback.from_user.id, apartments, kind="manual")
         else:
             await callback.message.answer("Новых совпадений пока нет.")
         await callback.message.answer(
             "Подборка обновлена.",
-            reply_markup=feed_footer_keyboard(has_more=len(apartments) == 3),
+            reply_markup=feed_footer_keyboard(
+                has_more=len(apartments) == 3, notifications_enabled=profile.notifications_enabled
+            ),
         )
 
 
 @router.callback_query(F.data == "matching:toggle")
-async def matching_toggle(
-    callback: CallbackQuery, matching: MatchingRepository
-) -> None:
+async def matching_toggle(callback: CallbackQuery, matching: MatchingRepository) -> None:
     enabled = await matching.toggle_notifications(callback.from_user.id)
     if enabled is None:
         await callback.answer("Сначала настройте подбор.", show_alert=True)
-    elif enabled:
-        await callback.answer("🔔 Уведомления включены.", show_alert=True)
     else:
-        await callback.answer("🔕 Уведомления приостановлены.", show_alert=True)
+        await callback.answer(
+            "🔔 Уведомления включены." if enabled else "🔕 Уведомления приостановлены."
+        )
+        profile = await matching.profile(callback.from_user.id)
+        if callback.message and profile is not None:
+            await callback.message.edit_text(
+                profile_summary(profile), reply_markup=search_home_keyboard(profile)
+            )
+
+
+@router.callback_query(F.data == "matching:home")
+async def matching_home(
+    callback: CallbackQuery, state: FSMContext, matching: MatchingRepository
+) -> None:
+    await state.clear()
+    await callback.answer()
+    profile = await matching.profile(callback.from_user.id)
+    if callback.message:
+        text = (
+            profile_summary(profile)
+            if profile is not None
+            else "🏠 Настройте поиск: комнаты, районы и бюджет."
+        )
+        await callback.message.answer(text, reply_markup=search_home_keyboard(profile))
+
+
+@router.callback_query(StateFilter(ApartmentMatchForm), F.data.startswith("matching:back:"))
+async def matching_back(callback: CallbackQuery, state: FSMContext) -> None:
+    target = (callback.data or "").rsplit(":", 1)[-1]
+    data = await state.get_data()
+    if target == "rooms":
+        next_state = ApartmentMatchForm.rooms
+        text = "1/4 · Комнаты\nМожно выбрать несколько вариантов."
+        keyboard = rooms_keyboard(set(data.get("matching_rooms", [])))
+    elif target == "sellers":
+        next_state = ApartmentMatchForm.seller_types
+        text = "2/4 · Объявления\nМожно оставить оба варианта или выбрать один."
+        keyboard = seller_types_keyboard(set(data.get("matching_seller_types", [])))
+    elif target == "districts":
+        next_state = ApartmentMatchForm.districts
+        text = "3/4 · Районы\nВыберите конкретные районы или весь Бишкек."
+        keyboard = districts_keyboard(
+            list(data.get("district_options", [])),
+            set(data.get("matching_districts", [])),
+            page=int(data.get("district_page", 0)),
+            all_districts=bool(data.get("all_districts", False)),
+        )
+    else:
+        await callback.answer()
+        return
+    await state.set_state(next_state)
+    await callback.answer()
+    if callback.message:
+        await callback.message.edit_text(text, reply_markup=keyboard)
+
+
+@router.callback_query(F.data.startswith("matching:"))
+async def matching_expired(callback: CallbackQuery) -> None:
+    await callback.answer("Откройте поиск заново — сохранённые параметры на месте.")
+    if callback.message:
+        await callback.message.answer(
+            "Вернитесь к своему поиску.", reply_markup=search_home_keyboard()
+        )

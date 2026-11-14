@@ -65,8 +65,9 @@ def test_callback_data_is_short_and_contains_no_phone():
     assert "." not in payload
     assert signer.verify_start_id("miniapp-apartment", payload) == 123456789
     assert group.inline_keyboard[0][0].text == "Получить номер"
-    assert len(group.inline_keyboard) == 2
+    assert len(group.inline_keyboard) == 3
     assert group.inline_keyboard[1][0].text == "🛟 Техподдержка"
+    assert group.inline_keyboard[2][0].url.endswith("?start=search")
     assert all(
         button.text != "🔄 Проверить актуальность"
         for row in group.inline_keyboard

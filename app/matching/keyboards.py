@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-
 PAGE_SIZE = 8
 
 DISTRICT_PRESETS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
@@ -68,28 +67,33 @@ def rooms_keyboard(selected: set[str]) -> InlineKeyboardMarkup:
     def label(value: str, text: str) -> str:
         return f"✅ {text}" if value in selected else text
 
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text=label("studio", "Студия"),
-                    callback_data="matching:room:studio",
-                ),
-                InlineKeyboardButton(
-                    text=label("1", "1-комнатная"),
-                    callback_data="matching:room:1",
-                ),
-            ],
-            [InlineKeyboardButton(
-                text=label("2", "2-комнатная"), callback_data="matching:room:2"
-            )],
-            [
-                InlineKeyboardButton(
-                    text="Далее →",
-                    callback_data="matching:rooms:done",
-                )
-            ],
-        ]
+    return _with_navigation(
+        InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text=label("studio", "Студия"),
+                        callback_data="matching:room:studio",
+                    ),
+                    InlineKeyboardButton(
+                        text=label("1", "1-комнатная"),
+                        callback_data="matching:room:1",
+                    ),
+                ],
+                [
+                    InlineKeyboardButton(
+                        text=label("2", "2-комнатная"), callback_data="matching:room:2"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="Далее →",
+                        callback_data="matching:rooms:done",
+                    )
+                ],
+            ]
+        ),
+        back=None,
     )
 
 
@@ -97,27 +101,30 @@ def seller_types_keyboard(selected: set[str]) -> InlineKeyboardMarkup:
     def label(value: str, text: str) -> str:
         return f"✅ {text}" if value in selected else text
 
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text=label("owner", "👤 От собственников"),
-                    callback_data="matching:seller:owner",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text=label("realtor", "🏢 От агентств недвижимости"),
-                    callback_data="matching:seller:realtor",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="Далее →",
-                    callback_data="matching:sellers:done",
-                )
-            ],
-        ]
+    return _with_navigation(
+        InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text=label("owner", "👤 От собственников"),
+                        callback_data="matching:seller:owner",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text=label("realtor", "🏢 От агентств недвижимости"),
+                        callback_data="matching:seller:realtor",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="Далее →",
+                        callback_data="matching:sellers:done",
+                    )
+                ],
+            ]
+        ),
+        back="rooms",
     )
 
 
@@ -169,44 +176,104 @@ def districts_keyboard(
             InlineKeyboardButton(text="Далее →", callback_data=f"matching:page:{page + 1}")
         )
     rows.append(navigation)
-    rows.append(
-        [InlineKeyboardButton(text="Готово", callback_data="matching:districts:done")]
-    )
-    return InlineKeyboardMarkup(inline_keyboard=rows)
+    rows.append([InlineKeyboardButton(text="Готово", callback_data="matching:districts:done")])
+    return _with_navigation(InlineKeyboardMarkup(inline_keyboard=rows), back="sellers")
 
 
 def budget_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(text="до 25 000 сом", callback_data="matching:budget:25000"),
-                InlineKeyboardButton(text="до 30 000 сом", callback_data="matching:budget:30000"),
-            ],
-            [
-                InlineKeyboardButton(text="до 35 000 сом", callback_data="matching:budget:35000"),
-                InlineKeyboardButton(text="до 40 000 сом", callback_data="matching:budget:40000"),
-            ],
-            [InlineKeyboardButton(text="до 50 000 сом", callback_data="matching:budget:50000")],
-            [InlineKeyboardButton(text="до 60 000 сом", callback_data="matching:budget:60000")],
-            [InlineKeyboardButton(text="Указать свой", callback_data="matching:budget:custom")],
-        ]
+    return _with_navigation(
+        InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="до 25 000 сом", callback_data="matching:budget:25000"
+                    ),
+                    InlineKeyboardButton(
+                        text="до 30 000 сом", callback_data="matching:budget:30000"
+                    ),
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="до 35 000 сом", callback_data="matching:budget:35000"
+                    ),
+                    InlineKeyboardButton(
+                        text="до 40 000 сом", callback_data="matching:budget:40000"
+                    ),
+                ],
+                [InlineKeyboardButton(text="до 50 000 сом", callback_data="matching:budget:50000")],
+                [InlineKeyboardButton(text="до 60 000 сом", callback_data="matching:budget:60000")],
+                [InlineKeyboardButton(text="Указать свой", callback_data="matching:budget:custom")],
+            ]
+        ),
+        back="districts",
     )
 
 
-def feed_footer_keyboard(*, has_more: bool = True) -> InlineKeyboardMarkup:
+def feed_footer_keyboard(
+    *, has_more: bool = True, notifications_enabled: bool = True
+) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     if has_more:
-        rows.append(
-            [InlineKeyboardButton(text="Показать ещё", callback_data="matching:more")]
-        )
+        rows.append([InlineKeyboardButton(text="Показать ещё", callback_data="matching:more")])
     rows.extend(
         [
             [InlineKeyboardButton(text="⚙️ Изменить фильтр", callback_data="matching:start")],
             [
                 InlineKeyboardButton(
-                    text="🔔 Приостановить уведомления",
+                    text="🔕 Приостановить уведомления"
+                    if notifications_enabled
+                    else "🔔 Включить уведомления",
                     callback_data="matching:toggle",
                 )
+            ],
+        ]
+    )
+    rows.append([InlineKeyboardButton(text="🏠 Мой поиск", callback_data="matching:home")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _with_navigation(keyboard: InlineKeyboardMarkup, *, back: str | None) -> InlineKeyboardMarkup:
+    navigation = []
+    if back:
+        navigation.append(
+            InlineKeyboardButton(text="← Назад", callback_data=f"matching:back:{back}")
+        )
+    navigation.append(InlineKeyboardButton(text="Отмена", callback_data="matching:home"))
+    keyboard.inline_keyboard.append(navigation)
+    return keyboard
+
+
+def search_home_keyboard(profile=None) -> InlineKeyboardMarkup:
+    rows = []
+    if profile is None:
+        rows.append(
+            [InlineKeyboardButton(text="🔎 Подобрать квартиру", callback_data="matching:start")]
+        )
+    else:
+        rows.extend(
+            [
+                [
+                    InlineKeyboardButton(
+                        text="🏠 Подходящие квартиры", callback_data="matching:mine"
+                    )
+                ],
+                [InlineKeyboardButton(text="⚙️ Изменить параметры", callback_data="matching:start")],
+                [
+                    InlineKeyboardButton(
+                        text="🔕 Приостановить уведомления"
+                        if profile.notifications_enabled
+                        else "🔔 Включить уведомления",
+                        callback_data="matching:toggle",
+                    )
+                ],
+            ]
+        )
+    rows.extend(
+        [
+            [InlineKeyboardButton(text="❤️ Избранное", callback_data="menu:favorites")],
+            [
+                InlineKeyboardButton(text="ℹ️ Как это работает", callback_data="menu:about"),
+                InlineKeyboardButton(text="🛟 Помощь", callback_data="menu:support"),
             ],
         ]
     )
