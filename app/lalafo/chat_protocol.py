@@ -17,7 +17,7 @@ AUTO_REPLY_TEXT = (
     "Здравствуйте, да! 👋\n"
     "Подробнее про эту квартиру, а также наши услуги вы можете узнать по ссылке "
     "в нашем телеграм:\n\n\n"
-    "https://t.me/bishkekarendakg"
+    "https://t.me/rentifykg"
 )
 
 LALAFO_HTTP_ORIGIN = "https://lalafo.kg"
