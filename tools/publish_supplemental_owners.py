@@ -11,7 +11,8 @@ from app.config import get_settings
 from app.database import create_engine_and_session
 from app.lalafo.exclusions import is_excluded_contact
 from app.lalafo.models import LalafoAd, PHONE_SOURCE_VERSION
-from app.models import LalafoAutoReplyMeta
+from app.models import LalafoAutoReplyMeta, ApartmentInventoryQueue
+from sqlalchemy import select
 from app.payments.repository import ApartmentRepository
 from app.security import TokenSigner
 from app.telegram.publisher import TelegramPublisher
@@ -38,7 +39,7 @@ async def main(path):
         if (not ad.phone or ad.phone_source_version != PHONE_SOURCE_VERSION
                 or ad.rooms not in {'studio', '1', '2'} or not ad.no_subletting
                 or not ad.owner_listing or ad.seller_type != 'owner'
-                or not ad.photo_urls or not ad.source_url.startswith(('https://lalafo.kg/', 'https://t.me/'))
+                or not ad.photo_urls or not ad.source_url.startswith(('https://lalafo.kg/', 'https://t.me/', 'manual://telegram/'))
                 or not 10000 <= ad.price <= {'studio':30000,'1':35000,'2':45000}[ad.rooms]
                 or is_excluded_contact(ad)):
             raise ValueError('Unverified source or excluded contact')
@@ -65,6 +66,14 @@ async def main(path):
                 print(f'RECEIPT source_id={ad.lalafo_id} {prior}', flush=True)
                 continue
             existing = await repo.get_by_lalafo(ad.lalafo_id)
+            if existing:
+                async with sessions() as session:
+                    queued = await session.scalar(select(ApartmentInventoryQueue.id).where(
+                        ApartmentInventoryQueue.apartment_id == existing.id,
+                        ApartmentInventoryQueue.status.in_(['queued','publishing','uncertain'])).limit(1))
+                if queued is not None:
+                    print(f'PRIMARY_QUEUE_OWNS source_id={ad.lalafo_id}', flush=True)
+                    continue
             if ad.lalafo_id in duplicates:
                 print(f'ALREADY_PUBLISHED source_id={ad.lalafo_id} message_id={existing.telegram_message_id if existing else None}', flush=True)
                 continue
@@ -74,6 +83,7 @@ async def main(path):
                     raise RuntimeError('Concurrent reservation')
                 session.add(LalafoAutoReplyMeta(key=key, value='sending'))
             # Never retry an uncertain send or swap the contact to an agency number.
+            await repo.mark_publication_uncertain(apartment.id)
             message = await publisher.publish(apartment.id, ad)
             await repo.mark_published(apartment.id, chat_id=settings.telegram_group_id,
                 message_id=message.message_id, acknowledged_at=message.date)
