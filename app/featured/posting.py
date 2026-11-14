@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.lalafo.models import LalafoAd
-from app.terms import PRIVACY_TEXT
+from app.telegram.formatting import format_apartment
 
 DISTRICT_PARAM_ID = 357
 ROOM_PARAM_ID = 69
@@ -36,18 +36,13 @@ COMMUNICATION_VALUES = [29532, 52859, 29535, 52860, 29533]
 
 
 def short_description(ad: LalafoAd) -> str:
-    rooms = {
-        "studio": "Студия", "1": "1-комнатная квартира",
-        "2": "2-комнатная квартира",
-    }.get(ad.rooms.casefold(), ad.rooms)
-    lines = [
-        f"🏠 {rooms}",
-        *([f"📍 {ad.district}"] if ad.district else []),
-        "🏙 Бишкек",
-        f"💰 {ad.price:,} сом".replace(",", " "),
-    ]
-    lines.append("🛋 Полностью меблирована, все условия")
-    return "\n".join(lines) + "\n\n" + PRIVACY_TEXT
+    text = format_apartment(ad.model_copy(update={"deposit": None}))
+    source_text = ad.source_description.casefold()
+    if "пример для подбора" in source_text or "объявление размещено для услуги подбора" in source_text:
+        text = text.replace("🏠 ", "🏠 Пример для подбора: ", 1).replace("💰 ", "💰 Ориентир: ", 1)
+    if len(text) < 70:
+        text += "\n" + "." * max(1, 69 - len(text))
+    return text
 
 
 def posting_payload(ad: LalafoAd) -> dict[str, Any]:
