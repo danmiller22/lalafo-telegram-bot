@@ -1151,7 +1151,7 @@ class PaymentRepository:
                     first_name=current.first_name,
                     apartment_id=current.apartment_id,
                     plan=current.plan,
-                    amount=plan_price(current.plan),
+                    amount=current.provider_expected_amount if current.provider_expected_amount is not None else plan_price(current.plan),
                     provider_payment_id=(
                         current.provider_payment_id
                         or f"manual-{current.id}-{int(now.timestamp())}"
@@ -1328,10 +1328,15 @@ class PaymentRepository:
                 and now - created_at >= timedelta(minutes=5)
                 and current.provider_status != "succeeded"
             )
+            if (current.provider_payment_id and current.provider_expected_amount is not None
+                    and current.provider_expected_amount != plan_price(current.plan)
+                    and not checkout_expired and current.status != "approved"):
+                raise RuntimeError("Previous checkout is still active; retry after it expires")
             if current.status != "approved" and current.provider_status != "succeeded" and (
                 not current.provider_payment_id or configuration_changed or checkout_expired
             ):
                 current.provider_payment_id = payment_id
+                current.provider_expected_amount = plan_price(current.plan)
                 current.provider_payment_url = None
                 current.created_at = now
                 current.provider_status = (
@@ -1350,11 +1355,21 @@ class PaymentRepository:
         """Return the single still-valid checkout shared across apartment cards."""
         cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
         async with self.sessions() as session:
+            previous = await session.scalar(select(PaymentRequest.id).where(
+                PaymentRequest.telegram_user_id == user_id, PaymentRequest.plan == plan,
+                PaymentRequest.status.in_(("prepared", "awaiting_receipt")),
+                PaymentRequest.provider_payment_id.is_not(None),
+                PaymentRequest.provider_expected_amount.is_not(None),
+                PaymentRequest.provider_expected_amount != plan_price(plan),
+                PaymentRequest.created_at >= cutoff).limit(1))
+            if previous is not None:
+                raise RuntimeError("Previous checkout is still active; retry after it expires")
             return await session.scalar(
                 select(PaymentRequest)
                 .where(
                     PaymentRequest.telegram_user_id == user_id,
                     PaymentRequest.plan == plan,
+                    PaymentRequest.provider_expected_amount == plan_price(plan),
                     PaymentRequest.status.in_(("prepared", "awaiting_receipt")),
                     PaymentRequest.provider_payment_url.is_not(None),
                     PaymentRequest.provider_status == f"waiting:{configuration_id}",
@@ -1407,7 +1422,7 @@ class PaymentRepository:
             current = result.scalar_one_or_none()
             if current is None:
                 return "missing", None
-            expected = plan_price(current.plan)
+            expected = current.provider_expected_amount if current.provider_expected_amount is not None else plan_price(current.plan)
             try:
                 amount_matches = amount is not None and Decimal(str(amount)) == Decimal(expected)
             except (InvalidOperation, ValueError, TypeError):

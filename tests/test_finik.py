@@ -39,14 +39,14 @@ def test_finik_signature_matches_canonical_request() -> None:
         path="/v1/payment",
         host="api.acquiring.averspay.kg",
         headers={"x-api-timestamp": "123", "x-api-key": "test"},
-        body={"PaymentId": "id", "Amount": 499, "Data": {"z": 1, "a": 2}},
+        body={"PaymentId": "id", "Amount": 399, "Data": {"z": 1, "a": 2}},
     )
     assert data.decode().startswith(
         "post\n/v1/payment\nhost:api.acquiring.averspay.kg&x-api-key:test&x-api-timestamp:123\n"
     )
     # Only top-level JSON keys are sorted, matching Finik's official authorizer.
     assert data.decode().endswith(
-        '{"Amount":499,"Data":{"z":1,"a":2},"PaymentId":"id"}'
+        '{"Amount":399,"Data":{"z":1,"a":2},"PaymentId":"id"}'
     )
     signature = sign_request(data, private_pem)
     assert verify_request(data, signature, public_pem)
@@ -79,7 +79,7 @@ def test_payment_configuration_id_changes_with_merchant() -> None:
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("amount", "expected_description"),
-        [(499, "Бессрочный доступ к контактам"), (500, "Бессрочный доступ к контактам"), (999, "Доступ к контактам навсегда"), (699, "Доступ к контактам навсегда")],
+        [(100, "Публикация заявки на поиск квартиры"), (399, "Бессрочный доступ к контактам"), (500, "Бессрочный доступ к контактам"), (999, "Доступ к контактам навсегда"), (699, "Доступ к контактам навсегда")],
 )
 async def test_checkout_uses_neutral_tariff_description(
     amount: int, expected_description: str

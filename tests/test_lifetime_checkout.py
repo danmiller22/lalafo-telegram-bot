@@ -18,9 +18,9 @@ def test_restored_lifetime_session_keeps_999_price():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('plan,price', [('week',499),('lifetime',999)])
+@pytest.mark.parametrize('plan,price', [('week',399),('lifetime',999)])
 async def test_checkout_keeps_selected_plan_and_price(monkeypatch,plan,price):
-    settings=Settings(_env_file=None,weekly_finik_payment_url='https://qr.finik.kg/weekly-499',monthly_finik_payment_url='https://qr.finik.kg/month-999')
+    settings=Settings(_env_file=None,weekly_finik_payment_url='https://qr.finik.kg/weekly-399',monthly_finik_payment_url='https://qr.finik.kg/month-999')
     result=ContactResult('unpaid',SimpleNamespace(id=42))
     service=SimpleNamespace(contact_status=AsyncMock(return_value=result),begin_payment=AsyncMock(return_value=SimpleNamespace(request=SimpleNamespace(status='awaiting_receipt',plan=plan))))
     runtime=SimpleNamespace(workflow_data={'service':service,'terms_consents':SimpleNamespace(accept=AsyncMock()),'payments':object()})
@@ -32,10 +32,11 @@ async def test_checkout_keeps_selected_plan_and_price(monkeypatch,plan,price):
         assert error.value.status_code == 400
         service.begin_payment.assert_not_awaited()
         return
-    response=await web.miniapp_start_payment(web.MiniAppRequest(init_data='test',start_param='test',plan=plan),BackgroundTasks())
-    assert response['plan']==plan and response['price']==price
-    assert response['payment_url']==(web._finik_payment_url(settings, plan))
-    assert service.begin_payment.await_args.kwargs['plan']==plan
+    # A static QR has no five-minute expiry and cannot be used for new purchases.
+    with pytest.raises(HTTPException) as error:
+        await web.miniapp_start_payment(web.MiniAppRequest(init_data="test",start_param="test",plan=plan),BackgroundTasks())
+    assert error.value.status_code == 503
+    service.begin_payment.assert_not_awaited()
 
 
 @pytest.mark.asyncio

@@ -143,7 +143,8 @@ class LalafoIngestRequest(BaseModel):
 
 
 def _finik_payment_url(settings: Any, plan: str) -> str:
-    return settings.weekly_finik_payment_url if plan == WEEK_PLAN else ""
+    # Static QR codes do not expire and cannot reflect a price change safely.
+    return ""
 
 
 def _uses_dynamic_finik(settings: Any, plan: str) -> bool:
@@ -182,6 +183,7 @@ async def _finik_checkout_url(
         created_at = created_at.replace(tzinfo=UTC) if created_at.tzinfo is None else created_at
         if (
             payment_request.plan == plan
+            and getattr(payment_request, "provider_expected_amount", None) == plan_price(plan)
             and payment_request.status in {"prepared", "awaiting_receipt"}
             and getattr(payment_request, "provider_status", None) == f"waiting:{configuration_id}"
             and getattr(payment_request, "provider_payment_url", None)

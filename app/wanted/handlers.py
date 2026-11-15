@@ -228,7 +228,7 @@ async def wanted_create(
         await callback.answer("Откройте личный чат бота.", show_alert=True)
         return
     payment_url = settings.wanted_finik_payment_url.strip()
-    if not settings.finik_auto_enabled and not payment_url.startswith(("https://", "http://")):
+    if not settings.finik_auto_enabled:
         await callback.answer(
             "Оплата заявки временно недоступна. Попробуйте позже или напишите в техподдержку.",
             show_alert=True,

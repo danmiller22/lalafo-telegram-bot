@@ -63,7 +63,7 @@ def test_telegram_init_data_rejects_tampering_and_stale_payload():
     ) is None
 
 
-def test_mini_app_page_has_only_lifetime_499_tariff_and_privacy_link():
+def test_mini_app_page_has_only_lifetime_399_tariff_and_privacy_link():
     html = mini_app_html()
 
     assert "/miniapp/api/session" in html
@@ -72,7 +72,7 @@ def test_mini_app_page_has_only_lifetime_499_tariff_and_privacy_link():
     assert "Бессрочный доступ" in html
     assert "Недельный доступ" not in html
     assert "Одна оплата открывает номера всех актуальных квартир на 7 дней." not in html
-    assert ">499 сом</span>" in html
+    assert ">399 сом</span>" in html
     assert 'id="pay-now"' in html
     assert ">Оплата</button>" in html
     assert "500 сом" not in html and "699" not in html
@@ -96,7 +96,7 @@ def test_mini_app_page_has_only_lifetime_499_tariff_and_privacy_link():
     assert "Доступ откроется автоматически" in html
     assert "Проверить оплату" not in html
     assert "Оплата через Finik" not in html
-    assert "Оплатили 499 сом?" not in html
+    assert "Оплатили 399 сом?" not in html
     assert "Я оплатил(а) — открыть номер" not in html
     assert 'id="receipt-file"' not in html
     assert "receipt_data" not in html

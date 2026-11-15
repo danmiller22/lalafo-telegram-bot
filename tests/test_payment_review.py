@@ -49,7 +49,7 @@ async def test_only_admin_decision_unlocks_contacts(repositories, service, revie
     bot.send_message.assert_awaited_once()
     sent = bot.send_message.await_args
     assert sent.args[0] == 999
-    assert "499" in sent.args[1] and "@buyer" in sent.args[1]
+    assert "399" in sent.args[1] and "@buyer" in sent.args[1]
     assert [b.text for b in sent.kwargs["reply_markup"].inline_keyboard[0]] == ["Дать доступ", "Отказать"]
     assert (await service.contact_status(101, apartment.id)).status == "pending"
     delivery = AsyncMock()
@@ -162,7 +162,7 @@ async def test_verified_finik_payment_overrides_an_earlier_manual_rejection(repo
     await notify_payment_admin(bot, payments, settings, signer, request)
     assert await service.decide(request.id, approve=False, actor_id=999) == "rejected"
     outcome, _ = await payments.apply_provider_result(
-        "manual-test", succeeded=True, amount=499
+        "manual-test", succeeded=True, amount=399
     )
     assert outcome == "approved"
     assert (await service.contact_status(101, apartment.id)).status == "approved"

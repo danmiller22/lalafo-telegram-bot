@@ -149,7 +149,7 @@ async def test_health_and_authentication() -> None:
         "payment_review_worker": "disabled",
         "listing_validity_days": 2,
         "payment_receipt_required": False,
-        "contact_tariff": {"plan": "week", "price": 499, "expires": False, "storage": "persistent_ledger"},
+        "contact_tariff": {"plan": "week", "price": 399, "expires": False, "storage": "persistent_ledger"},
         "payment_review": "admin_missing",
             "telegram_inventory": "disabled",
             "lalafo_inventory": "disabled",
@@ -663,7 +663,7 @@ async def test_miniapp_page_is_public_but_session_requires_telegram_auth(
     assert accepted.status_code == 200
     payload = accepted.json()
     assert payload["status"] == "unpaid"
-    assert payload["price"] == 499
+    assert payload["price"] == 399
     assert payload["lifetime_available"] is False
     assert payload["monthly_available"] is False
     assert "terms_accepted" not in payload
@@ -688,7 +688,7 @@ def test_personal_checkout_takes_priority_when_finik_api_is_configured(
     assert settings.finik_auto_enabled
     assert web._uses_dynamic_finik(settings, WEEK_PLAN)
     assert not web._uses_dynamic_finik(settings, MONTH_PLAN)
-    assert web._finik_payment_url(settings, WEEK_PLAN).endswith("/weekly")
+    assert web._finik_payment_url(settings, WEEK_PLAN) == ""
     assert web._finik_payment_url(settings, MONTH_PLAN) == ""
 
 
@@ -942,7 +942,7 @@ async def test_successful_finik_webhook_grants_and_delivers_contact(
             },
             json={
                 "status": "success",
-                "amount": 499,
+                "amount": 399,
                 "fields": {"paymentId": "arenda-73"},
             },
         )
@@ -950,7 +950,7 @@ async def test_successful_finik_webhook_grants_and_delivers_contact(
     assert response.status_code == 200
     assert response.json() == {"status": "approved"}
     payments.apply_provider_result.assert_awaited_once_with(
-        "arenda-73", succeeded=True, amount=499
+        "arenda-73", succeeded=True, amount=399
     )
     delivery.assert_awaited_once()
     assert delivery.await_args.args[0].workflow_data["payments"] is payments
