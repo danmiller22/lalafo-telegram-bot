@@ -148,4 +148,16 @@ async def run_payment_review_worker(runtime) -> None:
             await process_checkout_recoveries(runtime)
         except Exception:
             logger.exception("Checkout recovery iteration failed")
+        try:
+            from sqlalchemy import select
+            from app.models import WantedAd
+            from app.wanted.finik import publish_paid
+            wanted = runtime.workflow_data.get("wanted_ads")
+            if wanted is not None and runtime.workflow_data["settings"].finik_auto_enabled:
+                async with wanted.sessions() as session:
+                    ids = list((await session.scalars(select(WantedAd.id).where(WantedAd.status == "paid").limit(20))).all())
+                for ad_id in ids:
+                    await publish_paid(wanted, runtime.workflow_data["settings"], runtime.bot, ad_id)
+        except Exception:
+            logger.exception("Paid search-request publication recovery failed")
         await asyncio.sleep(30)

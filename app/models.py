@@ -416,6 +416,17 @@ class WantedAd(Base):
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class WantedPayment(Base):
+    __tablename__ = "wanted_payments"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    wanted_ad_id: Mapped[int] = mapped_column(ForeignKey("wanted_ads.id"), nullable=False, index=True)
+    provider_payment_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="created")
+    payment_url: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class DailyFeaturedPublication(Base):
     __tablename__ = "daily_featured_publications"
     __table_args__ = (

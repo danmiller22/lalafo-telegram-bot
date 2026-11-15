@@ -228,7 +228,7 @@ async def wanted_create(
         await callback.answer("Откройте личный чат бота.", show_alert=True)
         return
     payment_url = settings.wanted_finik_payment_url.strip()
-    if not payment_url.startswith(("https://", "http://")):
+    if not settings.finik_auto_enabled and not payment_url.startswith(("https://", "http://")):
         await callback.answer(
             "Оплата заявки временно недоступна. Попробуйте позже или напишите в техподдержку.",
             show_alert=True,
@@ -260,16 +260,28 @@ async def wanted_create(
         )
         return
 
+    if settings.finik_auto_enabled:
+        from app.wanted.finik import create_checkout
+        try:
+            payment_url = await create_checkout(wanted_ads, settings, ad)
+        except Exception:
+            logger.exception("Could not create Finik checkout for wanted ad %s", ad.id)
+            await callback.answer("Не удалось создать ссылку. Заявка сохранена; обратитесь в поддержку.", show_alert=True)
+            await state.clear()
+            return
+
     text = (
         f"Заявка сохранена. Стоимость публикации — {WANTED_SEARCH_PRICE} сом.\n\n"
         + format_wanted_ad(ad)
-        + "\n\nПосле оплаты нажмите «Проверить оплату»."
+        + ("\n\nПосле оплаты заявка будет опубликована автоматически." if settings.finik_auto_enabled
+           else "\n\nПосле оплаты нажмите «Проверить оплату».")
     )
     keyboard = wanted_payment_keyboard(
         ad.id,
         signer=signer,
         payment_url=payment_url,
         support_url=settings.support_bot_url,
+        automatic=settings.finik_auto_enabled,
     )
     await callback.answer()
     try:
@@ -301,6 +313,27 @@ async def wanted_stale_button(callback: CallbackQuery) -> None:
     )
 
 
+@router.callback_query(F.data.startswith("wanted-refresh:"))
+async def wanted_refresh(callback: CallbackQuery, wanted_ads: WantedAdRepository,
+                         signer: TokenSigner, settings: Settings) -> None:
+    ad_id = signer.verify_id("wanted-paid", (callback.data or "").split(":", 1)[-1])
+    ad = await wanted_ads.get_owned(ad_id, callback.from_user.id) if ad_id is not None else None
+    if ad is None or ad.status not in {"awaiting_payment", "rejected"}:
+        await callback.answer("Заявка не найдена или уже оплачена.", show_alert=True)
+        return
+    try:
+        from app.wanted.finik import create_checkout
+        url = await create_checkout(wanted_ads, settings, ad)
+    except Exception:
+        logger.exception("Could not refresh wanted checkout")
+        await callback.answer("Не удалось обновить ссылку. Попробуйте позже.", show_alert=True)
+        return
+    await callback.answer()
+    if callback.message:
+        await callback.message.edit_reply_markup(reply_markup=wanted_payment_keyboard(
+            ad.id, signer=signer, payment_url=url, support_url=settings.support_bot_url, automatic=True))
+
+
 @router.callback_query(F.data.startswith("wanted-paid:"))
 async def wanted_paid(
     callback: CallbackQuery,
@@ -321,7 +354,7 @@ async def wanted_paid(
     if outcome == "published":
         await callback.answer("✅ Заявка уже опубликована в группе.", show_alert=True)
         return
-    if outcome == "publishing":
+    if outcome in {"publishing", "paid"}:
         await callback.answer("⏳ Заявка публикуется. Подождите немного.", show_alert=True)
         return
     await callback.answer(
@@ -393,6 +426,7 @@ async def _send_my_wanted_ads(
         "awaiting_payment": "ожидает оплаты",
         "pending": "на проверке",
         "publishing": "публикуется",
+        "paid": "оплата подтверждена",
         "published": "опубликована",
         "rejected": "оплата отклонена",
     }
@@ -409,13 +443,22 @@ async def _send_my_wanted_ads(
     for ad in rows[:5]:
         keyboard = None
         if ad.status in {"awaiting_payment", "rejected", "pending"}:
-            keyboard = wanted_payment_keyboard(
-                ad.id,
-                signer=signer,
-                payment_url=settings.wanted_finik_payment_url,
-                support_url=settings.support_bot_url,
-                pending=ad.status == "pending",
-            )
+            if settings.finik_auto_enabled and ad.status == "pending":
+                from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+                keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="🛟 Техподдержка", url=settings.support_bot_url)],
+                ])
+            elif settings.finik_auto_enabled:
+                from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+                token = signer.sign_id("wanted-paid", ad.id)
+                keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="💳 Получить ссылку для оплаты", callback_data=f"wanted-refresh:{token}")],
+                    [InlineKeyboardButton(text="🛟 Техподдержка", url=settings.support_bot_url)],
+                ])
+            else:
+                keyboard = wanted_payment_keyboard(
+                    ad.id, signer=signer, payment_url=settings.wanted_finik_payment_url,
+                    support_url=settings.support_bot_url, pending=ad.status == "pending")
         await message.answer(
             f"Заявка #{ad.id} · {status_labels.get(ad.status, ad.status)}\n\n"
             + format_wanted_ad(ad),

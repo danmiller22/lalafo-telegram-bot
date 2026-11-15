@@ -70,7 +70,7 @@ class WantedAdRepository:
             ad = result.scalar_one_or_none()
             if ad is None:
                 return "missing", None
-            if ad.status in {"published", "publishing"}:
+            if ad.status in {"published", "publishing", "paid"}:
                 return ad.status, ad
             if ad.status == "pending":
                 return "pending", ad
