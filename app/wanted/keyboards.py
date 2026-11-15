@@ -118,6 +118,7 @@ def wanted_payment_keyboard(
     payment_url: str,
     support_url: str,
     pending: bool = False,
+    automatic: bool = False,
 ) -> InlineKeyboardMarkup:
     token = signer.sign_id("wanted-paid", ad_id)
     return InlineKeyboardMarkup(
@@ -127,12 +128,12 @@ def wanted_payment_keyboard(
                     text=f"💳 Оплатить {WANTED_SEARCH_PRICE} сом", url=payment_url
                 )
             ],
-            [
+            *([[InlineKeyboardButton(text="🔄 Обновить ссылку", callback_data=f"wanted-refresh:{token}")]] if automatic else [[
                 InlineKeyboardButton(
                     text="⏳ Оплата проверяется" if pending else "✅ Проверить оплату",
                     callback_data=f"wanted-paid:{token}",
                 )
-            ],
+            ]]),
             [InlineKeyboardButton(text="🛟 Техподдержка", url=support_url)],
         ]
     )

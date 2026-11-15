@@ -2014,6 +2014,15 @@ async def finik_webhook(
     amount = body.get("amount", fields.get("amount"))
     if not payment_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST)
+    if payment_id.startswith("wanted-"):
+        from app.wanted.finik import apply_result, publish_paid
+        repository = runtime.workflow_data["wanted_ads"]
+        outcome, ad_id = await apply_result(repository, payment_id, payment_succeeded(provider_status), amount)
+        if outcome == "amount_mismatch":
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT)
+        if outcome in ("approved", "already_paid") and ad_id is not None:
+            background_tasks.add_task(publish_paid, repository, settings, runtime.bot, ad_id)
+        return {"status": outcome}
     outcome, payment_request = await runtime.workflow_data["payments"].apply_provider_result(
         payment_id,
         succeeded=payment_succeeded(provider_status),
