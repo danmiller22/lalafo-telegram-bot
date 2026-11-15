@@ -7,14 +7,14 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from aiogram import Bot
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.config import get_settings
 from app.database import create_engine_and_session
 from app.lalafo.models import PHONE_SOURCE_VERSION
 from app.managed_cards import PREFIX
-from app.models import LalafoAutoReplyMeta
-from app.promotions import external_repeat_receipt_key
+from app.models import LalafoAutoReplyMeta, RequestedCardPromotion, ApartmentInventoryQueue
+from app.promotions import external_repeat_receipt_key, REQUESTED_WINDOW_PREFIX
 from app.payments.repository import ApartmentRepository
 from app.security import TokenSigner
 from app.telegram.publisher import TelegramPublisher
@@ -66,13 +66,16 @@ async def publish(data, sessions, publisher, now):
     resolved = []
     used = set()
     skipped = 0
+    missing = 0
     for card in cards:
         original = mappings.get(card['id'])
         if original is None:
             original = await repo.verified_source_by_photos(card['photo_urls'],
                 excluded_lalafo_ids={c['id'] for c in cards})
         if original is None or not original.phone or original.phone_source_version != PHONE_SOURCE_VERSION:
-            raise ValueError(f"verified_source_missing:{card['id']}")
+            print(f"SKIPPED_UNVERIFIED_SOURCE managed_id={card['id']}", flush=True)
+            missing += 1
+            continue
         ad = apartment_to_ad(original)
         if is_excluded_contact(ad):
             raise ValueError(f"excluded_source:{card['id']}")
@@ -111,7 +114,24 @@ async def publish(data, sessions, publisher, now):
             marker.value = f'published:{message.message_id}'
             session.add(LalafoAutoReplyMeta(key=external_repeat_receipt_key(CHAT, message.message_id), value='4h'))
         print(f"PUBLISHED managed_id={card['id']} message_id={message.message_id}", flush=True)
-    print(f"FOURHOUR_COMPLETED eligible={len(resolved)} skipped_nonowners={skipped}", flush=True)
+    # The explicit four-hour schedule replaces older timed repeats of these
+    # same account cards, without touching the ordinary discovery queue.
+    ids = {original.id for _, original, _ in resolved}
+    async with sessions.begin() as session:
+        await session.execute(update(RequestedCardPromotion).where(
+            RequestedCardPromotion.apartment_id.in_(ids)).values(enabled=False))
+        await session.execute(update(ApartmentInventoryQueue).where(
+            ApartmentInventoryQueue.apartment_id.in_(ids),
+            ApartmentInventoryQueue.window_key.startswith(REQUESTED_WINDOW_PREFIX),
+            ApartmentInventoryQueue.status == 'queued').values(status='skipped', last_error='external_four_hour_schedule'))
+        for original_id in ids:
+            binding = await session.get(LalafoAutoReplyMeta, PREFIX + str(original_id))
+            if binding is not None:
+                value = json.loads(binding.value)
+                if value.get('profile_id') == PROFILE:
+                    value.update(enabled=False, externally_scheduled=True, repeat_every_hours=4)
+                    binding.value = json.dumps(value)
+    print(f"FOURHOUR_COMPLETED eligible={len(resolved)} skipped_nonowners={skipped} missing_sources={missing}", flush=True)
 
 
 async def main(path):
