@@ -49,7 +49,7 @@ def test_primary_search_includes_studios_one_and_two_room_apartments():
         params[key] for key in params if key.startswith("parameters[2149]")
     ] == ["19057"]
     assert params["price[from]"] == "25000"
-    assert params["price[to]"] == "40000"
+    assert params["price[to]"] == "45000"
 
 
 def test_client_sends_browser_context_headers():
@@ -87,7 +87,7 @@ def test_supplementary_search_uses_central_owner_pool():
         } == {"19057"}
         assert not any(key.startswith("parameters[946]") for key in params)
         assert params["price[from]"] == "25000"
-        assert params["price[to]"] == "40000"
+        assert params["price[to]"] == "45000"
 
 
 @pytest.mark.asyncio
@@ -335,4 +335,4 @@ def test_district_inventory_sources_apply_distinct_geographic_filters():
             params = dict(LalafoClient._search_params(url, 1))
             assert len([k for k in params if k.startswith('parameters[357]')]) == 1
             assert params['price[from]'] == '25000'
-            assert params['price[to]'] == '40000'
+            assert params['price[to]'] == '45000'

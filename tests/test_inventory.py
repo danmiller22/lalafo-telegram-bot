@@ -97,8 +97,8 @@ async def test_external_realtor_repeats_do_not_reduce_ordinary_half_share(reposi
     assert await InventoryRepository(sessions).schedule_period(now=now) == 30
     async with sessions() as session:
         kinds = list((await session.scalars(select(Apartment.seller_type).join(ApartmentInventoryQueue))).all())
-    assert kinds.count("owner") == 26
-    assert kinds.count("realtor") == 4
+    assert kinds.count("owner") == 27
+    assert kinds.count("realtor") == 3
 
 
 
@@ -309,8 +309,8 @@ def test_healthy_stock_uses_a_small_realtor_allocation():
     period_count, central_count = period_publication_targets(period_start)
     assert len(planned) == period_count
     assert any(item.apartment.seller_type == "owner" for item in planned)
-    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 4
-    assert sum(is_central(item.apartment.district) for item in planned) == 4
+    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 3
+    assert sum(is_central(item.apartment.district) for item in planned) == 3
     assert central_count == 15
 
 
@@ -334,8 +334,8 @@ def test_two_periods_use_fifteen_percent_agents_when_stock_suffices():
 
     assert len(first) == 30
     assert len(second) == 30
-    assert sum(item.apartment.seller_type == "realtor" for item in first + second) == 9
-    assert sum(item.apartment.seller_type == "owner" for item in first + second) == 51
+    assert sum(item.apartment.seller_type == "realtor" for item in first + second) == 6
+    assert sum(item.apartment.seller_type == "owner" for item in first + second) == 54
 
 
 
@@ -375,8 +375,8 @@ def test_period_honors_remaining_daily_realtor_quota():
     )
 
     assert len(planned) == period_publication_targets(period_start)[0]
-    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 4
-    assert sum(item.apartment.seller_type == "owner" for item in planned) == 26
+    assert sum(item.apartment.seller_type == "realtor" for item in planned) == 3
+    assert sum(item.apartment.seller_type == "owner" for item in planned) == 27
 
 
 
@@ -711,7 +711,7 @@ async def test_schedule_uses_agents_to_fill_daily_catchup_shortage(repositories)
             or 0
         )
     assert daily_realtor_target(now) == 9
-    assert realtor_count == 7
+    assert realtor_count == 6
     assert unknown_count == 0
 
 
@@ -1396,7 +1396,7 @@ def test_unknown_authors_share_fifteen_percent_cap_with_realtors():
     second=plan_period([a for a in stock if a.id not in used],period_start=start+timedelta(minutes=630),prior_total=len(first),prior_non_owners=sum(p.apartment.seller_type != "owner" for p in first),rng=random.Random(53))
     selected=[p.apartment for p in first+second]
     assert len(selected)==60 and len({a.id for a in selected})==60
-    assert sum(a.seller_type=='owner' for a in selected)==51
-    assert sum(a.seller_type!='owner' for a in selected) == 9
+    assert sum(a.seller_type=='owner' for a in selected)==54
+    assert sum(a.seller_type!='owner' for a in selected) == 6
     assert all(a.price == 25_000 for a in selected if a.seller_type != "owner")
     assert all(not a.owner_listing for a in selected if a.seller_type=='unknown')

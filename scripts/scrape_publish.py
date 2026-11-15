@@ -111,7 +111,7 @@ REALTOR_CANDIDATE_RESERVE_SHARE = 0.20
 OWNER_SHORTAGE_SEARCH_SECONDS = 60.0
 # Two-bedroom value range; retained limits are used by reporting helpers.
 TWO_BEDROOM_MIN_PRICE = 25_000
-TWO_BEDROOM_MAX_PRICE = 40_000
+TWO_BEDROOM_MAX_PRICE = 45_000
 TWO_BEDROOM_DAILY_LIMIT = 20
 TWO_BEDROOM_MAX_PER_RUN = 2
 MANAGED_PROFILE_MAX_PER_RUN = 3
@@ -488,7 +488,7 @@ def rotate_inventory_sources(urls, *, now=None):
         url for url in owners
         if ('/2-bedrooms/owner?' in url or '/2-bedrooms/?' in url)
         and 'price[from]=25000' in url
-        and 'price[to]=40000' in url
+        and 'price[to]=45000' in url
     ]
     rotating_owners = [url for url in owners if url not in hot_owners]
     ordered = list(hot_owners)
