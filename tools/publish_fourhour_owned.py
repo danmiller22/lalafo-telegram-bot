@@ -2,7 +2,7 @@
 import argparse
 import asyncio
 import json
-import os
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -14,6 +14,7 @@ from app.database import create_engine_and_session
 from app.lalafo.models import PHONE_SOURCE_VERSION
 from app.managed_cards import PREFIX
 from app.models import LalafoAutoReplyMeta
+from app.promotions import external_repeat_receipt_key
 from app.payments.repository import ApartmentRepository
 from app.security import TokenSigner
 from app.telegram.publisher import TelegramPublisher
@@ -41,7 +42,7 @@ def validate_packet(data, now):
                 or card['category_id'] != 2044 or card['city_id'] != 103184
                 or str(card['currency']).upper() != 'KGS'
                 or 'пример для подбора' in card['source_description'].casefold()
-                or 'ориентир аренды' in card['source_description'].casefold()):
+                or re.search(r'ориентир:?\s*\d', card['source_description'], re.I)):
             raise ValueError('invalid_active_apartment_snapshot')
     return cards
 
@@ -101,12 +102,14 @@ async def publish(data, sessions, publisher, now):
                     continue
                 raise RuntimeError(f"reserved_unverified:{card['id']}")
             session.add(LalafoAutoReplyMeta(key=key, value='reserved_unverified'))
+        await repo.upsert_discovered(ad, discovery_priority=True)
         message = await publisher.publish(original.id, ad)
         await repo.mark_published(original.id, chat_id=CHAT, message_id=message.message_id,
                                   acknowledged_at=message.date, promote_requested=False)
         async with sessions.begin() as session:
             marker = await session.get(LalafoAutoReplyMeta, key)
             marker.value = f'published:{message.message_id}'
+            session.add(LalafoAutoReplyMeta(key=external_repeat_receipt_key(CHAT, message.message_id), value='4h'))
         print(f"PUBLISHED managed_id={card['id']} message_id={message.message_id}", flush=True)
     print(f"FOURHOUR_COMPLETED eligible={len(resolved)} skipped_nonowners={skipped}", flush=True)
 
