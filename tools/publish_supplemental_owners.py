@@ -40,7 +40,7 @@ async def main(path):
                 or ad.rooms not in {'studio', '1', '2'} or not ad.no_subletting
                 or not ad.owner_listing or ad.seller_type != 'owner'
                 or not ad.photo_urls or not ad.source_url.startswith(('https://lalafo.kg/', 'https://t.me/', 'manual://telegram/'))
-                or not 10000 <= ad.price <= {'studio':30000,'1':35000,'2':45000}[ad.rooms]
+                or not 25000 <= ad.price <= 45000
                 or is_excluded_contact(ad)):
             raise ValueError('Unverified source or excluded contact')
     settings = get_settings()
