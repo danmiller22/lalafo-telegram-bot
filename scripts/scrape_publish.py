@@ -691,8 +691,8 @@ def select_owners_then_realtors(
     eligible = deduplicate_candidates(
         [ad for ad in candidates if listing_policy_eligible(ad)]
     )
-    normal = [ad for ad in eligible if ad.seller_type != "realtor"]
-    agents = [ad for ad in eligible if ad.seller_type == "realtor"]
+    normal = [ad for ad in eligible if ad.seller_type == "owner" and ad.owner_listing]
+    agents = [ad for ad in eligible if ad.seller_type != "owner"]
     agent_limit = realtor_allowance(len(normal), limit, base_allowance=(limit * 15 + 99) // 100)
     agent_count = min(len(agents), agent_limit)
     selected = select_publish_batch_with_reposts(normal, {}, limit - agent_count)

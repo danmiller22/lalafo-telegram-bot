@@ -95,7 +95,7 @@ async def process_checkout_recoveries(runtime) -> int:
             price=price,
             manual_claim=not settings.finik_auto_enabled,
         )
-        offer = (f"Недельный доступ ко всем номерам — {price} сом"
+        offer = (f"Бессрочный доступ ко всем номерам — {price} сом"
                  if request.plan == WEEK_PLAN else f"Доступ ко всем номерам — {price} сом {plan_label(request.plan).lower()}")
         next_step = (
             "После оплаты доступ откроется автоматически."

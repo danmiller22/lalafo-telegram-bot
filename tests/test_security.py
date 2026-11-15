@@ -98,7 +98,7 @@ def test_callback_data_is_short_and_contains_no_phone():
         )
 
     assert [row[0].text for row in private_payment.inline_keyboard] == [
-        "Недельный тариф — 499 сом",
+        "Бессрочный доступ — 499 сом",
         "🔒 Политика конфиденциальности",
     ]
     assert private_payment.inline_keyboard[1][0].url.endswith("?start=privacy")

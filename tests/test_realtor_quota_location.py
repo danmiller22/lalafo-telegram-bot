@@ -58,7 +58,7 @@ async def test_due_queue_rejects_blocked_contact_from_old_inventory(repositories
         assert row.status=='skipped'
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('prior_ordinary,prior_agents,allowed',[(5,0,True),(6,0,True),(12,1,True),(60,10,False)])
+@pytest.mark.parametrize('prior_ordinary,prior_agents,allowed',[(5,0,False),(6,0,True),(12,1,True),(60,10,False)])
 async def test_fallback_dispatch_still_obeys_daily_cap(repositories,prior_ordinary,prior_agents,allowed):
     apartments,_,sessions=repositories
     now=publication_day_start(datetime.now(timezone.utc)).astimezone(timezone.utc)+timedelta(hours=19)

@@ -278,7 +278,10 @@ def parse_detail_data(raw: dict[str, Any], *, source_url: str) -> LalafoAd:
         deposit = None
     offerer = str(params.get("Кто предлагает") or "").strip().casefold()
     realtor_service = str(params.get("Услуги риэлтора") or "").strip()
-    if realtor_service or any(
+    is_realtor_service = bool(realtor_service) and realtor_service.casefold() not in {
+        "не являюсь риэлтором", "не являюсь риелтором",
+    }
+    if is_realtor_service or any(
         marker in offerer for marker in ("риелтор", "риэлтор", "агент", "агентство")
     ):
         seller_type = "realtor"

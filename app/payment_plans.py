@@ -3,7 +3,10 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 
+# Keep the persisted checkout identifier and 499-som Finik links compatible.
+# New grants on this tariff are lifetime; old dated grants retain their dates.
 WEEK_PLAN = "week"
+LIFETIME_ACCESS_PLANS = (WEEK_PLAN, "lifetime")
 MONTH_PLAN = "month"
 LIFETIME_PLAN = "lifetime"
 PERSONAL_PLAN = "personal"
@@ -28,11 +31,11 @@ def plan_price(plan: str) -> int:
 
 
 def plan_label(plan: str) -> str:
-    labels = {PERSONAL_PLAN: "Под меня: 1 месяц, до 20 новых квартир", WEEK_PLAN: "Базовая: 7 дней", MONTH_PLAN: "Премиум: 30 дней", LIFETIME_PLAN: "Доступ к контактам навсегда"}
+    labels = {PERSONAL_PLAN: "Под меня: 1 месяц, до 20 новых квартир", WEEK_PLAN: "Бессрочный доступ", MONTH_PLAN: "Премиум: 30 дней", LIFETIME_PLAN: "Доступ к контактам навсегда"}
     return labels.get(plan, "Неизвестный тариф")
 
 
 def expires_at_for(plan: str, approved_at: datetime) -> datetime | None:
-    durations = {PERSONAL_PLAN: PERSONAL_DURATION, WEEK_PLAN: WEEK_DURATION, MONTH_PLAN: MONTH_DURATION}
+    durations = {PERSONAL_PLAN: PERSONAL_DURATION, MONTH_PLAN: MONTH_DURATION}
     duration = durations.get(plan)
     return approved_at + duration if duration is not None else None

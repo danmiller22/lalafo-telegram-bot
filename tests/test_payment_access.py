@@ -46,7 +46,7 @@ async def test_payment_state_machine(repositories, service):
     approved = await service.contact_status(100, apartment.id)
     assert approved.status == "approved"
     assert approved.apartment.phone == "+996555123456"
-    assert approved.access_expires_at is not None
+    assert approved.access_expires_at is None
 
 
 @pytest.mark.asyncio
@@ -99,7 +99,7 @@ async def test_one_weekly_approval_closes_parallel_claims_without_duplicate_reve
 
 
 @pytest.mark.asyncio
-async def test_existing_paid_week_survives_checkout_reset_but_not_rejection(repositories, service):
+async def test_lifetime_499_survives_checkout_reset_but_not_rejection(repositories, service):
     apartments, payments, sessions = repositories
     first = await apartments.upsert_discovered(make_ad(lalafo_id=99003))
     second = await apartments.upsert_discovered(make_ad(lalafo_id=99004))
@@ -113,7 +113,7 @@ async def test_existing_paid_week_survives_checkout_reset_but_not_rejection(repo
             .values(status="awaiting_receipt", approved_at=None, access_expires_at=None))
     recovered = await service.contact_status(991, second.id)
     assert recovered.status == "approved"
-    assert recovered.access_expires_at is not None
+    assert recovered.access_expires_at is None
     assert (await service.contact_status(992, second.id)).status == "unpaid"
     async with sessions.begin() as session:
         await session.execute(update(PaymentRequest).where(PaymentRequest.id == initial.request.id)
@@ -157,7 +157,7 @@ async def test_verified_finik_payment_grants_access_without_admin_review(
     approved = await service.contact_status(9191, apartment.id)
     assert approved.status == "approved"
     expiry = approved.access_expires_at
-    assert expiry is not None
+    assert expiry is None
     repeated, _ = await payments.apply_provider_result(
         "payment-9191", succeeded=True, amount=499
     )
@@ -494,7 +494,7 @@ async def test_lifetime_999_unlocks_all_contacts_and_survives_checkout_cleanup(r
 
 
 @pytest.mark.asyncio
-async def test_weekly_access_unlocks_every_apartment_and_expires(repositories, service):
+async def test_legacy_dated_week_unlocks_every_apartment_and_expires(repositories, service):
     apartments, payments, sessions = repositories
     first = await apartments.upsert_discovered(make_ad(lalafo_id=601))
     second = await apartments.upsert_discovered(make_ad(lalafo_id=602, phone="+996555000002"))
@@ -510,6 +510,13 @@ async def test_weekly_access_unlocks_every_apartment_and_expires(repositories, s
         submission.request.id, approve=True, actor_id=999
     ) == "approved"
 
+    # A weekly grant issued before the tariff change keeps its recorded dates.
+    async with sessions.begin() as session:
+        for model in (PaymentRequest, PaymentHistory):
+            column = model.id if model is PaymentRequest else model.payment_request_id
+            await session.execute(update(model).where(column == submission.request.id)
+                .values(access_expires_at=datetime.now(timezone.utc) + timedelta(days=3)))
+
     access = await service.contact_status(700, second.id)
     assert access.status == "approved"
     assert access.apartment.id == second.id
@@ -521,6 +528,10 @@ async def test_weekly_access_unlocks_every_apartment_and_expires(repositories, s
             .where(PaymentRequest.id == submission.request.id)
             .values(access_expires_at=datetime.now(timezone.utc) - timedelta(seconds=1))
         )
+    async with sessions.begin() as session:
+        await session.execute(update(PaymentHistory)
+            .where(PaymentHistory.payment_request_id == submission.request.id)
+            .values(access_expires_at=datetime.now(timezone.utc) - timedelta(seconds=1)))
     assert (await service.contact_status(700, second.id)).status == "unpaid"
 
 
@@ -649,3 +660,30 @@ async def test_queued_repeat_checks_newer_publication_of_same_apartment(reposito
     await apartments.mark_published(other.id, chat_id=-100123, message_id=202)
     assert await apartments.is_duplicate(old, repost_before=cutoff)
     assert await apartments.is_duplicate(recent, repost_before=cutoff)
+
+
+@pytest.mark.asyncio
+async def test_499_provider_grant_is_lifetime_and_survives_checkout_cleanup(repositories, service, monkeypatch):
+    from sqlalchemy import delete
+    from app.payment_plans import plan_price, expires_at_for
+    apartments, payments, sessions = repositories
+    first = await apartments.upsert_discovered(make_ad(lalafo_id=991101))
+    second = await apartments.upsert_discovered(make_ad(lalafo_id=991102))
+    submission = await service.begin_payment(user_id=991101, apartment_id=first.id,
+        username=None, first_name="Buyer", plan=WEEK_PLAN)
+    await payments.prepare_provider_payment(submission.request.id, "lifetime-499")
+    assert (await payments.apply_provider_result("lifetime-499", succeeded=True, amount=499))[0] == "approved"
+    assert plan_price(WEEK_PLAN) == 499
+    assert expires_at_for(WEEK_PLAN, datetime.now(timezone.utc)) is None
+    async with sessions.begin() as session:
+        ledger = await session.scalar(select(PaymentHistory).where(PaymentHistory.payment_request_id == submission.request.id))
+        assert ledger.amount == 499 and ledger.access_expires_at is None
+        await session.execute(delete(PaymentRequest).where(PaymentRequest.id == submission.request.id))
+    future = datetime.now(timezone.utc) + timedelta(days=3650)
+    class FutureClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return future.astimezone(tz) if tz else future.replace(tzinfo=None)
+    monkeypatch.setattr("app.payments.repository.datetime", FutureClock)
+    access = await service.contact_status(991101, second.id)
+    assert access.status == "approved" and access.access_expires_at is None

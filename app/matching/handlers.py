@@ -33,7 +33,7 @@ async def personal_offer(callback: CallbackQuery, matching: MatchingRepository) 
     if callback.message is None:
         return
     await callback.message.answer(
-        "Для новых клиентов доступен недельный тариф — 499 сом на 7 дней. "
+        "Для новых клиентов доступен бессрочный доступ — 499 сом. "
         "Откройте карточку квартиры и нажмите «Получить номер»."
     )
 
@@ -41,7 +41,7 @@ async def personal_offer(callback: CallbackQuery, matching: MatchingRepository) 
 @router.callback_query(F.data == "personal:buy")
 async def personal_buy(callback: CallbackQuery) -> None:
     await callback.answer(
-        "Доступен только недельный тариф — 499 сом. Откройте карточку квартиры.", show_alert=True
+        "Доступен только бессрочный доступ — 499 сом. Откройте карточку квартиры.", show_alert=True
     )
 
 
@@ -84,7 +84,7 @@ async def show_hot_start(
             "Выберите количество комнат, районы и бюджет. Бот покажет подходящие "
             "квартиры и будет присылать новые совпадения.\n\n"
             "Просмотр и подбор бесплатны. Контакты открываются по доступу: "
-            "499 сом на 7 дней. Ранее оплаченный бессрочный доступ сохраняется."
+            "499 сом навсегда. Ранее оплаченный бессрочный доступ сохраняется."
         )
     else:
         text = profile_summary(profile)

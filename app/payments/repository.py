@@ -15,7 +15,7 @@ from sqlalchemy.orm import selectinload
 from app.lalafo.models import PHONE_SOURCE_VERSION, LalafoAd
 from app.listing_lifecycle import listing_expired
 from app.models import Apartment, ApartmentInventoryQueue, DailyFeaturedPublication, PaymentHistory, PaymentRequest
-from app.payment_plans import LIFETIME_PLAN, MONTH_PLAN, WEEK_PLAN, PERSONAL_PLAN, expires_at_for, plan_price
+from app.payment_plans import LIFETIME_ACCESS_PLANS, LIFETIME_PLAN, MONTH_PLAN, WEEK_PLAN, PERSONAL_PLAN, expires_at_for, plan_price
 from app.state import ListingIndex, ad_fingerprint
 from app.telegram.keyboards import APARTMENT_KEYBOARD_VERSION
 
@@ -723,11 +723,11 @@ class PaymentRepository:
                     PaymentRequest.telegram_user_id == user_id,
                     PaymentRequest.status == "approved",
                     or_(
-                        and_(PaymentRequest.plan == LIFETIME_PLAN, PaymentRequest.access_expires_at.is_(None)),
+                        and_(PaymentRequest.plan.in_(LIFETIME_ACCESS_PLANS), PaymentRequest.access_expires_at.is_(None)),
                         and_(PaymentRequest.plan.in_((WEEK_PLAN, MONTH_PLAN, PERSONAL_PLAN)), PaymentRequest.access_expires_at > now),
                     ),
                 )
-                .order_by((PaymentRequest.plan == LIFETIME_PLAN).desc(), PaymentRequest.access_expires_at.desc())
+                .order_by((PaymentRequest.plan.in_(LIFETIME_ACCESS_PLANS)).desc(), PaymentRequest.access_expires_at.desc())
                 .limit(1)
             )
             active = result.scalar_one_or_none()
@@ -742,7 +742,7 @@ class PaymentRepository:
                     PaymentHistory.telegram_user_id == user_id,
                     or_(
                         and_(
-                            PaymentHistory.plan == LIFETIME_PLAN,
+                            PaymentHistory.plan.in_(LIFETIME_ACCESS_PLANS),
                             PaymentHistory.access_expires_at.is_(None),
                         ),
                         and_(
@@ -853,7 +853,7 @@ class PaymentRepository:
                 session.add(request)
                 outcome = "created"
             elif request.status == "approved" and (request.plan == plan or plan != PERSONAL_PLAN) and (
-                (request.plan == LIFETIME_PLAN and expires_at is None)
+                (request.plan in LIFETIME_ACCESS_PLANS and expires_at is None)
                 or (
                     request.plan in (WEEK_PLAN, MONTH_PLAN, PERSONAL_PLAN)
                     and expires_at is not None
@@ -1142,7 +1142,7 @@ class PaymentRepository:
         current.rejected_by = None
         current.admin_notification_token = None
         current.admin_notification_claimed_at = None
-        if current.access_expires_at is not None or current.plan == LIFETIME_PLAN:
+        if current.access_expires_at is not None or current.plan in LIFETIME_ACCESS_PLANS:
             session.add(
                 PaymentHistory(
                     payment_request_id=current.id,
