@@ -14,7 +14,7 @@ from app.database import create_engine_and_session
 from app.lalafo.models import PHONE_SOURCE_VERSION
 from app.managed_cards import PREFIX
 from app.models import LalafoAutoReplyMeta, RequestedCardPromotion, ApartmentInventoryQueue
-from app.promotions import external_repeat_receipt_key, REQUESTED_WINDOW_PREFIX
+from app.promotions import external_repeat_receipt_key, REQUESTED_WINDOW_PREFIX, record_delivery
 from app.payments.repository import ApartmentRepository
 from app.security import TokenSigner
 from app.telegram.publisher import TelegramPublisher
@@ -112,6 +112,7 @@ async def publish(data, sessions, publisher, now):
         async with sessions.begin() as session:
             marker = await session.get(LalafoAutoReplyMeta, key)
             marker.value = f'published:{message.message_id}'
+            await record_delivery(session, original, chat_id=CHAT, message_id=message.message_id, published_at=message.date)
             session.add(LalafoAutoReplyMeta(key=external_repeat_receipt_key(CHAT, message.message_id), value='4h'))
         print(f"PUBLISHED managed_id={card['id']} message_id={message.message_id}", flush=True)
     # The explicit four-hour schedule replaces older timed repeats of these
