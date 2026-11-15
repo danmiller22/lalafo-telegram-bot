@@ -10,12 +10,12 @@ from tests.helpers import make_ad
 from tests.test_inventory import _apartments
 
 
-@pytest.mark.parametrize('ordinary,expected', [(120,9),(51,9),(50,8),(49,8),(48,8),(47,8),(10,1),(0,0)])
+@pytest.mark.parametrize('ordinary,expected', [(120,6),(54,6),(53,9),(51,9),(50,8),(49,8),(48,8),(47,8),(10,1),(0,0)])
 def test_daily_agent_allowance_never_exceeds_fifteen_percent(ordinary, expected):
     assert realtor_allowance(ordinary,60) == expected
 
 
-@pytest.mark.parametrize('ordinary,total,agents', [(120,60,9),(51,60,9),(50,58,8),(49,57,8),(48,56,8),(47,55,8),(10,11,1),(0,0,0)])
+@pytest.mark.parametrize('ordinary,total,agents', [(120,60,6),(51,60,9),(50,58,8),(49,57,8),(48,56,8),(47,55,8),(10,11,1),(0,0,0)])
 def test_two_periods_publish_sixty_with_adaptive_mix(ordinary,total,agents):
     stock = _apartments(ordinary,central=True,start_id=1) + _apartments(100,central=True,start_id=200,owner=False)
     start = datetime(2026,11,13,5,tzinfo=BISHKEK)
