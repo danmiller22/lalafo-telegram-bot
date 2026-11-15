@@ -98,7 +98,7 @@ def test_callback_data_is_short_and_contains_no_phone():
         )
 
     assert [row[0].text for row in private_payment.inline_keyboard] == [
-        "Бессрочный доступ — 499 сом",
+        "Бессрочный доступ — 399 сом",
         "🔒 Политика конфиденциальности",
     ]
     assert private_payment.inline_keyboard[1][0].url.endswith("?start=privacy")
@@ -125,12 +125,12 @@ def test_payment_and_status_keyboards_keep_recovery_actions():
         support_url="https://t.me/support_test",
     )
     assert [row[0].text for row in payment.inline_keyboard] == [
-        "💳 Оплатить 499 сом",
+        "💳 Оплатить 399 сом",
         "📞 Получить номер",
         "🛟 Техподдержка",
     ]
     assert [row[0].text for row in status.inline_keyboard] == [
-        "💳 Оплатить 499 сом",
+        "💳 Оплатить 399 сом",
         "📞 Получить номер",
         "🛟 Техподдержка",
     ]

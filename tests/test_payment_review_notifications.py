@@ -36,7 +36,7 @@ async def test_provider_success_grants_access_without_review_worker(repositories
     payments = repositories[1]
     await payments.prepare_provider_payment(request.id, "provider-confirmed")
     outcome, _ = await payments.apply_provider_result(
-        "provider-confirmed", succeeded=True, amount=499
+        "provider-confirmed", succeeded=True, amount=399
     )
     assert outcome == "approved"
     async with repositories[2].begin() as session:
@@ -56,7 +56,7 @@ async def test_verified_provider_payment_notifies_admin_once(repositories, servi
     runtime.workflow_data["settings"] = Settings(admin_user_id=999)
     await payments.prepare_provider_payment(request.id, "provider-admin-notice")
     outcome, approved = await payments.apply_provider_result(
-        "provider-admin-notice", succeeded=True, amount=499
+        "provider-admin-notice", succeeded=True, amount=399
     )
 
     assert outcome == "approved"
@@ -70,7 +70,7 @@ async def test_verified_provider_payment_notifies_admin_once(repositories, servi
     )
     assert runtime.bot.send_message.await_count == 1
     text = runtime.bot.send_message.await_args.args[1]
-    assert "499 сом" in text
+    assert "399 сом" in text
     assert "Бессрочный доступ" in text
     assert "Telegram ID: 121" in text
     assert "@buyer" in text
@@ -91,7 +91,7 @@ async def test_automatic_worker_retries_failed_verified_payment_notice(
     )
     await payments.prepare_provider_payment(request.id, "provider-retry-notice")
     await payments.apply_provider_result(
-        "provider-retry-notice", succeeded=True, amount=499
+        "provider-retry-notice", succeeded=True, amount=399
     )
     runtime.bot.send_message.side_effect = RuntimeError("Telegram unavailable")
 
@@ -207,7 +207,8 @@ async def test_paid_button_acknowledges_persisted_claim_before_slow_admin_notifi
 
 
 @pytest.mark.asyncio
-async def test_unavailable_checkout_does_not_suppress_valid_sibling_reminder(repositories, service):
+async def test_unavailable_checkout_does_not_suppress_valid_sibling_reminder(repositories, service, monkeypatch):
+    monkeypatch.setattr("app.web._finik_checkout_url", AsyncMock(return_value="https://qr.finik.kg/request-bound"))
     apartments, payments, sessions = repositories
     first = await apartments.upsert_discovered(make_ad(lalafo_id=15151))
     second = await apartments.upsert_discovered(make_ad(lalafo_id=15152))
@@ -262,8 +263,9 @@ async def test_notifications_scan_skips_already_notified_pending_rows(repositori
 
 @pytest.mark.asyncio
 async def test_abandoned_checkout_gets_one_recovery_message_per_customer(
-    repositories, service
+    repositories, service, monkeypatch
 ):
+    monkeypatch.setattr("app.web._finik_checkout_url", AsyncMock(return_value="https://qr.finik.kg/request-bound"))
     apartments, payments, sessions = repositories
     first = await apartments.upsert_discovered(make_ad(lalafo_id=13131))
     second = await apartments.upsert_discovered(make_ad(lalafo_id=13132))
@@ -301,15 +303,13 @@ async def test_abandoned_checkout_gets_one_recovery_message_per_customer(
     assert await process_checkout_recoveries(runtime) == 0
     bot.send_message.assert_awaited_once()
     assert bot.send_message.await_args.args[0] == 313
-    assert "499 сом" in bot.send_message.await_args.args[1]
-    assert "Бессрочный доступ ко всем номерам — 499 сом." in (
+    assert "399 сом" in bot.send_message.await_args.args[1]
+    assert "Бессрочный доступ ко всем номерам — 399 сом." in (
         bot.send_message.await_args.args[1]
     )
     markup = bot.send_message.await_args.kwargs["reply_markup"]
-    assert markup.inline_keyboard[0][0].text == "💳 Оплатить 499 сом"
-    assert markup.inline_keyboard[0][0].url == runtime.workflow_data[
-        "settings"
-    ].weekly_finik_payment_url
+    assert markup.inline_keyboard[0][0].text == "💳 Оплатить 399 сом"
+    assert markup.inline_keyboard[0][0].url == "https://qr.finik.kg/request-bound"
     assert markup.inline_keyboard[1][0].text == "✅ Я оплатил(а)"
     assert markup.inline_keyboard[1][0].callback_data.startswith(PAID_PREFIX)
     assert markup.inline_keyboard[2][0].url == "https://t.me/bishkekarendakg"

@@ -305,10 +305,10 @@ async def test_apartment_start_link_survives_cloud_signer_mismatch():
     )
 
     service.contact_status.assert_awaited_once_with(100, 152)
-    assert message.answer.await_args.args[0] == "Бессрочный доступ к контактам — 499 сом."
+    assert message.answer.await_args.args[0] == "Бессрочный доступ к контактам — 399 сом."
     markup = message.answer.await_args.kwargs["reply_markup"]
     assert [row[0].text for row in markup.inline_keyboard] == [
-        "Бессрочный доступ — 499 сом",
+        "Бессрочный доступ — 399 сом",
         "🔒 Политика конфиденциальности",
     ]
 

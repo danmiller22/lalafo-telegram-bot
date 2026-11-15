@@ -327,6 +327,7 @@ class PaymentRequest(Base):
     admin_message_id: Mapped[int | None] = mapped_column(BigInteger)
     provider_payment_id: Mapped[str | None] = mapped_column(String(64))
     provider_payment_url: Mapped[str | None] = mapped_column(Text)
+    provider_expected_amount: Mapped[int | None] = mapped_column(Integer)
     provider_status: Mapped[str | None] = mapped_column(String(32))
     payment_claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     admin_notification_token: Mapped[str | None] = mapped_column(String(64))

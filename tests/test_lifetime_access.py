@@ -16,7 +16,7 @@ async def test_lifetime_grant_covers_other_and_future_apartments(repositories, s
     submission = await service.begin_payment(user_id=880, apartment_id=first.id, username="lifetime", first_name="Test", plan=LIFETIME_PLAN)
     if via_webhook:
         await payments.prepare_provider_payment(submission.request.id, "lifetime-test")
-        outcome, _ = await payments.apply_provider_result("lifetime-test", succeeded=True, amount=499)
+        outcome, _ = await payments.apply_provider_result("lifetime-test", succeeded=True, amount=399)
         assert outcome == "amount_mismatch"
         assert (await service.contact_status(880, first.id)).status != "approved"
         outcome, _ = await payments.apply_provider_result("lifetime-test", succeeded=True, amount=LIFETIME_PRICE)
@@ -65,7 +65,7 @@ async def test_old_pending_checkout_can_switch_to_lifetime(repositories, service
     assert new.request.plan == LIFETIME_PLAN
     assert new.request.status == "awaiting_receipt"
     assert new.request.provider_payment_id is None
-    assert (await payments.apply_provider_result("old-weekly", succeeded=True, amount=499))[0] == "missing"
+    assert (await payments.apply_provider_result("old-weekly", succeeded=True, amount=399))[0] == "missing"
 
 
 @pytest.mark.asyncio
@@ -110,7 +110,7 @@ async def test_weekly_miniapp_checkout_and_automatic_access_end_to_end(repositor
             payload = {"init_data": miniapp_init_data(bot_token="123456:test-token", user_id=880), "start_param": TokenSigner("c" * 32).sign_start_id("miniapp-apartment", first.id), "plan": "week"}
             initial = await client.post("/miniapp/api/session", json=payload)
             assert initial.json()["status"] == "unpaid"
-            assert initial.json()["price"] == 499
+            assert initial.json()["price"] == 399
             prepared = await client.post("/miniapp/api/prepare", json=payload)
             assert prepared.status_code == 200
             assert prepared.json()["payment_url"] == "https://qr.finik.kg/weekly-500"
@@ -125,7 +125,7 @@ async def test_weekly_miniapp_checkout_and_automatic_access_end_to_end(repositor
             assert started.json()["payment_url"] == "https://qr.finik.kg/weekly-500"
             assert await consents.accepted(880)
             assert len(captured) == 1
-            assert captured[0]["Amount"] == 499
+            assert captured[0]["Amount"] == 399
             assert captured[0]["Data"]["description"] == "Бессрочный доступ к контактам"
             again = await client.post("/miniapp/api/start", json=payload)
             assert again.json()["payment_url"] == started.json()["payment_url"]
@@ -137,7 +137,7 @@ async def test_weekly_miniapp_checkout_and_automatic_access_end_to_end(repositor
             checkout = await payments.get_access(880, first.id)
             assert checkout.payment_claimed_at is None
             outcome, _ = await payments.apply_provider_result(
-                captured[0]["PaymentId"], succeeded=True, amount=499
+                captured[0]["PaymentId"], succeeded=True, amount=399
             )
             assert outcome == "approved"
             repeated = await client.post("/miniapp/api/access", json=payload)

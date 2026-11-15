@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 
-# Keep the persisted checkout identifier and 499-som Finik links compatible.
+# Keep the persisted checkout identifier and existing Finik checkout identifiers compatible.
 # New grants on this tariff are lifetime; old dated grants retain their dates.
 WEEK_PLAN = "week"
 LIFETIME_ACCESS_PLANS = (WEEK_PLAN, "lifetime")
@@ -14,7 +14,7 @@ PERSONAL_PRICE = 1499
 PERSONAL_LIMIT = 20
 PERSONAL_DURATION = timedelta(days=30)
 LIFETIME_PRICE = 999
-WEEK_PRICE = 499
+WEEK_PRICE = 399
 WEEK_FINIK_QR = "https://qr.finik.kg/#00020101021232810011qr.finik.kg0114averspay-items10321e56beca6e24471583e9a24a0e09ed951202121302125204482953034175405499005908Finik-QR63047f08"
 MONTH_PRICE = 999
 WANTED_SEARCH_PRICE = 100

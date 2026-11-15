@@ -17,7 +17,7 @@ async def test_cached_checkout_only_skips_reads_when_still_valid(case):
         plan="week", status="awaiting_receipt", telegram_user_id=42,
         created_at=datetime.now(UTC) - timedelta(seconds=30),
         provider_status=f"waiting:{configuration}",
-        provider_payment_url="https://qr.finik.kg/prepared",
+        provider_payment_url="https://qr.finik.kg/prepared", provider_expected_amount=399,
     )
     if case == "expired":
         request.created_at -= timedelta(minutes=5)

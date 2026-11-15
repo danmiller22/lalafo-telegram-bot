@@ -4,7 +4,6 @@ from functools import lru_cache
 from pathlib import Path
 
 from pydantic import Field, field_validator
-from app.payment_plans import WEEK_FINIK_QR
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LALAFO_DISTRICT_FILTERS = (
@@ -182,7 +181,7 @@ class Settings(BaseSettings):
     # specific, so keeping a historical QR here could send money to the wrong
     # account after a configuration change.
     finik_payment_url: str = ""
-    weekly_finik_payment_url: str = WEEK_FINIK_QR
+    weekly_finik_payment_url: str = ""
     monthly_finik_payment_url: str = ""
     lifetime_finik_payment_url: str = "https://qr.finik.kg/08fdd246-0b74-40c6-a37d-29404ff54fa9?type=t"
     wanted_finik_payment_url: str = ""
@@ -261,12 +260,11 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
 
-    @field_validator("weekly_finik_payment_url", mode="before")
+    @field_validator("weekly_finik_payment_url", "wanted_finik_payment_url", mode="before")
     @classmethod
-    def replace_legacy_weekly_qr(cls, value: object) -> object:
-        if isinstance(value, str) and ("bbfd79c8" in value or value.startswith("https://qr.finik.kg/1e56beca-6e24-4715-83e9-a24a0e09ed95")):
-            return WEEK_FINIK_QR
-        return value
+    def disable_nonexpiring_static_payment_links(cls, value: object) -> str:
+        # Only request-bound Finik links have a provider-enforced five-minute expiry.
+        return ""
 
     @field_validator("lifetime_finik_payment_url", mode="before")
     @classmethod

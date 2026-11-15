@@ -154,7 +154,7 @@ async def test_new_customer_sees_search_entry_before_any_cards(repositories):
     )
 
     assert "Выберите количество комнат, районы и бюджет" in message.answer.await_args.args[0]
-    assert "499 сом" in message.answer.await_args.args[0]
+    assert "399 сом" in message.answer.await_args.args[0]
     bot.send_photo.assert_not_awaited()
     footer = message.answer.await_args.kwargs["reply_markup"]
     assert footer.inline_keyboard[0][0].callback_data == "matching:start"

@@ -8,7 +8,7 @@ from app.models import TermsConsent
 from app.payment_plans import LIFETIME_PRICE, WEEK_PRICE, PERSONAL_PRICE
 
 
-TERMS_VERSION = "2026-11-15-v16"
+TERMS_VERSION = "2026-11-15-v17"
 TERMS_ACCEPT_BUTTON = "✅ Я ознакомлен(а) с условиями и согласен(на) со всеми пунктами"
 TERMS_TEXT = (
     "Пользовательское соглашение Arenda.\u2060KG\n\n"

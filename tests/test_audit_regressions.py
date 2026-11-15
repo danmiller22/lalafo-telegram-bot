@@ -59,7 +59,7 @@ async def test_checkout_response_does_not_erase_provider_success(repositories, s
         username=None, first_name=None, plan=WEEK_PLAN)
     request_id = submission.request.id
     await payments.prepare_provider_payment(request_id, "paid", configuration_id="merchant")
-    assert (await payments.apply_provider_result("paid", succeeded=True, amount=499))[0] == "approved"
+    assert (await payments.apply_provider_result("paid", succeeded=True, amount=399))[0] == "approved"
     assert not await payments.set_provider_payment_url(request_id, "https://qr.finik.kg/late",
         configuration_id="merchant", payment_id="paid")
     preserved = await payments.prepare_provider_payment(request_id, "unused", configuration_id="merchant")
@@ -89,7 +89,7 @@ async def test_late_mismatched_callback_preserves_acknowledged_payment(repositor
     submission = await service.begin_payment(user_id=1, apartment_id=apartment.id,
         username=None, first_name=None, plan=WEEK_PLAN)
     await payments.prepare_provider_payment(submission.request.id, "payment")
-    await payments.apply_provider_result("payment", succeeded=True, amount=499)
+    await payments.apply_provider_result("payment", succeeded=True, amount=399)
     if approved:
         await payments.mark_payment_claimed(user_id=1, apartment_id=apartment.id)
         await payments.decide(submission.request.id, approve=True, admin_id=999)
@@ -263,7 +263,7 @@ async def test_failed_callback_does_not_undo_verified_payment(repositories, serv
     submission = await service.begin_payment(user_id=1, apartment_id=apartment.id,
         username=None, first_name=None, plan=WEEK_PLAN)
     await payments.prepare_provider_payment(submission.request.id, "payment")
-    await payments.apply_provider_result("payment", succeeded=True, amount=499)
+    await payments.apply_provider_result("payment", succeeded=True, amount=399)
     outcome, request = await payments.apply_provider_result("payment", succeeded=False, amount=None)
     assert outcome == "already_approved" and request.provider_status == "succeeded"
     assert (await service.contact_status(1, apartment.id)).status == "approved"

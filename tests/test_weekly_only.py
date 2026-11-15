@@ -32,7 +32,7 @@ async def test_bot_weekly_uses_request_bound_finik_despite_shared_qr(repositorie
     assert row.plan == "week" and row.status == "awaiting_receipt"
     markup = callback.message.edit_text.await_args.kwargs["reply_markup"]
     assert markup.inline_keyboard[0][0].url == "https://qr.finik.kg/customer-bound"
-    assert "499" in markup.inline_keyboard[0][0].text
+    assert "399" in markup.inline_keyboard[0][0].text
 
 
 @pytest.mark.asyncio
