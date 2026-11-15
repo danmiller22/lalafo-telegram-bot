@@ -40,7 +40,8 @@ def validate_packet(data, now):
                 or not card['district'] or not card['photo_urls']
                 or card['category_id'] != 2044 or card['city_id'] != 103184
                 or str(card['currency']).upper() != 'KGS'
-                or 'пример для подбора' in card['source_description'].casefold()):
+                or 'пример для подбора' in card['source_description'].casefold()
+                or 'ориентир аренды' in card['source_description'].casefold()):
             raise ValueError('invalid_active_apartment_snapshot')
     return cards
 
@@ -66,6 +67,9 @@ async def publish(data, sessions, publisher, now):
     skipped = 0
     for card in cards:
         original = mappings.get(card['id'])
+        if original is None:
+            original = await repo.verified_source_by_photos(card['photo_urls'],
+                excluded_lalafo_ids={c['id'] for c in cards})
         if original is None or not original.phone or original.phone_source_version != PHONE_SOURCE_VERSION:
             raise ValueError(f"verified_source_missing:{card['id']}")
         ad = apartment_to_ad(original)
