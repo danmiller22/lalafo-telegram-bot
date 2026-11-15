@@ -153,7 +153,7 @@ def private_payment_keyboard(
     monthly_payment_url: str = "",
 ) -> InlineKeyboardMarkup:
     rows = [[InlineKeyboardButton(
-        text=f"Недельный тариф — {WEEK_PRICE} сом",
+        text=f"Бессрочный доступ — {WEEK_PRICE} сом",
         callback_data=f"plan:w:{signer.sign_id('plan-week', apartment_id)}",
     )]]
     rows.append(

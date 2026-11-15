@@ -62,7 +62,7 @@ async def test_only_admin_decision_unlocks_contacts(repositories, service, revie
     if approve:
         delivery.assert_awaited_once()
         assert delivery.await_args.kwargs["user_id"] == 101
-        assert result.access_expires_at is not None
+        assert result.access_expires_at is None
     else:
         delivery.assert_not_awaited()
     # Repeated clicks cannot issue more paid grants or send another contact card.

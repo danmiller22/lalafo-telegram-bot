@@ -63,13 +63,14 @@ def test_telegram_init_data_rejects_tampering_and_stale_payload():
     ) is None
 
 
-def test_mini_app_page_has_only_weekly_tariff_and_privacy_link():
+def test_mini_app_page_has_only_lifetime_499_tariff_and_privacy_link():
     html = mini_app_html()
 
     assert "/miniapp/api/session" in html
     assert "/miniapp/api/start" in html
     assert "Доступ ко всем контактам для прямой связи" in html
-    assert "Недельный доступ" in html
+    assert "Бессрочный доступ" in html
+    assert "Недельный доступ" not in html
     assert "Одна оплата открывает номера всех актуальных квартир на 7 дней." not in html
     assert ">499 сом</span>" in html
     assert 'id="pay-now"' in html

@@ -1461,7 +1461,7 @@ async def health() -> JSONResponse:
             ) if settings.run_bot and settings.hosted_apartment_scheduler_enabled else "disabled",
             "listing_validity_days": MAX_LISTING_AGE_DAYS,
             "payment_receipt_required": False,
-            "contact_tariff": {"plan": WEEK_PLAN, "price": WEEK_PRICE, "expires": True, "storage": "persistent_ledger"},
+            "contact_tariff": {"plan": WEEK_PLAN, "price": WEEK_PRICE, "expires": False, "storage": "persistent_ledger"},
             "payment_review": "ready" if settings.admin_user_id > 0 else "admin_missing",
             "telegram_setup": (
                 dict(_bot_setup_state) if settings.run_bot else "disabled"
@@ -1492,8 +1492,8 @@ async def health() -> JSONResponse:
             "publication_policy": {
                 "daily_target": MAX_PUBLICATIONS_PER_DAY, "start": "05:00", "end": "02:00",
                 "timezone": "Asia/Bishkek", "spacing_minutes": PUBLICATION_SPACING_MINUTES, "watermark_check": False,
-                "seller_mix": {"mode": "adaptive", "realtor_min_percent": 15, "realtor_max_percent": 20,
-                               "realtor_daily_target": 9, "realtor_daily_max": 12},
+                "seller_mix": {"mode": "combined_non_owner_cap", "realtor_min_percent": 0, "realtor_max_percent": 15, "unknown_included": True,
+                               "realtor_daily_target": 9, "realtor_daily_max": 9},
                 "single_photo_duplicate_guard": True,
                 "requested_cards": {"total_publications": 3, "duration_hours": 24, "minimum_gap_hours": 6, "included_in_daily_target": True},
                 "telegram_source_channels": len(settings.telegram_source_channels),

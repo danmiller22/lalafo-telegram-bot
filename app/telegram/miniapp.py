@@ -125,8 +125,8 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
   <div id="tariff-description">
     <button id="pay-lifetime" class="tariff-button" aria-pressed="true"{'' if payment_urls else ' disabled'}>
       <span class="popular">Популярный</span>
-      <span class="plan-heading"><svg class="plan-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/></svg>Недельный доступ</span>
-      <span class="plan-price">{WEEK_PRICE} сом</span><span class="plan-note">7 дней</span>
+      <span class="plan-heading"><svg class="plan-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/></svg>Бессрочный доступ</span>
+      <span class="plan-price">{WEEK_PRICE} сом</span><span class="plan-note">Навсегда</span>
     </button>
   </div>
   <button id="resume-payment" class="secondary hidden" style="margin-top:14px">Вернуться к оплате</button>
@@ -272,7 +272,7 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
     if (waiting) selectedPlan = data.plan;
     el("title").textContent = approved ? "Квартира" : waiting ? "Оплата" : "Получить доступ";
     show("title", !apartmentUnavailable);
-    el("intro").textContent = approved ? "" : waiting ? "7 дней · {WEEK_PRICE} сом" : "Доступ ко всем контактам для прямой связи";
+    el("intro").textContent = approved ? "" : waiting ? "Навсегда · {WEEK_PRICE} сом" : "Доступ ко всем контактам для прямой связи";
     show("intro", !approved && !apartmentUnavailable);
     show("apartment", approved);
     show("phone", approved);

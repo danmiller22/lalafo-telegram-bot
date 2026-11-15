@@ -126,7 +126,7 @@ async def test_weekly_miniapp_checkout_and_automatic_access_end_to_end(repositor
             assert await consents.accepted(880)
             assert len(captured) == 1
             assert captured[0]["Amount"] == 499
-            assert captured[0]["Data"]["description"] == "Недельный тариф"
+            assert captured[0]["Data"]["description"] == "Бессрочный доступ к контактам"
             again = await client.post("/miniapp/api/start", json=payload)
             assert again.json()["payment_url"] == started.json()["payment_url"]
             assert len(captured) == 1

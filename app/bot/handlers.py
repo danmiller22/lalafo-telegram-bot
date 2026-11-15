@@ -173,10 +173,10 @@ async def start_handler(
             text = (
                 "💳 Откройте оплату повторно.\n\n"
                 f"{apartment_text}\n\n"
-                f"Доступ к контактам на 7 дней — {WEEK_PRICE} сом."
+                f"Бессрочный доступ к контактам — {WEEK_PRICE} сом."
             )
         else:
-            text = f"Доступ к контактам на 7 дней — {WEEK_PRICE} сом."
+            text = f"Бессрочный доступ к контактам — {WEEK_PRICE} сом."
         reply_markup = private_payment_keyboard(
             apartment_id, signer=signer,
             payment_url=settings.weekly_finik_payment_url,
@@ -219,9 +219,9 @@ async def plan_handler(
         await callback.answer("✅ Карточка с номером отправлена вам.")
         return
     if plan != WEEK_PLAN:
-        await callback.answer("Для новых клиентов доступен только недельный тариф — 499 сом.", show_alert=True)
+        await callback.answer("Для новых клиентов доступен только бессрочный доступ — 499 сом.", show_alert=True)
         if callback.message:
-            await callback.message.answer("Выберите недельный доступ.", reply_markup=private_payment_keyboard(
+            await callback.message.answer("Выберите бессрочный доступ.", reply_markup=private_payment_keyboard(
                 apartment_id, signer=signer, payment_url=settings.weekly_finik_payment_url,
                 support_url=settings.support_bot_url))
         return

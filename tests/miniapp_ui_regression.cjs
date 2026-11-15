@@ -54,7 +54,7 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
   assert.equal(weekly.opened.length, 0, 'Selecting the weekly tariff must not open checkout');
   await weekly.node('pay-now').onclick();
   assert.deepEqual(weekly.opened, ['https://qr.finik.kg/week-499']);
-  assert.equal(weekly.node('intro').textContent, '7 дней · 499 сом');
+  assert.equal(weekly.node('intro').textContent, 'Навсегда · 499 сом');
   assert.equal(weekly.node('pay-lifetime').hidden, true);
   const unavailable = setup(null, () => Promise.resolve({ok: false, status: 404,
     json: async () => ({detail: 'Квартира больше недоступна.'})}));

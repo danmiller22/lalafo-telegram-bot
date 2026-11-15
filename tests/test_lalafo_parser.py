@@ -402,3 +402,16 @@ def test_one_som_deposit_placeholder_is_omitted():
         source_url="https://lalafo.kg/bishkek/ads/test-id-45",
     )
     assert ad.deposit is None
+
+
+def test_explicit_non_realtor_service_preserves_owner_classification():
+    ad = parse_detail_data({
+        "id": 47, "category_id": 2044, "price": 30000, "currency": "KGS",
+        "city": "Бишкек", "mobile": "+996555123456",
+        "params": [
+            {"name": "Количество комнат", "value": "1 комната"},
+            {"name": "Кто предлагает", "value": "Собственник"},
+            {"name": "Услуги риэлтора", "value": "Не являюсь риэлтором"},
+        ], "images": [{"original_url": "https://img.example/47.jpg"}],
+    }, source_url="https://lalafo.kg/bishkek/ads/test-id-47")
+    assert ad.seller_type == "owner" and ad.owner_listing

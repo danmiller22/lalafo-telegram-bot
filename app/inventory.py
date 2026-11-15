@@ -56,7 +56,7 @@ DISCOVERY_PERIOD_TARGET = (MAX_PUBLICATIONS_PER_DAY + 1) // 2
 PUBLICATION_SPACING_MINUTES = 21.0
 MIN_PUBLICATION_GAP_MINUTES = 10
 INVENTORY_CLAIM_LOCK_ID = 731_290_512
-PUBLICATION_POLICY_VERSION = "publication-sixty-adaptive-agents-v27"
+PUBLICATION_POLICY_VERSION = "publication-sixty-combined-nonowners15-v28"
 # Two equal 10.5-hour periods cover 05:00 through 02:00 the next day.
 PUBLICATION_PERIOD_MINUTES = 630
 
@@ -198,7 +198,9 @@ def _candidate_key(item: Apartment, *, central: bool) -> tuple[object, ...]:
 
 def _seller_type(item: Apartment) -> str:
     value = getattr(item, "seller_type", "unknown")
-    return value if value in {"owner", "realtor", "unknown"} else "unknown"
+    # This is a quota group, not a rewrite of the source author metadata.
+    # Unknown authors share the same allowance as realtors.
+    return "owner" if value == "owner" and bool(getattr(item, "owner_listing", False)) else "realtor"
 
 
 def _allowed_seller_filter():
@@ -283,6 +285,8 @@ def plan_period(
     target_count_override: int | None = None,
     central_target_override: int | None = None,
     repeat_apartment_ids: set[int] | None = None,
+    prior_total: int = 0,
+    prior_non_owners: int = 0,
     rng: random.Random | None = None,
 ) -> list[PlannedApartment]:
     """Create one half of the daily target in evenly spaced slots."""
@@ -331,13 +335,13 @@ def plan_period(
         for kind in ("owner", "realtor", "unknown")
     }
     ordinary_count = available["owner"] + available["unknown"]
+    cumulative_owners = ordinary_count + max(0, prior_total - prior_non_owners)
+    cumulative_allowance = max(0, realtor_allowance(
+        cumulative_owners, target_count + prior_total
+    ) - prior_non_owners)
     if use_adaptive_default:
-        daily_allowance = realtor_allowance(ordinary_count, MAX_PUBLICATIONS_PER_DAY)
-        first_half = (daily_allowance + 1) // 2
-        half_allowance = first_half if period_start.astimezone(BISHKEK).hour == 5 else daily_allowance - first_half
-        non_owner_target = max(half_allowance, target_count * REALTOR_BASE_PERCENT // 100)
-    agent_limit = min(non_owner_limit, realtor_allowance(ordinary_count, target_count,
-                                                        base_allowance=non_owner_target))
+        non_owner_target = cumulative_allowance
+    agent_limit = min(non_owner_limit, non_owner_target, cumulative_allowance)
     agents = min(available["realtor"], max(0, agent_limit))
     ordinary_budget = min(ordinary_count, max(0, target_count - agents))
     seller_remaining = {"owner": available["owner"], "unknown": available["unknown"],
@@ -414,14 +418,14 @@ async def _balanced_stock(session: AsyncSession, statement) -> list[Apartment]:
     for rooms in ("1", "studio", "2"):
         agent_share = math.floor(share * REALTOR_STOCK_RESERVE_SHARE)
         rows.extend((await session.scalars(base.where(Apartment.rooms == rooms,
-            func.coalesce(Apartment.seller_type, "unknown") != "realtor").limit(share - agent_share))).all())
+            func.coalesce(Apartment.seller_type, "unknown") == "owner").limit(share - agent_share))).all())
         rows.extend((await session.scalars(base.where(Apartment.rooms == rooms,
-            Apartment.seller_type == "realtor").limit(agent_share))).all())
+            func.coalesce(Apartment.seller_type, "unknown") != "owner").limit(agent_share))).all())
     if len(rows) < MAX_FRESH_STOCK_LOAD:
-        rows.extend((await session.scalars(base.where(Apartment.id.not_in([row.id for row in rows]), func.coalesce(Apartment.seller_type, "unknown") != "realtor")
+        rows.extend((await session.scalars(base.where(Apartment.id.not_in([row.id for row in rows]), func.coalesce(Apartment.seller_type, "unknown") == "owner")
             .limit(MAX_FRESH_STOCK_LOAD - len(rows)))).all())
     if len(rows) < MAX_FRESH_STOCK_LOAD:
-        rows.extend((await session.scalars(base.where(Apartment.id.not_in([row.id for row in rows]), Apartment.seller_type == "realtor")
+        rows.extend((await session.scalars(base.where(Apartment.id.not_in([row.id for row in rows]), func.coalesce(Apartment.seller_type, "unknown") != "owner")
             .limit(MAX_FRESH_STOCK_LOAD - len(rows)))).all())
     return rows
 
@@ -656,7 +660,7 @@ class InventoryRepository:
             )
             day_events = await publications_in_window(
                 session, day_start, day_end, include_external_repeats=False)
-            published_non_owners = sum(event.seller_type == "realtor" for event in day_events)
+            published_non_owners = sum(event.seller_type != "owner" for event in day_events)
             reserved_non_owners = int(
                 await session.scalar(
                     select(func.count())
@@ -666,7 +670,7 @@ class InventoryRepository:
                         ApartmentInventoryQueue.scheduled_at >= day_start,
                         ApartmentInventoryQueue.scheduled_at < day_end,
                         ApartmentInventoryQueue.status.in_(("queued", "publishing")),
-                        func.coalesce(Apartment.seller_type, "unknown") == "realtor",
+                        func.coalesce(Apartment.seller_type, "unknown") != "owner",
                     )
                 )
                 or 0
@@ -823,11 +827,11 @@ class InventoryRepository:
                 - reserved_central
                 - published_outside_queue_central,
             )
-            period_agents = sum(event.seller_type == "realtor" for event in ordinary_events)
+            period_agents = sum(event.seller_type != "owner" for event in ordinary_events)
             period_agents += int(await session.scalar(select(func.count()).select_from(ApartmentInventoryQueue)
                 .join(Apartment).where(ApartmentInventoryQueue.window_key == period_window_key,
                     ApartmentInventoryQueue.status.in_(("queued", "publishing")),
-                    Apartment.seller_type == "realtor")) or 0)
+                    func.coalesce(Apartment.seller_type, "unknown") != "owner")) or 0)
             reserved_total = int(await session.scalar(select(func.count()).select_from(ApartmentInventoryQueue).where(
                 ApartmentInventoryQueue.scheduled_at >= day_start,
                 ApartmentInventoryQueue.scheduled_at < day_end,
@@ -851,6 +855,8 @@ class InventoryRepository:
                 target_count_override=target_override,
                 central_target_override=central_override,
                 repeat_apartment_ids=set(),
+                prior_total=len(day_events) + reserved_total,
+                prior_non_owners=already_non_owners,
                 rng=chooser,
             )
             # A late refill uses only the remaining slots, never shifts cards
@@ -1031,7 +1037,7 @@ class InventoryRepository:
                 day_end=(day_start_local + timedelta(hours=21)).astimezone(timezone.utc),
                 managed_ids=only_apartment_ids if requested_only and only_apartment_ids else (),
             )
-            published_non_owners = sum(row.seller_type == 'realtor' for row in day_publications)
+            published_non_owners = sum(row.seller_type != 'owner' for row in day_publications)
             published_districts = [row.district for row in day_publications]
             published_central = sum(is_central(value) for value in published_districts)
             due_rows = (
@@ -1079,7 +1085,7 @@ class InventoryRepository:
             due_rows = [row for row in due_rows if row[5] in ALLOWED_ROOMS]
             normal_supply = int(await session.scalar(select(func.count()).select_from(Apartment).where(
                 _allowed_seller_filter(), _supported_source_filter(),
-                func.coalesce(Apartment.seller_type, "unknown") != "realtor",
+                func.coalesce(Apartment.seller_type, "unknown") == "owner",
                 Apartment.rooms.in_(ALLOWED_ROOMS), Apartment.price.between(25_000, OWNER_MAX_PRICE),
                 Apartment.publication_status == "discovered",
                 Apartment.last_seen_at >= now - timedelta(days=HISTORICAL_STOCK_DAYS),
@@ -1088,7 +1094,7 @@ class InventoryRepository:
             daily_agent_cap = realtor_allowance(ordinary_today + normal_supply, MAX_PUBLICATIONS_PER_DAY)
             prefix_agent_cap = (published_today + 1) * REALTOR_MAX_PERCENT // 100
             if published_non_owners >= min(daily_agent_cap, prefix_agent_cap):
-                due_rows = [row for row in due_rows if row[2] != "realtor"]
+                due_rows = [row for row in due_rows if row[2] == "owner"]
             if not due_rows:
                 return None
             due_rows = [
@@ -1115,7 +1121,7 @@ class InventoryRepository:
             )
             desired_agents = (published_today + 1) * daily_agent_cap // MAX_PUBLICATIONS_PER_DAY
             agent_needed = published_non_owners < desired_agents
-            balanced_rows = [row for row in due_rows if (row[2] == "realtor") == agent_needed]
+            balanced_rows = [row for row in due_rows if (row[2] != "owner") == agent_needed]
             due_rows = balanced_rows or due_rows
             preferred_rows = [row for row in due_rows if district_priority(row[1]) > 0]
             due_rows = preferred_rows or due_rows

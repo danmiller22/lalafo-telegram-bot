@@ -71,7 +71,7 @@ async def test_verified_provider_payment_notifies_admin_once(repositories, servi
     assert runtime.bot.send_message.await_count == 1
     text = runtime.bot.send_message.await_args.args[1]
     assert "499 сом" in text
-    assert "Базовая: 7 дней" in text
+    assert "Бессрочный доступ" in text
     assert "Telegram ID: 121" in text
     assert "@buyer" in text
 
@@ -302,7 +302,7 @@ async def test_abandoned_checkout_gets_one_recovery_message_per_customer(
     bot.send_message.assert_awaited_once()
     assert bot.send_message.await_args.args[0] == 313
     assert "499 сом" in bot.send_message.await_args.args[1]
-    assert "Недельный доступ ко всем номерам — 499 сом." in (
+    assert "Бессрочный доступ ко всем номерам — 499 сом." in (
         bot.send_message.await_args.args[1]
     )
     markup = bot.send_message.await_args.kwargs["reply_markup"]
