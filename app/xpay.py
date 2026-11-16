@@ -191,14 +191,10 @@ async def reconcile(sessions, settings, token):
                     attempt.status, attempt.payment_url = 'closed', None
         return 'waiting', None, None
     try:
-        # Production XPAY returns integer tyiyn (39900 for 399 som), whereas
-        # its API guide also shows decimal strings in som. Never interpret a
-        # bare integer as som: that could grant access for a 3.99 som payment.
+        # This merchant's production status response uses tyiyn: 39900 for
+        # 399 som. Do not infer units from JSON number/string formatting.
         def matches(value):
-            amount = Decimal(str(value))
-            if amount == Decimal(expected * 100):
-                return True
-            return isinstance(value, str) and '.' in value and amount == Decimal(expected)
+            return Decimal(str(value)) == Decimal(expected * 100)
         if not matches(data.get('amount')) or not matches(data.get('request_amount')):
             return 'amount_mismatch', None, None
     except (InvalidOperation, ValueError, TypeError):
