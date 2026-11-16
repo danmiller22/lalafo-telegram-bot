@@ -62,7 +62,7 @@ async def test_search_request_remains_unpaid_until_xpay_completed(repositories, 
         token = attempt.token
         assert attempt.expected_amount == 100
     status = AsyncMock(return_value={'qr_transaction_id':'Search123', 'pay_status':'PROCESSING',
-        'request_amount':'100','amount':'100','transaction_uuid':'uuid'})
+        'request_amount':10000,'amount':10000,'transaction_uuid':'uuid'})
     monkeypatch.setattr(XPayClient, 'status', status)
     assert (await reconcile(sessions, settings(), token))[0] == 'waiting'
     async with sessions() as session:
@@ -189,3 +189,18 @@ async def test_expired_checkout_cannot_be_replaced_while_bank_is_processing(repo
     with pytest.raises(XPayError, match='still being confirmed'):
         await create_checkout(sessions, settings(), request_id=request.id)
     create.assert_not_awaited()
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('reported, approved', [(39900, True), ('39900', True), ('399.00000000', True), (399, False), (39800, False), ('398.00', False)])
+async def test_production_and_documented_amount_units_are_verified(repositories, monkeypatch, reported, approved):
+    apartments, payments, sessions = repositories
+    apartment = await apartments.upsert_discovered(make_ad())
+    request = (await payments.submit(user_id=92, apartment_id=apartment.id, username=None, first_name=None, plan=WEEK_PLAN)).request
+    now = datetime.now(timezone.utc)
+    async with sessions.begin() as session:
+        session.add(XPayAttempt(token='units-test', request_id=request.id, provider_id='Units123', expected_amount=399,
+            status='waiting', created_at=now, expires_at=now+timedelta(minutes=5)))
+    monkeypatch.setattr(XPayClient, 'status', AsyncMock(return_value={'qr_transaction_id':'Units123', 'pay_status':'COMPLETED',
+        'amount':reported, 'request_amount':reported, 'transaction_uuid':'uuid'}))
+    outcome = (await reconcile(sessions, settings(), 'units-test'))[0]
+    assert outcome == ('approved' if approved else 'amount_mismatch')
