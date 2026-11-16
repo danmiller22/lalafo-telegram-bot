@@ -29,7 +29,7 @@ async def main():
     if a.provider_id:
      try:
       status=await XPayClient(settings).status(a.provider_id)
-      item.update(provider_status=status.get('pay_status'),provider_amount=status.get('amount'),provider_request_amount=status.get('request_amount'),executed= status.get('executed_time'))
+      item.update(provider_status=status.get('pay_status'),provider_amount=status.get('amount'),provider_request_amount=status.get('request_amount'),executed= status.get('executed_time'), transaction_uuid_present=bool(status.get('transaction_uuid')), trx_present=bool(status.get('trx')))
      except Exception as e:item['provider_error']=type(e).__name__
     out['attempts'].append(item)
    payments=(await session.scalars(select(PaymentHistory).where(PaymentHistory.paid_at>=since).order_by(PaymentHistory.paid_at.desc()).limit(100))).all()
