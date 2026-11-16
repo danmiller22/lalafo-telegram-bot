@@ -50,7 +50,7 @@ def test_payment_faq_gives_only_customer_facing_instructions():
     assert "Получить номер" in FAQ_BY_KEY["payment"].answer
     assert "автоматически" in FAQ_BY_KEY["review"].answer
     assert "проверяется вручную" not in FAQ_BY_KEY["review"].answer
-    assert "Finik" in FAQ_BY_KEY["review"].answer
+    assert "XPAY" in FAQ_BY_KEY["review"].answer
 
 
 def test_service_name_is_not_auto_linked_as_a_domain():

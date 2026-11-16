@@ -682,10 +682,13 @@ def test_personal_checkout_takes_priority_when_finik_api_is_configured(
     monkeypatch.setenv("FINIK_ACCOUNT_ID", "corporate")
     monkeypatch.setenv("FINIK_PRIVATE_KEY_PEM", "configured")
     monkeypatch.setenv("TELEGRAM_WEBHOOK_URL", "https://example.test/telegram/webhook")
+    monkeypatch.setenv("XPAY_CLIENT_ID", "configured")
+    monkeypatch.setenv("XPAY_CLIENT_SECRET", "configured")
+    monkeypatch.setenv("XPAY_SERVICE_UUID", "configured")
     get_settings.cache_clear()
     settings = get_settings()
 
-    assert settings.finik_auto_enabled
+    assert settings.xpay_auto_enabled
     assert web._uses_dynamic_finik(settings, WEEK_PLAN)
     assert not web._uses_dynamic_finik(settings, MONTH_PLAN)
     assert web._finik_payment_url(settings, WEEK_PLAN) == ""
@@ -702,6 +705,9 @@ async def test_automatic_miniapp_never_embeds_shared_payment_links(
     monkeypatch.setenv("FINIK_ACCOUNT_ID", "corporate")
     monkeypatch.setenv("FINIK_PRIVATE_KEY_PEM", "configured")
     monkeypatch.setenv("TELEGRAM_WEBHOOK_URL", "https://example.test/telegram/webhook")
+    monkeypatch.setenv("XPAY_CLIENT_ID", "configured")
+    monkeypatch.setenv("XPAY_CLIENT_SECRET", "configured")
+    monkeypatch.setenv("XPAY_SERVICE_UUID", "configured")
     get_settings.cache_clear()
 
     async with httpx.AsyncClient(
@@ -729,6 +735,9 @@ async def test_miniapp_starts_a_checkout_bound_to_the_selected_apartment(
     monkeypatch.setenv("FINIK_ACCOUNT_ID", "corporate")
     monkeypatch.setenv("FINIK_PRIVATE_KEY_PEM", "configured")
     monkeypatch.setenv("TELEGRAM_WEBHOOK_URL", "https://example.test/telegram/webhook")
+    monkeypatch.setenv("XPAY_CLIENT_ID", "configured")
+    monkeypatch.setenv("XPAY_CLIENT_SECRET", "configured")
+    monkeypatch.setenv("XPAY_SERVICE_UUID", "configured")
     get_settings.cache_clear()
     apartment = SimpleNamespace(id=42)
     unpaid = SimpleNamespace(status="unpaid", apartment=apartment, access_expires_at=None)
@@ -790,6 +799,9 @@ async def test_miniapp_uses_personal_checkout_when_finik_api_is_ready(
     monkeypatch.setenv("FINIK_ACCOUNT_ID", "corporate")
     monkeypatch.setenv("FINIK_PRIVATE_KEY_PEM", "configured")
     monkeypatch.setenv("TELEGRAM_WEBHOOK_URL", "https://example.test/telegram/webhook")
+    monkeypatch.setenv("XPAY_CLIENT_ID", "configured")
+    monkeypatch.setenv("XPAY_CLIENT_SECRET", "configured")
+    monkeypatch.setenv("XPAY_SERVICE_UUID", "configured")
     get_settings.cache_clear()
     apartment = SimpleNamespace(id=42)
     unpaid = SimpleNamespace(status="unpaid", apartment=apartment, access_expires_at=None)
@@ -840,6 +852,9 @@ async def test_miniapp_access_rejects_manual_claim_when_finik_is_automatic(
     monkeypatch.setenv("FINIK_ACCOUNT_ID", "corporate")
     monkeypatch.setenv("FINIK_PRIVATE_KEY_PEM", "configured")
     monkeypatch.setenv("TELEGRAM_WEBHOOK_URL", "https://example.test/telegram/webhook")
+    monkeypatch.setenv("XPAY_CLIENT_ID", "configured")
+    monkeypatch.setenv("XPAY_CLIENT_SECRET", "configured")
+    monkeypatch.setenv("XPAY_SERVICE_UUID", "configured")
     get_settings.cache_clear()
     apartment = SimpleNamespace(
         id=42,
@@ -987,7 +1002,7 @@ async def test_retired_lifetime_checkout_cannot_create_new_invoices():
     from app.config import Settings
     settings = Settings(_env_file=None, lifetime_finik_payment_url="https://qr.finik.kg/e0c9972e-0f05-4dc3-99fd-96ec1debea1f?type=t", finik_api_key="configured", finik_account_id="configured", finik_private_key_pem="configured")
     assert not web._uses_dynamic_finik(settings, LIFETIME_PLAN)
-    with pytest.raises(ValueError, match="Only the weekly plan"):
+    with pytest.raises(ValueError, match="Unsupported payment plan"):
         await web._finik_checkout_url(settings, object(), object(), apartment_id=42, plan=LIFETIME_PLAN)
 
 

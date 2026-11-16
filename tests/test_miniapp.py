@@ -136,7 +136,7 @@ def test_ready_checkout_is_recorded_before_opening_finik():
     assert '"week": "https://example.com/pay?x=1"' in html
     assert html.index("const data = await paymentStart") < html.index("current.openLink(targetUrl)")
     assert "if (paymentStart) await paymentStart" in html
-    assert 'button.textContent = "Открываем Finik…"' in html
+    assert 'button.textContent = "Открываем XPAY…"' in html
     assert "setInterval" not in html
     assert "attempts < 15 ? 2000 : 5000" in html
     assert "setTimeout(poll, immediate ? 0 : 2000)" in html

@@ -152,94 +152,16 @@ def _uses_dynamic_finik(settings: Any, plan: str) -> bool:
     # acquiring API is configured, create a request-bound checkout so its
     # signed webhook can grant access automatically. Static links remain the
     # fallback only while provider credentials are unavailable.
-    return plan == WEEK_PLAN and settings.finik_auto_enabled
+    return plan == WEEK_PLAN and settings.xpay_auto_enabled
 
 
-async def _finik_checkout_url(
-    settings: Any,
-    payments: Any,
-    payment_request: Any,
-    *,
-    apartment_id: int,
-    plan: str,
-) -> str:
-    """Create a checkout whose PaymentId maps back to this exact request."""
+async def _finik_checkout_url(settings, payments, payment_request, *, apartment_id, plan):
+    """Create a five-minute XPAY checkout for the existing payment request."""
+    from app.xpay import create_checkout
     if plan != WEEK_PLAN:
-        raise ValueError("Only the weekly plan is available for new checkouts")
-    if not _uses_dynamic_finik(settings, plan):
-        fallback = _finik_payment_url(settings, plan)
-        if not fallback:
-            raise RuntimeError("Finik payment is not configured")
-        return fallback
-
-    configuration_id = payment_configuration_id(
-        api_url=settings.finik_api_url,
-        account_id=settings.finik_account_id,
-    )
-    # submit() already returned this user's request. Reuse its valid checkout
-    # without two more repository round trips or another provider request.
-    created_at = getattr(payment_request, "created_at", None)
-    if isinstance(created_at, datetime):
-        created_at = created_at.replace(tzinfo=UTC) if created_at.tzinfo is None else created_at
-        if (
-            payment_request.plan == plan
-            and getattr(payment_request, "provider_expected_amount", None) == plan_price(plan)
-            and payment_request.status in {"prepared", "awaiting_receipt"}
-            and getattr(payment_request, "provider_status", None) == f"waiting:{configuration_id}"
-            and getattr(payment_request, "provider_payment_url", None)
-            and datetime.now(UTC) - timedelta(minutes=4, seconds=50) < created_at <= datetime.now(UTC)
-        ):
-            return payment_request.provider_payment_url
-    reusable_lookup = getattr(payments, "reusable_provider_checkout", None)
-    reusable = (
-        await reusable_lookup(
-            user_id=payment_request.telegram_user_id,
-            plan=plan,
-            configuration_id=configuration_id,
-        )
-        if reusable_lookup is not None
-        else None
-    )
-    if reusable is not None and reusable.provider_payment_url:
-        return reusable.provider_payment_url
-    prepared = await payments.prepare_provider_payment(
-        payment_request.id,
-        f"arenda-{payment_request.id}-{secrets.token_hex(8)}",
-        configuration_id=configuration_id,
-    )
-    if prepared.provider_payment_url:
-        return prepared.provider_payment_url
-
-    signer = TokenSigner(settings.require_callback_secret())
-    start_param = signer.sign_start_id("miniapp-apartment", apartment_id)
-    bot_url = f"https://t.me/{settings.telegram_bot_username.lstrip('@')}"
-    client = FinikClient(
-        api_url=settings.finik_api_url,
-        api_key=settings.finik_api_key,
-        account_id=settings.finik_account_id,
-        private_key_pem=decode_private_key(
-            pem=settings.finik_private_key_pem,
-            encoded=settings.finik_private_key_b64,
-        ),
-    )
-    created = await client.create_payment(
-        payment_id=prepared.provider_payment_id,
-        amount=plan_price(plan),
-        redirect_url=f"{bot_url}/access?startapp={start_param}",
-        webhook_url=settings.require_public_base_url() + "/finik/webhook",
-    )
-    stored = await payments.set_provider_payment_url(
-        prepared.id,
-        created.url,
-        configuration_id=configuration_id,
-        payment_id=prepared.provider_payment_id,
-    )
-    if stored is False:
-        current = await payments.get_request(prepared.id)
-        if current is not None and current.provider_payment_url:
-            return current.provider_payment_url
-        raise RuntimeError("Payment checkout changed while the provider was responding")
-    return created.url
+        raise ValueError("Unsupported payment plan")
+    url, _ = await create_checkout(payments.sessions, settings, request_id=payment_request.id)
+    return url
 
 
 def _now() -> str:
@@ -1143,6 +1065,12 @@ async def startup() -> None:
     _lalafo_mcp_context = lalafo_mcp.session_manager.run()
     await _lalafo_mcp_context.__aenter__()
     settings.require_run_trigger_secret()
+    if settings.run_bot and not settings.xpay_auto_enabled:
+        try:
+            from app.xpay_vault import load_stored_credentials
+            await load_stored_credentials(settings)
+        except Exception as exc:
+            logger.warning("XPAY configuration unavailable: %s", type(exc).__name__)
     if settings.run_bot:
         # Validate configuration synchronously, but do not wait for Telegram
         # network calls before FastAPI starts accepting customer webhooks.
@@ -1444,12 +1372,12 @@ async def health() -> JSONResponse:
         content={
             "status": "ok",
             "bot": "running" if settings.run_bot else "disabled",
-            "finik_auto_payment": "ready" if settings.finik_auto_enabled else "disabled",
+            "finik_auto_payment": "ready" if settings.xpay_auto_enabled else "disabled",
             "payment_access_mode": (
-                "automatic" if settings.finik_auto_enabled else "manual"
+                "automatic" if settings.xpay_auto_enabled else "manual"
             ),
             "payment_review_worker": (
-                ("recovery_only" if settings.finik_auto_enabled else "running")
+                ("recovery_only" if settings.xpay_auto_enabled else "running")
                 if settings.run_bot and not _task_stopped(_payment_review_worker_task)
                 else "stopped" if settings.run_bot else "disabled"
             ),
@@ -1646,7 +1574,7 @@ async def _record_funnel(
 @app.get("/miniapp", response_class=HTMLResponse, include_in_schema=False)
 async def telegram_mini_app() -> HTMLResponse:
     settings = get_settings()
-    payment_urls = {} if settings.finik_auto_enabled else {WEEK_PLAN: _finik_payment_url(settings, WEEK_PLAN)}
+    payment_urls = {} if settings.xpay_auto_enabled else {WEEK_PLAN: _finik_payment_url(settings, WEEK_PLAN)}
     return HTMLResponse(
         mini_app_html(payment_urls=payment_urls),
         headers={
@@ -1673,7 +1601,7 @@ async def miniapp_session(payload: MiniAppRequest, background_tasks: BackgroundT
         )
     response = _miniapp_result_payload(result)
     response["automatic_payment"] = bool(
-        getattr(settings, "finik_auto_enabled", False)
+        getattr(settings, "xpay_auto_enabled", False)
     )
     response["lifetime_available"] = False
     response["monthly_available"] = False
@@ -1777,7 +1705,7 @@ async def miniapp_prepare_payment(payload: MiniAppRequest) -> dict[str, Any]:
     except LookupError as exc:
         raise HTTPException(status_code=404, detail="Квартира больше недоступна.") from exc
     except Exception as exc:
-        logger.exception("Could not prepare Finik checkout")
+        logger.exception("Could not prepare XPAY checkout")
         raise HTTPException(status_code=503, detail="Не удалось подготовить оплату. Попробуйте ещё раз.") from exc
     created = prepared.created_at if _uses_dynamic_finik(settings, plan) else datetime.now(UTC)
     if created.tzinfo is None:
@@ -1840,7 +1768,7 @@ async def miniapp_start_payment(
                 plan=plan,
             )
         except Exception as exc:
-            logger.exception("Could not create Finik checkout")
+            logger.exception("Could not create XPAY checkout")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Не удалось открыть оплату. Попробуйте ещё раз через минуту.",
@@ -1873,10 +1801,10 @@ async def miniapp_issue_access(
     current = await _miniapp_contact_status(runtime, user.id, apartment_id, payload.plan)
     if current.status == "approved":
         return _miniapp_result_payload(current)
-    if settings.finik_auto_enabled:
+    if settings.xpay_auto_enabled:
         raise HTTPException(
             status_code=409,
-            detail="Оплата подтверждается Finik автоматически. Подождите несколько секунд.",
+            detail="Оплата подтверждается XPAY автоматически. Подождите несколько секунд.",
         )
     if not settings.admin_user_id:
         raise HTTPException(status_code=503, detail="Проверка оплаты временно недоступна. Обратитесь в поддержку.")
@@ -1966,6 +1894,57 @@ async def _deliver_verified_finik_access(
         logger.exception(
             "Could not deliver verified Finik access for request %s", request_id
         )
+
+
+@app.api_route("/xpay/check/{token}", methods=["GET", "POST"], include_in_schema=False)
+async def xpay_check(token: str) -> Response:
+    """XPAY must receive 201 before a QR can be paid."""
+    from sqlalchemy import select
+    from app.models import XPayAttempt, PaymentRequest, WantedAd
+    from app.xpay import utc
+    runtime = _bot_runtime
+    if runtime is None or not get_settings().xpay_auto_enabled:
+        raise HTTPException(status_code=503)
+    async with runtime.workflow_data["payments"].sessions() as session:
+        attempt = await session.scalar(select(XPayAttempt).where(XPayAttempt.token == token))
+        if not attempt or attempt.status != "waiting" or utc(attempt.expires_at) <= datetime.now(UTC):
+            raise HTTPException(status_code=403)
+        if attempt.request_id:
+            payment = await session.get(PaymentRequest, attempt.request_id)
+            if payment is None or payment.status == "approved":
+                raise HTTPException(status_code=403)
+        else:
+            wanted = await session.get(WantedAd, attempt.wanted_ad_id)
+            if wanted is None or wanted.status not in {"awaiting_payment", "rejected"}:
+                raise HTTPException(status_code=403)
+    return Response(status_code=201)
+
+
+async def _reconcile_xpay(runtime, settings, token):
+    from app.xpay import reconcile
+    outcome, request_id, wanted_id = await reconcile(runtime.workflow_data["payments"].sessions, settings, token)
+    if outcome == "approved" and request_id is not None:
+        await _deliver_verified_finik_access(runtime, settings, request_id)
+    elif outcome == "approved" and wanted_id is not None:
+        from app.wanted.finik import publish_paid
+        await publish_paid(runtime.workflow_data["wanted_ads"], settings, runtime.bot, wanted_id)
+    return outcome
+
+
+@app.api_route("/xpay/webhook/{token}", methods=["GET", "POST"], include_in_schema=False)
+async def xpay_webhook(token: str) -> dict[str, str]:
+    # Callback content is untrusted; only the authenticated XPAY status is authoritative.
+    settings, runtime = get_settings(), _bot_runtime
+    if runtime is None or not settings.xpay_auto_enabled:
+        raise HTTPException(status_code=503)
+    try:
+        outcome = await _reconcile_xpay(runtime, settings, token)
+    except Exception as exc:
+        logger.warning("XPAY verification failed: %s", type(exc).__name__)
+        raise HTTPException(status_code=503) from exc
+    if outcome == "amount_mismatch":
+        raise HTTPException(status_code=409)
+    return {"status": outcome}
 
 
 @app.post("/finik/webhook", include_in_schema=False)

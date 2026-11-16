@@ -192,6 +192,10 @@ class Settings(BaseSettings):
     finik_private_key_pem: str = ""
     finik_private_key_b64: str = ""
     finik_webhook_public_key_pem: str = ""
+    xpay_api_url: str = "https://api.xpay.kg"
+    xpay_client_id: str = ""
+    xpay_client_secret: str = ""
+    xpay_service_uuid: str = ""
     callback_secret: str = "change-me-in-production"
 
     lalafo_proxy_url: str = ""
@@ -385,6 +389,10 @@ class Settings(BaseSettings):
             and (self.finik_private_key_pem or self.finik_private_key_b64)
             and self.telegram_webhook_url
         )
+
+    @property
+    def xpay_auto_enabled(self) -> bool:
+        return bool(self.xpay_client_id and self.xpay_client_secret and self.xpay_service_uuid and self.telegram_webhook_url)
 
 
 @lru_cache(maxsize=1)

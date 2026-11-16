@@ -428,6 +428,27 @@ class WantedPayment(Base):
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class XPayConfig(Base):
+    __tablename__ = "xpay_config"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    encrypted_credentials: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class XPayAttempt(Base):
+    __tablename__ = "xpay_attempts"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    token: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    request_id: Mapped[int | None] = mapped_column(ForeignKey("payment_requests.id"), index=True)
+    wanted_ad_id: Mapped[int | None] = mapped_column(ForeignKey("wanted_ads.id"), index=True)
+    provider_id: Mapped[str | None] = mapped_column(String(128), unique=True)
+    payment_url: Mapped[str | None] = mapped_column(Text)
+    expected_amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="creating")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class DailyFeaturedPublication(Base):
     __tablename__ = "daily_featured_publications"
     __table_args__ = (

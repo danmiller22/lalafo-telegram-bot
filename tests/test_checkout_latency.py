@@ -1,37 +1,25 @@
-from datetime import UTC, datetime, timedelta
-from types import SimpleNamespace
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock
-
 import pytest
-
-from app import web
-from app.finik import payment_configuration_id
-
+from sqlalchemy import select
+from app.config import Settings
+from app.models import XPayAttempt
+from app.payment_plans import WEEK_PLAN
+from app.xpay import XPayClient, create_checkout
+from tests.helpers import make_ad
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("case", ["valid", "expired", "wrong_merchant", "failed", "future"])
-async def test_cached_checkout_only_skips_reads_when_still_valid(case):
-    settings = SimpleNamespace(finik_auto_enabled=True, finik_api_url="https://example.com/pay", finik_account_id="merchant")
-    configuration = payment_configuration_id(api_url=settings.finik_api_url, account_id=settings.finik_account_id)
-    request = SimpleNamespace(
-        plan="week", status="awaiting_receipt", telegram_user_id=42,
-        created_at=datetime.now(UTC) - timedelta(seconds=30),
-        provider_status=f"waiting:{configuration}",
-        provider_payment_url="https://qr.finik.kg/prepared", provider_expected_amount=399,
-    )
-    if case == "expired":
-        request.created_at -= timedelta(minutes=5)
-    elif case == "future":
-        request.created_at += timedelta(minutes=5)
-    elif case == "wrong_merchant":
-        request.provider_status = "waiting:old"
-    elif case == "failed":
-        request.provider_status = "failed"
-    payments = SimpleNamespace(reusable_provider_checkout=AsyncMock(side_effect=LookupError("normal checkout path")))
-    if case == "valid":
-        assert await web._finik_checkout_url(settings, payments, request, apartment_id=1, plan="week") == request.provider_payment_url
-        payments.reusable_provider_checkout.assert_not_awaited()
-    else:
-        with pytest.raises(LookupError, match="normal checkout path"):
-            await web._finik_checkout_url(settings, payments, request, apartment_id=1, plan="week")
-        payments.reusable_provider_checkout.assert_awaited_once()
+async def test_reuses_only_unexpired_xpay_checkout(repositories, monkeypatch):
+    apartments, payments, sessions = repositories
+    apartment = await apartments.upsert_discovered(make_ad())
+    request = (await payments.submit(user_id=19, apartment_id=apartment.id, username=None, first_name=None, plan=WEEK_PLAN)).request
+    settings = Settings(_env_file=None, xpay_client_id='id', xpay_client_secret='secret', xpay_service_uuid='uuid', telegram_webhook_url='https://example.test/telegram/webhook')
+    create = AsyncMock(side_effect=[('Tx1', 'https://pay.xpay.kg/1'), ('Tx2', 'https://pay.xpay.kg/2')])
+    monkeypatch.setattr(XPayClient, 'create', create)
+    assert (await create_checkout(sessions, settings, request_id=request.id))[0].endswith('/1')
+    assert (await create_checkout(sessions, settings, request_id=request.id))[0].endswith('/1')
+    async with sessions.begin() as session:
+        attempt = await session.scalar(select(XPayAttempt))
+        attempt.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    assert (await create_checkout(sessions, settings, request_id=request.id))[0].endswith('/2')
+    assert create.await_count == 2

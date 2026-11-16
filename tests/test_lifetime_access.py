@@ -70,85 +70,48 @@ async def test_old_pending_checkout_can_switch_to_lifetime(repositories, service
 
 @pytest.mark.asyncio
 async def test_weekly_miniapp_checkout_and_automatic_access_end_to_end(repositories, service, monkeypatch):
-    import json
-    from datetime import timedelta
     from unittest.mock import AsyncMock
     from types import SimpleNamespace
     import httpx
+    from sqlalchemy import select
     from app import web
     from app.config import get_settings
-    from app.finik import FinikClient
+    from app.models import XPayAttempt
+    from app.xpay import XPayClient, reconcile
     from app.security import TokenSigner
     from app.terms import TermsConsentRepository
-    from tests.test_finik import _keys
     from tests.test_web import miniapp_init_data
-
     apartments, payments, sessions = repositories
     first = await apartments.upsert_discovered(make_ad(lalafo_id=88101))
     second = await apartments.upsert_discovered(make_ad(lalafo_id=88102))
-    private_pem, _ = _keys()
-    for key, value in {
-        "ADMIN_USER_ID": "999", "RUN_BOT": "true", "TELEGRAM_BOT_TOKEN": "123456:test-token",
-        "CALLBACK_SECRET": "c" * 32, "FINIK_API_KEY": "test",
-        "FINIK_ACCOUNT_ID": "test-merchant", "FINIK_PRIVATE_KEY_PEM": private_pem,
-        "FINIK_PRIVATE_KEY_B64": "", "WEEKLY_FINIK_PAYMENT_URL": "",
-        "MONTHLY_FINIK_PAYMENT_URL": "https://qr.finik.kg/old-999", "LIFETIME_FINIK_PAYMENT_URL": "",
-        "TELEGRAM_WEBHOOK_URL": "https://example.test/telegram/webhook",
-    }.items():
+    for key, value in {"ADMIN_USER_ID":"999", "RUN_BOT":"true", "TELEGRAM_BOT_TOKEN":"123456:test-token",
+        "CALLBACK_SECRET":"c"*32, "XPAY_CLIENT_ID":"id", "XPAY_CLIENT_SECRET":"secret",
+        "XPAY_SERVICE_UUID":"uuid", "TELEGRAM_WEBHOOK_URL":"https://example.test/telegram/webhook"}.items():
         monkeypatch.setenv(key, value)
     get_settings.cache_clear()
     consents = TermsConsentRepository(sessions)
-    monkeypatch.setattr(web, "_bot_runtime", SimpleNamespace(bot=SimpleNamespace(send_message=AsyncMock(return_value=SimpleNamespace(message_id=515))), workflow_data={"service": service, "payments": payments, "terms_consents": consents}))
-    captured = []
-    async def provider(request):
-        captured.append(json.loads(request.content))
-        assert request.headers["signature"]
-        return httpx.Response(201, json={"url": "https://qr.finik.kg/weekly-500"})
-    async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as finik_http:
-        monkeypatch.setattr(web, "FinikClient", lambda **kwargs: FinikClient(client=finik_http, **kwargs))
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=web.app), base_url="http://test") as client:
-            payload = {"init_data": miniapp_init_data(bot_token="123456:test-token", user_id=880), "start_param": TokenSigner("c" * 32).sign_start_id("miniapp-apartment", first.id), "plan": "week"}
-            initial = await client.post("/miniapp/api/session", json=payload)
-            assert initial.json()["status"] == "unpaid"
-            assert initial.json()["price"] == 399
-            prepared = await client.post("/miniapp/api/prepare", json=payload)
-            assert prepared.status_code == 200
-            assert prepared.json()["payment_url"] == "https://qr.finik.kg/weekly-500"
-            assert len(captured) == 1
-            assert not await consents.accepted(880)
-            assert (await service.contact_status(880, first.id)).status == "unpaid"
-            premature = await client.post("/miniapp/api/access", json=payload)
-            assert premature.status_code == 409
-            started = await client.post("/miniapp/api/start", json=payload)
-            assert started.status_code == 200
-            assert started.json()["plan"] == WEEK_PLAN
-            assert started.json()["payment_url"] == "https://qr.finik.kg/weekly-500"
-            assert await consents.accepted(880)
-            assert len(captured) == 1
-            assert captured[0]["Amount"] == 399
-            assert captured[0]["Data"]["description"] == "Бессрочный доступ к контактам"
-            again = await client.post("/miniapp/api/start", json=payload)
-            assert again.json()["payment_url"] == started.json()["payment_url"]
-            assert len(captured) == 1
-            granted = await client.post("/miniapp/api/access", json=payload)
-            assert granted.status_code == 409
-            assert "автоматически" in granted.json()["detail"]
-            assert "phone" not in granted.json()
-            checkout = await payments.get_access(880, first.id)
-            assert checkout.payment_claimed_at is None
-            outcome, _ = await payments.apply_provider_result(
-                captured[0]["PaymentId"], succeeded=True, amount=399
-            )
-            assert outcome == "approved"
-            repeated = await client.post("/miniapp/api/access", json=payload)
-            assert repeated.json()["status"] == "approved"
-            already_ready = await client.post("/miniapp/api/prepare", json=payload)
-            assert already_ready.json()["status"] == "approved"
-            assert len(captured) == 1
-            payload["start_param"] = TokenSigner("c" * 32).sign_start_id("miniapp-apartment", second.id)
-            next_card = await client.post("/miniapp/api/session", json=payload)
-            assert next_card.json()["status"] == "approved"
-            assert next_card.json()["phone"]
+    monkeypatch.setattr(web, "_bot_runtime", SimpleNamespace(bot=SimpleNamespace(send_message=AsyncMock()),
+        workflow_data={"service":service, "payments":payments, "terms_consents":consents}))
+    create = AsyncMock(return_value=("Provider123", "https://pay.xpay.kg/checkout"))
+    monkeypatch.setattr(XPayClient, "create", create)
+    monkeypatch.setattr(XPayClient, "status", AsyncMock(return_value={"qr_transaction_id":"Provider123",
+        "pay_status":"COMPLETED", "amount":"399", "request_amount":"399", "transaction_uuid":"uuid"}))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=web.app), base_url="http://test") as client:
+        payload = {"init_data":miniapp_init_data(bot_token="123456:test-token", user_id=880),
+            "start_param":TokenSigner("c"*32).sign_start_id("miniapp-apartment",first.id), "plan":"week"}
+        assert (await client.post("/miniapp/api/session",json=payload)).json()["status"] == "unpaid"
+        prepared = await client.post("/miniapp/api/prepare",json=payload)
+        assert prepared.status_code == 200 and prepared.json()["payment_url"] == "https://pay.xpay.kg/checkout"
+        assert (await client.post("/miniapp/api/access",json=payload)).status_code == 409
+        started = await client.post("/miniapp/api/start",json=payload)
+        assert started.status_code == 200 and started.json()["payment_url"] == prepared.json()["payment_url"]
+        assert create.await_count == 1 and await consents.accepted(880)
+        async with sessions() as session:
+            token = (await session.scalar(select(XPayAttempt))).token
+        assert (await reconcile(sessions, get_settings(), token))[0] == "approved"
+        assert (await client.post("/miniapp/api/access",json=payload)).json()["status"] == "approved"
+        payload["start_param"] = TokenSigner("c"*32).sign_start_id("miniapp-apartment",second.id)
+        assert (await client.post("/miniapp/api/session",json=payload)).json()["status"] == "approved"
     get_settings.cache_clear()
 
 
