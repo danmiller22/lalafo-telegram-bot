@@ -1358,6 +1358,7 @@ def test_value_selection_prefers_affordable_realtors_without_blocking_fallback()
     pool = _apartments(3, central=True, start_id=9100, owner=False)
     for card, price in zip(pool, (39000, 32000, 40000)):
         card.price = price
+        card.rooms = "1"
     picked = _pick_for_window(pool, 3, {}, {}, {}, central=True, seller_remaining={"realtor":3})
     assert picked[0].price == 32000
     assert {card.price for card in picked} == {32000,39000,40000}

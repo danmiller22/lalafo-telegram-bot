@@ -30,6 +30,12 @@ from app.seller_mix import realtor_allowance, REALTOR_BASE_PERCENT, REALTOR_MAX_
 BISHKEK = ZoneInfo("Asia/Bishkek")
 ALLOWED_ROOMS = frozenset(PUBLIC_ROOMS)
 CENTRAL_DAILY_SHARE = 0.50
+
+
+def _room_mix_score(room: str | None, counts: dict[str, int]) -> tuple[int, int]:
+    """Aim for twice as many one-room flats as either other room type."""
+    return (counts.get(room, 0) * (1 if room == "1" else 2), 0 if room == "1" else 1)
+
 REALTOR_STOCK_RESERVE_SHARE = 0.20
 MIN_PUBLICATIONS_PER_DAY = 60
 MAX_PUBLICATIONS_PER_DAY = 60
@@ -247,7 +253,7 @@ def _pick_for_window(
             return (
                 _seller_type(item) == "realtor",
                 district_priority(item.district) == 0,
-                room_counts.get(item.rooms, 0),
+                *_room_mix_score(item.rooms, room_counts),
                 not getattr(item, "active", True) or getattr(item, "availability_status", None) == "unavailable",
                 rental_value_band(item.price, item.rooms, getattr(item, "source_description", None)),
                 item.price,
@@ -414,8 +420,10 @@ async def _balanced_stock(session: AsyncSession, statement) -> list[Apartment]:
     """Keep a busy room type from crowding the other types out of the stock."""
     base = statement.where(_allowed_seller_filter())
     rows = []
-    share = max(1, MAX_FRESH_STOCK_LOAD // len(ALLOWED_ROOMS))
+    shares = {"1": MAX_FRESH_STOCK_LOAD // 2, "studio": MAX_FRESH_STOCK_LOAD // 4}
+    shares["2"] = MAX_FRESH_STOCK_LOAD - shares["1"] - shares["studio"]
     for rooms in ("1", "studio", "2"):
+        share = shares[rooms]
         agent_share = math.floor(share * REALTOR_STOCK_RESERVE_SHARE)
         rows.extend((await session.scalars(base.where(Apartment.rooms == rooms,
             func.coalesce(Apartment.seller_type, "unknown") == "owner").limit(share - agent_share))).all())
@@ -1144,9 +1152,9 @@ class InventoryRepository:
                 day_room_counts[room] = day_room_counts.get(room, 0) + 1
             selected_id = min(due_rows, key=lambda row: (
                 not row[4].startswith(REQUESTED_WINDOW_PREFIX),
+                *_room_mix_score(row[5], day_room_counts),
                 row[5] in recent_rooms,
                 bool(recent_rooms) and row[5] == recent_rooms[0],
-                day_room_counts.get(row[5], 0),
                 not row[7] or row[8] == "unavailable",
                 rental_value_band(row[3], row[5], row[6]),
                 row[3],

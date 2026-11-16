@@ -35,7 +35,7 @@ async def test_stock_loading_reserves_space_for_each_room_type(repositories, mon
     monkeypatch.setattr(inventory, "MAX_FRESH_STOCK_LOAD", 6)
     async with sessions() as session:
         rows = await _balanced_stock(session, select(Apartment).order_by(Apartment.id))
-    assert Counter(row.rooms for row in rows) == {"studio":2, "1":2, "2":2}
+    assert Counter(row.rooms for row in rows) == {"studio":1, "1":2, "2":3}
 
 
 @pytest.mark.asyncio
@@ -88,3 +88,24 @@ async def test_unavailable_one_room_is_published_as_archive_without_reactivation
     assert stored.availability_status == "unavailable"
     assert (await service.contact_status(123, apartment.id)).status == "unavailable"
     detail.assert_not_awaited()
+
+
+def test_room_mix_prefers_one_bedrooms_but_keeps_other_types():
+    from app.inventory import _pick_for_window
+    from tests.test_inventory import _apartments
+    pool = _apartments(36, central=True, start_id=980000)
+    for i, apartment in enumerate(pool):
+        apartment.rooms = ("1", "studio", "2")[i % 3]
+    selected = _pick_for_window(pool, 20, {}, {}, {}, central=True, seller_remaining={"owner":36, "_ordinary":36})
+    assert Counter(item.rooms for item in selected) == {"1":10, "studio":5, "2":5}
+
+@pytest.mark.asyncio
+async def test_stock_loading_prioritizes_one_room_when_all_types_available(repositories, monkeypatch):
+    from app import inventory
+    apartments, _, sessions = repositories
+    for i in range(36):
+        await apartments.upsert_discovered(make_ad(lalafo_id=990000+i, rooms=("1", "studio", "2")[i % 3]))
+    monkeypatch.setattr(inventory, "MAX_FRESH_STOCK_LOAD", 8)
+    async with sessions() as session:
+        rows = await _balanced_stock(session, select(Apartment).order_by(Apartment.id))
+    assert Counter(row.rooms for row in rows) == {"1": 4, "studio": 2, "2": 2}
