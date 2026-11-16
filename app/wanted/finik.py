@@ -7,7 +7,6 @@ import logging
 from sqlalchemy import select, update
 from app.finik import FinikClient, decode_private_key
 from app.models import WantedAd, WantedPayment
-from app.payment_plans import WANTED_SEARCH_PRICE
 from app.wanted.formatting import format_wanted_ad, format_wanted_public
 from app.wanted.keyboards import wanted_public_keyboard
 
@@ -34,7 +33,7 @@ async def create_checkout(repository, settings, ad):
     client = FinikClient(api_url=settings.finik_api_url, api_key=settings.finik_api_key,
         account_id=settings.finik_account_id, private_key_pem=decode_private_key(
             pem=settings.finik_private_key_pem, encoded=settings.finik_private_key_b64))
-    checkout = await client.create_payment(payment_id=payment_id, amount=WANTED_SEARCH_PRICE,
+    checkout = await client.create_payment(payment_id=payment_id, amount=100,
         redirect_url=f"https://t.me/{settings.telegram_bot_username.lstrip('@')}",
         webhook_url=settings.require_public_base_url() + '/finik/webhook')
     async with repository.sessions.begin() as session:
@@ -52,7 +51,9 @@ async def apply_result(repository, payment_id, succeeded, amount):
         if not succeeded:
             return 'not_succeeded', payment.wanted_ad_id
         try:
-            matches = Decimal(str(amount)) == Decimal(WANTED_SEARCH_PRICE)
+            # Finik checkouts were issued only at the original 100-som price.
+            # Keep accepting those in-flight payments after the XPAY price change.
+            matches = Decimal(str(amount)) == Decimal(100)
         except (InvalidOperation, ValueError, TypeError):
             matches = False
         if not matches:

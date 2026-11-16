@@ -122,6 +122,8 @@ async def create_checkout(sessions, settings, *, request_id=None, wanted_ad_id=N
         active = await session.scalar(select(XPayAttempt).where(predicate, XPayAttempt.expires_at > now,
             XPayAttempt.status.in_(['creating', 'waiting'])).order_by(XPayAttempt.id.desc()).limit(1))
         if active:
+            if active.expected_amount != amount:
+                raise XPayError('Previous checkout is still active at a different price')
             if active.payment_url:
                 if request_id is not None:
                     request.created_at = active.created_at

@@ -96,5 +96,5 @@ def test_wanted_ad_payment_and_admin_callbacks_are_signed_and_short():
     for callback_data in (paid_data, approve_data, reject_data):
         assert callback_data is not None
         assert len(callback_data.encode()) <= 64
-    assert payment.inline_keyboard[0][0].text == "💳 Оплатить 100 сом"
+    assert payment.inline_keyboard[0][0].text == "💳 Оплатить 50 сом"
     assert payment.inline_keyboard[0][0].url == "https://qr.finik.kg/payment"

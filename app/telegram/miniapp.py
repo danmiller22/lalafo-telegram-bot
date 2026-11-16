@@ -121,7 +121,7 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
   <h1 id="title">Получить доступ</h1>
   <p id="intro" class="intro">Доступ ко всем контактам для прямой связи</p>
   <div id="status" class="status hidden" role="status" aria-live="polite"></div>
-  <a id="other-apartments" class="button secondary hidden" href="https://t.me/bishkekarendakg">Смотреть актуальные квартиры</a>
+  <a id="other-apartments" class="button secondary hidden" href="https://t.me/rentifykg">Смотреть актуальные квартиры</a>
   <div id="tariff-description">
     <button id="pay-lifetime" class="tariff-button" aria-pressed="true"{'' if payment_urls else ' disabled'}>
       <span class="popular">Популярный</span>
@@ -443,7 +443,7 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
     const current = window.Telegram && window.Telegram.WebApp;
     if (current && typeof current.close === "function") current.close();
     else if (window.history && window.history.length > 1) window.history.back();
-    else location.href = "https://t.me/bishkekarendakg";
+    else location.href = "https://t.me/rentifykg";
   }}
   el("back").onclick = goBack;
   el("resume-payment").onclick = () => {{ tariffsView = false; if (lastSession) render(lastSession); }};
