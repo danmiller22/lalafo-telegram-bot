@@ -193,8 +193,8 @@ class Settings(BaseSettings):
     finik_private_key_b64: str = ""
     finik_webhook_public_key_pem: str = ""
     xpay_api_url: str = "https://api.xpay.kg"
-    xpay_client_id: str = ""
-    xpay_client_secret: str = ""
+    xpay_client_id: str = Field(default="", repr=False)
+    xpay_client_secret: str = Field(default="", repr=False)
     xpay_service_uuid: str = ""
     callback_secret: str = "change-me-in-production"
 
