@@ -253,6 +253,7 @@ def _pick_for_window(
             return (
                 _seller_type(item) == "realtor",
                 district_priority(item.district) == 0,
+                _seller_type(item) == "realtor" and item.rooms != "1",
                 *_room_mix_score(item.rooms, room_counts),
                 not getattr(item, "active", True) or getattr(item, "availability_status", None) == "unavailable",
                 rental_value_band(item.price, item.rooms, getattr(item, "source_description", None)),
@@ -1152,6 +1153,7 @@ class InventoryRepository:
                 day_room_counts[room] = day_room_counts.get(room, 0) + 1
             selected_id = min(due_rows, key=lambda row: (
                 not row[4].startswith(REQUESTED_WINDOW_PREFIX),
+                row[2] == "realtor" and row[5] != "1",
                 *_room_mix_score(row[5], day_room_counts),
                 row[5] in recent_rooms,
                 bool(recent_rooms) and row[5] == recent_rooms[0],

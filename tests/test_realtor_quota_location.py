@@ -11,6 +11,16 @@ from app.telegram.formatting import format_public_apartment
 from tests.helpers import make_ad
 from tests.test_inventory import _apartments
 
+def test_realtor_fallback_prefers_one_room_even_when_room_mix_favors_others():
+    from app.inventory import _pick_for_window
+    pool = _apartments(3, central=True, start_id=30000, owner=False)
+    for item, rooms in zip(pool, ('studio', '2', '1')):
+        item.rooms = rooms
+        item.price = 30000
+    chosen = _pick_for_window(pool, 1, {'1': 20}, {}, {}, central=True,
+                              seller_remaining={'realtor': 1})
+    assert chosen[0].rooms == '1'
+
 @pytest.mark.parametrize('phone',['+996 703 108 500','0703-108-500','703108500','+996(703)223711','0703223711','+996703223711; +996555000000'])
 def test_blocked_contacts_have_no_format_loophole(phone):
     assert is_excluded_contact(make_ad(phone=phone))
