@@ -145,10 +145,10 @@ jobs:
           CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
           VERIFIED_CAMPAIGN_PLAN: ${{ inputs.verified_campaign_plan }}
         run: python -m tools.stop_lalafo_campaigns --plan "$VERIFIED_CAMPAIGN_PLAN" --verify-only
-      - name: Read shared runtime counters without sending messages or changing data
+      - name: Read destination chat identity
         if: inputs.runtime_diagnostics
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         run: python -m tools.runtime_diagnostics
       - name: Register requested Telegram cards using actual publication receipts
         if: inputs.register_requested_promotions
