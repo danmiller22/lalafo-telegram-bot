@@ -191,7 +191,11 @@ async def reconcile(sessions, settings, token):
                     attempt.status, attempt.payment_url = 'closed', None
         return 'waiting', None, None
     try:
-        if Decimal(str(data.get('amount'))) != Decimal(expected) or Decimal(str(data.get('request_amount'))) != Decimal(expected):
+        # This merchant's production status response uses tyiyn: 39900 for
+        # 399 som. Do not infer units from JSON number/string formatting.
+        def matches(value):
+            return Decimal(str(value)) == Decimal(expected * 100)
+        if not matches(data.get('amount')) or not matches(data.get('request_amount')):
             return 'amount_mismatch', None, None
     except (InvalidOperation, ValueError, TypeError):
         return 'amount_mismatch', None, None
