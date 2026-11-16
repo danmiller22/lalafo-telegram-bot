@@ -1373,6 +1373,7 @@ async def health() -> JSONResponse:
             "status": "ok",
             "bot": "running" if settings.run_bot else "disabled",
             "finik_auto_payment": "ready" if settings.xpay_auto_enabled else "disabled",
+            "xpay_auto_payment": "ready" if settings.xpay_auto_enabled else "disabled",
             "payment_access_mode": (
                 "automatic" if settings.xpay_auto_enabled else "manual"
             ),

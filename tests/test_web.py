@@ -145,6 +145,7 @@ async def test_health_and_authentication() -> None:
             "status": "ok",
             "bot": "disabled",
             "finik_auto_payment": "disabled",
+            "xpay_auto_payment": "disabled",
         "payment_access_mode": "manual",
         "payment_review_worker": "disabled",
         "listing_validity_days": 2,
