@@ -10,12 +10,12 @@ from tests.helpers import make_ad
 from tests.test_inventory import _apartments
 
 
-@pytest.mark.parametrize('ordinary,expected', [(120,6),(54,6),(53,9),(51,9),(50,8),(49,8),(48,8),(47,8),(10,1),(0,0)])
-def test_daily_agent_allowance_never_exceeds_fifteen_percent(ordinary, expected):
+@pytest.mark.parametrize('ordinary,expected', [(120,6),(54,6),(53,12),(51,12),(50,12),(49,12),(48,12),(47,11),(10,2),(0,0)])
+def test_daily_agent_allowance_never_exceeds_twenty_percent(ordinary, expected):
     assert realtor_allowance(ordinary,60) == expected
 
 
-@pytest.mark.parametrize('ordinary,total,agents', [(120,80,8),(68,80,12),(67,78,11),(51,60,9),(50,58,8),(49,57,8),(48,56,8),(47,55,8),(10,11,1),(0,0,0)])
+@pytest.mark.parametrize('ordinary,total,agents', [(120,80,8),(68,80,16),(67,80,16),(51,63,12),(50,62,12),(49,61,12),(48,60,12),(47,58,11),(10,12,2),(0,0,0)])
 def test_two_periods_publish_eighty_with_adaptive_mix(ordinary,total,agents):
     stock = _apartments(ordinary,central=True,start_id=1) + _apartments(100,central=True,start_id=200,owner=False)
     start = datetime(2026,11,13,5,tzinfo=BISHKEK)
@@ -25,12 +25,12 @@ def test_two_periods_publish_eighty_with_adaptive_mix(ordinary,total,agents):
     rows = first+second
     assert len(rows) == total and len({p.apartment.id for p in rows}) == total
     assert sum(p.apartment.seller_type=='realtor' for p in rows) == agents
-    assert agents*100 <= total*15
+    assert agents*100 <= total*20
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('remaining_normal,allowed',[(11,False),(8,False)])
-async def test_dispatch_never_allows_tenth_agent_even_when_owners_are_short(repositories,remaining_normal,allowed):
+@pytest.mark.parametrize('remaining_normal,allowed',[(11,True),(8,True)])
+async def test_dispatch_allows_tenth_agent_when_owners_are_short(repositories,remaining_normal,allowed):
     apartments,_,sessions = repositories
     now = publication_day_start(datetime.now(timezone.utc)).astimezone(timezone.utc)+timedelta(hours=19)
     for i in range(49):

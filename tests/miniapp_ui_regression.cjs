@@ -42,10 +42,10 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
 (async () => {
   const weekly = setup(null, (path, options) => {
     const body = JSON.parse(options.body);
-    if (path.endsWith('/prepare')) return Promise.resolve(response({payment_url:'https://qr.finik.kg/week-399',expires_at_ms:Date.now()+300000}));
+    if (path.endsWith('/prepare')) return Promise.resolve(response({payment_url:'https://qr.finik.kg/week-499',expires_at_ms:Date.now()+300000}));
     if (path.endsWith('/start')) {
       assert.equal(body.plan, 'week');
-      return Promise.resolve(response({status:'awaiting_receipt',plan:'week',price:399,payment_url:'https://qr.finik.kg/week-399'}));
+      return Promise.resolve(response({status:'awaiting_receipt',plan:'week',price:499,payment_url:'https://qr.finik.kg/week-499'}));
     }
     return Promise.resolve(response({status:'unpaid'}));
   });
@@ -53,8 +53,8 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
   await weekly.node('pay-lifetime').onclick();
   assert.equal(weekly.opened.length, 0, 'Selecting the weekly tariff must not open checkout');
   await weekly.node('pay-now').onclick();
-  assert.deepEqual(weekly.opened, ['https://qr.finik.kg/week-399']);
-  assert.equal(weekly.node('intro').textContent, 'Навсегда · 399 сом');
+  assert.deepEqual(weekly.opened, ['https://qr.finik.kg/week-499']);
+  assert.equal(weekly.node('intro').textContent, 'Навсегда · 499 сом');
   assert.equal(weekly.node('pay-lifetime').hidden, true);
   const unavailable = setup(null, () => Promise.resolve({ok: false, status: 404,
     json: async () => ({detail: 'Квартира больше недоступна.'})}));

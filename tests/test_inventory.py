@@ -356,7 +356,7 @@ def test_daily_fallback_capacity_cannot_exceed_daily_plan():
     start = datetime(2026, 9, 13, 5, tzinfo=timezone(timedelta(hours=6)))
     assert {
         daily_realtor_target(start + timedelta(days=offset)) for offset in range(4)
-    } == {12}
+    } == {16}
 
 
 
@@ -710,8 +710,8 @@ async def test_schedule_uses_agents_to_fill_daily_catchup_shortage(repositories)
             )
             or 0
         )
-    assert daily_realtor_target(now) == 12
-    assert realtor_count == 7
+    assert daily_realtor_target(now) == 16
+    assert realtor_count == 8
     assert unknown_count == 0
 
 
