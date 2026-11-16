@@ -158,3 +158,17 @@ async def test_untrusted_webhook_does_not_grant_without_provider_confirmation(re
     result = await web.xpay_webhook('forged-callback-test')
     assert result == {'status':'waiting'}
     assert (await service.contact_status(81, apartment.id)).status != 'approved'
+
+@pytest.mark.asyncio
+async def test_previous_finik_checkout_is_not_replaced_while_payable(repositories, monkeypatch):
+    from app.xpay import XPayError
+    apartments, payments, sessions = repositories
+    apartment = await apartments.upsert_discovered(make_ad())
+    request = (await payments.submit(user_id=90, apartment_id=apartment.id, username=None, first_name=None, plan=WEEK_PLAN)).request
+    await payments.prepare_provider_payment(request.id, 'old-finik', configuration_id='old')
+    await payments.set_provider_payment_url(request.id, 'https://qr.finik.kg/old', configuration_id='old', payment_id='old-finik')
+    provider = AsyncMock()
+    monkeypatch.setattr(XPayClient, 'create', provider)
+    with pytest.raises(XPayError, match='Previous checkout'):
+        await create_checkout(sessions, settings(), request_id=request.id)
+    provider.assert_not_awaited()

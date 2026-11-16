@@ -101,6 +101,17 @@ async def create_checkout(sessions, settings, *, request_id=None, wanted_ad_id=N
                 PaymentRequest.telegram_user_id == payer_id,
                 PaymentRequest.plan == request.plan,
                 PaymentRequest.status.in_(['prepared', 'awaiting_receipt']))
+            legacy = await session.scalar(select(PaymentRequest.id).where(
+                PaymentRequest.telegram_user_id == payer_id,
+                PaymentRequest.plan == request.plan,
+                PaymentRequest.status.in_(['prepared', 'awaiting_receipt']),
+                PaymentRequest.provider_payment_url.is_not(None),
+                PaymentRequest.provider_status.like('waiting:%'),
+                PaymentRequest.provider_status != 'waiting:xpay',
+                PaymentRequest.created_at > now - timedelta(minutes=5),
+            ).limit(1))
+            if legacy is not None:
+                raise XPayError('Previous checkout is still active')
             predicate = XPayAttempt.request_id.in_(other_ids)
         else:
             request = await session.scalar(select(WantedAd).where(WantedAd.id == wanted_ad_id).with_for_update())
