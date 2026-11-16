@@ -84,6 +84,9 @@ async def test_automatic_worker_retries_failed_verified_payment_notice(
     payments = repositories[1]
     runtime.workflow_data["settings"] = Settings(
         admin_user_id=999,
+        xpay_client_id="configured",
+        xpay_client_secret="configured",
+        xpay_service_uuid="configured",
         finik_api_key="configured",
         finik_account_id="merchant",
         finik_private_key_pem="configured",
@@ -168,6 +171,9 @@ async def test_old_customer_paid_button_cannot_create_manual_review_in_automatic
     signer = TokenSigner("automatic-paid-button-test-secret")
     settings = Settings(
         admin_user_id=999,
+        xpay_client_id="configured",
+        xpay_client_secret="configured",
+        xpay_service_uuid="configured",
         finik_api_key="configured",
         finik_account_id="merchant",
         finik_private_key_pem="configured",

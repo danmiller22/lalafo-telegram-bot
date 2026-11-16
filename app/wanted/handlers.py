@@ -228,7 +228,7 @@ async def wanted_create(
         await callback.answer("Откройте личный чат бота.", show_alert=True)
         return
     payment_url = settings.wanted_finik_payment_url.strip()
-    if not settings.finik_auto_enabled:
+    if not settings.xpay_auto_enabled:
         await callback.answer(
             "Оплата заявки временно недоступна. Попробуйте позже или напишите в техподдержку.",
             show_alert=True,
@@ -260,12 +260,12 @@ async def wanted_create(
         )
         return
 
-    if settings.finik_auto_enabled:
-        from app.wanted.finik import create_checkout
+    if settings.xpay_auto_enabled:
+        from app.wanted.xpay import create_checkout
         try:
             payment_url = await create_checkout(wanted_ads, settings, ad)
         except Exception:
-            logger.exception("Could not create Finik checkout for wanted ad %s", ad.id)
+            logger.exception("Could not create XPAY checkout for wanted ad %s", ad.id)
             await callback.answer("Не удалось создать ссылку. Заявка сохранена; обратитесь в поддержку.", show_alert=True)
             await state.clear()
             return
@@ -273,7 +273,7 @@ async def wanted_create(
     text = (
         f"Заявка сохранена. Стоимость публикации — {WANTED_SEARCH_PRICE} сом.\n\n"
         + format_wanted_ad(ad)
-        + ("\n\nПосле оплаты заявка будет опубликована автоматически." if settings.finik_auto_enabled
+        + ("\n\nПосле оплаты заявка будет опубликована автоматически." if settings.xpay_auto_enabled
            else "\n\nПосле оплаты нажмите «Проверить оплату».")
     )
     keyboard = wanted_payment_keyboard(
@@ -281,7 +281,7 @@ async def wanted_create(
         signer=signer,
         payment_url=payment_url,
         support_url=settings.support_bot_url,
-        automatic=settings.finik_auto_enabled,
+        automatic=settings.xpay_auto_enabled,
     )
     await callback.answer()
     try:
@@ -322,7 +322,7 @@ async def wanted_refresh(callback: CallbackQuery, wanted_ads: WantedAdRepository
         await callback.answer("Заявка не найдена или уже оплачена.", show_alert=True)
         return
     try:
-        from app.wanted.finik import create_checkout
+        from app.wanted.xpay import create_checkout
         url = await create_checkout(wanted_ads, settings, ad)
     except Exception:
         logger.exception("Could not refresh wanted checkout")
@@ -443,12 +443,12 @@ async def _send_my_wanted_ads(
     for ad in rows[:5]:
         keyboard = None
         if ad.status in {"awaiting_payment", "rejected", "pending"}:
-            if settings.finik_auto_enabled and ad.status == "pending":
+            if settings.xpay_auto_enabled and ad.status == "pending":
                 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
                 keyboard = InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text="🛟 Техподдержка", url=settings.support_bot_url)],
                 ])
-            elif settings.finik_auto_enabled:
+            elif settings.xpay_auto_enabled:
                 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
                 token = signer.sign_id("wanted-paid", ad.id)
                 keyboard = InlineKeyboardMarkup(inline_keyboard=[

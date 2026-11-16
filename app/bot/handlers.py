@@ -247,7 +247,7 @@ async def plan_handler(
                 apartment_id=apartment_id, plan=plan,
             )
         except Exception:
-            logger.exception("Could not create Finik checkout")
+            logger.exception("Could not create XPAY checkout")
             await callback.answer("Не удалось открыть оплату. Попробуйте ещё раз.", show_alert=True)
             return
     await callback.answer()
@@ -256,7 +256,7 @@ async def plan_handler(
             "💳 Оплата\n\n"
             f"Тариф: {plan_label(plan)}\n"
             f"Сумма: {price} сом\n\n"
-            "Нажмите кнопку ниже — откроется оплата Finik.",
+            "Нажмите кнопку ниже — откроется оплата XPAY.",
             reply_markup=payment_keyboard(
                 apartment_id,
                 signer=signer,
@@ -563,9 +563,9 @@ async def paid_handler(
         )
         await callback.answer("✅ Карточка с номером отправлена вам.")
         return
-    if settings.finik_auto_enabled:
+    if settings.xpay_auto_enabled:
         await callback.answer(
-            "Оплата подтверждается Finik автоматически. Подождите несколько секунд.",
+            "Оплата подтверждается XPAY автоматически. Подождите несколько секунд.",
             show_alert=True,
         )
         return

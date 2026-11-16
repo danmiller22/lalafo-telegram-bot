@@ -135,7 +135,7 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
   <a id="privacy" class="privacy hidden">Политика конфиденциальности</a>
   <section id="checkout" class="checkout hidden">
     <button id="access" class="primary hidden">Я оплатил(а)</button>
-    <button id="reopen-payment" class="secondary hidden" style="margin-top:10px">Открыть Finik ещё раз</button>
+    <button id="reopen-payment" class="secondary hidden" style="margin-top:10px">Открыть XPAY ещё раз</button>
   </section>
   <div id="apartment" class="hidden">
     <div id="photos" class="photos"></div>
@@ -319,7 +319,7 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
     }} else if (apartmentUnavailable) {{
       message("Контакт этой квартиры сейчас недоступен. Выберите другой актуальный вариант.");
     }} else if (waiting && automaticPayment) {{
-      message("Ожидаем подтверждение оплаты от Finik. Доступ откроется автоматически.");
+      message("Ожидаем подтверждение оплаты от XPAY. Доступ откроется автоматически.");
       startPaymentPolling();
     }} else if (waiting && data.status === "pending") {{
       message("Заявка отправлена на проверку. Ожидайте подтверждения.");
@@ -366,7 +366,7 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
     const button = el(buttonId);
     const originalText = button.textContent;
     button.disabled = true;
-    button.textContent = "Открываем Finik…";
+    button.textContent = "Открываем XPAY…";
     try {{
       if (!paymentUrls[plan] || preparedUntil[plan] <= Date.now()) {{
         paymentUrls[plan] = "";
@@ -376,7 +376,7 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
       }}
       if (navigation !== navigationVersion || accessApproved || apartmentUnavailable) return;
       const readyUrl = paymentUrls[plan];
-      // Persist the checkout before leaving Telegram. Opening Finik first can
+      // Persist the checkout before leaving Telegram. Opening XPAY first can
       // suspend the WebView and lose the request, leaving no verification
       // button when the customer returns.
       checkoutStarted = true;

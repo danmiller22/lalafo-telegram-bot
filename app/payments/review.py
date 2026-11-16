@@ -42,7 +42,7 @@ async def notify_payment_admin(
                 f"Telegram ID: {request.telegram_user_id}\n"
                 f"Тариф: {plan_label(request.plan)} — {plan_price(request.plan)} сом\n"
                 "Клиент нажал «Я оплатил(а)».\n\n"
-                f"⚠️ Одобрите только после отдельного поступления {plan_price(request.plan)} сом в Finik. "
+                f"⚠️ Одобрите только после отдельного поступления {plan_price(request.plan)} сом на счёт. "
                 "Несколько заявок одного клиента не являются несколькими оплатами.")
         markup = payment_review_keyboard(request.id, signer)
         sent = await bot.send_message(settings.admin_user_id, text, reply_markup=markup)
@@ -81,7 +81,7 @@ async def notify_verified_payment_admin(
             f"Сумма: {plan_price(request.plan)} сом\n"
             f"Квартира ID: {request.apartment_id}\n"
             f"Доступ: {expires}\n\n"
-            "Finik подтвердил платёж, доступ выдан автоматически."
+            "Платёж подтверждён провайдером, доступ выдан автоматически."
         )
         sent = await bot.send_message(settings.admin_user_id, text)
         return await payments.finish_provider_admin_notification(

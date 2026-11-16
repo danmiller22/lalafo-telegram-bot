@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 async def process_payment_reviews(runtime) -> int:
     payments = runtime.workflow_data["payments"]
     settings = runtime.workflow_data["settings"]
-    if settings.finik_auto_enabled:
+    if settings.xpay_auto_enabled:
         retired = 0
         signer = runtime.workflow_data["signer"]
         for request in await payments.pending_notifications():
@@ -93,13 +93,13 @@ async def process_checkout_recoveries(runtime) -> int:
             payment_url=checkout_url,
             support_url=settings.support_bot_url,
             price=price,
-            manual_claim=not settings.finik_auto_enabled,
+            manual_claim=not settings.xpay_auto_enabled,
         )
         offer = (f"Бессрочный доступ ко всем номерам — {price} сом"
                  if request.plan == WEEK_PLAN else f"Доступ ко всем номерам — {price} сом {plan_label(request.plan).lower()}")
         next_step = (
             "После оплаты доступ откроется автоматически."
-            if settings.finik_auto_enabled
+            if settings.xpay_auto_enabled
             else "Если уже оплатили, нажмите «Я оплатил(а)» — администратор проверит поступление."
         )
         text = (
@@ -153,11 +153,28 @@ async def run_payment_review_worker(runtime) -> None:
             from app.models import WantedAd
             from app.wanted.finik import publish_paid
             wanted = runtime.workflow_data.get("wanted_ads")
-            if wanted is not None and runtime.workflow_data["settings"].finik_auto_enabled:
+            if wanted is not None and runtime.workflow_data["settings"].xpay_auto_enabled:
                 async with wanted.sessions() as session:
                     ids = list((await session.scalars(select(WantedAd.id).where(WantedAd.status == "paid").limit(20))).all())
                 for ad_id in ids:
                     await publish_paid(wanted, runtime.workflow_data["settings"], runtime.bot, ad_id)
         except Exception:
             logger.exception("Paid search-request publication recovery failed")
+        try:
+            if runtime.workflow_data["settings"].xpay_auto_enabled:
+                from sqlalchemy import select
+                from app.models import XPayAttempt
+                from app.web import _reconcile_xpay
+                sessions = runtime.workflow_data["payments"].sessions
+                async with sessions() as session:
+                    tokens = list((await session.scalars(select(XPayAttempt.token).where(
+                        XPayAttempt.status == "waiting", XPayAttempt.provider_id.is_not(None)
+                    ).order_by(XPayAttempt.last_checked_at.asc().nullsfirst(), XPayAttempt.id).limit(20))).all())
+                for token in tokens:
+                    try:
+                        await _reconcile_xpay(runtime, runtime.workflow_data["settings"], token)
+                    except Exception as exc:
+                        logger.warning("XPAY polling failed: %s", type(exc).__name__)
+        except Exception:
+            logger.exception("XPAY recovery iteration failed")
         await asyncio.sleep(30)
