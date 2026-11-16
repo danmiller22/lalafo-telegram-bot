@@ -145,11 +145,14 @@ jobs:
           CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
           VERIFIED_CAMPAIGN_PLAN: ${{ inputs.verified_campaign_plan }}
         run: python -m tools.stop_lalafo_campaigns --plan "$VERIFIED_CAMPAIGN_PLAN" --verify-only
-      - name: Read shared runtime counters without sending messages or changing data
+      - name: Apply XPAY schema and store encrypted XPAY credentials
         if: inputs.runtime_diagnostics
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: python -m tools.runtime_diagnostics
+          CALLBACK_SECRET: ${{ secrets.CALLBACK_SECRET }}
+        run: |
+          alembic upgrade head
+          python -m tools.bootstrap_xpay_config
       - name: Register requested Telegram cards using actual publication receipts
         if: inputs.register_requested_promotions
         env:
