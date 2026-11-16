@@ -39,7 +39,7 @@ def test_thin_stock_preserves_twenty_percent_ceiling(ordinary_count):
     normal=_apartments(ordinary_count,central=True,start_id=10000)
     agents=_apartments(100,central=True,start_id=20000,owner=False)
     planned=plan_period(normal+agents,period_start=datetime(2026,11,13,5,tzinfo=timezone(timedelta(hours=6))),rng=random.Random(2))
-    assert len(planned) <= 30
+    assert len(planned) <= 40
     assert sum(p.apartment.seller_type=='realtor' for p in planned)*5 <= len(planned)
     assert sum(p.apartment.seller_type != 'realtor' for p in planned) <= ordinary_count
 

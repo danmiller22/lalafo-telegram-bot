@@ -15,8 +15,8 @@ def test_daily_agent_allowance_never_exceeds_fifteen_percent(ordinary, expected)
     assert realtor_allowance(ordinary,60) == expected
 
 
-@pytest.mark.parametrize('ordinary,total,agents', [(120,60,6),(51,60,9),(50,58,8),(49,57,8),(48,56,8),(47,55,8),(10,11,1),(0,0,0)])
-def test_two_periods_publish_sixty_with_adaptive_mix(ordinary,total,agents):
+@pytest.mark.parametrize('ordinary,total,agents', [(120,80,8),(68,80,12),(67,78,11),(51,60,9),(50,58,8),(49,57,8),(48,56,8),(47,55,8),(10,11,1),(0,0,0)])
+def test_two_periods_publish_eighty_with_adaptive_mix(ordinary,total,agents):
     stock = _apartments(ordinary,central=True,start_id=1) + _apartments(100,central=True,start_id=200,owner=False)
     start = datetime(2026,11,13,5,tzinfo=BISHKEK)
     first = plan_period(stock,period_start=start,rng=random.Random(1))
