@@ -1,11 +1,11 @@
 """Adaptive combined allowance for realtors and unclassified authors."""
 
 REALTOR_BASE_PERCENT = 10
-REALTOR_MAX_PERCENT = 15
+REALTOR_MAX_PERCENT = 20
 
 
 def realtor_allowance(ordinary_count: int, target: int, *, base_allowance: int | None = None) -> int:
-    """Use 10% with sufficient owners, rising to 15% when stock is short."""
+    """Use 10% with sufficient owners, rising to 20% when stock is short."""
     del base_allowance
     owners, target = max(0, ordinary_count), max(0, target)
     if not target:

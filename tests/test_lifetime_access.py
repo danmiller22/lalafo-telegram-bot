@@ -16,7 +16,7 @@ async def test_lifetime_grant_covers_other_and_future_apartments(repositories, s
     submission = await service.begin_payment(user_id=880, apartment_id=first.id, username="lifetime", first_name="Test", plan=LIFETIME_PLAN)
     if via_webhook:
         await payments.prepare_provider_payment(submission.request.id, "lifetime-test")
-        outcome, _ = await payments.apply_provider_result("lifetime-test", succeeded=True, amount=399)
+        outcome, _ = await payments.apply_provider_result("lifetime-test", succeeded=True, amount=499)
         assert outcome == "amount_mismatch"
         assert (await service.contact_status(880, first.id)).status != "approved"
         outcome, _ = await payments.apply_provider_result("lifetime-test", succeeded=True, amount=LIFETIME_PRICE)
@@ -95,7 +95,7 @@ async def test_weekly_miniapp_checkout_and_automatic_access_end_to_end(repositor
     create = AsyncMock(return_value=("Provider123", "https://pay.xpay.kg/checkout"))
     monkeypatch.setattr(XPayClient, "create", create)
     monkeypatch.setattr(XPayClient, "status", AsyncMock(return_value={"qr_transaction_id":"Provider123",
-        "pay_status":"COMPLETED", "amount":39900, "request_amount":39900, "transaction_uuid":"uuid"}))
+        "pay_status":"COMPLETED", "amount":49900, "request_amount":49900, "transaction_uuid":"uuid"}))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=web.app), base_url="http://test") as client:
         payload = {"init_data":miniapp_init_data(bot_token="123456:test-token", user_id=880),
             "start_param":TokenSigner("c"*32).sign_start_id("miniapp-apartment",first.id), "plan":"week"}

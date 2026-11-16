@@ -99,7 +99,7 @@ async def test_one_weekly_approval_closes_parallel_claims_without_duplicate_reve
 
 
 @pytest.mark.asyncio
-async def test_lifetime_399_survives_checkout_reset_but_not_rejection(repositories, service):
+async def test_lifetime_499_survives_checkout_reset_but_not_rejection(repositories, service):
     apartments, payments, sessions = repositories
     first = await apartments.upsert_discovered(make_ad(lalafo_id=99003))
     second = await apartments.upsert_discovered(make_ad(lalafo_id=99004))
@@ -151,7 +151,7 @@ async def test_verified_finik_payment_grants_access_without_admin_review(
     assert (await service.contact_status(9191, apartment.id)).status == "awaiting_receipt"
 
     approved_outcome, _ = await payments.apply_provider_result(
-        "payment-9191", succeeded=True, amount=399
+        "payment-9191", succeeded=True, amount=499
     )
     assert approved_outcome == "approved"
     approved = await service.contact_status(9191, apartment.id)
@@ -159,7 +159,7 @@ async def test_verified_finik_payment_grants_access_without_admin_review(
     expiry = approved.access_expires_at
     assert expiry is None
     repeated, _ = await payments.apply_provider_result(
-        "payment-9191", succeeded=True, amount=399
+        "payment-9191", succeeded=True, amount=499
     )
     assert repeated == "already_approved"
     async with repositories[2]() as session:
@@ -176,7 +176,7 @@ async def test_verified_finik_payment_grants_access_without_admin_review(
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("succeeded", "amount", "expected"),
-    [(True, 399, "approved"), (True, 1, "amount_mismatch"), (False, None, "failed")],
+    [(True, 499, "approved"), (True, 1, "amount_mismatch"), (False, None, "failed")],
 )
 async def test_terminal_finik_callback_discards_checkout_url(
     repositories, service, succeeded, amount, expected
@@ -231,7 +231,7 @@ async def test_verified_payment_discards_parallel_checkout_urls(repositories, se
         )
 
     outcome, _ = await payments.apply_provider_result(
-        "payment-9193-a", succeeded=True, amount=399
+        "payment-9193-a", succeeded=True, amount=499
     )
 
     assert outcome == "approved"
@@ -663,7 +663,7 @@ async def test_queued_repeat_checks_newer_publication_of_same_apartment(reposito
 
 
 @pytest.mark.asyncio
-async def test_399_provider_grant_is_lifetime_and_survives_checkout_cleanup(repositories, service, monkeypatch):
+async def test_499_provider_grant_is_lifetime_and_survives_checkout_cleanup(repositories, service, monkeypatch):
     from sqlalchemy import delete
     from app.payment_plans import plan_price, expires_at_for
     apartments, payments, sessions = repositories
@@ -671,13 +671,13 @@ async def test_399_provider_grant_is_lifetime_and_survives_checkout_cleanup(repo
     second = await apartments.upsert_discovered(make_ad(lalafo_id=991102))
     submission = await service.begin_payment(user_id=991101, apartment_id=first.id,
         username=None, first_name="Buyer", plan=WEEK_PLAN)
-    await payments.prepare_provider_payment(submission.request.id, "lifetime-399")
-    assert (await payments.apply_provider_result("lifetime-399", succeeded=True, amount=399))[0] == "approved"
-    assert plan_price(WEEK_PLAN) == 399
+    await payments.prepare_provider_payment(submission.request.id, "lifetime-499")
+    assert (await payments.apply_provider_result("lifetime-499", succeeded=True, amount=499))[0] == "approved"
+    assert plan_price(WEEK_PLAN) == 499
     assert expires_at_for(WEEK_PLAN, datetime.now(timezone.utc)) is None
     async with sessions.begin() as session:
         ledger = await session.scalar(select(PaymentHistory).where(PaymentHistory.payment_request_id == submission.request.id))
-        assert ledger.amount == 399 and ledger.access_expires_at is None
+        assert ledger.amount == 499 and ledger.access_expires_at is None
         await session.execute(delete(PaymentRequest).where(PaymentRequest.id == submission.request.id))
     future = datetime.now(timezone.utc) + timedelta(days=3650)
     class FutureClock(datetime):
@@ -690,20 +690,20 @@ async def test_399_provider_grant_is_lifetime_and_survives_checkout_cleanup(repo
 
 
 @pytest.mark.asyncio
-async def test_previously_issued_499_checkout_remains_valid_after_price_change(repositories, service):
+async def test_previously_issued_399_checkout_remains_valid_after_price_change(repositories, service):
     apartments, payments, sessions = repositories
     apartment = await apartments.upsert_discovered(make_ad(lalafo_id=991201))
     submission = await service.begin_payment(user_id=991201, apartment_id=apartment.id,
         username=None, first_name='Buyer', plan=WEEK_PLAN)
-    await payments.prepare_provider_payment(submission.request.id, 'old-499-checkout')
+    await payments.prepare_provider_payment(submission.request.id, 'old-399-checkout')
     async with sessions.begin() as session:
         await session.execute(update(PaymentRequest).where(PaymentRequest.id == submission.request.id)
-                              .values(provider_expected_amount=499))
-    assert (await payments.apply_provider_result('old-499-checkout', succeeded=True, amount=399))[0] == 'amount_mismatch'
-    assert (await payments.apply_provider_result('old-499-checkout', succeeded=True, amount=499))[0] == 'approved'
+                              .values(provider_expected_amount=399))
+    assert (await payments.apply_provider_result('old-399-checkout', succeeded=True, amount=499))[0] == 'amount_mismatch'
+    assert (await payments.apply_provider_result('old-399-checkout', succeeded=True, amount=399))[0] == 'approved'
     async with sessions() as session:
         ledger = await session.scalar(select(PaymentHistory).where(PaymentHistory.payment_request_id == submission.request.id))
-        assert ledger.amount == 499
+        assert ledger.amount == 399
 
 
 @pytest.mark.asyncio

@@ -150,7 +150,7 @@ async def test_health_and_authentication() -> None:
         "payment_review_worker": "disabled",
         "listing_validity_days": 2,
         "payment_receipt_required": False,
-        "contact_tariff": {"plan": "week", "price": 399, "expires": False, "storage": "persistent_ledger"},
+        "contact_tariff": {"plan": "week", "price": 499, "expires": False, "storage": "persistent_ledger"},
         "payment_review": "admin_missing",
             "telegram_inventory": "disabled",
             "lalafo_inventory": "disabled",
@@ -166,7 +166,7 @@ async def test_health_and_authentication() -> None:
             "personal_matching": "disabled",
             "lalafo_auto_reply": "disabled",
             "publication_policy": {"daily_target": 80, "start": "05:00", "end": "02:00", "timezone": "Asia/Bishkek", "spacing_minutes": 15.75, "watermark_check": False,
-                                   "seller_mix": {"mode": "combined_non_owner_cap", "realtor_min_percent": 0, "realtor_max_percent": 15, "unknown_included": True, "realtor_daily_target": 12, "realtor_daily_max": 12},
+                                   "seller_mix": {"mode": "combined_non_owner_cap", "realtor_min_percent": 0, "realtor_max_percent": 20, "unknown_included": True, "realtor_daily_target": 16, "realtor_daily_max": 16},
                                    "single_photo_duplicate_guard": True,
                 "requested_cards": {"total_publications": 3, "duration_hours": 24, "minimum_gap_hours": 6, "included_in_daily_target": True},
                                            "telegram_source_channels": 11,
@@ -664,7 +664,7 @@ async def test_miniapp_page_is_public_but_session_requires_telegram_auth(
     assert accepted.status_code == 200
     payload = accepted.json()
     assert payload["status"] == "unpaid"
-    assert payload["price"] == 399
+    assert payload["price"] == 499
     assert payload["lifetime_available"] is False
     assert payload["monthly_available"] is False
     assert "terms_accepted" not in payload
@@ -958,7 +958,7 @@ async def test_successful_finik_webhook_grants_and_delivers_contact(
             },
             json={
                 "status": "success",
-                "amount": 399,
+                "amount": 499,
                 "fields": {"paymentId": "arenda-73"},
             },
         )
@@ -966,7 +966,7 @@ async def test_successful_finik_webhook_grants_and_delivers_contact(
     assert response.status_code == 200
     assert response.json() == {"status": "approved"}
     payments.apply_provider_result.assert_awaited_once_with(
-        "arenda-73", succeeded=True, amount=399
+        "arenda-73", succeeded=True, amount=499
     )
     delivery.assert_awaited_once()
     assert delivery.await_args.args[0].workflow_data["payments"] is payments

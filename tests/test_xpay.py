@@ -35,11 +35,11 @@ async def test_contact_payment_checked_and_granted_once(repositories, service, m
         attempt = await session.scalar(select(XPayAttempt))
         token = attempt.token
     status = AsyncMock(return_value={'qr_transaction_id':'Provider123', 'pay_status':'COMPLETED',
-        'request_amount':39800,'amount':39900,'transaction_uuid':'uuid'})
+        'request_amount':49800,'amount':49900,'transaction_uuid':'uuid'})
     monkeypatch.setattr(XPayClient, 'status', status)
     assert (await reconcile(sessions, settings(), token))[0] == 'amount_mismatch'
     assert (await service.contact_status(100, apartment.id)).status != 'approved'
-    status.return_value['request_amount'] = 39900
+    status.return_value['request_amount'] = 49900
     assert (await reconcile(sessions, settings(), token))[0] == 'approved'
     assert (await reconcile(sessions, settings(), token))[0] == 'already_paid'
     result = await service.contact_status(100, apartment.id)
