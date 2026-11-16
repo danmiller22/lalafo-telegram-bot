@@ -127,6 +127,16 @@ async def create_checkout(sessions, settings, *, request_id=None, wanted_ad_id=N
                     request.created_at = active.created_at
                 return active.payment_url, utc(active.expires_at)
             raise XPayError('Checkout is being prepared')
+        previous = await session.scalar(select(XPayAttempt).where(predicate,
+            XPayAttempt.provider_id.is_not(None), XPayAttempt.status == 'waiting'
+        ).order_by(XPayAttempt.id.desc()).limit(1))
+        if previous:
+            # A bank may have prepared or started the previous payment before
+            # the link expired. Do not create another payable QR while that
+            # transaction can still settle, even if its callback is delayed.
+            previous_status = (await XPayClient(settings).status(previous.provider_id)).get('pay_status')
+            if previous_status not in {'WAITING', 'ERROR', 'CANCELED'}:
+                raise XPayError('Previous payment is still being confirmed')
         attempt = XPayAttempt(token=secrets.token_urlsafe(32), request_id=request_id,
             wanted_ad_id=wanted_ad_id, expected_amount=amount, status='creating',
             created_at=now, expires_at=now + timedelta(minutes=5))

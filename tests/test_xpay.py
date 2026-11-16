@@ -172,3 +172,20 @@ async def test_previous_finik_checkout_is_not_replaced_while_payable(repositorie
     with pytest.raises(XPayError, match='Previous checkout'):
         await create_checkout(sessions, settings(), request_id=request.id)
     provider.assert_not_awaited()
+
+@pytest.mark.asyncio
+async def test_expired_checkout_cannot_be_replaced_while_bank_is_processing(repositories, monkeypatch):
+    from app.xpay import XPayError
+    apartments, payments, sessions = repositories
+    apartment = await apartments.upsert_discovered(make_ad())
+    request = (await payments.submit(user_id=91, apartment_id=apartment.id, username=None, first_name=None, plan=WEEK_PLAN)).request
+    now = datetime.now(timezone.utc)
+    async with sessions.begin() as session:
+        session.add(XPayAttempt(token='processing-old', request_id=request.id, provider_id='Old123', expected_amount=399,
+            status='waiting', created_at=now-timedelta(minutes=6), expires_at=now-timedelta(minutes=1)))
+    monkeypatch.setattr(XPayClient, 'status', AsyncMock(return_value={'pay_status':'PROCESSING'}))
+    create = AsyncMock()
+    monkeypatch.setattr(XPayClient, 'create', create)
+    with pytest.raises(XPayError, match='still being confirmed'):
+        await create_checkout(sessions, settings(), request_id=request.id)
+    create.assert_not_awaited()

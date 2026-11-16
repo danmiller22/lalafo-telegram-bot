@@ -16,6 +16,7 @@ async def test_reuses_only_unexpired_xpay_checkout(repositories, monkeypatch):
     settings = Settings(_env_file=None, xpay_client_id='id', xpay_client_secret='secret', xpay_service_uuid='uuid', telegram_webhook_url='https://example.test/telegram/webhook')
     create = AsyncMock(side_effect=[('Tx1', 'https://pay.xpay.kg/1'), ('Tx2', 'https://pay.xpay.kg/2')])
     monkeypatch.setattr(XPayClient, 'create', create)
+    monkeypatch.setattr(XPayClient, 'status', AsyncMock(return_value={'pay_status': 'WAITING'}))
     assert (await create_checkout(sessions, settings, request_id=request.id))[0].endswith('/1')
     assert (await create_checkout(sessions, settings, request_id=request.id))[0].endswith('/1')
     async with sessions.begin() as session:
