@@ -60,9 +60,9 @@ async def test_search_request_remains_unpaid_until_xpay_completed(repositories, 
     async with sessions() as session:
         attempt = await session.scalar(select(XPayAttempt))
         token = attempt.token
-        assert attempt.expected_amount == 100
+        assert attempt.expected_amount == 50
     status = AsyncMock(return_value={'qr_transaction_id':'Search123', 'pay_status':'PROCESSING',
-        'request_amount':10000,'amount':10000,'transaction_uuid':'uuid'})
+        'request_amount':5000,'amount':5000,'transaction_uuid':'uuid'})
     monkeypatch.setattr(XPayClient, 'status', status)
     assert (await reconcile(sessions, settings(), token))[0] == 'waiting'
     async with sessions() as session:
@@ -204,3 +204,30 @@ async def test_production_and_documented_amount_units_are_verified(repositories,
         'amount':reported, 'request_amount':reported, 'transaction_uuid':'uuid'}))
     outcome = (await reconcile(sessions, settings(), 'units-test'))[0]
     assert outcome == ('approved' if approved else 'amount_mismatch')
+
+@pytest.mark.asyncio
+async def test_previous_wanted_checkout_keeps_its_original_amount(repositories, monkeypatch):
+    from app.models import WantedPayment
+    from app.xpay import XPayError
+    _, _, sessions = repositories
+    now = datetime.now(timezone.utc)
+    async with sessions.begin() as session:
+        ad = WantedAd(telegram_user_id=103, rooms='1', district='ЦУМ', budget=40000,
+            move_in='сейчас', tenants='1', notes='нет', contact='telegram', status='awaiting_payment')
+        session.add(ad)
+        await session.flush()
+        ad_id = ad.id
+        session.add(XPayAttempt(token='old-price', wanted_ad_id=ad_id, provider_id='OldPrice123',
+            payment_url='https://pay.xpay.kg/old', expected_amount=100, status='waiting',
+            created_at=now, expires_at=now+timedelta(minutes=4)))
+        session.add(WantedPayment(wanted_ad_id=ad_id, provider_payment_id='OldPrice123', status='created', created_at=now))
+    create = AsyncMock()
+    monkeypatch.setattr(XPayClient, 'create', create)
+    with pytest.raises(XPayError, match='different price'):
+        await create_checkout(sessions, settings(), wanted_ad_id=ad_id)
+    create.assert_not_awaited()
+    monkeypatch.setattr(XPayClient, 'status', AsyncMock(return_value={'qr_transaction_id':'OldPrice123',
+        'pay_status':'COMPLETED','amount':10000,'request_amount':10000,'transaction_uuid':'uuid'}))
+    assert (await reconcile(sessions, settings(), 'old-price'))[0] == 'approved'
+    async with sessions() as session:
+        assert (await session.get(WantedAd, ad_id)).status == 'paid'

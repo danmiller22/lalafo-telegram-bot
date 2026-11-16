@@ -318,7 +318,7 @@ async def test_abandoned_checkout_gets_one_recovery_message_per_customer(
     assert markup.inline_keyboard[0][0].url == "https://qr.finik.kg/request-bound"
     assert markup.inline_keyboard[1][0].text == "✅ Я оплатил(а)"
     assert markup.inline_keyboard[1][0].callback_data.startswith(PAID_PREFIX)
-    assert markup.inline_keyboard[2][0].url == "https://t.me/bishkekarendakg"
+    assert markup.inline_keyboard[2][0].url == "https://t.me/rentifykg"
 
     callback = SimpleNamespace(
         data=markup.inline_keyboard[1][0].callback_data,
