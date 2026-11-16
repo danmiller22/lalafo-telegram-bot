@@ -14,6 +14,8 @@ from app.payment_plans import WEEK_PLAN, WANTED_SEARCH_PRICE, plan_price
 from app.payments.repository import PaymentRepository
 
 UTC = timezone.utc
+CONTACT_SERVICE = ('Бессрочный доступ Rentify', 'Оплата доступа Rentify навсегда')
+WANTED_SERVICE = ('Заявка на поиск жилья Rentify', 'Оплата заявки на поиск Rentify')
 
 
 def utc(value):
@@ -44,14 +46,16 @@ class XPayClient:
             raise XPayError('XPAY service unavailable')
         return data['access_token']
 
-    async def create(self, *, amount, callback_url, check_url, payer_id):
+    async def create(self, *, amount, callback_url, check_url, payer_id, service_name, comments):
+        if not service_name or len(service_name) > 32 or not comments or len(comments) > 32:
+            raise XPayError('Invalid XPAY payment description')
         async with httpx.AsyncClient(timeout=20) as client:
             token = await self._token(client)
             response = await client.post(self.base + '/api/v1/developer/qr/get',
                 headers={'Authorization': 'Bearer ' + token, 'Accept': 'application/json'}, json={
                     'uuid': self.settings.xpay_service_uuid, 'amount': amount * 100,
                     'type': 'dynamic', 'amount_change': False, 'payer_id': str(payer_id),
-                    'service_name': 'Оплата услуги', 'callback_url': callback_url,
+                    'service_name': service_name, 'comments': comments, 'callback_url': callback_url,
                     'check_url': check_url,
                 })
             response.raise_for_status()
@@ -147,7 +151,9 @@ async def create_checkout(sessions, settings, *, request_id=None, wanted_ad_id=N
         attempt_id, callback_token, expires = attempt.id, attempt.token, attempt.expires_at
     base = settings.require_public_base_url()
     try:
+        service_name, comments = CONTACT_SERVICE if request_id is not None else WANTED_SERVICE
         provider_id, url = await XPayClient(settings).create(amount=amount, payer_id=payer_id,
+            service_name=service_name, comments=comments,
             callback_url=base + '/xpay/webhook/' + callback_token,
             check_url=base + '/xpay/check/' + callback_token)
     except Exception:

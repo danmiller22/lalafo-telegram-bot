@@ -29,6 +29,8 @@ async def test_contact_payment_checked_and_granted_once(repositories, service, m
     assert timedelta(minutes=4, seconds=50) < expires - datetime.now(timezone.utc) <= timedelta(minutes=5)
     assert (await create_checkout(sessions, settings(), request_id=submission.request.id))[0] == url
     assert create.await_count == 1
+    assert create.await_args.kwargs['service_name'] == 'Бессрочный доступ Rentify'
+    assert create.await_args.kwargs['comments'] == 'Оплата доступа Rentify навсегда'
     async with sessions() as session:
         attempt = await session.scalar(select(XPayAttempt))
         token = attempt.token
@@ -55,8 +57,11 @@ async def test_search_request_remains_unpaid_until_xpay_completed(repositories, 
         session.add(ad)
         await session.flush()
         ad_id = ad.id
-    monkeypatch.setattr(XPayClient, 'create', AsyncMock(return_value=('Search123','https://pay.xpay.kg/qr')))
+    create = AsyncMock(return_value=('Search123','https://pay.xpay.kg/qr'))
+    monkeypatch.setattr(XPayClient, 'create', create)
     await create_checkout(sessions, settings(), wanted_ad_id=ad_id)
+    assert create.await_args.kwargs['service_name'] == 'Заявка на поиск жилья Rentify'
+    assert create.await_args.kwargs['comments'] == 'Оплата заявки на поиск Rentify'
     async with sessions() as session:
         attempt = await session.scalar(select(XPayAttempt))
         token = attempt.token
@@ -120,6 +125,8 @@ async def test_api_creates_exact_nonchangeable_dynamic_qr(monkeypatch):
         body = json.loads(request.content)
         assert body['uuid'] == 'uuid' and body['amount'] == 39900
         assert body['type'] == 'dynamic' and body['amount_change'] is False
+        assert body['service_name'] == 'Бессрочный доступ Rentify'
+        assert body['comments'] == 'Оплата доступа Rentify навсегда'
         assert body['check_url'].endswith('/check/token') and body['callback_url'].endswith('/webhook/token')
         return httpx.Response(200, json={'status':'Success','data':{'qr_transaction_id':'Tx123',
             'qr_code':'https://pay.xpay.kg/#qr', 'amount':39900,'request_amount':39900,
@@ -127,7 +134,8 @@ async def test_api_creates_exact_nonchangeable_dynamic_qr(monkeypatch):
     original = httpx.AsyncClient
     monkeypatch.setattr('app.xpay.httpx.AsyncClient', lambda **kw: original(transport=httpx.MockTransport(handler)))
     assert await XPayClient(settings()).create(amount=399,payer_id=10,
-        callback_url='https://example.test/webhook/token',check_url='https://example.test/check/token') == ('Tx123','https://pay.xpay.kg/#qr')
+        callback_url='https://example.test/webhook/token',check_url='https://example.test/check/token',
+        service_name='Бессрочный доступ Rentify', comments='Оплата доступа Rentify навсегда') == ('Tx123','https://pay.xpay.kg/#qr')
     assert len(seen) == 2
 
 def test_vault_encrypts_credentials_and_rejects_wrong_database_key():
