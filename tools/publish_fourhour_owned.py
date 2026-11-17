@@ -11,7 +11,7 @@ from sqlalchemy import select, update
 
 from app.config import get_settings
 from app.database import create_engine_and_session
-from app.lalafo.models import PHONE_SOURCE_VERSION
+from app.lalafo.models import PHONE_SOURCE_VERSION, LalafoAd
 from app.managed_cards import PREFIX
 from app.models import LalafoAutoReplyMeta, RequestedCardPromotion, ApartmentInventoryQueue
 from app.promotions import external_repeat_receipt_key, REQUESTED_WINDOW_PREFIX, record_delivery
@@ -50,6 +50,18 @@ def validate_packet(data, now):
 async def publish(data, sessions, publisher, now):
     cards = validate_packet(data, now)
     repo = ApartmentRepository(sessions)
+    for managed_id, proof in data.get('sources', {}).items():
+        card=next((c for c in cards if c['id']==int(managed_id)),None)
+        source=LalafoAd.model_validate(proof['ad'])
+        if (card is None or proof['source_id']!=source.lalafo_id or proof['owner_field']!=19057
+                or proof['status_id']!=2 or not source.owner_listing or source.seller_type!='owner'
+                or not source.phone or source.phone_source_version!=PHONE_SOURCE_VERSION
+                or source.price!=card['price'] or source.rooms!=card['rooms']
+                or not source.no_subletting or is_excluded_contact(source) or is_substandard_structure(source)):
+            raise ValueError('invalid_explicit_source_binding')
+        original=await repo.upsert_discovered(source,discovery_priority=True)
+        await repo.save_managed_lalafo_source(managed_lalafo_ad_id=int(managed_id),
+            managed_lalafo_ad_url=f'https://lalafo.kg/bishkek/ads/id-{managed_id}',apartment=original)
     mappings = {r.managed_lalafo_ad_id: r.apartment
                 for r in await repo.managed_lalafo_sources(deduplicate_sources=False)}
     # Historical explicit bindings may predate DailyFeaturedPublication records.
