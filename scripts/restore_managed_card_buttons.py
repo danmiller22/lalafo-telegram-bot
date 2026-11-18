@@ -82,7 +82,7 @@ async def run():
                 try:
                     while True:
                         try:
-                            if apartment is None:
+                            if apartment is None or os.environ.get('BUTTONS_ONLY') == 'true':
                                 await bot.edit_message_reply_markup(chat_id=chat_id,
                                     message_id=message_id, reply_markup=markup)
                             else:
