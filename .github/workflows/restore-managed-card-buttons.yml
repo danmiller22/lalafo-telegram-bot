@@ -6,6 +6,10 @@ on:
         description: Update all recorded public card text and buttons (no new messages)
         type: boolean
         default: false
+      buttons_only:
+        description: Update only buttons, preserving card text
+        type: boolean
+        default: false
       follow_publication_run:
         description: Optional active publication run to follow for new receipts
         type: string
@@ -27,6 +31,7 @@ jobs:
       TELEGRAM_GROUP_ID: '-1004389602150'
       GH_TOKEN: ${{ github.token }}
       FOLLOW_PUBLICATION_RUN: ${{ inputs.follow_publication_run }}
+      BUTTONS_ONLY: ${{ inputs.buttons_only }}
       ALL_PUBLIC_CARDS: ${{ inputs.all_public_cards }}
     steps:
       - uses: actions/checkout@v7
