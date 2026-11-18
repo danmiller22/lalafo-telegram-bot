@@ -33,6 +33,7 @@ async def run_matching_worker(runtime: BotRuntime) -> None:
                         apartment=claimed.apartment,
                         signer=signer,
                         bot_username=settings.telegram_bot_username,
+                        include_phone=await runtime.workflow_data["payments"].active_personal_access(claimed.user_id) is not None,
                     )
                 except TelegramRetryAfter as exc:
                     await matching.finish_delivery(

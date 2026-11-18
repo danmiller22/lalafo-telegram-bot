@@ -76,7 +76,7 @@ def test_mini_app_page_has_only_lifetime_499_tariff_and_privacy_link():
     assert 'id="pay-now"' in html
     assert ">Оплата</button>" in html
     assert "500 сом" not in html and "699" not in html
-    assert ">999 сом</span>" not in html
+    assert ">999 сом</span>" in html
     assert "Без ограничения срока" not in html
     assert "Доступ навсегда" not in html
     assert "Месячный доступ" not in html
@@ -102,7 +102,7 @@ def test_mini_app_page_has_only_lifetime_499_tariff_and_privacy_link():
     assert "receipt_data" not in html
     assert "Статус: оплата проверяется" not in html
     assert "Загрузите чек об оплате." not in html
-    assert "openTelegramLink" not in html
+    assert "openTelegramLink" in html
     assert "/miniapp/api/access" in html
     assert "/miniapp/api/consent" not in html
     assert 'type="checkbox"' not in html
@@ -110,8 +110,10 @@ def test_mini_app_page_has_only_lifetime_499_tariff_and_privacy_link():
     assert "искусственного интеллекта" in html
     assert "Риелторы и другие лица могут выдавать себя за хозяев" in html
     first_screen = html.split('id="tariff-description"', 1)[1].split('id="checkout"', 1)[0]
-    assert first_screen.count("<button") == 3
-    assert 'id="pay-personal"' not in html
+    assert first_screen.count("<button") == 4
+    assert 'id="pay-personal"' in html
+    assert 'Под вас' in html
+    assert '999 сом' in html
     assert ">1499 сом</span>" not in html
     assert 'id="pay-forever"' not in html
     assert 'id="back"' in html

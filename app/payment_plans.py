@@ -10,8 +10,7 @@ LIFETIME_ACCESS_PLANS = (WEEK_PLAN, "lifetime")
 MONTH_PLAN = "month"
 LIFETIME_PLAN = "lifetime"
 PERSONAL_PLAN = "personal"
-PERSONAL_PRICE = 1499
-PERSONAL_LIMIT = 20
+PERSONAL_PRICE = 999
 PERSONAL_DURATION = timedelta(days=30)
 LIFETIME_PRICE = 999
 WEEK_PRICE = 499
@@ -31,7 +30,7 @@ def plan_price(plan: str) -> int:
 
 
 def plan_label(plan: str) -> str:
-    labels = {PERSONAL_PLAN: "Под меня: 1 месяц, до 20 новых квартир", WEEK_PLAN: "Бессрочный доступ", MONTH_PLAN: "Премиум: 30 дней", LIFETIME_PLAN: "Доступ к контактам навсегда"}
+    labels = {PERSONAL_PLAN: "Под вас: персональный подбор на 30 дней", WEEK_PLAN: "Бессрочный доступ", MONTH_PLAN: "Премиум: 30 дней", LIFETIME_PLAN: "Доступ к контактам навсегда"}
     return labels.get(plan, "Неизвестный тариф")
 
 

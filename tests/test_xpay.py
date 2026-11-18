@@ -239,3 +239,36 @@ async def test_previous_wanted_checkout_keeps_its_original_amount(repositories, 
     assert (await reconcile(sessions, settings(), 'old-price'))[0] == 'approved'
     async with sessions() as session:
         assert (await session.get(WantedAd, ad_id)).status == 'paid'
+
+@pytest.mark.asyncio
+async def test_tariff_switch_preserves_checkout_plan_and_verified_999_grant(repositories, monkeypatch):
+    from app.payment_plans import PERSONAL_PLAN
+    apartments, payments, sessions = repositories
+    apartment = await apartments.upsert_discovered(make_ad())
+    request = (await payments.submit(user_id=909, apartment_id=apartment.id,
+        username=None, first_name=None, plan=WEEK_PLAN)).request
+    monkeypatch.setattr(XPayClient, 'create', AsyncMock(side_effect=[
+        ('OldWeek999Test', 'https://pay.xpay.kg/old'),
+        ('Personal999Test', 'https://pay.xpay.kg/personal')]))
+    await create_checkout(sessions, settings(), request_id=request.id)
+    request = (await payments.submit(user_id=909, apartment_id=apartment.id,
+        username=None, first_name=None, plan=PERSONAL_PLAN)).request
+    await create_checkout(sessions, settings(), request_id=request.id)
+    async with sessions() as session:
+        attempts = list((await session.scalars(select(XPayAttempt).order_by(XPayAttempt.id))).all())
+    assert [a.expected_amount for a in attempts] == [499, 999]
+    assert [a.checkout_plan for a in attempts] == [WEEK_PLAN, PERSONAL_PLAN]
+    status = AsyncMock(return_value={'pay_status':'COMPLETED','amount':49900,
+        'request_amount':49900,'transaction_uuid':'verified'})
+    monkeypatch.setattr(XPayClient, 'status', status)
+    assert (await reconcile(sessions, settings(), attempts[0].token))[0] == 'approved'
+    assert await payments.active_personal_access(909) is None
+    assert (await reconcile(sessions, settings(), attempts[1].token))[0] == 'amount_mismatch'
+    status.return_value.update(amount=99900, request_amount=99900)
+    assert (await reconcile(sessions, settings(), attempts[1].token))[0] == 'approved'
+    assert (await reconcile(sessions, settings(), attempts[1].token))[0] == 'already_paid'
+    grant = await payments.active_personal_access(909)
+    assert grant.amount == 999 and grant.plan == PERSONAL_PLAN
+    assert grant.access_expires_at - grant.paid_at == timedelta(days=30)
+    async with sessions() as session:
+        assert await session.scalar(select(func.count()).select_from(PaymentHistory)) == 2

@@ -20,7 +20,6 @@ from app.matching.presentation import parse_budget, profile_summary
 from app.matching.repository import MAX_PRICE, MIN_PRICE, MatchingRepository
 from app.matching.states import ApartmentMatchForm
 from app.models import ApartmentSearchProfile
-from app.payment_plans import PERSONAL_LIMIT
 from app.security import TokenSigner
 from app.telegram.private_delivery import send_matching_card
 
@@ -33,15 +32,15 @@ async def personal_offer(callback: CallbackQuery, matching: MatchingRepository) 
     if callback.message is None:
         return
     await callback.message.answer(
-        "Для новых клиентов доступен бессрочный доступ — 499 сом. "
-        "Откройте карточку квартиры и нажмите «Посмотреть номер»."
+        "Тариф «Под вас» — 999 сом на 30 дней: персональный подбор и квартиры с номерами в личный чат. "
+        "Откройте карточку квартиры, нажмите «Посмотреть номер» и выберите «Под вас»."
     )
 
 
 @router.callback_query(F.data == "personal:buy")
 async def personal_buy(callback: CallbackQuery) -> None:
     await callback.answer(
-        "Доступен только бессрочный доступ — 499 сом. Откройте карточку квартиры.", show_alert=True
+        "Откройте карточку квартиры → Посмотреть номер → Под вас — 999 сом.", show_alert=True
     )
 
 
@@ -339,9 +338,10 @@ async def _finish_profile(
     )
     grant, used = await matching.personal_status(user_id)
     if grant is not None:
+        await matching.start_personal_feed(user_id)
         await state.clear()
         await message.answer(
-            f"✅ Требования сохранены. Вариантов в подборе: {used}/{PERSONAL_LIMIT}. "
+            "✅ Требования сохранены. Подходящие квартиры с номерами "
             "Новые совпадения будут приходить автоматически в течение срока тарифа.",
             reply_markup=feed_footer_keyboard(has_more=False),
         )
@@ -460,7 +460,7 @@ async def matching_feed(
         await callback.answer()
         if callback.message:
             await callback.message.answer(
-                f"✨ Под меня: {used}/{PERSONAL_LIMIT} вариантов. "
+                "✨ Под вас: персональный подбор. "
                 "Новые совпадения приходят автоматически до окончания тарифа.",
                 reply_markup=feed_footer_keyboard(has_more=False),
             )

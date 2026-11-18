@@ -167,14 +167,17 @@ async def send_matching_card(
     apartment: Apartment,
     signer: TokenSigner,
     bot_username: str,
+    include_phone: bool = False,
 ) -> int:
-    """Send a phone-free apartment card for hot and personalized feeds."""
+    """Send private feed cards, exposing contacts only with verified paid access."""
     keyboard = matching_apartment_keyboard(
         apartment.id,
         phone=apartment.phone, confirmed_owner=is_confirmed_owner(apartment), signer=signer,
         bot_username=bot_username,
     )
     text = format_showcase_apartment(apartment)
+    if include_phone:
+        text += "\n📞 " + display_phone(apartment.phone)
     urls = list(dict.fromkeys(apartment.photo_urls))
     if not urls:
         raise PrivatePhotoDeliveryError("Apartment photos are required")
