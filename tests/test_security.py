@@ -64,7 +64,7 @@ def test_callback_data_is_short_and_contains_no_phone():
     assert len(payload) <= 64
     assert "." not in payload
     assert signer.verify_start_id("miniapp-apartment", payload) == 123456789
-    assert group.inline_keyboard[0][0].text == "Получить номер"
+    assert group.inline_keyboard[0][0].text == "Посмотреть номер"
     assert len(group.inline_keyboard) == 3
     assert group.inline_keyboard[1][0].text == "🛟 Техподдержка"
     assert group.inline_keyboard[2][0].url.endswith("?start=search")
@@ -126,12 +126,12 @@ def test_payment_and_status_keyboards_keep_recovery_actions():
     )
     assert [row[0].text for row in payment.inline_keyboard] == [
         "💳 Оплатить 499 сом",
-        "📞 Получить номер",
+        "Посмотреть номер",
         "🛟 Техподдержка",
     ]
     assert [row[0].text for row in status.inline_keyboard] == [
         "💳 Оплатить 499 сом",
-        "📞 Получить номер",
+        "Посмотреть номер",
         "🛟 Техподдержка",
     ]
 

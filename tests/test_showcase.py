@@ -136,7 +136,7 @@ def test_showcase_card_is_compact_and_has_two_buttons() -> None:
         apartment.id, signer=TokenSigner("a-very-long-test-secret")
     )
     assert [row[0].text for row in keyboard.inline_keyboard] == [
-        "📞 Получить номер",
+        "Посмотреть номер",
         "❤️ Сохранить",
     ]
     assert len(customer_menu_keyboard().inline_keyboard) == 5

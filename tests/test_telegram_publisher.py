@@ -59,7 +59,7 @@ async def test_public_album_uses_fast_direct_telegram_urls() -> None:
     )
     keyboard = bot.send_message.await_args.kwargs["reply_markup"]
     assert [button.text for row in keyboard.inline_keyboard for button in row] == [
-        "+996700000***",
+        "Посмотреть номер",
         "🛟 Техподдержка",
         "🔎 Подобрать по бюджету и району",
     ]
@@ -357,7 +357,7 @@ async def test_unknown_author_publishes_without_false_owner_label():
     ad=make_ad().model_copy(update={'seller_type':'unknown','owner_listing':False})
     await publisher.publish(77,ad)
     args=bot.send_message.await_args.kwargs
-    assert args['reply_markup'].inline_keyboard[0][0].text=='Получить номер'
+    assert args['reply_markup'].inline_keyboard[0][0].text=='Посмотреть номер'
     assert 'Собственник' not in args['text']
     assert ad.seller_type=='unknown' and ad.owner_listing is False
 

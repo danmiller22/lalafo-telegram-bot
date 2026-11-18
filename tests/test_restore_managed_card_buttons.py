@@ -47,7 +47,7 @@ async def test_repair_restores_both_historical_and_latest_card_buttons(repositor
     assert {call.kwargs['message_id'] for call in calls} == ({100, 101, 102} if all_cards else {100, 101})
     for call in calls:
         rows = call.kwargs['reply_markup'].inline_keyboard
-        expected = '+996555999***' if call.kwargs['message_id'] == 102 else '+996555123***'
+        expected = 'Посмотреть номер'
         assert rows[0][0].text == expected and '/access?startapp=' in rows[0][0].url
         assert rows[1][0].text == '🛟 Техподдержка'
         assert all(button.text != '🔄 Проверить актуальность'
