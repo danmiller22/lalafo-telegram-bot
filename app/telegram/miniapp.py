@@ -135,7 +135,7 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
     <button id="pay-personal" class="tariff-button" aria-pressed="false">
       <span class="plan-heading">Под вас</span>
       <span class="plan-price">{PERSONAL_PRICE} сом</span>
-      <span class="plan-note">Персональный подбор на 30 дней. Квартиры по вашим фильтрам с номерами в личный чат. Без лимита квартир. Будем присылать вам контакты проверенных собственников.</span>
+      <span class="plan-note">Персональный подбор на 30 дней. Квартиры по вашим фильтрам с номерами в личный чат. Без лимита квартир. Проверенные собственники.</span>
     </button>
   </div>
   <button id="resume-payment" class="secondary hidden" style="margin-top:14px">Вернуться к оплате</button>
