@@ -358,6 +358,9 @@ class MatchingRepository:
         exclude_ids: set[int] | None = None,
         exclude_delivered: bool = True,
     ) -> list[Apartment]:
+        grant, _ = await self.personal_status(profile.telegram_user_id)
+        if grant is None:
+            return []
         excluded = set(exclude_ids or set())
         if exclude_delivered:
             async with self.sessions() as session:
@@ -469,6 +472,7 @@ class MatchingRepository:
             grant = await session.scalar(select(PaymentHistory).where(
                 PaymentHistory.telegram_user_id == user_id,
                 PaymentHistory.plan == PERSONAL_PLAN,
+                PaymentHistory.access_expires_at > datetime.now(timezone.utc),
             ).order_by(PaymentHistory.paid_at.desc(), PaymentHistory.id.desc()).limit(1))
             used = 0 if grant is None else int(await session.scalar(
                 select(func.count()).select_from(PersonalMatchReservation).where(
@@ -516,6 +520,8 @@ class MatchingRepository:
                     PaymentHistory.telegram_user_id == profile.telegram_user_id,
                     PaymentHistory.plan == PERSONAL_PLAN,
                 ).order_by(PaymentHistory.paid_at.desc(), PaymentHistory.id.desc()).limit(1).with_for_update())
+                if grant is None:
+                    continue
                 after = _aware(profile.notifications_after) or now
                 used = 0
                 if grant is not None:
@@ -631,7 +637,8 @@ class MatchingRepository:
                     PaymentHistory.telegram_user_id == delivery.telegram_user_id,
                     PaymentHistory.plan == PERSONAL_PLAN,
                 ).order_by(PaymentHistory.paid_at.desc(), PaymentHistory.id.desc()).limit(1))
-                paid_delivery_invalid = False
+                paid_delivery_invalid = (personal_grant is None or
+                    (_aware(personal_grant.access_expires_at) or now) <= now)
                 if reservation is not None:
                     reserved_grant = await session.get(PaymentHistory, reservation.payment_history_id)
                     paid_delivery_invalid = (

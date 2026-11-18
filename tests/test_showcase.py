@@ -151,7 +151,8 @@ async def test_start_opens_search_instead_of_launching_showcase() -> None:
         answer=AsyncMock(),
     )
     state = SimpleNamespace(clear=AsyncMock(), update_data=AsyncMock())
-    matching = SimpleNamespace(profile=AsyncMock(return_value=None), event=AsyncMock())
+    matching = SimpleNamespace(profile=AsyncMock(return_value=None), event=AsyncMock(),
+        personal_status=AsyncMock(return_value=(None, 0)), _fresh_apartments=AsyncMock(return_value=[]))
     showcase = SimpleNamespace(start=Mock())
 
     await start_handler(
@@ -167,7 +168,7 @@ async def test_start_opens_search_instead_of_launching_showcase() -> None:
 
     state.clear.assert_awaited_once()
     showcase.start.assert_not_called()
-    assert message.answer.await_args.kwargs["reply_markup"].inline_keyboard[0][0].callback_data == "matching:start"
+    assert "999 сом" in message.answer.await_args.args[0]
 
 
 @pytest.mark.asyncio

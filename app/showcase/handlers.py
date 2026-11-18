@@ -6,7 +6,7 @@ from aiogram.types import CallbackQuery
 
 from app.config import Settings
 from app.favorites import FavoriteRepository
-from app.matching.handlers import begin_matching_form
+from app.matching.access import open_paid_matching
 from app.matching.repository import MatchingRepository
 from app.payments.repository import ApartmentRepository
 from app.payments.service import PaymentService
@@ -116,10 +116,10 @@ async def show_favorites(
 
 
 @router.callback_query(F.data == "menu:cheap")
-async def cheap_search(callback: CallbackQuery, state: FSMContext, matching: MatchingRepository) -> None:
+async def cheap_search(callback: CallbackQuery, state: FSMContext, matching: MatchingRepository, signer: TokenSigner, settings: Settings) -> None:
     await callback.answer()
     if callback.message:
-        await begin_matching_form(callback.message, state, source="telegram", profile=await matching.profile(callback.from_user.id))
+        await open_paid_matching(callback.message, state, matching=matching, signer=signer, settings=settings, user_id=callback.from_user.id, source="telegram", profile=await matching.profile(callback.from_user.id))
 
 
 @router.callback_query(F.data == "menu:about")

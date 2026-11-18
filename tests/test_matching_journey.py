@@ -12,7 +12,7 @@ from app.matching.presentation import parse_budget, profile_summary
 from app.matching.repository import MatchingRepository
 from app.matching.states import ApartmentMatchForm
 from app.security import TokenSigner
-from tests.helpers import make_ad
+from tests.helpers import make_ad, grant_personal_for_test
 
 
 @pytest.mark.parametrize(
@@ -39,6 +39,7 @@ def test_budget_accepts_single_amount_without_merging_numbers(text, expected):
 async def test_search_journey_saves_preferences_filters_cards_and_can_resume(repositories):
     apartments, _, sessions = repositories
     matching = MatchingRepository(sessions)
+    await grant_personal_for_test(sessions, 505)
     for identifier, rooms, price, district in [
         (8101, "1", 29000, "Центр"),
         (8102, "2", 29000, "Центр"),
@@ -93,15 +94,18 @@ async def test_search_journey_saves_preferences_filters_cards_and_can_resume(rep
     assert profile.districts == ["Центр"]
     assert profile.max_budget == 30000
     assert await state.get_state() is None
-    assert bot.send_photo.await_count == 1
-    assert "29 000" in bot.send_photo.await_args.kwargs["caption"]
-    assert await matching.matching_apartments(profile) == []  # already delivered
+    assert bot.send_photo.await_count == 0  # Delivery goes through the paid durable outbox.
+    assert await matching.seed_notifications() == 1
+    claim = await matching.claim_delivery()
+    assert claim.apartment.price == 29000
+    await matching.finish_delivery(claim.delivery_id, message_id=1)
+    assert await matching.matching_apartments(profile) == []
     # "My apartments" deliberately permits revisiting cards already seen.
     callback.data = "matching:mine"
     await handlers.matching_feed(
         callback, matching, TokenSigner("a-very-long-test-secret"), Settings(_env_file=None), bot
     )
-    assert bot.send_photo.await_count == 2
+    assert bot.send_photo.await_count == 0
     await handlers.matching_start(callback, state, matching)
     assert (await state.get_data())["matching_rooms"] == ["1"]
     assert (await state.get_data())["matching_districts"] == ["Центр"]
@@ -150,9 +154,8 @@ async def test_group_search_link_opens_form_directly(repositories):
         state,
         matching=matching,
     )
-    assert await state.get_state() == ApartmentMatchForm.rooms.state
-    assert (await state.get_data())["matching_source"] == "group"
-    assert message.answer.await_args.args[0].startswith("1/4")
+    assert await state.get_state() is None
+    assert "999 сом" in message.answer.await_args.args[0]
     await storage.close()
 
 @pytest.mark.asyncio
@@ -161,6 +164,7 @@ async def test_personal_payment_deep_link_opens_filter_setup(repositories):
     _, _, sessions = repositories
     matching = MatchingRepository(sessions)
     storage = MemoryStorage()
+    await grant_personal_for_test(sessions, 555)
     state = FSMContext(storage=storage, key=StorageKey(bot_id=1, chat_id=555, user_id=555))
     message = SimpleNamespace(text='/start personal', from_user=SimpleNamespace(id=555), answer=AsyncMock())
     await start_handler(message, service=None, signer=TokenSigner('long-enough-test-secret'),

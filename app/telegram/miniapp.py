@@ -356,6 +356,7 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
     sessionLoading = true;
     try {{
       await prepareTelegramContext();
+      if (startParam.startsWith("personal_")) selectedPlan = "personal";
       if (!initData || !startParam) {{
         message("Откройте это окно кнопкой под карточкой квартиры в Telegram.");
         return;

@@ -365,5 +365,12 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
   await personalPoll();
   assert.equal(personal.node('personal-setup').hidden, false);
   assert.equal(personal.opened.at(-1), 'https://t.me/testbot?start=personal');
+  const paywall = setup(null, (path, options) => {
+    assert.equal(JSON.parse(options.body).plan, 'personal');
+    return Promise.resolve(response({status:'unpaid',plan:'personal',automatic_payment:true}));
+  }, true, {location:{search:'?tgWebAppData=test&tgWebAppStartParam=personal_signed-token',hash:''}});
+  await new Promise(setImmediate);
+  assert.equal(paywall.node('pay-personal').attributes['aria-pressed'], 'true');
+  assert.equal(paywall.node('pay-lifetime').attributes['aria-pressed'], 'false');
   console.log('Mini App UI regression checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });
