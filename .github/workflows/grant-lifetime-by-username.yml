@@ -1,30 +1,42 @@
-name: Grant lifetime access by username
-
+name: Update Rentify Telegram descriptions once
 on:
   workflow_dispatch:
     inputs:
       usernames:
-        description: Comma-separated Telegram usernames
         required: true
-
-permissions:
-  contents: read
-
+permissions: {}
 jobs:
-  grant:
+  update:
+    if: github.ref_name == 'rentify-description-once' && inputs.usernames == 'rentify-description'
     runs-on: ubuntu-latest
-    timeout-minutes: 3
     env:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      ADMIN_USER_ID: ${{ secrets.ADMIN_USER_ID }}
-      LIFETIME_GRANT_USERNAMES: ${{ inputs.usernames }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-          cache: pip
-      - run: pip install -r requirements.txt
-      - name: Grant lifetime access without notifications
-        run: python -m scripts.grant_lifetime_by_username_once
+      - name: Update and verify Telegram descriptions
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request
+          description = "Rentify — сервис подбора квартир в Бишкеке. Мы не агентство недвижимости. Объявления отбирает ИИ. Некоторые риелторы представляются собственниками, поэтому их объявления могут попасть в подборку. Перед оплатой ознакомьтесь с пользовательским договором."
+          def call(method, **data):
+              url = "https://api.telegram.org/bot" + os.environ["TELEGRAM_BOT_TOKEN"] + "/" + method
+              request = urllib.request.Request(url, json.dumps(data).encode(), {"Content-Type": "application/json"})
+              try:
+                  with urllib.request.urlopen(request, timeout=24) as response:
+                      return json.load(response)["result"]
+              except Exception as exc:
+                  print(method, "failed", getattr(exc, "code", type(exc).__name__))
+                  return None
+          me = call("getMe") or {}
+          if me.get("username", "").lower() != "arenda312bot":
+              raise SystemExit("Unexpected Telegram bot identity")
+          bot = call("setMyDescription", description=description)
+          bot_verified = bool(bot and (call("getMyDescription") or {}).get("description") == description)
+          print("Bot description verified:", bot_verified)
+          chat = call("getChat", chat_id="@rentifykg") or {}
+          channel_verified = False
+          if chat.get("type") == "channel" and chat.get("username", "").lower() == "rentifykg":
+              updated = call("setChatDescription", chat_id=chat["id"], description=description)
+              channel_verified = bool(updated and (call("getChat", chat_id=chat["id"]) or {}).get("description") == description)
+          print("Channel description verified:", channel_verified)
+          raise SystemExit(0 if bot_verified and channel_verified else 1)
+          PY
