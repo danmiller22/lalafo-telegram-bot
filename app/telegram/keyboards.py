@@ -186,6 +186,9 @@ def showcase_apartment_keyboard(
                     f"listing:save:{signer.sign_id('listing-save', apartment_id)}"
                 ),
             )],
+            [InlineKeyboardButton(
+                text="Главное меню", callback_data="matching:home",
+            )],
         ]
     )
 
