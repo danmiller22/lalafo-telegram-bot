@@ -13,7 +13,7 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
     hidden: /class="[^"]*\bhidden\b/.test(markup(id)),
     disabled: /\sdisabled(?:\s|>)/.test(markup(id)),
     classList: {
-      toggle(_, hidden) { nodes[id].hidden = hidden; },
+      toggle(name, hidden) { if (name === "hidden") nodes[id].hidden = hidden; },
       contains() { return nodes[id].hidden; },
     },
     attributes: {}, setAttribute(key, value) { this.attributes[key] = value; },
@@ -240,9 +240,12 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
   const opening = warm.node('pay-now').onclick();
   // The checkout request is persisted before Telegram opens Finik.
   assert.deepEqual(warm.opened, []);
+  assert.equal(warm.node('pay-now').attributes['aria-busy'], 'true');
+  assert.equal(warm.node('pay-now').textContent, '');
   finishStart(response({status: 'awaiting_receipt', plan: 'week', payment_url:'https://example.com/prepared'}));
   await opening;
   assert.deepEqual(warm.opened, ['https://example.com/prepared']);
+  assert.equal(warm.node('pay-now').attributes['aria-busy'], 'false');
   assert.equal(warm.node('access').hidden, false);
   // Checkout is created for the chosen tariff on click, without a competing
   // background preparation that could replace another selected tariff.
