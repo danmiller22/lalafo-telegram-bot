@@ -89,6 +89,10 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
     .primary {{ background: var(--accent); color: #fff; }}
     .secondary {{ background: transparent; color: var(--accent); border: 1px solid #ccd5d2; }}
     button:disabled {{ cursor: default; opacity: .55; }}
+    button.loading:disabled {{ opacity: 1; }}
+    button.loading::after {{ content: ""; display: inline-block; width: 20px; height: 20px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; vertical-align: middle; animation: payment-spin .7s linear infinite; }}
+    @keyframes payment-spin {{ to {{ transform: rotate(360deg); }} }}
+    @media (prefers-reduced-motion: reduce) {{ button.loading::after {{ animation: none; }} }}
     button:focus-visible, a:focus-visible {{ outline: 3px solid #38a88b; outline-offset: 3px; }}
     .status {{ padding: 12px 14px; margin: 0 0 14px; border-radius: 12px; background: #edf6f3; font-size: 15px; line-height: 1.4; }}
     .privacy {{ display: block; text-align: center; font-size: 13px; color: #939599; margin: 22px 4px 0; border-top: 1px solid #e4e5e7; text-decoration: none; padding: 14px 0 4px; }}
@@ -140,7 +144,7 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
   <a id="privacy" class="privacy hidden">Политика конфиденциальности</a>
   <section id="checkout" class="checkout hidden">
     <button id="access" class="primary hidden">Я оплатил(а)</button>
-    <button id="reopen-payment" class="secondary hidden" style="margin-top:10px">Открыть XPAY ещё раз</button>
+    <button id="reopen-payment" class="secondary hidden" style="margin-top:10px">Открыть оплату ещё раз</button>
   </section>
   <div id="apartment" class="hidden">
     <div id="photos" class="photos"></div>
@@ -335,7 +339,7 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
     }} else if (apartmentUnavailable) {{
       message("Контакт этой квартиры сейчас недоступен. Выберите другой актуальный вариант.");
     }} else if (waiting && automaticPayment) {{
-      message("Ожидаем подтверждение оплаты от XPAY. Доступ откроется автоматически.");
+      message("Ожидаем подтверждение оплаты. Доступ откроется автоматически.");
       startPaymentPolling();
     }} else if (waiting && data.status === "pending") {{
       message("Заявка отправлена на проверку. Ожидайте подтверждения.");
@@ -382,7 +386,10 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
     const button = el(buttonId);
     const originalText = button.textContent;
     button.disabled = true;
-    button.textContent = "Открываем XPAY…";
+    button.textContent = "";
+    button.classList.toggle("loading", true);
+    button.setAttribute("aria-busy", "true");
+    button.setAttribute("aria-label", "Подождите");
     try {{
       if (!paymentUrls[plan] || preparedUntil[plan] <= Date.now()) {{
         paymentUrls[plan] = "";
@@ -415,6 +422,9 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
       if (!checkoutStarted && !(lastSession && ["awaiting_receipt", "pending"].includes(lastSession.status))) {{ paymentExpected = false; pausePaymentPolling(); }}
       paymentStart = null;
       button.disabled = false;
+      button.classList.toggle("loading", false);
+      button.setAttribute("aria-busy", "false");
+      button.setAttribute("aria-label", originalText);
       button.textContent = originalText;
       paymentOpening = false;
     }}

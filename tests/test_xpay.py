@@ -272,3 +272,32 @@ async def test_tariff_switch_preserves_checkout_plan_and_verified_999_grant(repo
     assert grant.access_expires_at - grant.paid_at == timedelta(days=30)
     async with sessions() as session:
         assert await session.scalar(select(func.count()).select_from(PaymentHistory)) == 2
+
+@pytest.mark.asyncio
+async def test_personal_checkout_passes_real_client_description_validation(repositories, monkeypatch):
+    import httpx, json
+    from app.payment_plans import PERSONAL_PLAN
+    apartments, payments, sessions = repositories
+    apartment = await apartments.upsert_discovered(make_ad())
+    request = (await payments.submit(user_id=1001, apartment_id=apartment.id,
+        username=None, first_name=None, plan=PERSONAL_PLAN)).request
+    calls = []
+    def handler(req):
+        if req.url.path.endswith('/developer/login'):
+            return httpx.Response(200, json={'status':'Success','data':{'access_token':'test-token',
+                'service':[{'uuid':'uuid','currency_code':'KGS'}]}})
+        body = json.loads(req.content)
+        calls.append(body)
+        assert body['amount'] == 99900
+        assert 0 < len(body['service_name']) <= 32
+        assert 0 < len(body['comments']) <= 32
+        assert body['service_name'] == 'Под вас — Rentify'
+        return httpx.Response(200, json={'status':'Success','data':{
+            'qr_transaction_id':'PersonalRealClient123','pay_link':'https://pay.xpay.kg/personal',
+            'amount':99900,'request_amount':99900,'type':'dynamic','amount_change':False}})
+    original = httpx.AsyncClient
+    monkeypatch.setattr('app.xpay.httpx.AsyncClient', lambda **kw: original(transport=httpx.MockTransport(handler)))
+    url, _ = await create_checkout(sessions, settings(), request_id=request.id, expected_plan=PERSONAL_PLAN)
+    assert url == 'https://pay.xpay.kg/personal'
+    assert len(calls) == 1
+    assert '/xpay/webhook/' in calls[0]['callback_url']

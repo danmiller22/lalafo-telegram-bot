@@ -156,7 +156,7 @@ async def create_checkout(sessions, settings, *, request_id=None, wanted_ad_id=N
     try:
         service_name, comments = CONTACT_SERVICE if request_id is not None else WANTED_SERVICE
         if request_id is not None and request.plan == PERSONAL_PLAN:
-            service_name, comments = 'Под вас — Rentify', 'Персональный подбор квартир на 30 дней'
+            service_name, comments = 'Под вас — Rentify', 'Подбор квартир на 30 дней'
         provider_id, url = await XPayClient(settings).create(amount=amount, payer_id=payer_id,
             service_name=service_name, comments=comments,
             callback_url=base + '/xpay/webhook/' + callback_token,
