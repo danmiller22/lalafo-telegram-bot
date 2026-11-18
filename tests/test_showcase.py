@@ -138,6 +138,7 @@ def test_showcase_card_is_compact_and_has_two_buttons() -> None:
     assert [row[0].text for row in keyboard.inline_keyboard] == [
         "Посмотреть номер",
         "❤️ Сохранить",
+        "Главное меню",
     ]
     assert len(customer_menu_keyboard().inline_keyboard) == 5
 
