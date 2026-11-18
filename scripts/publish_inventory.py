@@ -212,6 +212,13 @@ async def _publish_item(settings, sessions, inventory, apartments, item) -> int 
                 return await _skip(inventory, item.id, f"stale_{type(exc).__name__}")
 
     assert ad is not None
+    # Detail responses may omit media even when discovery already saved it.
+    # Preserve that snapshot before upsert so future retries can still use it.
+    if not ad.photo_urls:
+        if not stored.photo_urls:
+            await inventory.retry_item(item.id, error="missing_source_photos")
+            return None
+        ad = ad.model_copy(update={"photo_urls": stored.photo_urls})
     valid, reason = _valid(ad, settings, allow_chat_contact=bool(binding))
     # Hand-picked cards may legitimately have a different budget/room count;
     # source, whole-apartment, structure and lodging protections still apply.
