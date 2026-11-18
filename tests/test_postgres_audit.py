@@ -78,6 +78,8 @@ async def test_postgres_manual_approval_and_notification_are_claimed_once(postgr
 
 async def test_postgres_matching_delivery_is_claimed_once(postgres_repositories):
     apartments, _, sessions = postgres_repositories
+    from tests.helpers import grant_personal_for_test
+    await grant_personal_for_test(sessions, 1)
     matching = MatchingRepository(sessions)
     await matching.save_profile(user_id=1, rooms=["1"], districts=[], all_districts=True,
         max_budget=40_000, source="test")

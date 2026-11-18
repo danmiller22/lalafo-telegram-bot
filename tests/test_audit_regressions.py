@@ -149,7 +149,9 @@ async def test_cancelled_notification_can_be_retried(repositories, service):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("change", ["expired", "inactive", "filters", "notifications"])
 async def test_matching_claim_skips_invalid_queued_card_and_finds_next(repositories, change):
+    from tests.helpers import grant_personal_for_test
     apartments, _, sessions = repositories
+    await grant_personal_for_test(sessions, 1)
     matching = MatchingRepository(sessions)
     await matching.save_profile(user_id=1, rooms=["1"], districts=[], all_districts=True,
         max_budget=40_000, source="test")

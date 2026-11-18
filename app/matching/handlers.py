@@ -23,7 +23,11 @@ from app.models import ApartmentSearchProfile
 from app.security import TokenSigner
 from app.telegram.private_delivery import send_matching_card
 
+from app.matching.access import PaidMatchingMiddleware, show_matching_paywall
+
 router = Router(name="apartment-matching")
+router.callback_query.middleware(PaidMatchingMiddleware())
+router.message.middleware(PaidMatchingMiddleware())
 
 
 @router.callback_query(F.data == "personal:offer")
@@ -73,6 +77,11 @@ async def show_hot_start(
     source: str,
 ) -> None:
     user_id = message.from_user.id
+    grant, _ = await matching.personal_status(user_id)
+    if grant is None:
+        await state.clear()
+        await show_matching_paywall(message, matching=matching, signer=signer, settings=settings)
+        return
     profile = await matching.profile(user_id)
     await state.clear()
     await state.update_data(matching_source=source)
@@ -82,8 +91,7 @@ async def show_hot_start(
             "🏠 Найдите квартиру под себя в Бишкеке\n\n"
             "Выберите количество комнат, районы и бюджет. Бот покажет подходящие "
             "квартиры и будет присылать новые совпадения.\n\n"
-            "Просмотр и подбор бесплатны. Контакты открываются по доступу: "
-            "499 сом навсегда. Ранее оплаченный бессрочный доступ сохраняется."
+            "Тариф «Под вас» активен. Подходящие квартиры с номерами будут приходить в личный чат."
         )
     else:
         text = profile_summary(profile)

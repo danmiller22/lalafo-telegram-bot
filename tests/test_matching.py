@@ -16,7 +16,7 @@ from app.matching.handlers import show_hot_start
 from app.config import Settings
 from app.models import DailyFeaturedPublication, LalafoAutoReplyMeta
 from app.security import TokenSigner
-from tests.helpers import make_ad
+from tests.helpers import make_ad, grant_personal_for_test
 
 
 @pytest.mark.asyncio
@@ -153,11 +153,11 @@ async def test_new_customer_sees_search_entry_before_any_cards(repositories):
         source="lalafo",
     )
 
-    assert "Выберите количество комнат, районы и бюджет" in message.answer.await_args.args[0]
+    assert "999 сом" in message.answer.await_args.args[0]
     assert "499 сом" in message.answer.await_args.args[0]
     bot.send_photo.assert_not_awaited()
     footer = message.answer.await_args.kwargs["reply_markup"]
-    assert footer.inline_keyboard[0][0].callback_data == "matching:start"
+    assert "startapp=personal_" in footer.inline_keyboard[0][0].url
 
 
 def test_matching_filters_offer_only_requested_rooms_quick_districts_and_60k():
@@ -279,6 +279,7 @@ async def test_profile_matches_rooms_district_and_max_budget(repositories):
 async def test_manual_feed_does_not_repeat_recorded_apartment(repositories):
     apartments, _, sessions = repositories
     matching = MatchingRepository(sessions)
+    await grant_personal_for_test(sessions, 88)
     profile = await matching.save_profile(
         user_id=88,
         rooms=["studio", "1"],
@@ -304,6 +305,7 @@ async def test_manual_feed_does_not_repeat_recorded_apartment(repositories):
 async def test_notification_outbox_only_queues_apartments_published_after_filter(repositories):
     apartments, _, sessions = repositories
     matching = MatchingRepository(sessions)
+    await grant_personal_for_test(sessions, 99)
     old = await apartments.upsert_discovered(make_ad(lalafo_id=7301))
     await apartments.mark_published(old.id, chat_id=-100, message_id=1)
     await matching.save_profile(

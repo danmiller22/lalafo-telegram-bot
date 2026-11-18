@@ -16,7 +16,8 @@ from app.bot.callbacks import (
     VIEW_PREFIX,
 )
 from app.config import Settings
-from app.matching.handlers import show_hot_start, begin_matching_form
+from app.matching.handlers import show_hot_start
+from app.matching.access import open_paid_matching
 from app.matching.repository import MatchingRepository
 from app.availability import AvailabilityService
 from app.payments.repository import PaymentRepository
@@ -100,7 +101,7 @@ async def start_handler(
     if payload == "personal":
         await state.clear()
         if matching is not None:
-            await begin_matching_form(message, state, source="personal",
+            await open_paid_matching(message, state, matching=matching, signer=signer, settings=settings, source="personal",
                                       profile=await matching.profile(message.from_user.id))
         else:
             await _show_main_menu(message, settings)
@@ -116,8 +117,8 @@ async def start_handler(
         await message.answer(PRIVACY_TEXT)
         return
     if payload == "search" and matching is not None:
-        await begin_matching_form(
-            message, state, source="group",
+        await open_paid_matching(
+            message, state, matching=matching, signer=signer, settings=settings, source="group",
             profile=await matching.profile(message.from_user.id),
         )
         return
