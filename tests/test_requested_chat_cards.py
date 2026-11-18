@@ -36,7 +36,7 @@ async def test_reviewed_delivery_keeps_standard_buttons_and_is_idempotent(reposi
     bot.send_message.assert_awaited_once()
     bot.send_media_group.assert_awaited_once()
     message = bot.send_message.call_args.kwargs
-    assert message['reply_markup'].inline_keyboard[0][0].text == 'Получить номер'
+    assert message['reply_markup'].inline_keyboard[0][0].text == 'Посмотреть номер'
     assert '/access?startapp=' in message['reply_markup'].inline_keyboard[0][0].url
     assert message['reply_markup'].inline_keyboard[1][0].text == '🛟 Техподдержка'
     assert 'Актуально' not in message['text']

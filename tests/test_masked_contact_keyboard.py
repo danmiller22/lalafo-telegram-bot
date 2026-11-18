@@ -5,11 +5,11 @@ from app.telegram.keyboards import apartment_keyboard, matching_apartment_keyboa
 
 
 @pytest.mark.parametrize('phone,expected', [
-    ('+996 (555) 123-456', '+996555123***'),
-    ('0555123456', '0555123***'),
-    ('', 'Получить номер'),
-    (None, 'Получить номер'),
-    ('123', 'Получить номер'),
+    ('+996 (555) 123-456', 'Посмотреть номер'),
+    ('0555123456', 'Посмотреть номер'),
+    ('', 'Посмотреть номер'),
+    (None, 'Посмотреть номер'),
+    ('123', 'Посмотреть номер'),
 ])
 def test_mask_last_three_digits(phone, expected):
     assert masked_contact_label(phone) == expected
@@ -22,7 +22,7 @@ def test_card_buttons_only_expose_masked_phone_and_keep_signed_target():
         bot_username='testbot', support_url='https://t.me/support'
     )
     button = markup.inline_keyboard[0][0]
-    assert button.text == '+996555123***'
+    assert button.text == 'Посмотреть номер'
     assert '996555123456' not in markup.model_dump_json()
     assert signer.verify_start_id('miniapp-apartment', button.url.split('startapp=')[1]) == 123
 
@@ -31,7 +31,7 @@ def test_card_buttons_only_expose_masked_phone_and_keep_signed_target():
         bot_username='testbot'
     )
     assert [row[0].text for row in matching.inline_keyboard] == [
-        '+996555123***', '❤️ Сохранить'
+        'Посмотреть номер', '❤️ Сохранить'
     ]
     assert '996555123456' not in matching.model_dump_json()
 
@@ -42,5 +42,5 @@ def test_realtor_or_unconfirmed_contact_keeps_generic_button():
         123, phone='+996555123456', signer=signer,
         bot_username='testbot', support_url='https://t.me/support'
     )
-    assert markup.inline_keyboard[0][0].text == 'Получить номер'
+    assert markup.inline_keyboard[0][0].text == 'Посмотреть номер'
     assert '996555123' not in markup.model_dump_json()

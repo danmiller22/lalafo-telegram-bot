@@ -161,13 +161,13 @@ async def start_handler(
             text = (
                 "💳 Оплата\n\n"
                 f"{apartment_text}\n\n"
-                "Нажмите «Получить номер»."
+                "Нажмите «Посмотреть номер»."
             )
         elif result.status == "awaiting_receipt":
             text = (
                 "💳 Оплата\n\n"
                 f"{apartment_text}\n\n"
-                "После оплаты нажмите «Получить номер»."
+                "После оплаты нажмите «Посмотреть номер»."
             )
         elif result.status == "rejected":
             text = (
@@ -380,7 +380,7 @@ async def contact_handler(
         return
     if result.status == "pending":
         payment_url, price = _payment_details(result.plan, settings, signer=signer, apartment_id=apartment_id)
-        await callback.answer("Нажмите «Получить номер».", show_alert=True)
+        await callback.answer("Нажмите «Посмотреть номер».", show_alert=True)
         if callback.message:
             try:
                 await callback.message.edit_reply_markup(
@@ -445,7 +445,7 @@ async def view_contact_handler(
     if result.status == "pending":
         payment_url, price = _payment_details(result.plan, settings, signer=signer, apartment_id=apartment_id)
         await callback.answer(
-            "После оплаты нажмите «Получить номер».",
+            "После оплаты нажмите «Посмотреть номер».",
             show_alert=True,
         )
         if callback.message:
@@ -472,7 +472,7 @@ async def view_contact_handler(
         return
     if result.status == "awaiting_receipt":
         payment_url, price = _payment_details(result.plan, settings, signer=signer, apartment_id=apartment_id)
-        await callback.answer("После оплаты нажмите «Получить номер».", show_alert=True)
+        await callback.answer("После оплаты нажмите «Посмотреть номер».", show_alert=True)
         if callback.message:
             await callback.message.edit_reply_markup(
                 reply_markup=payment_keyboard(
@@ -512,7 +512,7 @@ async def view_contact_handler(
         await callback.answer("Квартира больше недоступна.", show_alert=True)
         return
     await callback.answer(
-        "Оплатите доступ и нажмите «Получить номер».",
+        "Оплатите доступ и нажмите «Посмотреть номер».",
         show_alert=True,
     )
     if callback.message:

@@ -47,7 +47,7 @@ def test_faq_answers_only_confident_common_questions():
 
 
 def test_payment_faq_gives_only_customer_facing_instructions():
-    assert "Получить номер" in FAQ_BY_KEY["payment"].answer
+    assert "Посмотреть номер" in FAQ_BY_KEY["payment"].answer
     assert "автоматически" in FAQ_BY_KEY["review"].answer
     assert "проверяется вручную" not in FAQ_BY_KEY["review"].answer
     assert "XPAY" in FAQ_BY_KEY["review"].answer

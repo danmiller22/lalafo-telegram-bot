@@ -8,15 +8,12 @@ from app.security import TokenSigner
 from app.payment_plans import LIFETIME_PRICE, WEEK_PRICE
 
 
-APARTMENT_KEYBOARD_VERSION = 20
+APARTMENT_KEYBOARD_VERSION = 21
 MINI_APP_SHORT_NAME = "access"
 
 
 def masked_contact_label(phone: str | None) -> str:
-    digits = re.sub(r"\D", "", phone or "")
-    if not 9 <= len(digits) <= 15:
-        return "Получить номер"
-    return ("+" if (phone or "").strip().startswith("+") else "") + digits[:-3] + "***"
+    return "Посмотреть номер"
 
 
 def _support_row(support_url: str) -> list[InlineKeyboardButton]:
@@ -46,7 +43,7 @@ def apartment_keyboard(
     rows = [
         [
             InlineKeyboardButton(
-                text=masked_contact_label(phone) if confirmed_owner else "Получить номер",
+                text="Посмотреть номер",
                 url=mini_app_url,
             )
         ]
@@ -108,7 +105,7 @@ def payment_keyboard(
             [InlineKeyboardButton(text=f"💳 Оплатить {price} сом", url=payment_url)],
             [
                 InlineKeyboardButton(
-                    text="📞 Получить номер",
+                    text="Посмотреть номер",
                     callback_data=f"paid:{paid_token}",
                 )
             ],
@@ -179,7 +176,7 @@ def showcase_apartment_keyboard(
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(
-                text=masked_contact_label(phone) if confirmed_owner else "📞 Получить номер",
+                text="Посмотреть номер",
                 url=mini_app_url,
             )],
             [InlineKeyboardButton(
@@ -199,7 +196,7 @@ def favorite_apartment_keyboard(
     rows: list[list[InlineKeyboardButton]] = []
     if available:
         rows.append([InlineKeyboardButton(
-            text="📞 Получить номер",
+            text="Посмотреть номер",
             callback_data=(
                 f"listing:contact:{signer.sign_id('listing-contact', apartment_id)}"
             ),
@@ -255,7 +252,7 @@ def status_keyboard(
             [InlineKeyboardButton(text=f"💳 Оплатить {price} сом", url=payment_url)],
             [
                 InlineKeyboardButton(
-                    text="📞 Получить номер",
+                    text="Посмотреть номер",
                     callback_data=f"paid:{signer.sign_id('paid', apartment_id)}",
                 )
             ],
@@ -272,7 +269,7 @@ def reveal_keyboard(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="📞 Показать номер",
+                    text="Посмотреть номер",
                     callback_data=f"view:{token}",
                 )
             ],

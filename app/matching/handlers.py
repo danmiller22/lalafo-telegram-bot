@@ -34,7 +34,7 @@ async def personal_offer(callback: CallbackQuery, matching: MatchingRepository) 
         return
     await callback.message.answer(
         "Для новых клиентов доступен бессрочный доступ — 499 сом. "
-        "Откройте карточку квартиры и нажмите «Получить номер»."
+        "Откройте карточку квартиры и нажмите «Посмотреть номер»."
     )
 
 
