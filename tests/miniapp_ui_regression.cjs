@@ -240,12 +240,12 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
   const opening = warm.node('pay-now').onclick();
   // The checkout request is persisted before Telegram opens Finik.
   assert.deepEqual(warm.opened, []);
-  finishStart(response({status: 'awaiting_receipt', plan: 'week'}));
+  finishStart(response({status: 'awaiting_receipt', plan: 'week', payment_url:'https://example.com/prepared'}));
   await opening;
   assert.deepEqual(warm.opened, ['https://example.com/prepared']);
   assert.equal(warm.node('access').hidden, false);
-  // A slow warm-up must not freeze the loaded payment window. The click joins
-  // the existing preparation rather than issuing a second provider request.
+  // Checkout is created for the chosen tariff on click, without a competing
+  // background preparation that could replace another selected tariff.
   let finishPreparation, prepareCalls = 0, startCalls = 0;
   const slowWarmup = setup(null, path => {
     if (path.endsWith('/prepare')) {
@@ -261,10 +261,9 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
   await new Promise(setImmediate);
   assert.equal(slowWarmup.node('pay-now').disabled, false);
   const slowClick = slowWarmup.node('pay-now').onclick();
-  assert.equal(startCalls, 0);
-  finishPreparation(response({payment_url: 'https://example.com/fast', expires_at_ms: Date.now() + 300000}));
+  assert.equal(startCalls, 1);
   await slowClick;
-  assert.equal(prepareCalls, 1);
+  assert.equal(prepareCalls, 0);
   assert.equal(startCalls, 1);
   assert.deepEqual(slowWarmup.opened, ['https://example.com/fast']);
   // Back returns to tariffs without cancelling or losing the payment request.
@@ -338,5 +337,30 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
   await new Promise(setImmediate);
   assert.equal(legacyLifetime.node('phone').hidden, false, 'Existing lifetime access remains usable');
   assert.equal(legacyLifetime.node('pay-now').hidden, true);
+  // Personal tariff uses its own checkout and returns a verified buyer to setup.
+  let personalPaid = false;
+  const personal = setup(null, (path, options) => {
+    const body = JSON.parse(options.body);
+    if (path.endsWith('/start')) {
+      assert.equal(body.plan, 'personal');
+      return Promise.resolve(response({status:'awaiting_receipt', plan:'personal',
+        price:999, automatic_payment:true, payment_url:'https://example.com/personal999'}));
+    }
+    if (personalPaid) return Promise.resolve(response({status:'approved', plan:'personal',
+      personal_setup_url:'https://t.me/testbot?start=personal', phone:'+996555000000', apartment:{}}));
+    return Promise.resolve(response({status:'unpaid', plan:body.plan, automatic_payment:true}));
+  }, true);
+  await new Promise(setImmediate);
+  personal.node('pay-personal').onclick();
+  await new Promise(setImmediate);
+  await personal.node('pay-now').onclick();
+  assert.deepEqual(personal.opened, ['https://example.com/personal999']);
+  assert.equal(personal.node('intro').textContent, 'Под вас · 999 сом · 30 дней');
+  personalPaid = true;
+  const [personalTimer, personalPoll] = [...personal.timers.entries()][0];
+  personal.timers.delete(personalTimer);
+  await personalPoll();
+  assert.equal(personal.node('personal-setup').hidden, false);
+  assert.equal(personal.opened.at(-1), 'https://t.me/testbot?start=personal');
   console.log('Mini App UI regression checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

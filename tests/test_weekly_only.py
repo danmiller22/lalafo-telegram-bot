@@ -36,7 +36,7 @@ async def test_bot_weekly_uses_request_bound_finik_despite_shared_qr(repositorie
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("plan", ["lifetime", "month", "personal"])
+@pytest.mark.parametrize("plan", ["lifetime", "month"])
 async def test_prepare_rejects_retired_plans_before_invoice_or_database_write(monkeypatch, plan):
     service = SimpleNamespace(contact_status=AsyncMock())
     payments = SimpleNamespace(submit=AsyncMock())

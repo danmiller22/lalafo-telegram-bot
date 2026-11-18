@@ -50,7 +50,7 @@ async def test_background_preparation_cannot_replace_selected_lifetime_plan(repo
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("plan", ["month", "lifetime", "personal"])
+@pytest.mark.parametrize("plan", ["month", "lifetime"])
 async def test_unoffered_plan_is_rejected_before_payment(monkeypatch, plan):
     service=SimpleNamespace(contact_status=AsyncMock(return_value=ContactResult('unpaid',None)),begin_payment=AsyncMock())
     monkeypatch.setattr(web,'_miniapp_context',lambda payload:(Settings(_env_file=None),SimpleNamespace(workflow_data={'service':service}),SimpleNamespace(id=1),42))

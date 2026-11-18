@@ -206,3 +206,18 @@ async def test_private_photo_failure_sends_no_text() -> None:
         )
 
     bot.send_message.assert_not_awaited()
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('paid', [False, True])
+async def test_private_matching_phone_requires_explicit_paid_access(paid):
+    from app.telegram.private_delivery import send_matching_card
+    from app.security import TokenSigner
+    bot = SimpleNamespace(send_photo=AsyncMock(return_value=SimpleNamespace(message_id=1)))
+    apartment = SimpleNamespace(id=11, rooms='1', district='Центр', city='Бишкек',
+        price=30000, deposit=None, seller_type='owner', owner_listing=True,
+        phone='+996555123456', photo_urls=['https://example.test/photo.jpg'])
+    await send_matching_card(bot, user_id=22, apartment=apartment,
+        signer=TokenSigner('long-enough-test-secret'), bot_username='testbot', include_phone=paid)
+    caption = bot.send_photo.await_args.kwargs['caption']
+    assert ('+996 555 123 456' in caption) is paid
+    assert bot.send_photo.await_args.kwargs['reply_markup'].inline_keyboard[-1][0].callback_data == 'matching:home'

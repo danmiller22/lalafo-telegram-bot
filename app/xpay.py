@@ -10,7 +10,7 @@ import httpx
 from sqlalchemy import select, text
 
 from app.models import PaymentRequest, WantedAd, WantedPayment, XPayAttempt
-from app.payment_plans import WEEK_PLAN, WANTED_SEARCH_PRICE, plan_price
+from app.payment_plans import PERSONAL_PLAN, WEEK_PLAN, WANTED_SEARCH_PRICE, plan_price
 from app.payments.repository import PaymentRepository
 
 UTC = timezone.utc
@@ -86,15 +86,17 @@ class XPayClient:
             return data
 
 
-async def create_checkout(sessions, settings, *, request_id=None, wanted_ad_id=None):
+async def create_checkout(sessions, settings, *, request_id=None, wanted_ad_id=None, expected_plan=None):
     if not settings.xpay_auto_enabled or (request_id is None) == (wanted_ad_id is None):
         raise XPayError('XPAY is not configured')
     now = datetime.now(UTC)
     async with sessions.begin() as session:
         if request_id is not None:
             request = await session.scalar(select(PaymentRequest).where(PaymentRequest.id == request_id).with_for_update())
-            if request is None or request.plan != WEEK_PLAN or request.status == 'approved':
+            if request is None or request.plan not in (WEEK_PLAN, PERSONAL_PLAN) or request.status == 'approved':
                 raise XPayError('Payment request unavailable')
+            if expected_plan is not None and request.plan != expected_plan:
+                raise XPayError('Checkout tariff changed; refresh the selected tariff')
             amount, payer_id = plan_price(request.plan), request.telegram_user_id
             # A customer can open several apartment cards at once. Serialize
             # these checkouts and reuse the same account-wide payment link.
@@ -116,7 +118,7 @@ async def create_checkout(sessions, settings, *, request_id=None, wanted_ad_id=N
             ).limit(1))
             if legacy is not None:
                 raise XPayError('Previous checkout is still active')
-            predicate = XPayAttempt.request_id.in_(other_ids)
+            predicate = (XPayAttempt.request_id.in_(other_ids) & ((XPayAttempt.checkout_plan == request.plan) | ((XPayAttempt.checkout_plan.is_(None)) & (request.plan == WEEK_PLAN))))
         else:
             request = await session.scalar(select(WantedAd).where(WantedAd.id == wanted_ad_id).with_for_update())
             if request is None or request.status not in {'awaiting_payment', 'rejected'}:
@@ -144,7 +146,8 @@ async def create_checkout(sessions, settings, *, request_id=None, wanted_ad_id=N
             if previous_status not in {'WAITING', 'ERROR', 'CANCELED'}:
                 raise XPayError('Previous payment is still being confirmed')
         attempt = XPayAttempt(token=secrets.token_urlsafe(32), request_id=request_id,
-            wanted_ad_id=wanted_ad_id, expected_amount=amount, status='creating',
+            wanted_ad_id=wanted_ad_id, expected_amount=amount,
+            checkout_plan=request.plan if request_id is not None else None, status='creating',
             created_at=now, expires_at=now + timedelta(minutes=5))
         session.add(attempt)
         await session.flush()
@@ -152,6 +155,8 @@ async def create_checkout(sessions, settings, *, request_id=None, wanted_ad_id=N
     base = settings.require_public_base_url()
     try:
         service_name, comments = CONTACT_SERVICE if request_id is not None else WANTED_SERVICE
+        if request_id is not None and request.plan == PERSONAL_PLAN:
+            service_name, comments = 'Под вас — Rentify', 'Персональный подбор квартир на 30 дней'
         provider_id, url = await XPayClient(settings).create(amount=amount, payer_id=payer_id,
             service_name=service_name, comments=comments,
             callback_url=base + '/xpay/webhook/' + callback_token,
@@ -168,7 +173,7 @@ async def create_checkout(sessions, settings, *, request_id=None, wanted_ad_id=N
         attempt.provider_id, attempt.payment_url, attempt.status = provider_id, url, 'waiting'
         if request_id is not None:
             request = await session.get(PaymentRequest, request_id, with_for_update=True)
-            if not request or request.status == 'approved':
+            if not request or request.status == 'approved' or request.plan != attempt.checkout_plan:
                 raise XPayError('Payment request changed')
             request.provider_payment_id = provider_id
             request.provider_expected_amount = amount
@@ -218,7 +223,8 @@ async def reconcile(sessions, settings, token):
         if attempt.request_id:
             request = await session.get(PaymentRequest, attempt.request_id, with_for_update=True)
             if request is None: return 'missing', None, None
-            if request.status != 'approved':
+            if request.status != 'approved' or request.plan != (attempt.checkout_plan or WEEK_PLAN):
+                request.plan = attempt.checkout_plan or WEEK_PLAN
                 request.provider_payment_id = provider_id
                 request.provider_expected_amount = expected
                 request.provider_status = 'succeeded'

@@ -24,7 +24,7 @@ from app.state import normalized_district
 from app.listing_lifecycle import listing_expired
 
 
-from app.payment_plans import PERSONAL_PLAN, PERSONAL_LIMIT
+from app.payment_plans import PERSONAL_PLAN
 
 
 FRESH_FOR = timedelta(days=2)
@@ -130,6 +130,13 @@ class MatchingRepository:
             await session.flush()
             await session.refresh(profile)
             return profile
+
+    async def start_personal_feed(self, user_id: int) -> None:
+        """Include current fresh offers once after the paid customer saves filters."""
+        async with self.sessions.begin() as session:
+            await session.execute(update(ApartmentSearchProfile).where(
+                ApartmentSearchProfile.telegram_user_id == user_id
+            ).values(notifications_after=datetime.now(timezone.utc) - FRESH_FOR, include_current_offers=True))
 
     async def toggle_notifications(self, user_id: int) -> bool | None:
         async with self.sessions.begin() as session:
@@ -503,8 +510,8 @@ class MatchingRepository:
             )
             now = datetime.now(timezone.utc)
             for profile in profiles:
-                # Lock the paid grant before counting/reserving slots. Multiple
-                # workers must not enqueue more than the purchased allowance.
+                # Serialize reservations for the paid grant; delivery identities
+                # remain durable even though the tariff has no count limit.
                 grant = await session.scalar(select(PaymentHistory).where(
                     PaymentHistory.telegram_user_id == profile.telegram_user_id,
                     PaymentHistory.plan == PERSONAL_PLAN,
@@ -514,13 +521,12 @@ class MatchingRepository:
                 if grant is not None:
                     if (_aware(grant.access_expires_at) or now) <= now:
                         continue
-                    after = max(after, _aware(grant.paid_at))
+                    if not profile.include_current_offers:
+                        after = max(after, _aware(grant.paid_at))
                     used = int(await session.scalar(select(func.count()).select_from(
                         PersonalMatchReservation).where(
                         PersonalMatchReservation.payment_history_id == grant.id)) or 0)
                 for apartment in apartments:
-                    if grant is not None and used >= PERSONAL_LIMIT:
-                        break
                     published_at = _aware(
                         apartment.published_at
                         or apartment.last_seen_at

@@ -154,3 +154,18 @@ async def test_group_search_link_opens_form_directly(repositories):
     assert (await state.get_data())["matching_source"] == "group"
     assert message.answer.await_args.args[0].startswith("1/4")
     await storage.close()
+
+@pytest.mark.asyncio
+async def test_personal_payment_deep_link_opens_filter_setup(repositories):
+    from app.bot.handlers import start_handler
+    _, _, sessions = repositories
+    matching = MatchingRepository(sessions)
+    storage = MemoryStorage()
+    state = FSMContext(storage=storage, key=StorageKey(bot_id=1, chat_id=555, user_id=555))
+    message = SimpleNamespace(text='/start personal', from_user=SimpleNamespace(id=555), answer=AsyncMock())
+    await start_handler(message, service=None, signer=TokenSigner('long-enough-test-secret'),
+        settings=Settings(_env_file=None), bot=SimpleNamespace(), state=state, matching=matching)
+    assert await state.get_state() == ApartmentMatchForm.rooms.state
+    assert message.answer.await_args.args[0].startswith('1/4 · Комнаты')
+    assert (await state.get_data())['matching_source'] == 'personal'
+    await storage.close()

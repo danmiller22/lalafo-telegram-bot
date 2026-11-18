@@ -97,7 +97,7 @@ async def test_postgres_forced_collectors_share_one_live_lease(postgres_reposito
     assert sum(key is not None for key in claimed)==1
 
 
-async def test_postgres_personal_quota_survives_concurrent_seeders(postgres_repositories):
+async def test_postgres_personal_reservations_deduplicate_concurrent_seeders(postgres_repositories):
     from app.payment_plans import PERSONAL_PLAN
     from app.models import PersonalMatchReservation
     apartments, payments, sessions = postgres_repositories
@@ -113,6 +113,6 @@ async def test_postgres_personal_quota_survives_concurrent_seeders(postgres_repo
         row = await apartments.upsert_discovered(make_ad(lalafo_id=80001 + i))
         await apartments.mark_published(row.id, chat_id=-100, message_id=i + 1)
     counts = await asyncio.gather(*(matching.seed_notifications() for _ in range(4)))
-    assert sum(counts) == 20
+    assert sum(counts) == 25
     async with sessions() as session:
-        assert await session.scalar(select(func.count(PersonalMatchReservation.id))) == 20
+        assert await session.scalar(select(func.count(PersonalMatchReservation.id))) == 25

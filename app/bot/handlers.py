@@ -99,7 +99,11 @@ async def start_handler(
     payload = _start_payload(message)
     if payload == "personal":
         await state.clear()
-        await _show_main_menu(message, settings)
+        if matching is not None:
+            await begin_matching_form(message, state, source="personal",
+                                      profile=await matching.profile(message.from_user.id))
+        else:
+            await _show_main_menu(message, settings)
         return
     if payload == "want":
         await begin_wanted_form(message, state)

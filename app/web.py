@@ -152,15 +152,15 @@ def _uses_dynamic_finik(settings: Any, plan: str) -> bool:
     # acquiring API is configured, create a request-bound checkout so its
     # signed webhook can grant access automatically. Static links remain the
     # fallback only while provider credentials are unavailable.
-    return plan == WEEK_PLAN and settings.xpay_auto_enabled
+    return plan in (WEEK_PLAN, PERSONAL_PLAN) and settings.xpay_auto_enabled
 
 
 async def _finik_checkout_url(settings, payments, payment_request, *, apartment_id, plan):
     """Create a five-minute XPAY checkout for the existing payment request."""
     from app.xpay import create_checkout
-    if plan != WEEK_PLAN:
+    if plan not in (WEEK_PLAN, PERSONAL_PLAN):
         raise ValueError("Unsupported payment plan")
-    url, _ = await create_checkout(payments.sessions, settings, request_id=payment_request.id)
+    url, _ = await create_checkout(payments.sessions, settings, request_id=payment_request.id, expected_plan=plan)
     return url
 
 
@@ -1515,7 +1515,18 @@ def _miniapp_context(payload: MiniAppRequest):
 
 
 async def _miniapp_contact_status(runtime, user_id: int, apartment_id: int, plan: str | None):
-    return await runtime.workflow_data["service"].contact_status(user_id, apartment_id)
+    result = await runtime.workflow_data["service"].contact_status(user_id, apartment_id)
+    if plan == PERSONAL_PLAN and result.status != "unavailable":
+        from app.payments.service import ContactResult
+        grant = await runtime.workflow_data["payments"].active_personal_access(user_id)
+        if grant is not None:
+            return ContactResult("approved", result.apartment, PERSONAL_PLAN, grant.access_expires_at)
+        request = await runtime.workflow_data["payments"].get_access(user_id, apartment_id)
+        request_status = request.status if request and request.plan == PERSONAL_PLAN else "unpaid"
+        if request_status in {"approved", "prepared"}:
+            request_status = "unpaid"
+        return ContactResult(request_status, result.apartment, PERSONAL_PLAN)
+    return result
 
 
 def _miniapp_result_payload(result) -> dict[str, Any]:
@@ -1529,6 +1540,7 @@ def _miniapp_result_payload(result) -> dict[str, Any]:
         "status": result.status,
         "price": plan_price(getattr(result, "plan", None) or WEEK_PLAN),
         "plan": getattr(result, "plan", None),
+        "personal_setup_url": f"https://t.me/{get_settings().telegram_bot_username.lstrip('@')}?start=personal",
     }
     if result.status == "approved":
         response["phone"] = display_phone(apartment.phone)
@@ -1679,7 +1691,7 @@ async def miniapp_availability(payload: MiniAppRequest) -> dict[str, Any]:
 async def miniapp_prepare_payment(payload: MiniAppRequest) -> dict[str, Any]:
     settings, runtime, user, apartment_id = _miniapp_context(payload)
     plan = payload.plan or WEEK_PLAN
-    if plan != WEEK_PLAN:
+    if plan not in (WEEK_PLAN, PERSONAL_PLAN):
         raise HTTPException(status_code=400, detail="Неизвестный тариф.")
     if (
         plan == LIFETIME_PLAN
@@ -1724,7 +1736,7 @@ async def miniapp_start_payment(
     result = await _miniapp_contact_status(runtime, user.id, apartment_id, plan)
     if result.status in {"approved", "unavailable", "pending"}:
         return _miniapp_result_payload(result)
-    if plan != WEEK_PLAN:
+    if plan not in (WEEK_PLAN, PERSONAL_PLAN):
         raise HTTPException(status_code=400, detail="Неизвестный тариф.")
     if (
         plan == LIFETIME_PLAN
@@ -1858,8 +1870,8 @@ async def _deliver_verified_finik_access(
             bot_url = f"https://t.me/{settings.telegram_bot_username.lstrip('@')}"
             await runtime.bot.send_message(
                 payment_request.telegram_user_id,
-                "✅ Тариф «Под меня» активен на 1 месяц (30 дней). "
-                "До 20 новых квартир под ваши требования будут приходить в личный чат. "
+                "✅ Тариф «Под вас» активен на 30 дней. "
+                "Подходящие квартиры с номерами будут приходить в личный чат. "
                 "Укажите бюджет, районы и число комнат. Доступ к контактам открыт.",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
                     InlineKeyboardButton(text="⚙️ Указать требования", url=f"{bot_url}?start=personal")

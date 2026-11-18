@@ -5,6 +5,7 @@ from datetime import date, datetime, timezone
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    false,
     Date,
     DateTime,
     ForeignKey,
@@ -108,6 +109,7 @@ class ApartmentSearchProfile(Base):
     districts: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     all_districts: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     max_budget: Mapped[int] = mapped_column(Integer, nullable=False)
+    include_current_offers: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     notifications_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True
     )
@@ -443,6 +445,7 @@ class XPayAttempt(Base):
     provider_id: Mapped[str | None] = mapped_column(String(128), unique=True)
     payment_url: Mapped[str | None] = mapped_column(Text)
     expected_amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    checkout_plan: Mapped[str | None] = mapped_column(String(24))
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="creating")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
