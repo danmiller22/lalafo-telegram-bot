@@ -1423,8 +1423,8 @@ async def health() -> JSONResponse:
             "publication_policy": {
                 "daily_target": MAX_PUBLICATIONS_PER_DAY, "start": "05:00", "end": "02:00",
                 "timezone": "Asia/Bishkek", "spacing_minutes": PUBLICATION_SPACING_MINUTES, "watermark_check": False,
-                "seller_mix": {"mode": "combined_non_owner_cap", "realtor_min_percent": 0, "realtor_max_percent": 20, "unknown_included": True,
-                               "realtor_daily_target": MAX_PUBLICATIONS_PER_DAY * 20 // 100, "realtor_daily_max": MAX_PUBLICATIONS_PER_DAY * 20 // 100},
+                "seller_mix": {"mode": "balanced", "realtor_min_percent": 0, "realtor_max_percent": 50, "unknown_included": False,
+                               "realtor_daily_target": MAX_PUBLICATIONS_PER_DAY // 2, "realtor_daily_max": MAX_PUBLICATIONS_PER_DAY // 2},
                 "single_photo_duplicate_guard": True,
                 "requested_cards": {"total_publications": 3, "duration_hours": 24, "minimum_gap_hours": 6, "included_in_daily_target": True},
                 "telegram_source_channels": len(settings.telegram_source_channels),

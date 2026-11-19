@@ -28,7 +28,6 @@ from app.models import Apartment
 from app.state import PostedState, ad_fingerprint, normalized_district
 from app.listing_quality import central_intersection, district_priority, mix_prices, rental_value_band
 from app.listing_policy import OWNER_MAX_PRICE, PUBLIC_ROOMS, listing_policy_eligible
-from app.seller_mix import realtor_allowance
 from app.telegram.formatting import format_apartment
 from app.telegram.source_filter import is_lodging_offer
 from app.telegram.sources import (
@@ -689,14 +688,12 @@ def select_owners_then_realtors(
     if limit <= 0:
         return []
     eligible = deduplicate_candidates(
-        [ad for ad in candidates if listing_policy_eligible(ad)]
+        [ad for ad in candidates if listing_policy_eligible(ad) and not is_excluded_agency(ad)]
     )
     normal = [ad for ad in eligible if ad.seller_type == "owner" and ad.owner_listing]
-    agents = [ad for ad in eligible if ad.seller_type != "owner"]
-    agent_limit = realtor_allowance(len(normal), limit, base_allowance=(limit * 15 + 99) // 100)
-    agent_count = min(len(agents), agent_limit)
-    selected = select_publish_batch_with_reposts(normal, {}, limit - agent_count)
-    selected += select_publish_batch_with_reposts(agents, {}, agent_count)
+    agents = [ad for ad in eligible if ad.seller_type == "realtor"]
+    selected = select_publish_batch_with_reposts(normal, {}, limit)
+    selected += select_publish_batch_with_reposts(agents, {}, limit - len(selected))
     return selected
 
 
