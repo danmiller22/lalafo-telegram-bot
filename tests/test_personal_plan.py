@@ -152,10 +152,10 @@ async def test_paid_filter_setup_includes_current_offers_once_and_respects_pause
     assert await matching.claim_delivery() is None
 
 @pytest.mark.asyncio
-async def test_personal_upgrade_session_creates_999_checkout_then_opens_setup(repositories, service, monkeypatch):
+async def test_legacy_personal_access_is_retained_without_new_checkout(repositories, service, monkeypatch):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
-    from fastapi import BackgroundTasks
+    from fastapi import BackgroundTasks, HTTPException
     from app import web
     from app.config import Settings
     apartments, payments, sessions = repositories
@@ -173,10 +173,12 @@ async def test_personal_upgrade_session_creates_999_checkout_then_opens_setup(re
     payload = web.MiniAppRequest(init_data='test', start_param='test', plan='personal')
     result = await web.miniapp_session(payload, BackgroundTasks())
     assert result['status'] == 'unpaid' and result['plan'] == 'personal'
-    started = await web.miniapp_start_payment(payload, BackgroundTasks())
-    assert started['price'] == 999 and started['plan'] == 'personal'
-    assert started['payment_url'] == 'https://pay.xpay.kg/personal'
-    request = await payments.get_access(123, apartment.id)
+    with pytest.raises(HTTPException) as error:
+        await web.miniapp_start_payment(payload, BackgroundTasks())
+    assert error.value.status_code == 400
+    checkout.assert_not_called()
+    request = (await payments.submit(user_id=123, apartment_id=apartment.id,
+        username=None, first_name=None, plan='personal')).request
     await payments.prepare_provider_payment(request.id, 'verified-personal-999')
     assert (await payments.apply_provider_result('verified-personal-999', succeeded=True, amount=999))[0] == 'approved'
     approved = await web.miniapp_session(payload, BackgroundTasks())

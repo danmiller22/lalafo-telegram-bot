@@ -36,15 +36,14 @@ async def personal_offer(callback: CallbackQuery, matching: MatchingRepository) 
     if callback.message is None:
         return
     await callback.message.answer(
-        "Тариф «Под вас» — 999 сом на 30 дней: персональный подбор и квартиры с номерами в личный чат. "
-        "Откройте карточку квартиры, нажмите «Посмотреть номер» и выберите «Под вас»."
+        "Персональный подбор доступен до конца ранее оплаченного срока."
     )
 
 
 @router.callback_query(F.data == "personal:buy")
 async def personal_buy(callback: CallbackQuery) -> None:
     await callback.answer(
-        "Откройте карточку квартиры → Посмотреть номер → Под вас — 999 сом.", show_alert=True
+        "Новые подключения персонального подбора закрыты.", show_alert=True
     )
 
 

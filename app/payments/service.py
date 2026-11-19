@@ -42,6 +42,9 @@ class PaymentService:
             return ContactResult(
                 "approved", apartment, weekly.plan, weekly.access_expires_at
             )
+        personal = await self.payments.active_personal_access(user_id)
+        if personal is not None:
+            return ContactResult("approved", apartment, personal.plan, personal.access_expires_at)
         request = await self.payments.get_access(user_id, apartment_id)
         if request is not None:
             if request.status in {"approved", "prepared"}:

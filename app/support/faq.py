@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from app.payment_plans import WEEK_PRICE, WANTED_SEARCH_PRICE, PERSONAL_PRICE
+from app.payment_plans import WEEK_PRICE, WANTED_SEARCH_PRICE
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,7 +45,6 @@ FAQ_ITEMS = (
         ),
         answer=(
             f"💳 Бессрочный доступ к контактам — {WEEK_PRICE} сом.\n\n"
-            f"«Под вас» — {PERSONAL_PRICE} сом на 30 дней: персональный подбор по фильтрам и квартиры с номерами в личный чат. Без лимита квартир.\n\n"
             "Ранее оплаченный бессрочный доступ сохраняется.\n\n"
             f"Нажмите «Посмотреть номер», затем «Оплатить {WEEK_PRICE} сом» "
             "и оплатите по открывшейся ссылке. Оплата предоставляет доступ к "

@@ -152,13 +152,13 @@ def _uses_dynamic_finik(settings: Any, plan: str) -> bool:
     # acquiring API is configured, create a request-bound checkout so its
     # signed webhook can grant access automatically. Static links remain the
     # fallback only while provider credentials are unavailable.
-    return plan in (WEEK_PLAN, PERSONAL_PLAN) and settings.xpay_auto_enabled
+    return plan == WEEK_PLAN and settings.xpay_auto_enabled
 
 
 async def _finik_checkout_url(settings, payments, payment_request, *, apartment_id, plan):
     """Create a five-minute XPAY checkout for the existing payment request."""
     from app.xpay import create_checkout
-    if plan not in (WEEK_PLAN, PERSONAL_PLAN):
+    if plan != WEEK_PLAN:
         raise ValueError("Unsupported payment plan")
     url, _ = await create_checkout(payments.sessions, settings, request_id=payment_request.id, expected_plan=plan)
     return url
@@ -1691,7 +1691,7 @@ async def miniapp_availability(payload: MiniAppRequest) -> dict[str, Any]:
 async def miniapp_prepare_payment(payload: MiniAppRequest) -> dict[str, Any]:
     settings, runtime, user, apartment_id = _miniapp_context(payload)
     plan = payload.plan or WEEK_PLAN
-    if plan not in (WEEK_PLAN, PERSONAL_PLAN):
+    if plan != WEEK_PLAN:
         raise HTTPException(status_code=400, detail="Неизвестный тариф.")
     if (
         plan == LIFETIME_PLAN
@@ -1736,7 +1736,7 @@ async def miniapp_start_payment(
     result = await _miniapp_contact_status(runtime, user.id, apartment_id, plan)
     if result.status in {"approved", "unavailable", "pending"}:
         return _miniapp_result_payload(result)
-    if plan not in (WEEK_PLAN, PERSONAL_PLAN):
+    if plan != WEEK_PLAN:
         raise HTTPException(status_code=400, detail="Неизвестный тариф.")
     if (
         plan == LIFETIME_PLAN

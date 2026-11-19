@@ -10,7 +10,7 @@ import httpx
 from sqlalchemy import select, text
 
 from app.models import PaymentRequest, WantedAd, WantedPayment, XPayAttempt
-from app.payment_plans import PERSONAL_PLAN, WEEK_PLAN, WANTED_SEARCH_PRICE, plan_price
+from app.payment_plans import WEEK_PLAN, WANTED_SEARCH_PRICE, plan_price
 from app.payments.repository import PaymentRepository
 
 UTC = timezone.utc
@@ -93,7 +93,7 @@ async def create_checkout(sessions, settings, *, request_id=None, wanted_ad_id=N
     async with sessions.begin() as session:
         if request_id is not None:
             request = await session.scalar(select(PaymentRequest).where(PaymentRequest.id == request_id).with_for_update())
-            if request is None or request.plan not in (WEEK_PLAN, PERSONAL_PLAN) or request.status == 'approved':
+            if request is None or request.plan != WEEK_PLAN or request.status == 'approved':
                 raise XPayError('Payment request unavailable')
             if expected_plan is not None and request.plan != expected_plan:
                 raise XPayError('Checkout tariff changed; refresh the selected tariff')
@@ -155,8 +155,6 @@ async def create_checkout(sessions, settings, *, request_id=None, wanted_ad_id=N
     base = settings.require_public_base_url()
     try:
         service_name, comments = CONTACT_SERVICE if request_id is not None else WANTED_SERVICE
-        if request_id is not None and request.plan == PERSONAL_PLAN:
-            service_name, comments = 'Под вас — Rentify', 'Подбор квартир на 30 дней'
         provider_id, url = await XPayClient(settings).create(amount=amount, payer_id=payer_id,
             service_name=service_name, comments=comments,
             callback_url=base + '/xpay/webhook/' + callback_token,
