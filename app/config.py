@@ -88,7 +88,7 @@ DEFAULT_SEARCH_URL = (
 # Public previews audited 2026-11-10: active rental/general housing feeds.
 # These are mixed boards, not verified-owner directories. Each post still
 # passes seller, rental, budget, room, contact, photo and duplicate checks.
-# Unknown authors are allowed; realtor cards use a strict 20% publication cap.
+# These feeds include both owners and realtors. Publication prefers owners.
 TELEGRAM_SOURCE_CHANNELS: tuple[str, ...] = (
     "https://t.me/s/apartbishkek",
     "https://t.me/s/bishkekarendakv",

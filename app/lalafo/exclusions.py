@@ -31,8 +31,18 @@ def is_permanently_excluded(lalafo_id: int) -> bool:
 
 
 
-EXCLUDED_CONTACT_SUFFIXES = frozenset({"703108500", "703223711"})
-EXCLUDED_CONTACT_RE = re.compile(r"(?<!\d)(?:\+?996[\s().-]*)?0?703[\s().-]*(?:108[\s().-]*500|223[\s().-]*711)(?!\d)")
+EXCLUDED_CONTACT_SUFFIXES = frozenset({
+    "703108500", "703223711", "702133014", "700014220",
+    "500066355", "708516601", "700014496",
+})
+_CONTACT_SEPARATOR = r"[\s().-]*"
+_CONTACT_PATTERNS = [
+    _CONTACT_SEPARATOR.join((number[:3], number[3:6], number[6:]))
+    for number in sorted(EXCLUDED_CONTACT_SUFFIXES)
+]
+EXCLUDED_CONTACT_RE = re.compile(
+    rf"(?<!\d)(?:\+?996{_CONTACT_SEPARATOR})?0?(?:{'|'.join(_CONTACT_PATTERNS)})(?!\d)"
+)
 
 def is_excluded_contact(ad) -> bool:
     digits = re.sub(r"\D", "", str(getattr(ad, "phone", "") or ""))
