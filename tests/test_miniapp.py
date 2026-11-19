@@ -63,7 +63,7 @@ def test_telegram_init_data_rejects_tampering_and_stale_payload():
     ) is None
 
 
-def test_mini_app_page_has_only_lifetime_999_tariff_and_privacy_link():
+def test_mini_app_page_has_only_lifetime_499_tariff_and_privacy_link():
     html = mini_app_html()
 
     assert "/miniapp/api/session" in html
@@ -72,11 +72,11 @@ def test_mini_app_page_has_only_lifetime_999_tariff_and_privacy_link():
     assert "Бессрочный доступ" in html
     assert "Недельный доступ" not in html
     assert "Одна оплата открывает номера всех актуальных квартир на 7 дней." not in html
-    assert ">499 сом</span>" not in html
+    assert ">499 сом</span>" in html
     assert 'id="pay-now"' in html
     assert ">Оплата</button>" in html
     assert "500 сом" not in html and "699" not in html
-    assert ">999 сом</span>" in html
+    assert ">999 сом</span>" not in html
     assert "Без ограничения срока" not in html
     assert "Доступ навсегда" not in html
     assert "Месячный доступ" not in html
@@ -113,7 +113,7 @@ def test_mini_app_page_has_only_lifetime_999_tariff_and_privacy_link():
     assert first_screen.count("<button") == 3
     assert 'id="pay-personal"' not in html
     assert 'Под вас' not in html
-    assert '999 сом' in html
+    assert '499 сом' in html
     assert ">1499 сом</span>" not in html
     assert 'id="pay-forever"' not in html
     assert 'id="back"' in html
