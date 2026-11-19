@@ -18,7 +18,7 @@ def test_restored_lifetime_session_keeps_999_price():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('plan,price', [('week',999),('lifetime',999)])
+@pytest.mark.parametrize('plan,price', [('week',499),('lifetime',999)])
 async def test_checkout_keeps_selected_plan_and_price(monkeypatch,plan,price):
     settings=Settings(_env_file=None,weekly_finik_payment_url='https://qr.finik.kg/weekly-499',monthly_finik_payment_url='https://qr.finik.kg/month-999')
     result=ContactResult('unpaid',SimpleNamespace(id=42))

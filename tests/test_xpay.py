@@ -35,11 +35,11 @@ async def test_contact_payment_checked_and_granted_once(repositories, service, m
         attempt = await session.scalar(select(XPayAttempt))
         token = attempt.token
     status = AsyncMock(return_value={'qr_transaction_id':'Provider123', 'pay_status':'COMPLETED',
-        'request_amount':99800,'amount':99900,'transaction_uuid':'uuid'})
+        'request_amount':49800,'amount':49900,'transaction_uuid':'uuid'})
     monkeypatch.setattr(XPayClient, 'status', status)
     assert (await reconcile(sessions, settings(), token))[0] == 'amount_mismatch'
     assert (await service.contact_status(100, apartment.id)).status != 'approved'
-    status.return_value['request_amount'] = 99900
+    status.return_value['request_amount'] = 49900
     assert (await reconcile(sessions, settings(), token))[0] == 'approved'
     assert (await reconcile(sessions, settings(), token))[0] == 'already_paid'
     result = await service.contact_status(100, apartment.id)
@@ -249,20 +249,21 @@ async def test_legacy_attempts_keep_original_plan_and_amount(repositories, monke
         username=None, first_name=None, plan=WEEK_PLAN)).request
     now = datetime.now(timezone.utc)
     async with sessions.begin() as session:
-        for plan, amount, token in [(WEEK_PLAN, 499, "OldWeek999Test"),
+        for plan, amount, token in [(WEEK_PLAN, 999, "OldWeek999Test"),
                                     (PERSONAL_PLAN, 999, "Personal999Test")]:
             session.add(XPayAttempt(request_id=request.id, token=token, provider_id=token,
                 checkout_plan=plan, expected_amount=amount, status="waiting",
                 created_at=now, expires_at=now + timedelta(minutes=5)))
     async with sessions() as session:
         attempts = list((await session.scalars(select(XPayAttempt).order_by(XPayAttempt.id))).all())
-    assert [a.expected_amount for a in attempts] == [499, 999]
+    assert [a.expected_amount for a in attempts] == [999, 999]
     assert [a.checkout_plan for a in attempts] == [WEEK_PLAN, PERSONAL_PLAN]
-    status = AsyncMock(return_value={'pay_status':'COMPLETED','amount':49900,
-        'request_amount':49900,'transaction_uuid':'verified'})
+    status = AsyncMock(return_value={'pay_status':'COMPLETED','amount':99900,
+        'request_amount':99900,'transaction_uuid':'verified'})
     monkeypatch.setattr(XPayClient, 'status', status)
     assert (await reconcile(sessions, settings(), attempts[0].token))[0] == 'approved'
     assert await payments.active_personal_access(909) is None
+    status.return_value.update(amount=49900, request_amount=49900)
     assert (await reconcile(sessions, settings(), attempts[1].token))[0] == 'amount_mismatch'
     status.return_value.update(amount=99900, request_amount=99900)
     assert (await reconcile(sessions, settings(), attempts[1].token))[0] == 'approved'
