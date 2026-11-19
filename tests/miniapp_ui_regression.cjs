@@ -54,7 +54,7 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
   assert.equal(weekly.opened.length, 0, 'Selecting the weekly tariff must not open checkout');
   await weekly.node('pay-now').onclick();
   assert.deepEqual(weekly.opened, ['https://qr.finik.kg/week-499']);
-  assert.equal(weekly.node('intro').textContent, 'Навсегда · 499 сом');
+  assert.equal(weekly.node('intro').textContent, 'Навсегда · 999 сом');
   assert.equal(weekly.node('pay-lifetime').hidden, true);
   const unavailable = setup(null, () => Promise.resolve({ok: false, status: 404,
     json: async () => ({detail: 'Квартира больше недоступна.'})}));
@@ -340,25 +340,18 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
   await new Promise(setImmediate);
   assert.equal(legacyLifetime.node('phone').hidden, false, 'Existing lifetime access remains usable');
   assert.equal(legacyLifetime.node('pay-now').hidden, true);
-  // Personal tariff uses its own checkout and returns a verified buyer to setup.
+  // An already-started legacy payment can still settle and open setup.
   let personalPaid = false;
   const personal = setup(null, (path, options) => {
     const body = JSON.parse(options.body);
-    if (path.endsWith('/start')) {
-      assert.equal(body.plan, 'personal');
-      return Promise.resolve(response({status:'awaiting_receipt', plan:'personal',
-        price:999, automatic_payment:true, payment_url:'https://example.com/personal999'}));
-    }
+    assert.ok(path.endsWith('/session'));
     if (personalPaid) return Promise.resolve(response({status:'approved', plan:'personal',
       personal_setup_url:'https://t.me/testbot?start=personal', phone:'+996555000000', apartment:{}}));
-    return Promise.resolve(response({status:'unpaid', plan:body.plan, automatic_payment:true}));
+    return Promise.resolve(response({status:'awaiting_receipt', plan:'personal', automatic_payment:true}));
   }, true);
   await new Promise(setImmediate);
-  personal.node('pay-personal').onclick();
-  await new Promise(setImmediate);
-  await personal.node('pay-now').onclick();
-  assert.deepEqual(personal.opened, ['https://example.com/personal999']);
-  assert.equal(personal.node('intro').textContent, 'Под вас · 999 сом · 30 дней');
+  assert.deepEqual(personal.opened, []);
+  assert.equal(personal.node('intro').textContent, 'Подтверждение ранее начатой оплаты');
   personalPaid = true;
   const [personalTimer, personalPoll] = [...personal.timers.entries()][0];
   personal.timers.delete(personalTimer);
@@ -366,11 +359,10 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
   assert.equal(personal.node('personal-setup').hidden, false);
   assert.equal(personal.opened.at(-1), 'https://t.me/testbot?start=personal');
   const paywall = setup(null, (path, options) => {
-    assert.equal(JSON.parse(options.body).plan, 'personal');
-    return Promise.resolve(response({status:'unpaid',plan:'personal',automatic_payment:true}));
+    assert.equal(JSON.parse(options.body).plan, 'week');
+    return Promise.resolve(response({status:'unpaid',plan:'week',automatic_payment:true}));
   }, true, {location:{search:'?tgWebAppData=test&tgWebAppStartParam=personal_signed-token',hash:''}});
   await new Promise(setImmediate);
-  assert.equal(paywall.node('pay-personal').attributes['aria-pressed'], 'true');
-  assert.equal(paywall.node('pay-lifetime').attributes['aria-pressed'], 'false');
+  assert.equal(paywall.node('pay-lifetime').attributes['aria-pressed'], 'true');
   console.log('Mini App UI regression checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

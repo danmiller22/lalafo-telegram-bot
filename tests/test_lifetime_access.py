@@ -95,7 +95,7 @@ async def test_weekly_miniapp_checkout_and_automatic_access_end_to_end(repositor
     create = AsyncMock(return_value=("Provider123", "https://pay.xpay.kg/checkout"))
     monkeypatch.setattr(XPayClient, "create", create)
     monkeypatch.setattr(XPayClient, "status", AsyncMock(return_value={"qr_transaction_id":"Provider123",
-        "pay_status":"COMPLETED", "amount":49900, "request_amount":49900, "transaction_uuid":"uuid"}))
+        "pay_status":"COMPLETED", "amount":99900, "request_amount":99900, "transaction_uuid":"uuid"}))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=web.app), base_url="http://test") as client:
         payload = {"init_data":miniapp_init_data(bot_token="123456:test-token", user_id=880),
             "start_param":TokenSigner("c"*32).sign_start_id("miniapp-apartment",first.id), "plan":"week"}

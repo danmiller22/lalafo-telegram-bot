@@ -35,11 +35,11 @@ async def test_contact_payment_checked_and_granted_once(repositories, service, m
         attempt = await session.scalar(select(XPayAttempt))
         token = attempt.token
     status = AsyncMock(return_value={'qr_transaction_id':'Provider123', 'pay_status':'COMPLETED',
-        'request_amount':49800,'amount':49900,'transaction_uuid':'uuid'})
+        'request_amount':99800,'amount':99900,'transaction_uuid':'uuid'})
     monkeypatch.setattr(XPayClient, 'status', status)
     assert (await reconcile(sessions, settings(), token))[0] == 'amount_mismatch'
     assert (await service.contact_status(100, apartment.id)).status != 'approved'
-    status.return_value['request_amount'] = 49900
+    status.return_value['request_amount'] = 99900
     assert (await reconcile(sessions, settings(), token))[0] == 'approved'
     assert (await reconcile(sessions, settings(), token))[0] == 'already_paid'
     result = await service.contact_status(100, apartment.id)
@@ -241,19 +241,19 @@ async def test_previous_wanted_checkout_keeps_its_original_amount(repositories, 
         assert (await session.get(WantedAd, ad_id)).status == 'paid'
 
 @pytest.mark.asyncio
-async def test_tariff_switch_preserves_checkout_plan_and_verified_999_grant(repositories, monkeypatch):
+async def test_legacy_attempts_keep_original_plan_and_amount(repositories, monkeypatch):
     from app.payment_plans import PERSONAL_PLAN
     apartments, payments, sessions = repositories
     apartment = await apartments.upsert_discovered(make_ad())
     request = (await payments.submit(user_id=909, apartment_id=apartment.id,
         username=None, first_name=None, plan=WEEK_PLAN)).request
-    monkeypatch.setattr(XPayClient, 'create', AsyncMock(side_effect=[
-        ('OldWeek999Test', 'https://pay.xpay.kg/old'),
-        ('Personal999Test', 'https://pay.xpay.kg/personal')]))
-    await create_checkout(sessions, settings(), request_id=request.id)
-    request = (await payments.submit(user_id=909, apartment_id=apartment.id,
-        username=None, first_name=None, plan=PERSONAL_PLAN)).request
-    await create_checkout(sessions, settings(), request_id=request.id)
+    now = datetime.now(timezone.utc)
+    async with sessions.begin() as session:
+        for plan, amount, token in [(WEEK_PLAN, 499, "OldWeek999Test"),
+                                    (PERSONAL_PLAN, 999, "Personal999Test")]:
+            session.add(XPayAttempt(request_id=request.id, token=token, provider_id=token,
+                checkout_plan=plan, expected_amount=amount, status="waiting",
+                created_at=now, expires_at=now + timedelta(minutes=5)))
     async with sessions() as session:
         attempts = list((await session.scalars(select(XPayAttempt).order_by(XPayAttempt.id))).all())
     assert [a.expected_amount for a in attempts] == [499, 999]
@@ -274,30 +274,15 @@ async def test_tariff_switch_preserves_checkout_plan_and_verified_999_grant(repo
         assert await session.scalar(select(func.count()).select_from(PaymentHistory)) == 2
 
 @pytest.mark.asyncio
-async def test_personal_checkout_passes_real_client_description_validation(repositories, monkeypatch):
-    import httpx, json
+async def test_retired_personal_checkout_is_rejected(repositories, monkeypatch):
+    from app.xpay import XPayError
     from app.payment_plans import PERSONAL_PLAN
     apartments, payments, sessions = repositories
     apartment = await apartments.upsert_discovered(make_ad())
     request = (await payments.submit(user_id=1001, apartment_id=apartment.id,
         username=None, first_name=None, plan=PERSONAL_PLAN)).request
-    calls = []
-    def handler(req):
-        if req.url.path.endswith('/developer/login'):
-            return httpx.Response(200, json={'status':'Success','data':{'access_token':'test-token',
-                'service':[{'uuid':'uuid','currency_code':'KGS'}]}})
-        body = json.loads(req.content)
-        calls.append(body)
-        assert body['amount'] == 99900
-        assert 0 < len(body['service_name']) <= 32
-        assert 0 < len(body['comments']) <= 32
-        assert body['service_name'] == 'Под вас — Rentify'
-        return httpx.Response(200, json={'status':'Success','data':{
-            'qr_transaction_id':'PersonalRealClient123','pay_link':'https://pay.xpay.kg/personal',
-            'amount':99900,'request_amount':99900,'type':'dynamic','amount_change':False}})
-    original = httpx.AsyncClient
-    monkeypatch.setattr('app.xpay.httpx.AsyncClient', lambda **kw: original(transport=httpx.MockTransport(handler)))
-    url, _ = await create_checkout(sessions, settings(), request_id=request.id, expected_plan=PERSONAL_PLAN)
-    assert url == 'https://pay.xpay.kg/personal'
-    assert len(calls) == 1
-    assert '/xpay/webhook/' in calls[0]['callback_url']
+    create = AsyncMock()
+    monkeypatch.setattr(XPayClient, 'create', create)
+    with pytest.raises(XPayError, match="Payment request unavailable"):
+        await create_checkout(sessions, settings(), request_id=request.id, expected_plan=PERSONAL_PLAN)
+    create.assert_not_called()

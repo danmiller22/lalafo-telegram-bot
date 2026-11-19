@@ -224,7 +224,7 @@ async def plan_handler(
         await callback.answer("✅ Карточка с номером отправлена вам.")
         return
     if plan != WEEK_PLAN:
-        await callback.answer("Для новых клиентов доступен только бессрочный доступ — 499 сом.", show_alert=True)
+        await callback.answer(f"Для новых клиентов доступен бессрочный доступ — {WEEK_PRICE} сом.", show_alert=True)
         if callback.message:
             await callback.message.answer("Выберите бессрочный доступ.", reply_markup=private_payment_keyboard(
                 apartment_id, signer=signer, payment_url=settings.weekly_finik_payment_url,
