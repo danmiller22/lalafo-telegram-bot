@@ -166,8 +166,8 @@ def test_source_urls_follow_the_operator_filters():
 def test_discovery_reserves_capacity_for_owner_shortage():
     targets = source_candidate_targets(300, source_count=3, batch_limit=18)
 
-    assert REALTOR_CANDIDATE_RESERVE_SHARE == 0.20
-    assert targets == [120, 240, 300]
+    assert REALTOR_CANDIDATE_RESERVE_SHARE == 0.50
+    assert targets == [75, 150, 300]
 
 
 
@@ -179,7 +179,7 @@ def test_inventory_sources_keep_fallback_capacity():
         owner_source_count=2,
     )
 
-    assert targets == [96, 192, 216, 240]
+    assert targets == [60, 120, 180, 240]
 
 
 

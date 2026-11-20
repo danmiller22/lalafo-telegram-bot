@@ -82,8 +82,8 @@ async def test_single_slow_detail_does_not_block_next_candidate_on_same_worker()
 def test_owner_queries_reserve_time_for_fallback():
     from scripts.scrape_publish import crawl_source_budget
     args=dict(started_at=0,seconds=180,owner_count=4,source_count=10)
-    assert crawl_source_budget(**args,now=30,source_index=0)==(0,114)
-    assert crawl_source_budget(**args,now=45,source_index=1)==(1,99)
+    assert crawl_source_budget(**args,now=30,source_index=0)==(0,60)
+    assert crawl_source_budget(**args,now=45,source_index=1)==(1,45)
     assert crawl_source_budget(**args,now=163,source_index=1)==(4,17)
     assert crawl_source_budget(**args,now=180,source_index=4)==(4,0)
 
@@ -101,6 +101,6 @@ def test_thin_owner_supply_moves_to_realtors_after_one_minute_not_four():
     assert crawl_source_budget(**args, now=61, owner_candidates=0) == (70,239)
     assert crawl_source_budget(**args, now=61, owner_candidates=2) == (70,239)
     # A healthy owner batch may retain its ordinary budget.
-    assert crawl_source_budget(**args, now=61, owner_candidates=18) == (1,179)
+    assert crawl_source_budget(**args, now=61, owner_candidates=18) == (1,89)
     # Preparation consumes the caller's deadline too; preserve fallback time.
     assert crawl_source_budget(**args, now=240, owner_candidates=0) == (70,60)
