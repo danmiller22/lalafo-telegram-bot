@@ -106,7 +106,7 @@ MAX_CANDIDATE_POOL = 300
 DISCOVERY_CANDIDATE_TARGET = 210
 DISCOVERY_COLLECTION_BUDGET_SECONDS = 300
 # Reserve part of the crawl for fallback sources when owner supply is thin.
-REALTOR_CANDIDATE_RESERVE_SHARE = 0.20
+REALTOR_CANDIDATE_RESERVE_SHARE = 0.50
 OWNER_SHORTAGE_SEARCH_SECONDS = 60.0
 # Two-bedroom value range; retained limits are used by reporting helpers.
 TWO_BEDROOM_MIN_PRICE = 25_000
