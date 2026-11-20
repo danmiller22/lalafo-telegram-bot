@@ -7,10 +7,10 @@ from decimal import Decimal, InvalidOperation
 from urllib.parse import urlsplit
 
 import httpx
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 
 from app.models import PaymentRequest, WantedAd, WantedPayment, XPayAttempt
-from app.payment_plans import WEEK_PLAN, WANTED_SEARCH_PRICE, plan_price
+from app.payment_plans import OFFERED_CONTACT_PLANS, WEEK_PLAN, WEEKLY_PLAN, WANTED_SEARCH_PRICE, plan_price
 from app.payments.repository import PaymentRepository
 
 UTC = timezone.utc
@@ -93,7 +93,7 @@ async def create_checkout(sessions, settings, *, request_id=None, wanted_ad_id=N
     async with sessions.begin() as session:
         if request_id is not None:
             request = await session.scalar(select(PaymentRequest).where(PaymentRequest.id == request_id).with_for_update())
-            if request is None or request.plan != WEEK_PLAN or request.status == 'approved':
+            if request is None or request.plan not in OFFERED_CONTACT_PLANS or request.status == 'approved':
                 raise XPayError('Payment request unavailable')
             if expected_plan is not None and request.plan != expected_plan:
                 raise XPayError('Checkout tariff changed; refresh the selected tariff')
@@ -103,6 +103,15 @@ async def create_checkout(sessions, settings, *, request_id=None, wanted_ad_id=N
             if session.bind.dialect.name == 'postgresql':
                 await session.execute(text('SELECT pg_advisory_xact_lock(:namespace, :user_id)'),
                     {'namespace': 1481654617, 'user_id': int(payer_id) % 2147483647})
+            account_requests = select(PaymentRequest.id).where(PaymentRequest.telegram_user_id == payer_id)
+            other_active = await session.scalar(select(XPayAttempt.id).where(
+                XPayAttempt.request_id.in_(account_requests),
+                func.coalesce(XPayAttempt.checkout_plan, WEEK_PLAN) != request.plan,
+                XPayAttempt.expires_at > now,
+                XPayAttempt.status.in_(["creating", "waiting"]),
+            ).limit(1))
+            if other_active is not None:
+                raise XPayError('Previous checkout for a different tariff is still active')
             other_ids = select(PaymentRequest.id).where(
                 PaymentRequest.telegram_user_id == payer_id,
                 PaymentRequest.plan == request.plan,
@@ -155,6 +164,8 @@ async def create_checkout(sessions, settings, *, request_id=None, wanted_ad_id=N
     base = settings.require_public_base_url()
     try:
         service_name, comments = CONTACT_SERVICE if request_id is not None else WANTED_SERVICE
+        if request_id is not None and request.plan == WEEKLY_PLAN:
+            service_name, comments = 'Доступ на 7 дней Rentify', 'Оплата доступа Rentify на 7 дней'
         provider_id, url = await XPayClient(settings).create(amount=amount, payer_id=payer_id,
             service_name=service_name, comments=comments,
             callback_url=base + '/xpay/webhook/' + callback_token,

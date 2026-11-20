@@ -23,7 +23,8 @@ from app.availability import AvailabilityService
 from app.payments.repository import PaymentRepository
 from app.payment_plans import (
     LIFETIME_PLAN,
-    WEEK_PLAN,
+    LIFETIME_PRICE,
+    WEEKLY_PLAN,
     WEEK_PRICE,
     plan_label,
     plan_price,
@@ -55,7 +56,7 @@ def _payment_details(plan: str | None, settings: Settings, *, signer: TokenSigne
     if not url and signer is not None and apartment_id is not None:
         token = signer.sign_start_id("miniapp-apartment", apartment_id)
         url = f"https://t.me/{settings.telegram_bot_username.lstrip('@')}/access?startapp={token}"
-    return url, plan_price(WEEK_PLAN)
+    return url, plan_price(plan if plan in (WEEKLY_PLAN, LIFETIME_PLAN) else WEEKLY_PLAN)
 
 
 def _start_payload(message: Message) -> str:
@@ -178,10 +179,10 @@ async def start_handler(
             text = (
                 "💳 Откройте оплату повторно.\n\n"
                 f"{apartment_text}\n\n"
-                f"Бессрочный доступ к контактам — {WEEK_PRICE} сом."
+                f"7 дней — {WEEK_PRICE} сом. Бессрочно — {LIFETIME_PRICE} сом."
             )
         else:
-            text = f"Бессрочный доступ к контактам — {WEEK_PRICE} сом."
+            text = f"Доступ к контактам: 7 дней — {WEEK_PRICE} сом, бессрочно — {LIFETIME_PRICE} сом."
         reply_markup = private_payment_keyboard(
             apartment_id, signer=signer,
             payment_url=settings.weekly_finik_payment_url,
@@ -205,8 +206,8 @@ async def plan_handler(
     if len(parts) != 3 or parts[1] not in {"w", "l"}:
         await callback.answer("Недействительная кнопка.", show_alert=True)
         return
-    plan = WEEK_PLAN if parts[1] == "w" else LIFETIME_PLAN
-    purpose = "plan-week" if plan == WEEK_PLAN else "plan-lifetime"
+    plan = WEEKLY_PLAN if parts[1] == "w" else LIFETIME_PLAN
+    purpose = "plan-week" if plan == WEEKLY_PLAN else "plan-lifetime"
     payment_url, price = _payment_details(plan, settings)
     apartment_id = signer.verify_id(purpose, parts[2])
     if apartment_id is None:
@@ -222,13 +223,6 @@ async def plan_handler(
             max_photos=settings.max_photos_per_apartment,
         )
         await callback.answer("✅ Карточка с номером отправлена вам.")
-        return
-    if plan != WEEK_PLAN:
-        await callback.answer(f"Для новых клиентов доступен бессрочный доступ — {WEEK_PRICE} сом.", show_alert=True)
-        if callback.message:
-            await callback.message.answer("Выберите бессрочный доступ.", reply_markup=private_payment_keyboard(
-                apartment_id, signer=signer, payment_url=settings.weekly_finik_payment_url,
-                support_url=settings.support_bot_url))
         return
     try:
         submission = await service.begin_payment(

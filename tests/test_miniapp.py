@@ -63,20 +63,20 @@ def test_telegram_init_data_rejects_tampering_and_stale_payload():
     ) is None
 
 
-def test_mini_app_page_has_only_lifetime_499_tariff_and_privacy_link():
+def test_mini_app_page_has_two_contact_tariffs_and_privacy_link():
     html = mini_app_html()
 
     assert "/miniapp/api/session" in html
     assert "/miniapp/api/start" in html
     assert "Доступ ко всем контактам для прямой связи" in html
     assert "Бессрочный доступ" in html
-    assert "Недельный доступ" not in html
+    assert "Недельный доступ" in html
     assert "Одна оплата открывает номера всех актуальных квартир на 7 дней." not in html
     assert ">499 сом</span>" in html
     assert 'id="pay-now"' in html
     assert ">Оплата</button>" in html
     assert "500 сом" not in html and "699" not in html
-    assert ">999 сом</span>" not in html
+    assert ">999 сом</span>" in html
     assert "Без ограничения срока" not in html
     assert "Доступ навсегда" not in html
     assert "Месячный доступ" not in html
@@ -110,7 +110,7 @@ def test_mini_app_page_has_only_lifetime_499_tariff_and_privacy_link():
     assert "искусственного интеллекта" in html
     assert "Риелторы и другие лица могут выдавать себя за хозяев" in html
     first_screen = html.split('id="tariff-description"', 1)[1].split('id="checkout"', 1)[0]
-    assert first_screen.count("<button") == 3
+    assert first_screen.count("<button") == 4
     assert 'id="pay-personal"' not in html
     assert 'Под вас' not in html
     assert '499 сом' in html
@@ -157,7 +157,7 @@ def test_miniapp_checkout_reopening_and_late_status_response():
         import pytest
         pytest.skip("Node.js is required for the browser script regression checks")
     html = mini_app_html(payment_urls={
-        "week": "https://example.com/week",
+        "weekly_7d": "https://example.com/week",
     })
     subprocess.run(
         ["node", str(Path(__file__).with_name("miniapp_ui_regression.cjs"))],

@@ -44,17 +44,17 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
     const body = JSON.parse(options.body);
     if (path.endsWith('/prepare')) return Promise.resolve(response({payment_url:'https://qr.finik.kg/week-499',expires_at_ms:Date.now()+300000}));
     if (path.endsWith('/start')) {
-      assert.equal(body.plan, 'week');
-      return Promise.resolve(response({status:'awaiting_receipt',plan:'week',price:499,payment_url:'https://qr.finik.kg/week-499'}));
+      assert.equal(body.plan, 'weekly_7d');
+      return Promise.resolve(response({status:'awaiting_receipt',plan:'weekly_7d',price:499,payment_url:'https://qr.finik.kg/week-499'}));
     }
     return Promise.resolve(response({status:'unpaid'}));
   });
   await new Promise(setImmediate);
-  await weekly.node('pay-lifetime').onclick();
+  await weekly.node('pay-weekly').onclick();
   assert.equal(weekly.opened.length, 0, 'Selecting the weekly tariff must not open checkout');
   await weekly.node('pay-now').onclick();
   assert.deepEqual(weekly.opened, ['https://qr.finik.kg/week-499']);
-  assert.equal(weekly.node('intro').textContent, 'Навсегда · 499 сом');
+  assert.equal(weekly.node('intro').textContent, '7 дней · 499 сом');
   assert.equal(weekly.node('pay-lifetime').hidden, true);
   const unavailable = setup(null, () => Promise.resolve({ok: false, status: 404,
     json: async () => ({detail: 'Квартира больше недоступна.'})}));
@@ -66,7 +66,7 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
   // An apartment may become unavailable between page load and checkout start.
   for (const status of ['unavailable', 'pending', 'approved']) {
     const changed = setup(null, path => Promise.resolve(response(path.endsWith('/start') ?
-      {status, plan: 'week', apartment: {}} : {status: 'unpaid'})));
+      {status, plan: 'weekly_7d', apartment: {}} : {status: 'unpaid'})));
     await new Promise(setImmediate);
     await changed.node('pay-now').onclick();
     assert.deepEqual(changed.opened, [], status + ' must not redirect to Finik');
@@ -114,10 +114,10 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
     }
     if (path.endsWith('/access')) {
       recoveredClaims++;
-      return Promise.resolve(response({status: 'pending', plan: 'week'}));
+      return Promise.resolve(response({status: 'pending', plan: 'weekly_7d'}));
     }
     return Promise.resolve(response(checkoutPersisted ?
-      {status: 'awaiting_receipt', plan: 'week'} : {status: 'unpaid'}));
+      {status: 'awaiting_receipt', plan: 'weekly_7d'} : {status: 'unpaid'}));
   });
   await new Promise(setImmediate);
   await recovery.node('pay-now').onclick();
@@ -151,7 +151,7 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
 
   // Paint the tariff before either Telegram initialization or a slow DB response.
   let finishSession;
-  const slow = setup(null, path => path.endsWith('/session') ? new Promise(resolve => { finishSession = resolve; }) : Promise.resolve(response({status: 'awaiting_receipt', plan: 'week'})));
+  const slow = setup(null, path => path.endsWith('/session') ? new Promise(resolve => { finishSession = resolve; }) : Promise.resolve(response({status: 'awaiting_receipt', plan: 'weekly_7d'})));
   assert.equal(slow.node('tariff-description').hidden, false);
   assert.equal(slow.node('agreement-caption').hidden, false);
   assert.equal(slow.node('pay-lifetime').hidden, false);
@@ -175,7 +175,7 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
   assert.deepEqual(failed.opened, []);
 
   // A restored weekly checkout must reopen its URL without a new request.
-  const restored = setup({status: 'awaiting_receipt', plan: 'week'});
+  const restored = setup({status: 'awaiting_receipt', plan: 'weekly_7d'});
   await new Promise(setImmediate);
   assert.equal(restored.node('reopen-payment').hidden, false);
   assert.equal(restored.node('checkout').hidden, false);
@@ -191,8 +191,8 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
       return new Promise(resolve => { resolvePoll = resolve; });
     }
     if (path.endsWith('/consent')) return Promise.resolve(response({terms_accepted: true}));
-    if (path.endsWith('/start')) return Promise.resolve(response({status: 'awaiting_receipt', plan: 'week'}));
-    return Promise.resolve(response({status: 'pending', plan: 'week'}));
+    if (path.endsWith('/start')) return Promise.resolve(response({status: 'awaiting_receipt', plan: 'weekly_7d'}));
+    return Promise.resolve(response({status: 'pending', plan: 'weekly_7d'}));
   });
   await new Promise(setImmediate);
   assert.equal(race.node('pay-lifetime').hidden, false);
@@ -222,7 +222,7 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
   assert.equal(race.node('reopen-payment').hidden, true);
   assert.equal(race.timers.size, 0);
   assert.equal(race.node('status').hidden, true);
-  const pending = setup({status: 'pending', plan: 'week'});
+  const pending = setup({status: 'pending', plan: 'weekly_7d'});
   await new Promise(setImmediate);
   assert.equal(pending.node('phone').hidden, true);
   assert.equal(pending.node('access').hidden, true);
@@ -242,7 +242,7 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
   assert.deepEqual(warm.opened, []);
   assert.equal(warm.node('pay-now').attributes['aria-busy'], 'true');
   assert.equal(warm.node('pay-now').textContent, '');
-  finishStart(response({status: 'awaiting_receipt', plan: 'week', payment_url:'https://example.com/prepared'}));
+  finishStart(response({status: 'awaiting_receipt', plan: 'weekly_7d', payment_url:'https://example.com/prepared'}));
   await opening;
   assert.deepEqual(warm.opened, ['https://example.com/prepared']);
   assert.equal(warm.node('pay-now').attributes['aria-busy'], 'false');
@@ -257,7 +257,7 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
     }
     if (path.endsWith('/start')) {
       startCalls++;
-      return Promise.resolve(response({status: 'awaiting_receipt', plan: 'week', payment_url: 'https://example.com/fast'}));
+      return Promise.resolve(response({status: 'awaiting_receipt', plan: 'weekly_7d', payment_url: 'https://example.com/fast'}));
     }
     return Promise.resolve(response({status: 'unpaid'}));
   }, true);
@@ -290,7 +290,7 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
   await new Promise(setImmediate);
   const backOpening = backDuringStart.node('pay-now').onclick();
   backDuringStart.node('back').onclick();
-  finishBackStart(response({status:'awaiting_receipt',plan:'week'}));
+  finishBackStart(response({status:'awaiting_receipt',plan:'weekly_7d'}));
   await backOpening;
   assert.deepEqual(backDuringStart.opened, [], 'Back must prevent a late Finik redirect');
   assert.equal(backDuringStart.node('tariff-description').hidden, false);
@@ -359,10 +359,10 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
   assert.equal(personal.node('personal-setup').hidden, false);
   assert.equal(personal.opened.at(-1), 'https://t.me/testbot?start=personal');
   const paywall = setup(null, (path, options) => {
-    assert.equal(JSON.parse(options.body).plan, 'week');
-    return Promise.resolve(response({status:'unpaid',plan:'week',automatic_payment:true}));
+    assert.equal(JSON.parse(options.body).plan, 'weekly_7d');
+    return Promise.resolve(response({status:'unpaid',plan:'weekly_7d',automatic_payment:true}));
   }, true, {location:{search:'?tgWebAppData=test&tgWebAppStartParam=personal_signed-token',hash:''}});
   await new Promise(setImmediate);
-  assert.equal(paywall.node('pay-lifetime').attributes['aria-pressed'], 'true');
+  assert.equal(paywall.node('pay-weekly').attributes['aria-pressed'], 'true');
   console.log('Mini App UI regression checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });
