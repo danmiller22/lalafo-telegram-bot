@@ -363,7 +363,7 @@ async def test_unknown_author_publishes_without_false_owner_label():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("rooms,label", [("studio", "Студия"), ("1", "1-комнатная"), ("2", "2-комнатная")])
+@pytest.mark.parametrize("rooms,label", [("studio", "Студия"), ("1", "1-комнатная")])
 async def test_publisher_sends_each_supported_room_type(rooms, label):
     bot = SimpleNamespace(send_photo=AsyncMock(return_value=SimpleNamespace(message_id=1)),
         send_media_group=AsyncMock(return_value=[SimpleNamespace(message_id=1)]),
@@ -373,6 +373,18 @@ async def test_publisher_sends_each_supported_room_type(rooms, label):
     result = await publisher.publish(77, make_ad().model_copy(update={"rooms": rooms}))
     assert result.message_id == 2
     assert label in bot.send_message.await_args.kwargs["text"]
+
+
+@pytest.mark.asyncio
+async def test_two_room_offer_is_rejected_before_sending_photos():
+    bot = SimpleNamespace(send_photo=AsyncMock(), send_media_group=AsyncMock(), send_message=AsyncMock())
+    publisher = TelegramPublisher(bot, chat_id=-1001, signer=TokenSigner("s" * 32),
+        bot_username="testbot", support_url="https://t.me/support")
+    with pytest.raises(TelegramPublishError, match="Only studios and one-room"):
+        await publisher.publish(77, make_ad().model_copy(update={"rooms": "2"}))
+    bot.send_photo.assert_not_awaited()
+    bot.send_media_group.assert_not_awaited()
+    bot.send_message.assert_not_awaited()
 
 @pytest.mark.asyncio
 async def test_shared_offer_is_rejected_before_any_telegram_send():

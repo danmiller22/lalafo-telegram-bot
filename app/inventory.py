@@ -419,9 +419,9 @@ async def _balanced_stock(session: AsyncSession, statement) -> list[Apartment]:
     """Keep a busy room type from crowding the other types out of the stock."""
     base = statement.where(_allowed_seller_filter())
     rows = []
-    shares = {"1": MAX_FRESH_STOCK_LOAD // 2, "studio": MAX_FRESH_STOCK_LOAD // 4}
-    shares["2"] = MAX_FRESH_STOCK_LOAD - shares["1"] - shares["studio"]
-    for rooms in ("1", "studio", "2"):
+    shares = {"studio": MAX_FRESH_STOCK_LOAD // 3}
+    shares["1"] = MAX_FRESH_STOCK_LOAD - shares["studio"]
+    for rooms in ("1", "studio"):
         share = shares[rooms]
         agent_share = math.floor(share * REALTOR_STOCK_RESERVE_SHARE)
         rows.extend((await session.scalars(base.where(Apartment.rooms == rooms,
@@ -647,6 +647,10 @@ class InventoryRepository:
                 ApartmentInventoryQueue.status == "queued",
                 ApartmentInventoryQueue.apartment_id.in_(select(Apartment.id).where(Apartment.rooms == SHARED_ROOMS)),
             ).values(status="skipped", last_error="shared_disabled"))
+            await session.execute(update(ApartmentInventoryQueue).where(
+                ApartmentInventoryQueue.status == "queued",
+                ApartmentInventoryQueue.apartment_id.in_(select(Apartment.id).where(Apartment.rooms == "2")),
+            ).values(status="skipped", last_error="two_rooms_disabled"))
             invalid_room_ids = select(Apartment.id).where(
                 Apartment.rooms.not_in((*ALLOWED_ROOMS, SHARED_ROOMS))
             )

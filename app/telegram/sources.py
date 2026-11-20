@@ -13,7 +13,7 @@ from bs4 import BeautifulSoup
 
 from app.lalafo.models import LalafoAd
 from app.telegram.source_filter import is_lodging_offer, is_owner_offer
-from app.listing_policy import RENT_MIN_PRICE, RENT_MAX_PRICE
+from app.listing_policy import PUBLIC_ROOMS, RENT_MIN_PRICE, RENT_MAX_PRICE
 from app.shared_housing import SHARED_ROOMS, SHARED_MIN_PRICE, SHARED_MAX_PRICE, shared_offer
 
 
@@ -337,6 +337,9 @@ def parse_telegram_apartments(
             rooms = SHARED_ROOMS
         if rooms is None:
             note("missing_room_type")
+            continue
+        if not shared and rooms not in PUBLIC_ROOMS:
+            note("unsupported_room_type")
             continue
         if phone is None:
             note("missing_phone")

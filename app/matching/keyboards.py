@@ -82,11 +82,6 @@ def rooms_keyboard(selected: set[str]) -> InlineKeyboardMarkup:
                 ],
                 [
                     InlineKeyboardButton(
-                        text=label("2", "2-комнатная"), callback_data="matching:room:2"
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
                         text="Далее →",
                         callback_data="matching:rooms:done",
                     )
