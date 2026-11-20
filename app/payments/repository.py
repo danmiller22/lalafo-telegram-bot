@@ -15,7 +15,7 @@ from sqlalchemy.orm import selectinload
 from app.lalafo.models import PHONE_SOURCE_VERSION, LalafoAd
 from app.listing_lifecycle import listing_expired
 from app.models import Apartment, ApartmentInventoryQueue, DailyFeaturedPublication, PaymentHistory, PaymentRequest
-from app.payment_plans import LIFETIME_ACCESS_PLANS, LIFETIME_PLAN, MONTH_PLAN, WEEK_PLAN, PERSONAL_PLAN, expires_at_for, plan_price
+from app.payment_plans import LIFETIME_ACCESS_PLANS, LIFETIME_PLAN, MONTH_PLAN, WEEK_PLAN, WEEKLY_PLAN, PERSONAL_PLAN, expires_at_for, plan_price
 from app.state import ListingIndex, ad_fingerprint
 from app.telegram.keyboards import APARTMENT_KEYBOARD_VERSION
 
@@ -724,7 +724,7 @@ class PaymentRepository:
                     PaymentRequest.status == "approved",
                     or_(
                         and_(PaymentRequest.plan.in_(LIFETIME_ACCESS_PLANS), PaymentRequest.access_expires_at.is_(None)),
-                        and_(PaymentRequest.plan.in_((WEEK_PLAN, MONTH_PLAN, PERSONAL_PLAN)), PaymentRequest.access_expires_at > now),
+                        and_(PaymentRequest.plan.in_((WEEK_PLAN, WEEKLY_PLAN, MONTH_PLAN, PERSONAL_PLAN)), PaymentRequest.access_expires_at > now),
                     ),
                 )
                 .order_by((PaymentRequest.plan.in_(LIFETIME_ACCESS_PLANS)).desc(), PaymentRequest.access_expires_at.desc())
@@ -746,7 +746,7 @@ class PaymentRepository:
                             PaymentHistory.access_expires_at.is_(None),
                         ),
                         and_(
-                            PaymentHistory.plan.in_((WEEK_PLAN, MONTH_PLAN, PERSONAL_PLAN)),
+                            PaymentHistory.plan.in_((WEEK_PLAN, WEEKLY_PLAN, MONTH_PLAN, PERSONAL_PLAN)),
                             PaymentHistory.access_expires_at > now,
                         ),
                     ),
@@ -778,7 +778,7 @@ class PaymentRepository:
         plan: str = LIFETIME_PLAN,
         prepare_only: bool = False,
     ) -> PaymentSubmission:
-        if plan not in {WEEK_PLAN, MONTH_PLAN, LIFETIME_PLAN, PERSONAL_PLAN}:
+        if plan not in {WEEK_PLAN, WEEKLY_PLAN, MONTH_PLAN, LIFETIME_PLAN, PERSONAL_PLAN}:
             raise ValueError("Unsupported access plan")
         try:
             return await self._submit_once(
@@ -855,7 +855,7 @@ class PaymentRepository:
             elif request.status == "approved" and (request.plan == plan or plan != PERSONAL_PLAN) and (
                 (request.plan in LIFETIME_ACCESS_PLANS and expires_at is None)
                 or (
-                    request.plan in (WEEK_PLAN, MONTH_PLAN, PERSONAL_PLAN)
+                    request.plan in (WEEK_PLAN, WEEKLY_PLAN, MONTH_PLAN, PERSONAL_PLAN)
                     and expires_at is not None
                     and expires_at > datetime.now(timezone.utc)
                 )

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import select, update
@@ -69,7 +69,8 @@ async def test_old_pending_checkout_can_switch_to_lifetime(repositories, service
 
 
 @pytest.mark.asyncio
-async def test_weekly_miniapp_checkout_and_automatic_access_end_to_end(repositories, service, monkeypatch):
+@pytest.mark.parametrize(("plan", "price"), [("weekly_7d", 499), ("lifetime", 999)])
+async def test_miniapp_checkout_and_automatic_access_end_to_end(repositories, service, monkeypatch, plan, price):
     from unittest.mock import AsyncMock
     from types import SimpleNamespace
     import httpx
@@ -95,10 +96,10 @@ async def test_weekly_miniapp_checkout_and_automatic_access_end_to_end(repositor
     create = AsyncMock(return_value=("Provider123", "https://pay.xpay.kg/checkout"))
     monkeypatch.setattr(XPayClient, "create", create)
     monkeypatch.setattr(XPayClient, "status", AsyncMock(return_value={"qr_transaction_id":"Provider123",
-        "pay_status":"COMPLETED", "amount":49900, "request_amount":49900, "transaction_uuid":"uuid"}))
+        "pay_status":"COMPLETED", "amount":price * 100, "request_amount":price * 100, "transaction_uuid":"uuid"}))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=web.app), base_url="http://test") as client:
         payload = {"init_data":miniapp_init_data(bot_token="123456:test-token", user_id=880),
-            "start_param":TokenSigner("c"*32).sign_start_id("miniapp-apartment",first.id), "plan":"week"}
+            "start_param":TokenSigner("c"*32).sign_start_id("miniapp-apartment",first.id), "plan":plan}
         assert (await client.post("/miniapp/api/session",json=payload)).json()["status"] == "unpaid"
         prepared = await client.post("/miniapp/api/prepare",json=payload)
         assert prepared.status_code == 200 and prepared.json()["payment_url"] == "https://pay.xpay.kg/checkout"
@@ -106,9 +107,17 @@ async def test_weekly_miniapp_checkout_and_automatic_access_end_to_end(repositor
         started = await client.post("/miniapp/api/start",json=payload)
         assert started.status_code == 200 and started.json()["payment_url"] == prepared.json()["payment_url"]
         assert create.await_count == 1 and await consents.accepted(880)
+        assert create.await_args.kwargs["amount"] == price
         async with sessions() as session:
             token = (await session.scalar(select(XPayAttempt))).token
         assert (await reconcile(sessions, get_settings(), token))[0] == "approved"
+        async with sessions() as session:
+            grant = await session.scalar(select(PaymentHistory))
+            assert grant.plan == plan
+            if plan == "weekly_7d":
+                assert grant.access_expires_at - grant.paid_at == timedelta(days=7)
+            else:
+                assert grant.access_expires_at is None
         assert (await client.post("/miniapp/api/access",json=payload)).json()["status"] == "approved"
         payload["start_param"] = TokenSigner("c"*32).sign_start_id("miniapp-apartment",second.id)
         assert (await client.post("/miniapp/api/session",json=payload)).json()["status"] == "approved"

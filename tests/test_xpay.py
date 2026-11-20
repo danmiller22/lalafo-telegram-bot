@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import select, func
 from app.config import Settings
 from app.models import PaymentHistory, XPayAttempt, WantedAd
-from app.payment_plans import WEEK_PLAN
+from app.payment_plans import WEEKLY_PLAN
 from app.xpay import create_checkout, reconcile, XPayClient
 from tests.helpers import make_ad
 
@@ -21,7 +21,7 @@ async def test_contact_payment_checked_and_granted_once(repositories, service, m
     apartments, payments, sessions = repositories
     apartment = await apartments.upsert_discovered(make_ad())
     submission = await payments.submit(user_id=100, apartment_id=apartment.id,
-        username=None, first_name=None, plan=WEEK_PLAN)
+        username=None, first_name=None, plan=WEEKLY_PLAN)
     create = AsyncMock(return_value=('Provider123', 'https://pay.xpay.kg/qr'))
     monkeypatch.setattr(XPayClient, 'create', create)
     url, expires = await create_checkout(sessions, settings(), request_id=submission.request.id)
@@ -29,8 +29,8 @@ async def test_contact_payment_checked_and_granted_once(repositories, service, m
     assert timedelta(minutes=4, seconds=50) < expires - datetime.now(timezone.utc) <= timedelta(minutes=5)
     assert (await create_checkout(sessions, settings(), request_id=submission.request.id))[0] == url
     assert create.await_count == 1
-    assert create.await_args.kwargs['service_name'] == 'Бессрочный доступ Rentify'
-    assert create.await_args.kwargs['comments'] == 'Оплата доступа Rentify навсегда'
+    assert create.await_args.kwargs['service_name'] == 'Доступ на 7 дней Rentify'
+    assert create.await_args.kwargs['comments'] == 'Оплата доступа Rentify на 7 дней'
     async with sessions() as session:
         attempt = await session.scalar(select(XPayAttempt))
         token = attempt.token
@@ -43,7 +43,7 @@ async def test_contact_payment_checked_and_granted_once(repositories, service, m
     assert (await reconcile(sessions, settings(), token))[0] == 'approved'
     assert (await reconcile(sessions, settings(), token))[0] == 'already_paid'
     result = await service.contact_status(100, apartment.id)
-    assert result.status == 'approved' and result.access_expires_at is None
+    assert result.status == 'approved' and result.access_expires_at is not None
     async with sessions() as session:
         assert await session.scalar(select(func.count()).select_from(PaymentHistory)) == 1
 
@@ -83,8 +83,8 @@ async def test_checkout_is_shared_across_apartments_for_same_buyer(repositories,
     apartments, payments, sessions = repositories
     first = await apartments.upsert_discovered(make_ad(lalafo_id=800001))
     second = await apartments.upsert_discovered(make_ad(lalafo_id=800002))
-    req1 = (await payments.submit(user_id=100, apartment_id=first.id, username=None, first_name=None, plan=WEEK_PLAN)).request
-    req2 = (await payments.submit(user_id=100, apartment_id=second.id, username=None, first_name=None, plan=WEEK_PLAN)).request
+    req1 = (await payments.submit(user_id=100, apartment_id=first.id, username=None, first_name=None, plan=WEEKLY_PLAN)).request
+    req2 = (await payments.submit(user_id=100, apartment_id=second.id, username=None, first_name=None, plan=WEEKLY_PLAN)).request
     create = AsyncMock(return_value=('Same123', 'https://pay.xpay.kg/qr'))
     monkeypatch.setattr(XPayClient, 'create', create)
     a = await create_checkout(sessions, settings(), request_id=req1.id)
@@ -97,7 +97,7 @@ async def test_xpay_check_url_enforces_five_minute_expiry_and_prevents_repayment
     from app import web
     apartments, payments, sessions = repositories
     apartment = await apartments.upsert_discovered(make_ad())
-    request = (await payments.submit(user_id=100, apartment_id=apartment.id, username=None, first_name=None, plan=WEEK_PLAN)).request
+    request = (await payments.submit(user_id=100, apartment_id=apartment.id, username=None, first_name=None, plan=WEEKLY_PLAN)).request
     now = datetime.now(timezone.utc)
     async with sessions.begin() as session:
         session.add(XPayAttempt(token='xpay-token', request_id=request.id, provider_id='Provider123',
@@ -125,8 +125,8 @@ async def test_api_creates_exact_nonchangeable_dynamic_qr(monkeypatch):
         body = json.loads(request.content)
         assert body['uuid'] == 'uuid' and body['amount'] == 39900
         assert body['type'] == 'dynamic' and body['amount_change'] is False
-        assert body['service_name'] == 'Бессрочный доступ Rentify'
-        assert body['comments'] == 'Оплата доступа Rentify навсегда'
+        assert body['service_name'] == 'Доступ на 7 дней Rentify'
+        assert body['comments'] == 'Оплата доступа Rentify на 7 дней'
         assert body['check_url'].endswith('/check/token') and body['callback_url'].endswith('/webhook/token')
         return httpx.Response(200, json={'status':'Success','data':{'qr_transaction_id':'Tx123',
             'qr_code':'https://pay.xpay.kg/#qr', 'amount':39900,'request_amount':39900,
@@ -135,7 +135,7 @@ async def test_api_creates_exact_nonchangeable_dynamic_qr(monkeypatch):
     monkeypatch.setattr('app.xpay.httpx.AsyncClient', lambda **kw: original(transport=httpx.MockTransport(handler)))
     assert await XPayClient(settings()).create(amount=399,payer_id=10,
         callback_url='https://example.test/webhook/token',check_url='https://example.test/check/token',
-        service_name='Бессрочный доступ Rentify', comments='Оплата доступа Rentify навсегда') == ('Tx123','https://pay.xpay.kg/#qr')
+        service_name='Доступ на 7 дней Rentify', comments='Оплата доступа Rentify на 7 дней') == ('Tx123','https://pay.xpay.kg/#qr')
     assert len(seen) == 2
 
 def test_vault_encrypts_credentials_and_rejects_wrong_database_key():
@@ -154,7 +154,7 @@ async def test_untrusted_webhook_does_not_grant_without_provider_confirmation(re
     from app import web
     apartments, payments, sessions = repositories
     apartment = await apartments.upsert_discovered(make_ad())
-    request = (await payments.submit(user_id=81, apartment_id=apartment.id, username=None, first_name=None, plan=WEEK_PLAN)).request
+    request = (await payments.submit(user_id=81, apartment_id=apartment.id, username=None, first_name=None, plan=WEEKLY_PLAN)).request
     now = datetime.now(timezone.utc)
     async with sessions.begin() as session:
         session.add(XPayAttempt(token='forged-callback-test', request_id=request.id,
@@ -172,7 +172,7 @@ async def test_previous_finik_checkout_is_not_replaced_while_payable(repositorie
     from app.xpay import XPayError
     apartments, payments, sessions = repositories
     apartment = await apartments.upsert_discovered(make_ad())
-    request = (await payments.submit(user_id=90, apartment_id=apartment.id, username=None, first_name=None, plan=WEEK_PLAN)).request
+    request = (await payments.submit(user_id=90, apartment_id=apartment.id, username=None, first_name=None, plan=WEEKLY_PLAN)).request
     await payments.prepare_provider_payment(request.id, 'old-finik', configuration_id='old')
     await payments.set_provider_payment_url(request.id, 'https://qr.finik.kg/old', configuration_id='old', payment_id='old-finik')
     provider = AsyncMock()
@@ -186,11 +186,11 @@ async def test_expired_checkout_cannot_be_replaced_while_bank_is_processing(repo
     from app.xpay import XPayError
     apartments, payments, sessions = repositories
     apartment = await apartments.upsert_discovered(make_ad())
-    request = (await payments.submit(user_id=91, apartment_id=apartment.id, username=None, first_name=None, plan=WEEK_PLAN)).request
+    request = (await payments.submit(user_id=91, apartment_id=apartment.id, username=None, first_name=None, plan=WEEKLY_PLAN)).request
     now = datetime.now(timezone.utc)
     async with sessions.begin() as session:
         session.add(XPayAttempt(token='processing-old', request_id=request.id, provider_id='Old123', expected_amount=399,
-            status='waiting', created_at=now-timedelta(minutes=6), expires_at=now-timedelta(minutes=1)))
+            checkout_plan=WEEKLY_PLAN, status='waiting', created_at=now-timedelta(minutes=6), expires_at=now-timedelta(minutes=1)))
     monkeypatch.setattr(XPayClient, 'status', AsyncMock(return_value={'pay_status':'PROCESSING'}))
     create = AsyncMock()
     monkeypatch.setattr(XPayClient, 'create', create)
@@ -203,7 +203,7 @@ async def test_expired_checkout_cannot_be_replaced_while_bank_is_processing(repo
 async def test_production_and_documented_amount_units_are_verified(repositories, monkeypatch, reported, approved):
     apartments, payments, sessions = repositories
     apartment = await apartments.upsert_discovered(make_ad())
-    request = (await payments.submit(user_id=92, apartment_id=apartment.id, username=None, first_name=None, plan=WEEK_PLAN)).request
+    request = (await payments.submit(user_id=92, apartment_id=apartment.id, username=None, first_name=None, plan=WEEKLY_PLAN)).request
     now = datetime.now(timezone.utc)
     async with sessions.begin() as session:
         session.add(XPayAttempt(token='units-test', request_id=request.id, provider_id='Units123', expected_amount=399,
@@ -242,7 +242,7 @@ async def test_previous_wanted_checkout_keeps_its_original_amount(repositories, 
 
 @pytest.mark.asyncio
 async def test_legacy_attempts_keep_original_plan_and_amount(repositories, monkeypatch):
-    from app.payment_plans import PERSONAL_PLAN
+    from app.payment_plans import PERSONAL_PLAN, WEEK_PLAN
     apartments, payments, sessions = repositories
     apartment = await apartments.upsert_discovered(make_ad())
     request = (await payments.submit(user_id=909, apartment_id=apartment.id,
@@ -277,7 +277,7 @@ async def test_legacy_attempts_keep_original_plan_and_amount(repositories, monke
 @pytest.mark.asyncio
 async def test_retired_personal_checkout_is_rejected(repositories, monkeypatch):
     from app.xpay import XPayError
-    from app.payment_plans import PERSONAL_PLAN
+    from app.payment_plans import PERSONAL_PLAN, WEEK_PLAN
     apartments, payments, sessions = repositories
     apartment = await apartments.upsert_discovered(make_ad())
     request = (await payments.submit(user_id=1001, apartment_id=apartment.id,

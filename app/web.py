@@ -28,7 +28,7 @@ from app.config import INVENTORY_SEARCH_URLS, get_settings
 from app.inventory import ALLOWED_ROOMS, MAX_PUBLICATIONS_PER_DAY, PUBLICATION_SPACING_MINUTES
 from app.lalafo.auto_reply import LalafoAutoResponder
 from app.lalafo.models import LalafoAd
-from app.payment_plans import LIFETIME_PLAN, MONTH_PLAN, WEEK_PLAN, WEEK_PRICE, PERSONAL_PLAN, plan_price
+from app.payment_plans import LIFETIME_PLAN, LIFETIME_PRICE, MONTH_PLAN, OFFERED_CONTACT_PLANS, WEEK_PLAN, WEEKLY_PLAN, WEEK_PRICE, PERSONAL_PLAN, plan_price
 from app.finik import (
     FinikClient,
     PRODUCTION_WEBHOOK_PUBLIC_KEY,
@@ -152,13 +152,13 @@ def _uses_dynamic_finik(settings: Any, plan: str) -> bool:
     # acquiring API is configured, create a request-bound checkout so its
     # signed webhook can grant access automatically. Static links remain the
     # fallback only while provider credentials are unavailable.
-    return plan == WEEK_PLAN and settings.xpay_auto_enabled
+    return plan in OFFERED_CONTACT_PLANS and settings.xpay_auto_enabled
 
 
 async def _finik_checkout_url(settings, payments, payment_request, *, apartment_id, plan):
     """Create a five-minute XPAY checkout for the existing payment request."""
     from app.xpay import create_checkout
-    if plan != WEEK_PLAN:
+    if plan not in OFFERED_CONTACT_PLANS:
         raise ValueError("Unsupported payment plan")
     url, _ = await create_checkout(payments.sessions, settings, request_id=payment_request.id, expected_plan=plan)
     return url
@@ -1392,7 +1392,8 @@ async def health() -> JSONResponse:
             ) if settings.run_bot and settings.hosted_apartment_scheduler_enabled else "disabled",
             "listing_validity_days": MAX_LISTING_AGE_DAYS,
             "payment_receipt_required": False,
-            "contact_tariff": {"plan": WEEK_PLAN, "price": WEEK_PRICE, "expires": False, "storage": "persistent_ledger"},
+            "contact_tariff": {"plan": WEEKLY_PLAN, "price": WEEK_PRICE, "expires": True, "days": 7, "storage": "persistent_ledger"},
+            "lifetime_tariff": {"plan": LIFETIME_PLAN, "price": LIFETIME_PRICE, "expires": False},
             "payment_review": "ready" if settings.admin_user_id > 0 else "admin_missing",
             "telegram_setup": (
                 dict(_bot_setup_state) if settings.run_bot else "disabled"
@@ -1690,8 +1691,8 @@ async def miniapp_availability(payload: MiniAppRequest) -> dict[str, Any]:
 @app.post("/miniapp/api/prepare", include_in_schema=False)
 async def miniapp_prepare_payment(payload: MiniAppRequest) -> dict[str, Any]:
     settings, runtime, user, apartment_id = _miniapp_context(payload)
-    plan = payload.plan or WEEK_PLAN
-    if plan != WEEK_PLAN:
+    plan = payload.plan or WEEKLY_PLAN
+    if plan not in OFFERED_CONTACT_PLANS:
         raise HTTPException(status_code=400, detail="Неизвестный тариф.")
     if (
         plan == LIFETIME_PLAN
@@ -1732,12 +1733,14 @@ async def miniapp_start_payment(
 ) -> dict[str, Any]:
     settings, runtime, user, apartment_id = _miniapp_context(payload)
     service = runtime.workflow_data["service"]
-    plan = payload.plan or WEEK_PLAN
+    plan = payload.plan or WEEKLY_PLAN
+    if plan not in (*OFFERED_CONTACT_PLANS, WEEK_PLAN):
+        raise HTTPException(status_code=400, detail="Неизвестный тариф.")
     result = await _miniapp_contact_status(runtime, user.id, apartment_id, plan)
     if result.status in {"approved", "unavailable", "pending"}:
         return _miniapp_result_payload(result)
-    if plan != WEEK_PLAN:
-        raise HTTPException(status_code=400, detail="Неизвестный тариф.")
+    if plan == WEEK_PLAN:
+        raise HTTPException(status_code=400, detail="Обновите Mini App и выберите тариф.")
     if (
         plan == LIFETIME_PLAN
         and not _finik_payment_url(settings, plan)

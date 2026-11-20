@@ -18,7 +18,7 @@ def test_restored_lifetime_session_keeps_999_price():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('plan,price', [('week',499),('lifetime',999)])
+@pytest.mark.parametrize('plan,price', [('weekly_7d',499),('lifetime',999)])
 async def test_checkout_keeps_selected_plan_and_price(monkeypatch,plan,price):
     settings=Settings(_env_file=None,weekly_finik_payment_url='https://qr.finik.kg/weekly-499',monthly_finik_payment_url='https://qr.finik.kg/month-999')
     result=ContactResult('unpaid',SimpleNamespace(id=42))
@@ -26,13 +26,6 @@ async def test_checkout_keeps_selected_plan_and_price(monkeypatch,plan,price):
     runtime=SimpleNamespace(workflow_data={'service':service,'terms_consents':SimpleNamespace(accept=AsyncMock()),'payments':object()})
     user=SimpleNamespace(id=123,username=None,first_name='Test')
     monkeypatch.setattr(web,'_miniapp_context',lambda payload:(settings,runtime,user,42))
-    if plan != 'week':
-        with pytest.raises(HTTPException) as error:
-            await web.miniapp_start_payment(web.MiniAppRequest(init_data='test',start_param='test',plan=plan),BackgroundTasks())
-        assert error.value.status_code == 400
-        service.begin_payment.assert_not_awaited()
-        return
-    # A static QR has no five-minute expiry and cannot be used for new purchases.
     with pytest.raises(HTTPException) as error:
         await web.miniapp_start_payment(web.MiniAppRequest(init_data="test",start_param="test",plan=plan),BackgroundTasks())
     assert error.value.status_code == 503
@@ -50,7 +43,7 @@ async def test_background_preparation_cannot_replace_selected_lifetime_plan(repo
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("plan", ["month", "lifetime"])
+@pytest.mark.parametrize("plan", ["month", "week", "personal"])
 async def test_unoffered_plan_is_rejected_before_payment(monkeypatch, plan):
     service=SimpleNamespace(contact_status=AsyncMock(return_value=ContactResult('unpaid',None)),begin_payment=AsyncMock())
     monkeypatch.setattr(web,'_miniapp_context',lambda payload:(Settings(_env_file=None),SimpleNamespace(workflow_data={'service':service}),SimpleNamespace(id=1),42))

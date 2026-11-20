@@ -10,7 +10,7 @@ from app.matching.access import open_paid_matching
 from app.matching.repository import MatchingRepository
 from app.payments.repository import ApartmentRepository
 from app.payments.service import PaymentService
-from app.payment_plans import WEEK_PRICE
+from app.payment_plans import LIFETIME_PRICE, WEEK_PRICE
 from app.security import TokenSigner
 from app.showcase.service import ShowcaseService
 from app.telegram.formatting import format_showcase_apartment
@@ -130,7 +130,7 @@ async def about_service(callback: CallbackQuery) -> None:
         await callback.message.answer(
             "Arenda.\u2060KG помогает находить квартиры и получать контакты по объявлениям.\n\n"
             "Просмотр квартир и сохранение в избранное бесплатны. Доступ ко всем "
-            f"контактам навсегда — {WEEK_PRICE} сом. Ранее оплаченный бессрочный доступ сохраняется. Автоматического "
+            f"контактам на 7 дней — {WEEK_PRICE} сом, навсегда — {LIFETIME_PRICE} сом. Ранее оплаченный бессрочный доступ сохраняется. Автоматического "
             "продления нет."
         )
 

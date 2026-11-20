@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from app.payment_plans import WEEK_PRICE, WANTED_SEARCH_PRICE
+from app.payment_plans import LIFETIME_PRICE, WEEK_PRICE, WANTED_SEARCH_PRICE
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,9 +44,9 @@ FAQ_ITEMS = (
             "оплата",
         ),
         answer=(
-            f"💳 Бессрочный доступ к контактам — {WEEK_PRICE} сом.\n\n"
+            f"💳 Доступ к контактам на 7 дней — {WEEK_PRICE} сом. Бессрочно — {LIFETIME_PRICE} сом.\n\n"
             "Ранее оплаченный бессрочный доступ сохраняется.\n\n"
-            f"Нажмите «Посмотреть номер», затем «Оплатить {WEEK_PRICE} сом» "
+            "Нажмите «Посмотреть номер», выберите тариф "
             "и оплатите по открывшейся ссылке. Оплата предоставляет доступ к "
             "контактам объявлений, а не гарантию аренды или актуальности квартиры. "
             "После оплаты XPAY подтвердит её автоматически, и карточка с номером "

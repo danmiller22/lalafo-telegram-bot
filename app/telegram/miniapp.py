@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from html import escape
 from urllib.parse import parse_qsl
 
-from app.payment_plans import WEEK_PRICE
+from app.payment_plans import LIFETIME_PRICE, WEEK_PRICE
 from app.terms import TERMS_TEXT
 
 
@@ -127,10 +127,14 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
   <div id="status" class="status hidden" role="status" aria-live="polite"></div>
   <a id="other-apartments" class="button secondary hidden" href="https://t.me/rentifykg">Смотреть актуальные квартиры</a>
   <div id="tariff-description">
-    <button id="pay-lifetime" class="tariff-button" aria-pressed="true"{'' if payment_urls else ' disabled'}>
+    <button id="pay-weekly" class="tariff-button" aria-pressed="true"{'' if payment_urls else ' disabled'}>
+      <span class="plan-heading">Недельный доступ</span>
+      <span class="plan-price">{WEEK_PRICE} сом</span><span class="plan-note">7 дней</span>
+    </button>
+    <button id="pay-lifetime" class="tariff-button" aria-pressed="false"{'' if payment_urls else ' disabled'}>
       <span class="popular">Популярный</span>
       <span class="plan-heading"><svg class="plan-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/></svg>Бессрочный доступ</span>
-      <span class="plan-price">{WEEK_PRICE} сом</span><span class="plan-note">Навсегда</span>
+      <span class="plan-price">{LIFETIME_PRICE} сом</span><span class="plan-note">Навсегда</span>
     </button>
   </div>
   <button id="resume-payment" class="secondary hidden" style="margin-top:14px">Вернуться к оплате</button>
@@ -166,7 +170,8 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
   let apartmentUnavailable = false;
   let sessionReady = false;
   let sessionLoading = false;
-  let selectedPlan = "week";
+  const offeredPlans = ["weekly_7d", "lifetime"];
+  let selectedPlan = "weekly_7d";
   let lastSession = null;
   let tariffsView = false;
   let navigationVersion = 0;
@@ -179,11 +184,11 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
   const checkoutPreparation = {{}};
   const refreshCheckoutTimer = {{}};
 
-  function prepareCheckout(plan = "week") {{
-    if (plan !== "week") return;
+  function prepareCheckout(plan = "weekly_7d") {{
+    if (!offeredPlans.includes(plan)) return;
     if (accessApproved || checkoutPreparation[plan]) return checkoutPreparation[plan];
     if (paymentUrls[plan] && preparedUntil[plan] > Date.now()) return Promise.resolve();
-    const buttonId = "pay-lifetime";
+    const buttonId = plan === "lifetime" ? "pay-lifetime" : "pay-weekly";
     el(buttonId).disabled = true;
     el("reopen-payment").disabled = true;
     checkoutPreparation[plan] = api("/miniapp/api/prepare", {{plan}}).then(data => {{
@@ -272,14 +277,14 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
     const returnToBot = approved && data.plan === "personal" && paymentExpected;
     apartmentUnavailable = data.status === "unavailable";
     show("other-apartments", apartmentUnavailable);
-    const serverWaiting = (["week", "personal"].includes(data.plan)) && (data.status === "awaiting_receipt" || data.status === "pending");
+    const serverWaiting = ([...offeredPlans, "week", "personal"].includes(data.plan)) && (data.status === "awaiting_receipt" || data.status === "pending");
     if (serverWaiting) paymentExpected = true;
     if (approved || apartmentUnavailable || data.status === "rejected") {{ paymentExpected = false; pausePaymentPolling(); }}
     const waiting = serverWaiting && !tariffsView;
     if (waiting) selectedPlan = data.plan;
     el("title").textContent = approved ? "Квартира" : waiting ? "Оплата" : "Получить доступ";
     show("title", !apartmentUnavailable);
-    el("intro").textContent = approved ? "" : waiting ? (data.plan === "personal" ? "Подтверждение ранее начатой оплаты" : "Навсегда · {WEEK_PRICE} сом") : "Доступ ко всем контактам для прямой связи";
+    el("intro").textContent = approved ? "" : waiting ? (data.plan === "weekly_7d" ? "7 дней · {WEEK_PRICE} сом" : data.plan === "lifetime" ? "Навсегда · {LIFETIME_PRICE} сом" : "Подтверждение ранее начатой оплаты") : "Доступ ко всем контактам для прямой связи";
     show("intro", !approved && !apartmentUnavailable);
     show("apartment", approved);
     show("phone", approved);
@@ -289,6 +294,7 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
     show("privacy", !approved);
     show("agreement-caption", !approved && !apartmentUnavailable);
     show("pay-lifetime", canPay);
+    show("pay-weekly", canPay);
     show("personal-setup", approved && data.plan === "personal");
     if (data.personal_setup_url) el("personal-setup").href = data.personal_setup_url;
     if (returnToBot && data.personal_setup_url) {{
@@ -357,6 +363,7 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
       render(await api("/miniapp/api/session", {{}}));
       sessionReady = true;
       el("pay-lifetime").disabled = false;
+      el("pay-weekly").disabled = false;
       el("pay-now").disabled = false;
     }}
     catch (error) {{
@@ -367,7 +374,7 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
   }}
   async function startPayment(plan, buttonId) {{
     if (paymentOpening || accessApproved || apartmentUnavailable || (!sessionReady && !paymentUrls[plan])) return;
-    if (plan !== "week") return;
+    if (!offeredPlans.includes(plan)) return;
     telegramContext();
     selectedPlan = plan;
     tariffsView = false;
@@ -486,10 +493,11 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
     if (agreement.close) agreement.close(); else agreement.removeAttribute("open");
   }};
   function updatePlanSelection() {{
-    el("pay-lifetime").setAttribute("aria-pressed", String(selectedPlan === "week"));
+    el("pay-lifetime").setAttribute("aria-pressed", String(selectedPlan === "lifetime"));
+    el("pay-weekly").setAttribute("aria-pressed", String(selectedPlan === "weekly_7d"));
   }}
   function selectPlan(plan) {{
-    if (accessApproved || apartmentUnavailable || paymentOpening || plan !== "week") return;
+    if (accessApproved || apartmentUnavailable || paymentOpening || !offeredPlans.includes(plan)) return;
     selectedPlan = plan;
     updatePlanSelection();
     if (sessionReady) {{ accessApproved = false; loadSelectedPlan(); }}
@@ -498,7 +506,8 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
     try {{ render(await api("/miniapp/api/session", {{}})); }}
     catch (error) {{ message(error.message); }}
   }}
-  el("pay-lifetime").onclick = () => selectPlan("week");
+  el("pay-weekly").onclick = () => selectPlan("weekly_7d");
+  el("pay-lifetime").onclick = () => selectPlan("lifetime");
   el("pay-now").onclick = () => startPayment(selectedPlan, "pay-now");
   el("reopen-payment").onclick = () => {{
     if (accessApproved) return;
