@@ -138,7 +138,7 @@ async def matching_start(
 @router.callback_query(StateFilter(ApartmentMatchForm.rooms), F.data.startswith("matching:room:"))
 async def matching_room(callback: CallbackQuery, state: FSMContext) -> None:
     value = (callback.data or "").rsplit(":", 1)[-1]
-    if value not in {"studio", "1", "2"}:
+    if value not in {"studio", "1"}:
         await callback.answer("Выберите вариант на кнопке.", show_alert=True)
         return
     data = await state.get_data()

@@ -5,7 +5,7 @@ import re
 from typing import Any
 
 
-PUBLIC_ROOMS = ("studio", "1", "2")
+PUBLIC_ROOMS = ("studio", "1")
 
 RENT_MIN_PRICE = 25_000
 RENT_MAX_PRICE = 45_000

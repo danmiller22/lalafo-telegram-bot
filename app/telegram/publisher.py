@@ -158,7 +158,7 @@ class TelegramPublisher:
         if is_excluded_agency(ad):
             raise TelegramPublishError("Excluded agency source")
         if ad.rooms not in PUBLIC_ROOMS:
-            raise TelegramPublishError("Only studios, one-room and two-room apartments are allowed")
+            raise TelegramPublishError("Only studios and one-room apartments are allowed")
         # A bad remote image can hold Telegram's media fetch open for minutes.
         # A compact single album gives renters enough context and keeps one
         # listing from blocking the publication queue.

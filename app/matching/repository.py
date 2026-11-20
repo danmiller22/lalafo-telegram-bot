@@ -22,6 +22,7 @@ from app.models import (
 )
 from app.state import normalized_district
 from app.listing_lifecycle import listing_expired
+from app.listing_policy import PUBLIC_ROOMS
 
 
 from app.payment_plans import PERSONAL_PLAN
@@ -30,7 +31,7 @@ from app.payment_plans import PERSONAL_PLAN
 FRESH_FOR = timedelta(days=2)
 MIN_PRICE = 5_000
 MAX_PRICE = 60_000
-SUPPORTED_ROOMS = ("studio", "1", "2")
+SUPPORTED_ROOMS = PUBLIC_ROOMS
 COMMON_DISTRICTS = (
     "Центр", "ЦУМ", "ГУМ", "Золотой квадрат", "Филармония", "Ошский рынок",
     "Восток-5", "Асанбай", "Джал", "Верхний Джал", "Тунгуч", "Юг-2",
@@ -48,7 +49,7 @@ def _aware(value: datetime | None) -> datetime | None:
 
 
 def apartment_matches(apartment: Apartment, profile: ApartmentSearchProfile) -> bool:
-    if apartment.rooms not in set(profile.rooms or []):
+    if apartment.rooms not in SUPPORTED_ROOMS or apartment.rooms not in set(profile.rooms or []):
         return False
     seller_types = set(
         getattr(profile, "seller_types", None) or ("owner", "realtor")

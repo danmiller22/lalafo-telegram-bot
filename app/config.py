@@ -79,7 +79,7 @@ LALAFO_DISTRICT_FILTERS = (
 
 DEFAULT_SEARCH_URL = (
     "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
-    "dolgosrochnaya-arenda-kvartir/studio/1-bedroom/2-bedrooms/owner/"
+    "dolgosrochnaya-arenda-kvartir/studio/1-bedroom/owner/"
     "semeynym/param-bez-detey/studentam/bez-podseleniya/"
     "mozhno-s-zhivotnymi"
     "?price[from]=25000&price[to]=45000"
@@ -111,7 +111,7 @@ TELEGRAM_APARTMENT_CHANNELS: tuple[str, ...] = TELEGRAM_SOURCE_CHANNELS
 # the detail page before a card may enter the queue.
 ADDITIONAL_SEARCH_URLS: tuple[str, ...] = (
     *(f"https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
-      f"dolgosrochnaya-arenda-kvartir/studio/1-bedroom/2-bedrooms/{district}/"
+      f"dolgosrochnaya-arenda-kvartir/studio/1-bedroom/{district}/"
       f"owner?price[from]=25000&price[to]=45000"
       for district in (
           "vostok-5", "filarmoniya", "bishkek-park-trc",
@@ -123,7 +123,7 @@ ADDITIONAL_SEARCH_URLS: tuple[str, ...] = (
 
 _INVENTORY_BASE = (
     "https://lalafo.kg/bishkek/kvartiry/arenda-kvartir/"
-    "dolgosrochnaya-arenda-kvartir/studio/1-bedroom/2-bedrooms/"
+    "dolgosrochnaya-arenda-kvartir/studio/1-bedroom/"
 )
 INVENTORY_PRIORITY_DISTRICTS = (
     "vostok-5", "filarmoniya", "bishkek-park-trc",

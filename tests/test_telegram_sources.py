@@ -100,7 +100,7 @@ def test_rejects_foreign_currency_rent_even_if_som_deposit_is_present() -> None:
 
 def test_accepts_explicit_kgs_equivalent_from_structured_channel() -> None:
     html = _post(
-        "Аренда, квартира, 2-комн. Адрес: Бишкек, ЦУМ. "
+        "Аренда, квартира, 1-комн. Адрес: Бишкек, ЦУМ. "
         "Цена: $450 (39 500 сом). Тип предложения: от собственника. "
         "Телефон: +996 (555) 55-11-50",
         post_id=104,
@@ -113,7 +113,7 @@ def test_accepts_explicit_kgs_equivalent_from_structured_channel() -> None:
 
     assert len(ads) == 1
     assert ads[0].price == 39_500
-    assert ads[0].rooms == "2"
+    assert ads[0].rooms == "1"
     assert ads[0].owner_listing is True
 
 

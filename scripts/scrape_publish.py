@@ -485,7 +485,7 @@ def rotate_inventory_sources(urls, *, now=None):
     agencies = [url for url in urls if 'real-estate-agency' in url]
     hot_owners = [
         url for url in owners
-        if ('/2-bedrooms/owner?' in url or '/2-bedrooms/?' in url)
+        if ('/studio/1-bedroom/owner?' in url or '/studio/1-bedroom/?' in url)
         and 'price[from]=25000' in url
         and 'price[to]=45000' in url
     ]
