@@ -154,6 +154,8 @@ INVENTORY_SEARCH_URLS: tuple[str, ...] = (
     f"{_INVENTORY_BASE}owner?price[from]=36000&price[to]=45000",
     *(f"{_INVENTORY_BASE}{district}/owner?price[from]=25000&price[to]=45000"
       for district in INVENTORY_OWNER_DISTRICTS[:45]),
+    *(f"{_INVENTORY_BASE}agent/real-estate-agency?price[from]={low}&price[to]={high}"
+      for low, high in ((25000,45000),(25000,27999),(28000,31999),(32000,35999),(36000,45000))),
 )
 
 APARTMENT_PUBLISH_INTERVAL_MINUTES = 90
