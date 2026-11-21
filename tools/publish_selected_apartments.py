@@ -28,6 +28,9 @@ logger = logging.getLogger(__name__)
 _LALAFO_ID = re.compile(r"-id-(\d+)(?:$|[/?#])")
 SELECTED_REPOST_AFTER_HOURS = None
 MANAGED_SELECTED_TERM_OVERRIDES = {
+    117970133: (40000, "Бишкек Парк"),
+    111021624: (37000, "Восток-5 мкр"),
+    117970146: (35000, "Дордой Плаза"),
     114740296: (28_000, "Восток-5 мкр"),
     111730695: (32_000, "Филармония"),
     116490287: (22_000, "Филармония"),
@@ -45,6 +48,9 @@ MANAGED_KNOWN_SOURCE_IDS = {
     114621485: 81141886,
 }
 MANAGED_KNOWN_PHOTO_URLS = {
+    117970133: ["https://img5.lalafo.com/i/posters/original/a7/bc/8a/ba125103e1d9943e5c2cff19f7.jpeg","https://img5.lalafo.com/i/posters/original/4d/e2/96/534fda9fe3e27cd57c02dae3f0.jpeg","https://img5.lalafo.com/i/posters/original/7c/be/a7/8df69e3f53d03388422e9df8d8.jpeg","https://img5.lalafo.com/i/posters/original/7a/78/5e/bc49f6d47ed788e8c29cb8fc6a.jpeg","https://img5.lalafo.com/i/posters/original/82/a4/b0/6ac065faed47fd8ac104f588d4.jpeg","https://img5.lalafo.com/i/posters/original/c8/d7/91/5b64e14ba00ab164a7a2c5f8d4.jpeg","https://img5.lalafo.com/i/posters/original/cd/74/55/57bed1f59a7c091fe5d370266a.jpeg","https://img5.lalafo.com/i/posters/original/97/e3/6e/bd630f6a9cc58e5b1a3585cd36.jpeg"],
+    111021624: ["https://img5.lalafo.com/i/posters/original/d2/2f/c1/2115d9e07d6203d88c39a3c4ef.jpeg","https://img5.lalafo.com/i/posters/original/cc/7a/d5/120695a699e01dae4585f4bf71.jpeg","https://img5.lalafo.com/i/posters/original/9a/02/2e/fdd7f78581b3c4d2f1bb24ecc8.jpeg","https://img5.lalafo.com/i/posters/original/9a/1f/10/8564914a1d0dfe2bb73f40530c.jpeg","https://img5.lalafo.com/i/posters/original/31/bb/c7/77b9f60e05f69e53e0420e1f34.jpeg"],
+    117970146: ["https://img5.lalafo.com/i/posters/original/3e/a8/77/fb78e30b34cd70997a7e38c202.jpeg","https://img5.lalafo.com/i/posters/original/49/98/b4/5b8e2d17b722f2f9719833604c.jpeg","https://img5.lalafo.com/i/posters/original/c9/83/55/a18742a6ebe5678e4e5afdbeee.jpeg","https://img5.lalafo.com/i/posters/original/7f/79/82/9a0d806b68289eb86192bdb98a.jpeg"],
     114740296: [
         "https://img5.lalafo.com/i/posters/api/7b/d6/f4/607bfc91bb9ac049678f820ae0.jpeg",
         "https://img5.lalafo.com/i/posters/api/df/25/f2/c4acb5b116dfa40e04aa3e374b.jpeg",
