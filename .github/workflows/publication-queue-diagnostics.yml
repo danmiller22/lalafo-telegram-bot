@@ -16,5 +16,27 @@ jobs:
           python-version: '3.12'
           cache: pip
       - run: pip install -r requirements.txt
-      - run: python -m tools.publication_queue_diagnostics
-      - run: python -m tools.publication_failure_probe
+      - run: |
+          python - <<'PY'
+          import asyncio
+          import json
+          from datetime import datetime, timedelta
+          from collections import Counter
+          from app.config import get_settings
+          from app.database import create_engine_and_session
+          from app.inventory import BISHKEK, publication_day_start
+          from app.promotions import publications_in_window
+
+          async def audit():
+              engine, sessions = create_engine_and_session(get_settings().database_url)
+              end = publication_day_start(datetime.now(BISHKEK))
+              try:
+                  async with sessions() as session:
+                      rows = await publications_in_window(session, end - timedelta(days=1), end, include_external_repeats=False)
+                      print("DAILY_COUNT=" + json.dumps({"date": (end - timedelta(days=1)).date().isoformat(),
+                          "total": len(rows), "sellers": dict(Counter(row.seller_type or "unknown" for row in rows))}))
+              finally:
+                  await engine.dispose()
+
+          asyncio.run(audit())
+          PY
