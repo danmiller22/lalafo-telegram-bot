@@ -128,7 +128,7 @@ def test_missing_district_uses_labeled_demo_location_and_omits_deposit():
 def test_expanded_source_keeps_reposts_strictly_limited():
     settings = Settings(_env_file=None)
 
-    assert SOURCE_ALLOWED_ROOMS == ("studio", "1", "2")
+    assert SOURCE_ALLOWED_ROOMS == ("studio", "1")
     assert SOURCE_MAX_POSTS_PER_RUN == 18
     assert SOURCE_PUBLISH_SPACING_SECONDS == 150
     assert SOURCE_MAX_SEARCH_PAGES == 30
@@ -152,7 +152,7 @@ def test_expanded_source_keeps_reposts_strictly_limited():
 def test_source_urls_follow_the_operator_filters():
     assert "/1-bedroom/" in DEFAULT_SEARCH_URL
     assert "/owner" in DEFAULT_SEARCH_URL
-    assert "/studio/1-bedroom/2-bedrooms/owner/" in DEFAULT_SEARCH_URL
+    assert "/studio/1-bedroom/owner/" in DEFAULT_SEARCH_URL
     assert "/semeynym/param-bez-detey/studentam/" in DEFAULT_SEARCH_URL
     assert "/bez-podseleniya/mozhno-s-zhivotnymi" in DEFAULT_SEARCH_URL
     assert "bez-zhivotnyh" not in DEFAULT_SEARCH_URL
@@ -799,7 +799,7 @@ def test_kyrgyz_wanted_ad_still_rejected():
     assert is_substandard_structure(make_ad(source_description="Квартира арендага керек"))
 
 
-def test_searches_cover_owner_and_unknown_author_inventory():
+def test_searches_cover_owner_mixed_and_agency_inventory():
     from app.config import (
         INVENTORY_OWNER_DISTRICTS,
         INVENTORY_SEARCH_URLS,
@@ -808,29 +808,31 @@ def test_searches_cover_owner_and_unknown_author_inventory():
     from urllib.parse import parse_qs,urlsplit
     owner_ranges=[]
     for url in INVENTORY_SEARCH_URLS:
-        if urlsplit(url).path.endswith('/studio/1-bedroom/2-bedrooms/owner'):
+        if urlsplit(url).path.endswith('/studio/1-bedroom/owner'):
             q=parse_qs(urlsplit(url).query)
             owner_ranges.append((int(q['price[from]'][0]),int(q['price[to]'][0])))
     assert owner_ranges==[(25000,45000),(25000,27999),(28000,31999),(32000,35999),(36000,45000)]
     assert set(INVENTORY_OWNER_DISTRICTS) == {
         slug for slug, _ in LALAFO_DISTRICT_FILTERS
     }
-    assert len(INVENTORY_SEARCH_URLS) == 55
-    assert sum('/owner?' not in url for url in INVENTORY_SEARCH_URLS) == 5
-    assert all('real-estate-agency' not in url for url in INVENTORY_SEARCH_URLS)
+    assert len(INVENTORY_SEARCH_URLS) == 60
+    assert sum('/owner?' in url for url in INVENTORY_SEARCH_URLS) == 50
+    assert sum('/agent/real-estate-agency?' in url for url in INVENTORY_SEARCH_URLS) == 5
 
 
 def test_source_rotation_covers_owner_and_unknown_sources():
     from scripts.scrape_publish import rotate_inventory_sources
     from app.config import INVENTORY_SEARCH_URLS
-    hot = {u for u in INVENTORY_SEARCH_URLS if 'price[from]=25000' in u and 'price[to]=45000' in u and ('/2-bedrooms/owner?' in u or '/2-bedrooms/?' in u)}
+    hot = {u for u in INVENTORY_SEARCH_URLS if 'price[from]=25000' in u and 'price[to]=45000' in u and ('/studio/1-bedroom/owner?' in u or '/studio/1-bedroom/?' in u)}
     assert len(hot) == 2
-    rotating = set(INVENTORY_SEARCH_URLS) - hot
+    agencies = {url for url in INVENTORY_SEARCH_URLS if 'real-estate-agency' in url}
+    rotating = set(INVENTORY_SEARCH_URLS) - hot - agencies
     first_rotating = set()
     for cycle in range(len(INVENTORY_SEARCH_URLS)):
         urls = rotate_inventory_sources(INVENTORY_SEARCH_URLS, now=datetime.fromtimestamp(cycle*180, timezone.utc))
         assert set(urls) == set(INVENTORY_SEARCH_URLS)
         assert set(urls[:2]) == hot
+        assert set(urls[-len(agencies):]) == agencies
         first_rotating.add(urls[2])
     assert first_rotating == rotating
 
