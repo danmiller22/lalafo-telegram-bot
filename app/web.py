@@ -1427,7 +1427,7 @@ async def health() -> JSONResponse:
                 "seller_mix": {"mode": "balanced_with_realtor_backfill", "realtor_min_percent": 0, "realtor_max_percent": 100, "unknown_included": False,
                                "realtor_daily_target": MAX_PUBLICATIONS_PER_DAY // 2, "realtor_daily_max": MAX_PUBLICATIONS_PER_DAY},
                 "single_photo_duplicate_guard": True,
-                "requested_cards": {"total_publications": 3, "duration_hours": 24, "minimum_gap_hours": 6, "included_in_daily_target": True},
+                "requested_cards": {"total_publications": 2, "duration_hours": 24, "minimum_gap_hours": 12, "included_in_daily_target": True},
                 "telegram_source_channels": len(settings.telegram_source_channels),
                 "source_summary": {
                     "total_sources": 1 + len(settings.telegram_source_channels),

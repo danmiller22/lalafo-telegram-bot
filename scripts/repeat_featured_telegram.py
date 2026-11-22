@@ -26,8 +26,8 @@ ACTIVE_MANAGED_TERMS = {
     116325997: (32_000, "Восток-5"),
     114621485: (35_000, "ЦУМ"),
 }
-MIN_GLOBAL_REPEAT_GAP = timedelta(hours=1, minutes=30)
-REPEAT_HOURS = frozenset(range(0, 24, 2))
+MIN_GLOBAL_REPEAT_GAP = timedelta(hours=5, minutes=30)
+REPEAT_HOURS = frozenset(range(0, 24, 6))
 
 
 def is_repeat_window(
