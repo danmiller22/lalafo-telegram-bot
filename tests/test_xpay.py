@@ -163,7 +163,7 @@ async def test_untrusted_webhook_does_not_grant_without_provider_confirmation(re
     monkeypatch.setattr(web, '_bot_runtime', SimpleNamespace(workflow_data={'payments':payments}))
     monkeypatch.setattr(web, 'get_settings', lambda: settings())
     monkeypatch.setattr(XPayClient, 'status', AsyncMock(return_value={'qr_transaction_id':'Transaction123', 'pay_status':'WAITING'}))
-    result = await web.xpay_webhook('forged-callback-test')
+    result = await web.xpay_webhook('forged-callback-test', web.BackgroundTasks())
     assert result == {'status':'waiting'}
     assert (await service.contact_status(81, apartment.id)).status != 'approved'
 

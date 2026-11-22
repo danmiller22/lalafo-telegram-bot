@@ -1936,9 +1936,16 @@ async def xpay_check(token: str) -> Response:
     return Response(status_code=201)
 
 
-async def _reconcile_xpay(runtime, settings, token):
+async def _reconcile_xpay(runtime, settings, token, background_tasks=None):
     from app.xpay import reconcile
     outcome, request_id, wanted_id = await reconcile(runtime.workflow_data["payments"].sessions, settings, token)
+    if outcome == "approved" and settings.pushover_app_token and settings.pushover_user_key:
+        from app.payments.push import send_xpay_push
+        sessions = runtime.workflow_data["payments"].sessions
+        if background_tasks is None:
+            await send_xpay_push(sessions, settings, token)
+        else:
+            background_tasks.add_task(send_xpay_push, sessions, settings, token)
     if outcome == "approved" and request_id is not None:
         await _deliver_verified_finik_access(runtime, settings, request_id)
     elif outcome == "approved" and wanted_id is not None:
@@ -1948,13 +1955,13 @@ async def _reconcile_xpay(runtime, settings, token):
 
 
 @app.api_route("/xpay/webhook/{token}", methods=["GET", "POST"], include_in_schema=False)
-async def xpay_webhook(token: str) -> dict[str, str]:
+async def xpay_webhook(token: str, background_tasks: BackgroundTasks) -> dict[str, str]:
     # Callback content is untrusted; only the authenticated XPAY status is authoritative.
     settings, runtime = get_settings(), _bot_runtime
     if runtime is None or not settings.xpay_auto_enabled:
         raise HTTPException(status_code=503)
     try:
-        outcome = await _reconcile_xpay(runtime, settings, token)
+        outcome = await _reconcile_xpay(runtime, settings, token, background_tasks)
     except Exception as exc:
         logger.warning("XPAY verification failed: %s", type(exc).__name__)
         raise HTTPException(status_code=503) from exc
