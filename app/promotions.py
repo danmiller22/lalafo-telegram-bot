@@ -6,8 +6,8 @@ from sqlalchemy import String, case, cast, func, literal, or_, select, union_all
 from app.telegram.formatting import is_supported_source
 from app.models import Apartment, ApartmentInventoryQueue, LalafoAutoReplyMeta, RequestedCardPromotion, RequestedCardPublication
 
-DAILY_REQUESTED_CARD_LIMIT = 3
-REQUESTED_CARD_GAP = timedelta(hours=6)
+DAILY_REQUESTED_CARD_LIMIT = 2
+REQUESTED_CARD_GAP = timedelta(hours=12)
 REQUESTED_WINDOW_PREFIX = 'requested-card:'
 EXTERNAL_REPEAT_RECEIPT_PREFIX = 'external_2h:'
 
@@ -143,8 +143,8 @@ async def promotion_work(session, *, now, day_start, day_end):
         recent, count, campaign_count = stats.get(apartment.id, (None, 0, 0))
         latest = max([utc(v) for v in (recent, apartment.published_at) if v is not None], default=utc(promotion.requested_at))
         three_hour = bindings.get(apartment.id, {}).get('repeat_every_hours') == 3
-        limit = 8 if three_hour else DAILY_REQUESTED_CARD_LIMIT
-        gap = timedelta(hours=3) if three_hour else REQUESTED_CARD_GAP
+        limit = DAILY_REQUESTED_CARD_LIMIT
+        gap = REQUESTED_CARD_GAP
         continuous = apartment.id in continuous_ids
         remaining = max(0, limit - count if continuous else min(limit - count, limit - campaign_count))
         # A new explicit batch includes one immediate send, then the normal gap.

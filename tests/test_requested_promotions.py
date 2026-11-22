@@ -53,23 +53,21 @@ async def work(sessions, now):
         return await promotion_work(session, now=now, day_start=START - timedelta(hours=1), day_end=START + timedelta(hours=20))
 
 @pytest.mark.asyncio
-async def test_three_total_not_three_repeats_and_gap(repositories):
+async def test_one_repeat_after_twelve_hours(repositories):
     apartments, _, sessions = repositories
     apartment = await apartments.upsert_discovered(make_ad())
     await apartments.mark_published(apartment.id, chat_id=1, message_id=1, acknowledged_at=START, promote_requested=True)
     assert (await work(sessions, START))[0] == []
-    assert (await work(sessions, START))[1] == 2
+    assert (await work(sessions, START))[1] == 1
     assert (await work(sessions, START + timedelta(hours=5, minutes=59)))[0] == []
-    assert len((await work(sessions, START + timedelta(hours=6)))[0]) == 1
-    await apartments.mark_published(apartment.id, chat_id=1, message_id=2, acknowledged_at=START + timedelta(hours=6))
-    assert (await work(sessions, START + timedelta(hours=6)))[1] == 1
-    await apartments.mark_published(apartment.id, chat_id=1, message_id=3, acknowledged_at=START + timedelta(hours=12))
+    assert len((await work(sessions, START + timedelta(hours=12)))[0]) == 1
+    await apartments.mark_published(apartment.id, chat_id=1, message_id=2, acknowledged_at=START + timedelta(hours=12))
     assert await work(sessions, START + timedelta(hours=18)) == ([], 0)
-    # A new calendar/publication day does not restart the three-send campaign.
+    # A new calendar/publication day does not restart the campaign.
     async with sessions() as session:
         assert await promotion_work(session, now=START + timedelta(hours=23), day_start=START + timedelta(hours=22), day_end=START + timedelta(days=2)) == ([], 0)
         rows = await publications_in_window(session, START, START + timedelta(days=1))
-        assert len(rows) == 3
+        assert len(rows) == 2
 
 @pytest.mark.asyncio
 async def test_expiry_blocks_unfinished_campaign(repositories):
@@ -113,8 +111,8 @@ async def test_new_explicit_request_starts_one_new_day_keeps_history(repositorie
     later = START + timedelta(days=2)
     await apartments.mark_published(apartment.id, chat_id=1, message_id=2, acknowledged_at=later, promote_requested=True)
     async with sessions() as session:
-        due, reserved = await promotion_work(session, now=later + timedelta(hours=6), day_start=later, day_end=later + timedelta(days=1))
-        assert len(due) == 1 and reserved == 2
+        due, reserved = await promotion_work(session, now=later + timedelta(hours=12), day_start=later, day_end=later + timedelta(days=1))
+        assert len(due) == 1 and reserved == 1
         assert len(await publications_in_window(session, START, later + timedelta(days=1))) == 2
 
 @pytest.mark.asyncio
@@ -194,5 +192,5 @@ async def test_fresh_stock_cannot_consume_reserved_repeat_slots(repositories):
         for index in range(118):
             await record_delivery(session, history, chat_id=1, message_id=100+index, published_at=START)
         session.add(ApartmentInventoryQueue(apartment_id=fresh.id, scheduled_at=START, window_key='ordinary', sequence=1, status='queued'))
-    assert (await work(sessions, START+timedelta(hours=4)))[1] == 2
+    assert (await work(sessions, START+timedelta(hours=4)))[1] == 1
     assert await InventoryRepository(sessions).claim_due(now=START+timedelta(hours=4)) is None
