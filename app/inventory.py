@@ -43,8 +43,8 @@ MAX_PUBLICATIONS_PER_DAY = 110
 # discovery periods so retries cannot increase the day's publication volume.
 # Realtors may fill missing whole-apartment supply after ordinary authors.
 MIN_NON_OWNERS_PER_DAY = MAX_PUBLICATIONS_PER_DAY * REALTOR_BASE_PERCENT // 100
-MAX_NON_OWNERS_PER_DAY = MAX_PUBLICATIONS_PER_DAY // 2
-TARGET_NON_OWNERS_PER_PERIOD = (MAX_NON_OWNERS_PER_DAY + 1) // 2
+MAX_NON_OWNERS_PER_DAY = MAX_PUBLICATIONS_PER_DAY
+TARGET_NON_OWNERS_PER_PERIOD = (MAX_PUBLICATIONS_PER_DAY // 2 + 1) // 2
 # Ordinary daily slots are fresh-only. Managed promotions have their own
 # explicitly requested repeat schedule and do not turn an old card into new.
 REPOST_AFTER_HOURS = 48
@@ -62,7 +62,7 @@ DISCOVERY_PERIOD_TARGET = (MAX_PUBLICATIONS_PER_DAY + 1) // 2
 PUBLICATION_SPACING_MINUTES = 21 * 60 / MAX_PUBLICATIONS_PER_DAY
 MIN_PUBLICATION_GAP_MINUTES = 10
 INVENTORY_CLAIM_LOCK_ID = 731_290_512
-PUBLICATION_POLICY_VERSION = "publication-110-balanced-sellers-v31"
+PUBLICATION_POLICY_VERSION = "publication-110-realtor-backfill-v32"
 # Two equal 10.5-hour periods cover 05:00 through 02:00 the next day.
 PUBLICATION_PERIOD_MINUTES = 630
 
@@ -344,11 +344,12 @@ def plan_period(
     morning = period_start.astimezone(BISHKEK).hour == 5
     if non_owner_target is None:
         non_owner_target = (target_count + int(morning)) // 2
-    agent_limit = min(non_owner_limit, non_owner_target, target_count)
-    agents = min(available["realtor"], max(0, agent_limit))
     if owner_limit is None:
         owner_limit = target_count - non_owner_target
-    ordinary_budget = min(available["owner"], max(0, owner_limit), target_count - agents)
+    ordinary_budget = min(available["owner"], max(0, owner_limit), target_count)
+    # Reserve the owner share when it exists, then fill its missing slots with agents.
+    agents = min(available["realtor"], max(0, non_owner_limit), target_count - ordinary_budget)
+    ordinary_budget = min(available["owner"], target_count - agents)
     seller_remaining = {"owner": available["owner"], "unknown": 0,
                         "realtor": agents, "_ordinary": ordinary_budget}
     target_count = ordinary_budget + agents
@@ -1081,10 +1082,6 @@ class InventoryRepository:
                 due_rows = [row for row in due_rows if row[0] not in rejected]
             due_rows = [row for row in due_rows if row[5] in ALLOWED_ROOMS]
             due_rows = [row for row in due_rows if row[2] in ("owner", "realtor")]
-            if published_owners >= MAX_PUBLICATIONS_PER_DAY - MAX_NON_OWNERS_PER_DAY:
-                due_rows = [row for row in due_rows if row[2] != "owner"]
-            if published_realtors >= MAX_NON_OWNERS_PER_DAY:
-                due_rows = [row for row in due_rows if row[2] != "realtor"]
             if not due_rows:
                 return None
             due_rows = [
