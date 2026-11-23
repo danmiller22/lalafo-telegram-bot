@@ -1401,3 +1401,38 @@ def test_unknown_authors_share_fifteen_percent_cap_with_realtors():
     assert sum(a.seller_type!='owner' for a in selected) == 8
     assert all(a.price == 25_000 for a in selected if a.seller_type != "owner")
     assert all(not a.owner_listing for a in selected if a.seller_type=='unknown')
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("publication_clock")
+async def test_refill_releases_photoless_slots_and_recovers_when_photos_arrive(repositories):
+    apartments, _, sessions = repositories
+    inventory = InventoryRepository(sessions)
+    now = datetime.now(timezone.utc)
+    old_ad = make_ad(lalafo_id=992001, price=30_000, photo_urls=[])
+    old = await apartments.upsert_discovered(old_ad)
+    async with sessions.begin() as session:
+        session.add(ApartmentInventoryQueue(
+            apartment_id=old.id, scheduled_at=now,
+            window_key=f"{discovery_period_start(now):%Y%m%dT%H}-two-hour-batches",
+            sequence=1, status="queued", last_error="missing_source_photos", attempts=440,
+        ))
+    fresh = await apartments.upsert_discovered(make_ad(
+        lalafo_id=992002, price=32_000, phone="+996555992002",
+        photo_urls=["https://img.example/new-apartment-992002.jpg"],
+    ))
+
+    assert await inventory.schedule_period(now=now) == 1
+    async with sessions() as session:
+        rows = {row.apartment_id: row for row in await session.scalars(select(ApartmentInventoryQueue))}
+        assert rows[old.id].status == "skipped"
+        assert rows[fresh.id].status == "queued"
+
+    await apartments.upsert_discovered(old_ad.model_copy(update={
+        "photo_urls": ["https://img.example/restored-apartment-992001.jpg"],
+    }))
+    assert await inventory.schedule_period(now=now) == 1
+    async with sessions() as session:
+        restored = await session.get(ApartmentInventoryQueue, rows[old.id].id)
+        assert restored.status == "queued"
+        assert restored.attempts == 0

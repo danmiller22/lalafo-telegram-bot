@@ -644,6 +644,16 @@ class InventoryRepository:
                     text("SELECT pg_advisory_xact_lock(:lock_id)"),
                     {"lock_id": INVENTORY_CLAIM_LOCK_ID},
                 )
+            missing_photo_ids = select(Apartment.id).where(func.json_array_length(Apartment.photo_urls) == 0)
+            await session.execute(
+                update(ApartmentInventoryQueue)
+                .where(
+                    ApartmentInventoryQueue.status == "queued",
+                    ~ApartmentInventoryQueue.window_key.startswith(REQUESTED_WINDOW_PREFIX),
+                    ApartmentInventoryQueue.apartment_id.in_(missing_photo_ids),
+                )
+                .values(status="skipped", last_error="missing_source_photos", claimed_at=None)
+            )
             await session.execute(update(ApartmentInventoryQueue).where(
                 ApartmentInventoryQueue.status == "queued",
                 ApartmentInventoryQueue.apartment_id.in_(select(Apartment.id).where(Apartment.rooms == SHARED_ROOMS)),
@@ -756,6 +766,7 @@ class InventoryRepository:
                     Apartment.fingerprint.not_in(select(Apartment.fingerprint).where(
                         Apartment.publication_status == "published")),
                     _supported_source_filter(),
+                    func.json_array_length(Apartment.photo_urls) > 0,
                     Apartment.id.not_in(active_queue_ids),
                     Apartment.fingerprint.not_in(queued_fingerprints),
                     Apartment.price.between(25_000, OWNER_MAX_PRICE),
@@ -768,22 +779,6 @@ class InventoryRepository:
                     Apartment.price.asc(),
                 )
             )
-            repeat_stock = await _balanced_stock(
-                session,
-                select(Apartment).where(
-                    Apartment.active.is_(True),
-                    Apartment.publication_status == "published",
-                    Apartment.published_at.is_not(None),
-                    Apartment.published_at <= now - timedelta(hours=REPOST_AFTER_HOURS),
-                    _supported_source_filter(),
-                    Apartment.id.not_in(active_queue_ids),
-                    Apartment.fingerprint.not_in(queued_fingerprints),
-                    Apartment.price.between(25_000, OWNER_MAX_PRICE),
-                    Apartment.rooms.in_(ALLOWED_ROOMS),
-                    Apartment.last_seen_at >= now - timedelta(days=2),
-                )
-                .order_by(Apartment.published_at.asc())
-            )
             historical_stock = await _balanced_stock(
                 session,
                 select(Apartment).where(
@@ -795,6 +790,7 @@ class InventoryRepository:
                     Apartment.fingerprint.not_in(select(Apartment.fingerprint).where(
                         Apartment.publication_status == "published")),
                     _supported_source_filter(),
+                    func.json_array_length(Apartment.photo_urls) > 0,
                     Apartment.id.not_in(active_queue_ids),
                     Apartment.fingerprint.not_in(queued_fingerprints),
                     Apartment.price.between(25_000, OWNER_MAX_PRICE),
@@ -818,10 +814,7 @@ class InventoryRepository:
                 Apartment.published_at,
             )))).all())
             published_index = ListingIndex(published)
-            recent_index = ListingIndex(item for item in published
-                if item.published_at is None or as_utc(item.published_at) > now - timedelta(hours=REPOST_AFTER_HOURS))
             fresh_stock = [item for item in fresh_stock if not published_index.contains(item)]
-            repeat_stock = [item for item in repeat_stock if not recent_index.contains(item)]
             historical_stock = [
                 item for item in historical_stock if not published_index.contains(item)
             ]

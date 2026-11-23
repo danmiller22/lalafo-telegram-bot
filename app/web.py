@@ -729,6 +729,10 @@ async def _inventory_queue_status(*, whole_apartments_only: bool = False) -> tup
                     func.min(ApartmentInventoryQueue.scheduled_at),
                 ).join(Apartment).where(
                     ApartmentInventoryQueue.status == "queued",
+                    (
+                        ApartmentInventoryQueue.last_error.is_(None)
+                        | (ApartmentInventoryQueue.last_error != "missing_source_photos")
+                    ) if whole_apartments_only else True,
                     Apartment.rooms.in_(ALLOWED_ROOMS) if whole_apartments_only else True,
                 )
             )).one()

@@ -56,7 +56,7 @@ async def test_confirmed_removal_is_not_an_eligible_repeat(repositories):
 
 
 @pytest.mark.asyncio
-async def test_catalogue_refreshes_old_cards_skips_recent_and_batches_queue(repositories,monkeypatch,tmp_path):
+async def test_catalogue_skips_published_cards_and_batches_fresh_queue(repositories,monkeypatch,tmp_path):
     apartments,_,sessions = repositories
     old = make_ad(lalafo_id=414921,source_url="https://lalafo.kg/bishkek/ads/unit-id-414921",price=30000,district="ЦУМ",phone="+996700414921",photo_urls=["https://img/old1","https://img/old2"])
     recent = make_ad(lalafo_id=414922,source_url="https://lalafo.kg/bishkek/ads/unit-id-414922",price=31000,district="Филармония",phone="+996700414922",photo_urls=["https://img/new1","https://img/new2"])
@@ -90,8 +90,7 @@ async def test_catalogue_refreshes_old_cards_skips_recent_and_batches_queue(repo
     schedule=AsyncMock(return_value=2)
     monkeypatch.setattr(InventoryRepository,"schedule_period",schedule)
     assert await scrape_publish.run(discovery_only=True,include_telegram_sources=False,collection_budget_seconds=180)==0
-    assert set(calls)=={old.lalafo_id,fresh.lalafo_id}
-    assert recent.lalafo_id not in calls
+    assert calls == [fresh.lalafo_id]
     assert schedule.await_count==2  # catalogue batch and final merge, not every card
     assert (await apartments.get_by_lalafo(fresh.lalafo_id)).publication_status=="discovered"
 
