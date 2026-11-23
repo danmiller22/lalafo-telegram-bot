@@ -85,14 +85,16 @@ async def test_catalogue_skips_published_cards_and_batches_fresh_queue(repositor
         async def detail(self,url):
             ad=next(ad for ad in [old,recent,fresh] if ad.source_url==url)
             calls.append(ad.lalafo_id)
-            return ad
+            return ad.model_copy(update={"photo_urls": []}) if ad is fresh else ad
     monkeypatch.setattr(scrape_publish,"LalafoClient",Client)
     schedule=AsyncMock(return_value=2)
     monkeypatch.setattr(InventoryRepository,"schedule_period",schedule)
     assert await scrape_publish.run(discovery_only=True,include_telegram_sources=False,collection_budget_seconds=180)==0
     assert calls == [fresh.lalafo_id]
     assert schedule.await_count==2  # catalogue batch and final merge, not every card
-    assert (await apartments.get_by_lalafo(fresh.lalafo_id)).publication_status=="discovered"
+    saved = await apartments.get_by_lalafo(fresh.lalafo_id)
+    assert saved.publication_status == "discovered"
+    assert saved.photo_urls == fresh.photo_urls
 
 
 @pytest.mark.asyncio
