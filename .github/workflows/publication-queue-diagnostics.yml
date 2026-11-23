@@ -26,6 +26,8 @@ jobs:
           from app.database import create_engine_and_session
           from app.inventory import BISHKEK, publication_day_start
           from app.promotions import publications_in_window
+          from app.models import ApartmentInventoryQueue
+          from sqlalchemy import select, func
 
           async def audit():
               engine, sessions = create_engine_and_session(get_settings().database_url)
@@ -35,6 +37,13 @@ jobs:
                       rows = await publications_in_window(session, end - timedelta(days=1), end, include_external_repeats=False)
                       print("DAILY_COUNT=" + json.dumps({"date": (end - timedelta(days=1)).date().isoformat(),
                           "total": len(rows), "sellers": dict(Counter(row.seller_type or "unknown" for row in rows))}))
+                      queue = ApartmentInventoryQueue
+                      states = (await session.execute(
+                          select(queue.status, func.count()).where(
+                              queue.scheduled_at >= end - timedelta(days=1), queue.scheduled_at < end,
+                          ).group_by(queue.status)
+                      )).all()
+                      print("DAILY_QUEUE=" + json.dumps(dict(states)))
               finally:
                   await engine.dispose()
 
