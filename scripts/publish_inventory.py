@@ -216,8 +216,7 @@ async def _publish_item(settings, sessions, inventory, apartments, item) -> int 
     # Preserve that snapshot before upsert so future retries can still use it.
     if not ad.photo_urls:
         if not stored.photo_urls:
-            await inventory.retry_item(item.id, error="missing_source_photos")
-            return None
+            return await _skip(inventory, item.id, "missing_source_photos")
         ad = ad.model_copy(update={"photo_urls": stored.photo_urls})
     valid, reason = _valid(ad, settings, allow_chat_contact=bool(binding))
     # Hand-picked cards may legitimately have a different budget/room count;

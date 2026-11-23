@@ -1208,7 +1208,7 @@ async def run(
             repostable_publications = (
                 await apartments.repostable_lalafo_publications(
                     [item.lalafo_id for item in page.items], after_hours=SOURCE_REPOST_AFTER_HOURS
-                ) if apartments is not None else {}
+                ) if apartments is not None and not discovery_only else {}
             )
             repostable_ids = set(repostable_publications)
             repost_last_published_at.update(repostable_publications)
@@ -1250,7 +1250,8 @@ async def run(
                 discovery_stats['details_parsed'] = discovery_stats.get('details_parsed', 0) + len(parsed_ads)
             duplicate_ids = (
                 await apartments.duplicate_candidate_ids(parsed_ads,
-                    repost_before=datetime.now(timezone.utc) - timedelta(hours=SOURCE_REPOST_AFTER_HOURS))
+                    repost_before=(datetime.now(timezone.utc) - timedelta(hours=SOURCE_REPOST_AFTER_HOURS))
+                    if not discovery_only else None)
                 if apartments is not None
                 else set()
             )
