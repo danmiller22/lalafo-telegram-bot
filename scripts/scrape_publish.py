@@ -1244,6 +1244,14 @@ async def run(
                 continue
             details = await fetch_detail_batch(detail_search_ads, detail_clients, cache=detail_cache,
                                                batch_timeout_seconds=max(0.001, min(45.0, remaining)))
+            if discovery_only:
+                details = [
+                    (search_ad, ad.model_copy(update={"photo_urls": search_ad.photo_urls}))
+                    if ad is not None and ad.lalafo_id == search_ad.lalafo_id
+                    and not ad.photo_urls and search_ad.photo_urls
+                    else (search_ad, ad)
+                    for search_ad, ad in details
+                ]
             parsed_ads = [ad for _, ad in details if ad is not None]
             if discovery_stats is not None:
                 discovery_stats['detail_candidates'] = discovery_stats.get('detail_candidates', 0) + len(details)
@@ -1285,7 +1293,10 @@ async def run(
                 if ad.price < max(settings.min_price, minimum_price_for_rooms(ad.rooms)):
                     logger.info("Skipping ad id=%s reason=min_price", ad.lalafo_id)
                     continue
-                if len(ad.photo_urls) < SOURCE_MIN_PHOTOS:
+                if len(ad.photo_urls) < max(SOURCE_MIN_PHOTOS, int(discovery_only)):
+                    if discovery_stats is not None:
+                        rejected = discovery_stats.setdefault("rejected", {})
+                        rejected["too_few_photos"] = rejected.get("too_few_photos", 0) + 1
                     logger.info(
                         "Skipping ad id=%s reason=too_few_photos count=%d",
                         ad.lalafo_id,
