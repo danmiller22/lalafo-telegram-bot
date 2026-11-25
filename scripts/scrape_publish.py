@@ -1260,6 +1260,14 @@ async def run(
                 if apartments is not None
                 else set()
             )
+            blocked_ids = set()
+            if discovery_only:
+                from app.inventory import InventoryRepository
+
+                inventory = InventoryRepository(sessions)
+                blocked_ids = await inventory.blocked_discovery_ids(parsed_ads)
+                if discovery_stats is not None:
+                    discovery_stats["blocked_stock"] = discovery_stats.get("blocked_stock", 0) + len(blocked_ids)
             stored_this_page = 0
             for search_ad, ad in details:
                 if len(candidates) >= source_candidate_limit:
@@ -1327,7 +1335,7 @@ async def run(
                     continue
                 if state.contains(ad.lalafo_id, ad_fingerprint(ad)) and not is_repost:
                     continue
-                if ad.lalafo_id in duplicate_ids:
+                if ad.lalafo_id in blocked_ids or ad.lalafo_id in duplicate_ids:
                     logger.info("Skipping DB duplicate id=%s", ad.lalafo_id)
                     continue
                 candidates.append(ad)
@@ -1352,7 +1360,7 @@ async def run(
                     repost_candidate_ids.add(ad.lalafo_id)
             if discovery_only and stored_this_page:
                 # One queue rebuild per detail batch, not per listing.
-                await InventoryRepository(sessions).schedule_period()
+                await inventory.schedule_period()
             if len(candidates) >= source_candidate_limit:
                 search_index += 1
                 if search_index >= len(search_urls):

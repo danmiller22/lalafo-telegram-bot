@@ -1436,3 +1436,19 @@ async def test_refill_releases_photoless_slots_and_recovers_when_photos_arrive(r
         restored = await session.get(ApartmentInventoryQueue, rows[old.id].id)
         assert restored.status == "queued"
         assert restored.attempts == 0
+
+
+@pytest.mark.asyncio
+async def test_discovery_filters_reserved_fingerprints_without_blocking_fresh_cards(repositories):
+    apartments, _, sessions = repositories
+    inventory = InventoryRepository(sessions)
+    original = make_ad(lalafo_id=993001, district="ЦУМ", price=32_000)
+    saved = await apartments.upsert_discovered(original)
+    await apartments.mark_publication_uncertain(saved.id)
+    duplicate = original.model_copy(update={"lalafo_id": 993002})
+    fresh = original.model_copy(update={
+        "lalafo_id": 993003,
+        "photo_urls": ["https://img.example/fresh-993003.jpg"],
+    })
+
+    assert await inventory.blocked_discovery_ids([original, duplicate, fresh]) == {993001, 993002}
