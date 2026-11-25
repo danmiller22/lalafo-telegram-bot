@@ -18,7 +18,7 @@ from app.models import (
     LalafoAutoReplyMeta,
 )
 from app.lalafo.exclusions import is_excluded_contact, EXCLUDED_CONTACT_SUFFIXES
-from app.state import normalized_district, ListingIndex
+from app.state import normalized_district, ListingIndex, ad_fingerprint
 from app.listing_quality import district_priority, price_bucket, mix_prices, rental_value_band, price_mix_rank
 from app.listing_policy import OWNER_MAX_PRICE, PUBLIC_ROOMS, seller_policy_eligible
 from app.telegram.formatting import is_supported_source
@@ -218,6 +218,18 @@ def _allowed_seller_filter():
         Apartment.seller_type == "realtor",
         and_(Apartment.seller_type == "owner", Apartment.owner_listing.is_(True)),
     ), phone.not_in(blocked))
+
+
+def _queue_blocks_discovery(now: datetime):
+    return or_(
+        ApartmentInventoryQueue.status.in_(("queued", "publishing", "uncertain")),
+        ApartmentInventoryQueue.last_error == "watermarked_photos",
+        and_(
+            ApartmentInventoryQueue.last_error == "TelegramPublishError",
+            ApartmentInventoryQueue.attempts >= 3,
+            ApartmentInventoryQueue.scheduled_at > now,
+        ),
+    )
 
 
 def _supported_source_filter():
@@ -442,6 +454,27 @@ async def _balanced_stock(session: AsyncSession, statement) -> list[Apartment]:
 class InventoryRepository:
     def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
         self.sessions = sessions
+
+    async def blocked_discovery_ids(self, ads) -> set[int]:
+        if not ads:
+            return set()
+        fingerprints = {ad.lalafo_id: ad_fingerprint(ad) for ad in ads}
+        blocked = (
+            select(Apartment.lalafo_id, Apartment.fingerprint)
+            .outerjoin(ApartmentInventoryQueue)
+            .where(
+                or_(Apartment.lalafo_id.in_(fingerprints),
+                    Apartment.fingerprint.in_(set(fingerprints.values()))),
+                or_(Apartment.publication_status.in_(("published", "uncertain")),
+                    _queue_blocks_discovery(datetime.now(timezone.utc))),
+            )
+        )
+        async with self.sessions() as session:
+            rows = (await session.execute(blocked)).all()
+        blocked_ids = {row.lalafo_id for row in rows}
+        blocked_fingerprints = {row.fingerprint for row in rows}
+        return {ad_id for ad_id, fingerprint in fingerprints.items()
+                if ad_id in blocked_ids or fingerprint in blocked_fingerprints}
 
     async def _period_stock_target(self, session: AsyncSession, now: datetime) -> int:
         period = discovery_period_start(now).astimezone(timezone.utc)
@@ -744,15 +777,7 @@ class InventoryRepository:
             remaining_non_owners = max(
                 0, realtor_daily_target - already_non_owners
             )
-            excluded_queue = or_(
-                ApartmentInventoryQueue.status.in_(("queued", "publishing", "uncertain")),
-                ApartmentInventoryQueue.last_error == "watermarked_photos",
-                and_(
-                    ApartmentInventoryQueue.last_error == "TelegramPublishError",
-                    ApartmentInventoryQueue.attempts >= 3,
-                    ApartmentInventoryQueue.scheduled_at > now,
-                ),
-            )
+            excluded_queue = _queue_blocks_discovery(now)
             active_queue_ids = select(ApartmentInventoryQueue.apartment_id).where(excluded_queue)
             queued_fingerprints = select(Apartment.fingerprint).join(
                 ApartmentInventoryQueue,
