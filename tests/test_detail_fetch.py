@@ -104,3 +104,13 @@ def test_thin_owner_supply_moves_to_realtors_after_one_minute_not_four():
     assert crawl_source_budget(**args, now=61, owner_candidates=18) == (1,89)
     # Preparation consumes the caller's deadline too; preserve fallback time.
     assert crawl_source_budget(**args, now=240, owner_candidates=0) == (70,60)
+
+
+def test_preparation_does_not_consume_owner_search_budget():
+    from scripts.scrape_publish import crawl_source_budget
+
+    args = dict(started_at=0, search_started_at=95, seconds=300,
+                owner_count=4, source_count=10, owner_candidates=0)
+    assert crawl_source_budget(**args, now=95, source_index=0) == (0, 60)
+    assert crawl_source_budget(**args, now=156, source_index=0) == (4, 144)
+    assert crawl_source_budget(**args, now=300, source_index=4) == (4, 0)

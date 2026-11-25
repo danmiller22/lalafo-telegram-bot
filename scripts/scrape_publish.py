@@ -298,18 +298,20 @@ async def fetch_detail_batch(
 
 
 def crawl_source_budget(*, started_at, now, seconds, source_index, owner_count, source_count,
-                        owner_candidates=None):
+                        owner_candidates=None, search_started_at=None):
     """Reserve the requested agency share when owner sources run slowly."""
     if seconds is None:
         return source_index, 3600.0
     remaining = max(0.0, started_at + seconds - now)
     if 0 < owner_count < source_count and source_index < owner_count:
-        owner_seconds = seconds * (1 - REALTOR_CANDIDATE_RESERVE_SHARE)
+        search_started_at = started_at if search_started_at is None else search_started_at
+        search_seconds = max(0.0, started_at + seconds - search_started_at)
+        owner_seconds = search_seconds * (1 - REALTOR_CANDIDATE_RESERVE_SHARE)
         if owner_candidates is not None and owner_candidates < SOURCE_MAX_POSTS_PER_RUN:
             # Thin owner supply must not consume the whole run while the
             # fallback catalogue and its detail requests wait untouched.
             owner_seconds = min(owner_seconds, OWNER_SHORTAGE_SEARCH_SECONDS)
-        owner_remaining = started_at + owner_seconds - now
+        owner_remaining = search_started_at + owner_seconds - now
         if owner_remaining <= 0:
             return owner_count, remaining
         remaining = min(remaining, owner_remaining)
@@ -1109,13 +1111,13 @@ async def run(
         # Always inspect at least one page from each operator-approved source.
         # Once the shared pool is full, move to the next source for one page
         # instead of spending the whole cycle on the first, larger query.
-        # Count preparation in the same deadline as the caller. Starting this
-        # clock after preparation could defer fallback beyond the outer timeout.
-        crawl_started = collection_started
+        # Split the remaining crawl time after preparation between seller feeds.
+        search_started = asyncio.get_running_loop().time()
         owner_count = sum("real-estate-agency" not in url for url in search_urls) if discovery_only else 0
         while len(candidates) < candidate_pool_limit or search_index < len(search_urls) - 1:
             next_index, remaining = crawl_source_budget(
-                started_at=crawl_started, now=asyncio.get_running_loop().time(),
+                started_at=collection_started, search_started_at=search_started,
+                now=asyncio.get_running_loop().time(),
                 seconds=collection_budget_seconds, source_index=search_index,
                 owner_count=owner_count, source_count=len(search_urls),
                 owner_candidates=sum(ad.seller_type == 'owner' for ad in candidates))
@@ -1236,7 +1238,8 @@ async def run(
                 detail_search_ads.append(search_ad)
 
             detail_index, remaining = crawl_source_budget(
-                started_at=crawl_started, now=asyncio.get_running_loop().time(),
+                started_at=collection_started, search_started_at=search_started,
+                now=asyncio.get_running_loop().time(),
                 seconds=collection_budget_seconds, source_index=search_index,
                 owner_count=owner_count, source_count=len(search_urls),
                 owner_candidates=sum(ad.seller_type == 'owner' for ad in candidates))
@@ -1314,6 +1317,11 @@ async def run(
                         "Skipping ad id=%s reason=substandard_structure",
                         ad.lalafo_id,
                     )
+                    continue
+                if discovery_only and ad.seller_type not in {"owner", "realtor"}:
+                    if discovery_stats is not None:
+                        rejected = discovery_stats.setdefault("rejected", {})
+                        rejected["unknown_seller"] = rejected.get("unknown_seller", 0) + 1
                     continue
                 if not listing_policy_eligible(ad):
                     if discovery_stats is not None:
