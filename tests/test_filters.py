@@ -823,18 +823,21 @@ def test_searches_cover_owner_mixed_and_agency_inventory():
 def test_source_rotation_covers_owner_and_unknown_sources():
     from scripts.scrape_publish import rotate_inventory_sources
     from app.config import INVENTORY_SEARCH_URLS
-    hot = {u for u in INVENTORY_SEARCH_URLS if 'price[from]=25000' in u and 'price[to]=45000' in u and ('/studio/1-bedroom/owner?' in u or '/studio/1-bedroom/?' in u)}
-    assert len(hot) == 2
-    agencies = {url for url in INVENTORY_SEARCH_URLS if 'real-estate-agency' in url}
-    rotating = set(INVENTORY_SEARCH_URLS) - hot - agencies
+    primary = next(url for url in INVENTORY_SEARCH_URLS
+                   if "/studio/1-bedroom/owner?price[from]=25000&price[to]=45000" in url)
+    agencies = {url for url in INVENTORY_SEARCH_URLS if "real-estate-agency" in url}
+    rotating = set(INVENTORY_SEARCH_URLS) - {primary} - agencies
     first_rotating = set()
+    first_agency = set()
     for cycle in range(len(INVENTORY_SEARCH_URLS)):
-        urls = rotate_inventory_sources(INVENTORY_SEARCH_URLS, now=datetime.fromtimestamp(cycle*180, timezone.utc))
+        urls = rotate_inventory_sources(INVENTORY_SEARCH_URLS, now=datetime.fromtimestamp(cycle * 180, timezone.utc))
         assert set(urls) == set(INVENTORY_SEARCH_URLS)
-        assert set(urls[:2]) == hot
+        assert urls[0] == primary
         assert set(urls[-len(agencies):]) == agencies
-        first_rotating.add(urls[2])
+        first_rotating.add(urls[1])
+        first_agency.add(urls[-len(agencies)])
     assert first_rotating == rotating
+    assert first_agency == agencies
 
 @pytest.mark.parametrize('rooms', ['studio', '1', '2'])
 @pytest.mark.parametrize('price,eligible', [(24999, False), (25000, True), (45000, True), (45001, False)])
