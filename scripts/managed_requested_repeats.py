@@ -138,6 +138,11 @@ async def run():
             await inventory.schedule_period(now=now)
         async with sessions() as session:
             bindings = await managed_bindings(session)
+            if os.environ.get('MANAGED_PROFILE_18225388_ONLY') == 'true':
+                if all_cards:
+                    raise ValueError('Profile restriction requires managed-only publishing')
+                bindings = {key: value for key, value in bindings.items()
+                            if int(value['profile_id']) == 18225388}
             if not bindings and not all_cards:
                 return 0
             ids = set(await session.scalars(select(RequestedCardPromotion.apartment_id).where(
