@@ -8,6 +8,10 @@ on:
         description: Publish only due current-account Lalafo cards
         type: boolean
         default: false
+      profile_18225388_only:
+        description: Restrict managed publication to profile 18225388
+        type: boolean
+        default: false
       managed_batch_size:
         description: Number of due managed cards to send in this manual run
         type: choice
@@ -39,6 +43,7 @@ jobs:
       LALAFO_PROXY_URL: ${{ secrets.LALAFO_PROXY_URL }}
       TELEGRAM_GROUP_ID: '-1004389602150'
       QUEUE_RESERVATION_ALL_CARDS: ${{ inputs.managed_only && 'false' || 'true' }}
+      MANAGED_PROFILE_18225388_ONLY: ${{ inputs.profile_18225388_only && 'true' || 'false' }}
       MANAGED_REPEAT_MANIFEST: ${{ inputs.manifest }}
       CONFIRM_MANAGED_REPEATS: ${{ inputs.confirm_enrollment && 'true' || 'false' }}
       MANAGED_BATCH_SIZE: ${{ inputs.managed_only && inputs.managed_batch_size || '1' }}
@@ -50,17 +55,17 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       - name: Store verified originals for the explicitly requested batch
-        if: inputs.publish_all_now && inputs.confirm_enrollment
+        if: inputs.publish_all_now && inputs.confirm_enrollment && !inputs.profile_18225388_only
         env:
           CONFIRM_OWNED_SOURCE_SEED: 'true'
         run: python -m tools.seed_owned_manifest_sources --manifest "$MANAGED_REPEAT_MANIFEST"
       - name: Publish the explicitly requested owned batch
-        if: inputs.publish_all_now && inputs.confirm_enrollment
+        if: inputs.publish_all_now && inputs.confirm_enrollment && !inputs.profile_18225388_only
         env:
           CONFIRM_OWNED_PUBLIC_SEND: 'true'
         run: python -m tools.publish_owned_requested_cards --manifest "$MANAGED_REPEAT_MANIFEST"
       - name: Select the existing public Lalafo route
-        if: ${{ !inputs.publish_all_now }}
+        if: ${{ !inputs.publish_all_now || inputs.profile_18225388_only }}
         shell: bash
         run: |
           if python -m scripts.select_lalafo_proxy > lalafo-route.env; then
@@ -70,7 +75,7 @@ jobs:
             cat lalafo-route.env >> "$GITHUB_ENV"
           fi
       - name: Publish requested batch within the shared queue limits
-        if: ${{ !inputs.publish_all_now }}
+        if: ${{ !inputs.publish_all_now || inputs.profile_18225388_only }}
         shell: bash
         run: |
           delivered=0
