@@ -23,14 +23,26 @@ async def main():
             from app.inventory import ALLOWED_ROOMS, is_supported_source
             from app.listing_policy import seller_policy_eligible, listing_policy_eligible
             from app.state import ListingIndex
-            ads = list((await session.scalars(select(Apartment).where(Apartment.rooms.in_(ALLOWED_ROOMS)))).all())
+            ads = list((await session.scalars(select(Apartment))).all())
             published = [ad for ad in ads if ad.publication_status == 'published']
             fingers = {ad.fingerprint for ad in published}
-            index = ListingIndex(published)
+            index = ListingIndex(ad for ad in published if ad.rooms in ALLOWED_ROOMS)
+            ad_by_id = {ad.id: ad for ad in ads}
+            excluded_fingerprints = {
+                ad_by_id[row.apartment_id].fingerprint
+                for row in rows if row.apartment_id in ad_by_id and (
+                    row.status in ("queued", "publishing", "uncertain")
+                    or row.last_error == "watermarked_photos"
+                    or (row.last_error == "TelegramPublishError" and row.attempts >= 3
+                        and utc(row.scheduled_at) > now)
+                )
+            }
+            from app.inventory import InventoryRepository, discovery_period_start, plan_period
+            free = []
             queue_by_ad = {row.apartment_id: row for row in rows}
             counts = Counter()
             for ad in ads:
-                if not ad.last_seen_at or utc(ad.last_seen_at) < now - timedelta(hours=24):
+                if ad.rooms not in ALLOWED_ROOMS or not ad.last_seen_at or utc(ad.last_seen_at) < now - timedelta(hours=24):
                     continue
                 if ad.publication_status != 'discovered':
                     reason = 'status_' + ad.publication_status
@@ -42,6 +54,8 @@ async def main():
                     reason = 'seller_price_or_contact'
                 elif ad.fingerprint in fingers:
                     reason = 'exact_duplicate'
+                elif ad.fingerprint in excluded_fingerprints:
+                    reason = "reserved_fingerprint"
                 elif index.contains(ad):
                     reason = 'similar_duplicate'
                 elif ad.id in queue_by_ad:
@@ -49,7 +63,12 @@ async def main():
                     reason = 'queue_' + row.status + '_' + (row.last_error or 'none')
                 else:
                     reason = 'free_candidate'
+                    free.append(ad)
                 counts[reason] += 1
+            print('PLAN_PROBE=' + json.dumps({
+                'target': await InventoryRepository(sessions)._period_stock_target(session, now),
+                'free_plan': len(plan_period(free, period_start=discovery_period_start(now))),
+            }), flush=True)
             print('STOCK_STAGES=' + json.dumps(dict(counts)), flush=True)
             print('ROOM_DIAGNOSTICS=' + json.dumps({
                 'available': dict(Counter(row.rooms for row in stock if row.active and row.availability_status != 'unavailable')),
