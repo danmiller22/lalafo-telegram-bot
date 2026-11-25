@@ -477,31 +477,25 @@ def insert_randomly(
 
 
 def rotate_inventory_sources(urls, *, now=None):
-    """Read broad owner and unclassified feeds before rotating districts."""
+    """Read an explicit owner feed first and rotate the remaining routes."""
     current = now or datetime.now(timezone.utc)
-    # Thin owner inventory retries after three minutes. Rotate on that same
-    # clock so retries inspect a new district slice instead of repeating the
-    # identical sources five times before the old 15-minute offset changed.
     cycle = int(current.timestamp() // (3 * 60))
-    owners = [url for url in urls if 'real-estate-agency' not in url]
-    agencies = [url for url in urls if 'real-estate-agency' in url]
-    hot_owners = [
+    agencies = [url for url in urls if "real-estate-agency" in url]
+    owners = [url for url in urls if url not in agencies]
+    primary_owners = [
         url for url in owners
-        if ('/studio/1-bedroom/owner?' in url or '/studio/1-bedroom/?' in url)
-        and 'price[from]=25000' in url
-        and 'price[to]=45000' in url
+        if "/studio/1-bedroom/owner?" in url
+        and "price[from]=25000" in url
+        and "price[to]=45000" in url
     ]
-    rotating_owners = [url for url in owners if url not in hot_owners]
-    ordered = list(hot_owners)
+    rotating_owners = [url for url in owners if url not in primary_owners]
+    ordered = list(primary_owners)
     if rotating_owners:
         offset = cycle % len(rotating_owners)
         ordered.extend(rotating_owners[offset:] + rotating_owners[:offset])
-    hot_agencies = [url for url in agencies if '/1-bedroom/agent/real-estate-agency?' in url]
-    ordered.extend(hot_agencies)
-    rotating_agencies = [url for url in agencies if url not in hot_agencies]
-    if rotating_agencies:
-        offset = cycle % len(rotating_agencies)
-        ordered.extend(rotating_agencies[offset:] + rotating_agencies[:offset])
+    if agencies:
+        offset = cycle % len(agencies)
+        ordered.extend(agencies[offset:] + agencies[:offset])
     return tuple(ordered)
 
 
