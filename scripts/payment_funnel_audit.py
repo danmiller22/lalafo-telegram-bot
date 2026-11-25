@@ -11,7 +11,8 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import distinct, func, select
 
 from app.database import create_engine_and_session
-from app.models import CustomerFunnelEvent, PaymentHistory, PaymentRequest
+from app.models import Apartment, CustomerFunnelEvent, PaymentHistory, PaymentRequest
+from app.promotions import publications_in_window, publication_counts_in_window
 
 
 async def _period(session, *, start: datetime, end: datetime) -> dict[str, object]:
@@ -52,6 +53,28 @@ async def _period(session, *, start: datetime, end: datetime) -> dict[str, objec
             .where(PaymentHistory.paid_at >= start, PaymentHistory.paid_at < end)
         )
     ).one()
+    posts = await publications_in_window(session, start, end)
+    prior = {row.apartment_id for row in await publications_in_window(
+        session, start - timedelta(days=30), start)}
+    fresh = {row.apartment_id for row in posts} - prior
+    delivery = await publication_counts_in_window(session, start, end)
+    opens = (await session.execute(
+        select(CustomerFunnelEvent.apartment_id, Apartment.availability_status,
+               func.count(CustomerFunnelEvent.id))
+        .outerjoin(Apartment, Apartment.id == CustomerFunnelEvent.apartment_id)
+        .where(CustomerFunnelEvent.created_at >= start, CustomerFunnelEvent.created_at < end,
+               CustomerFunnelEvent.event_name == "card_opened")
+        .group_by(CustomerFunnelEvent.apartment_id, Apartment.availability_status)
+    )).all()
+    if end - start < timedelta(days=2):
+        print("ALIGNED_PUBLICATION=" + json.dumps({
+            "start": start.isoformat(), "end": end.isoformat(),
+            "posts": len(posts), "fresh_30d": len(fresh),
+            "repeat_30d": len(posts) - len(fresh),
+            "external_repeats": int(delivery.total - delivery.ordinary),
+            "opens_on_fresh": sum(count for aid, _, count in opens if aid in fresh),
+            "opens_on_unavailable_now": sum(count for _, state, count in opens if state == "unavailable"),
+        }), flush=True)
     return {
         "start": start.isoformat(),
         "end": end.isoformat(),
@@ -90,6 +113,7 @@ async def main() -> None:
                     start=yesterday_start,
                     end=today_start,
                 ),
+                "yesterday_same_hours": await _period(session, start=yesterday_start, end=now - timedelta(days=1)),
                 "last_24h": await _period(session, start=now - timedelta(days=1), end=now),
                 "last_7d": await _period(session, start=now - timedelta(days=7), end=now),
                 "previous_7d": await _period(
