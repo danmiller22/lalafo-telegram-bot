@@ -20,6 +20,37 @@ async def main():
             def utc(value):
                 return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
             stock = list((await session.execute(select(Apartment.rooms, Apartment.active, Apartment.availability_status, Apartment.published_at))).all())
+            from app.inventory import ALLOWED_ROOMS, is_supported_source
+            from app.listing_policy import seller_policy_eligible, listing_policy_eligible
+            from app.state import ListingIndex
+            ads = list((await session.scalars(select(Apartment).where(Apartment.rooms.in_(ALLOWED_ROOMS)))).all())
+            published = [ad for ad in ads if ad.publication_status == 'published']
+            fingers = {ad.fingerprint for ad in published}
+            index = ListingIndex(published)
+            queue_by_ad = {row.apartment_id: row for row in rows}
+            counts = Counter()
+            for ad in ads:
+                if not ad.last_seen_at or utc(ad.last_seen_at) < now - timedelta(hours=24):
+                    continue
+                if ad.publication_status != 'discovered':
+                    reason = 'status_' + ad.publication_status
+                elif not ad.photo_urls:
+                    reason = 'no_photos'
+                elif not is_supported_source(ad):
+                    reason = 'unsupported'
+                elif ad.seller_type not in ('owner', 'realtor') or not listing_policy_eligible(ad):
+                    reason = 'seller_price_or_contact'
+                elif ad.fingerprint in fingers:
+                    reason = 'exact_duplicate'
+                elif index.contains(ad):
+                    reason = 'similar_duplicate'
+                elif ad.id in queue_by_ad:
+                    row = queue_by_ad[ad.id]
+                    reason = 'queue_' + row.status + '_' + (row.last_error or 'none')
+                else:
+                    reason = 'free_candidate'
+                counts[reason] += 1
+            print('STOCK_STAGES=' + json.dumps(dict(counts)), flush=True)
             print('ROOM_DIAGNOSTICS=' + json.dumps({
                 'available': dict(Counter(row.rooms for row in stock if row.active and row.availability_status != 'unavailable')),
                 'recently_published': dict(Counter(row.rooms for row in stock if row.published_at and utc(row.published_at) > now - timedelta(hours=48))),
