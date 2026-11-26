@@ -4,7 +4,7 @@ from pathlib import Path
 from collections import defaultdict
 import httpx
 from PIL import Image, ImageOps
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from app.config import get_settings
 from app.database import create_engine_and_session
 from app.models import Apartment
@@ -21,18 +21,20 @@ def digest(raw):
 
 async def main():
     owned = json.loads(Path("tools/owned_nov26_public_images.json").read_text())
+    owned = {k: v for k, v in owned.items() if k in {"114944685", "118561560", "82651724", "118561570"}}
+    all_owned = json.loads(Path("tools/owned_nov26_public_images.json").read_text())
     engine, sessions = create_engine_and_session(get_settings().database_url)
     try:
         async with sessions() as session:
             ads = (await session.scalars(select(Apartment).where(
-                Apartment.price.in_({p for p, _ in owned.values()}),
+                Apartment.price.between(22000, 48000),
                 Apartment.rooms.in_(("1","studio")), Apartment.telegram_chat_id == -1004389602150,
                 Apartment.telegram_message_id.is_not(None),
-                Apartment.lalafo_id.not_in([int(k) for k in owned]),
+                Apartment.lalafo_id.not_in([int(k) for k in all_owned]),
             ).order_by(Apartment.published_at.desc()))).all()
         groups = defaultdict(list)
         for ad in ads:
-            if len(groups[ad.price]) < 80:
+            if len(groups[ad.price]) < 45:
                 groups[ad.price].append(ad)
         urls = {url for _, images in owned.values() for url in images}
         urls.update(url for rows in groups.values() for ad in rows for url in ad.photo_urls[:6])
@@ -51,16 +53,17 @@ async def main():
         for aid, (price, images) in owned.items():
             refs = [photos[url] for url in images if photos.get(url) is not None]
             results = []
-            for ad in groups[price]:
-                candidates = [photos[url] for url in ad.photo_urls[:6] if photos.get(url) is not None]
-                pairs = sorted(((a ^ b).bit_count(),i,j) for i,a in enumerate(refs) for j,b in enumerate(candidates))
-                seen_a, seen_b = set(), set()
-                scores = []
-                for distance,i,j in pairs:
-                    if distance <= 26 and i not in seen_a and j not in seen_b:
-                        seen_a.add(i); seen_b.add(j); scores.append(distance)
-                if len(scores) >= 2:
-                    results.append({"source":ad.source_url,"message":ad.telegram_message_id,"scores":scores})
+            for candidates_by_price in groups.values():
+                for ad in candidates_by_price:
+                    candidates = [photos[url] for url in ad.photo_urls[:6] if photos.get(url) is not None]
+                    pairs = sorted(((a ^ b).bit_count(),i,j) for i,a in enumerate(refs) for j,b in enumerate(candidates))
+                    seen_a, seen_b = set(), set()
+                    scores = []
+                    for distance,i,j in pairs:
+                        if distance <= 26 and i not in seen_a and j not in seen_b:
+                            seen_a.add(i); seen_b.add(j); scores.append(distance)
+                    if len(scores) >= 2:
+                        results.append({"source":ad.source_url,"message":ad.telegram_message_id,"scores":scores})
             print("VISUAL_MATCH=" + json.dumps({"owned":aid,"images":len(refs),"hits":results}), flush=True)
     finally:
         await engine.dispose()
