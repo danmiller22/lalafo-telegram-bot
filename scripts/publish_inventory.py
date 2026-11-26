@@ -11,7 +11,7 @@ from app.database import create_engine_and_session, init_db
 from app.inventory import InventoryRepository, REPOST_AFTER_HOURS, as_utc, publication_day_start
 from app.promotions import REQUESTED_WINDOW_PREFIX, requested_send_allowed
 from app.lalafo.client import LalafoClient, LalafoError, LalafoNotFound
-from app.lalafo.parser import LalafoParseError, is_allowed
+from app.lalafo.parser import LalafoParseError, is_allowed, parse_detail_data
 from app.payments.repository import ApartmentRepository
 from app.security import TokenSigner
 from app.lalafo.exclusions import is_excluded_agency
@@ -157,10 +157,7 @@ async def _publish_item(settings, sessions, inventory, apartments, item) -> int 
             return None
     elif (not is_requested and stored.rooms == "1" and
           (not apartment.active or apartment.availability_status == "unavailable")):
-        if as_utc(apartment.last_seen_at or apartment.updated_at) < datetime.now(timezone.utc) - timedelta(hours=STORED_FALLBACK_MAX_AGE_HOURS):
-            return await _skip(inventory, item.id, "stale_archive")
-        ad = stored
-        archived = True
+        return await _skip(inventory, item.id, "source_unavailable")
     elif apartment.source_url.startswith("https://t.me/"):
         source_updated = as_utc(apartment.source_updated_at or apartment.updated_at)
         max_source_age = 48 if stored.rooms == SHARED_ROOMS else STORED_FALLBACK_MAX_AGE_HOURS
@@ -185,23 +182,22 @@ async def _publish_item(settings, sessions, inventory, apartments, item) -> int 
                     max_retries=settings.http_max_retries,
                     proxy_url=settings.lalafo_proxy_url,
                 ) as client:
-                    ad = await client.detail(apartment.source_url)
+                    if is_repeat:
+                        payload = await client._get_json(
+                            f"https://lalafo.kg/api/search/v3/feed/details/{apartment.lalafo_id}?expand=url")
+                        if payload.get("status_id") != 2:
+                            raise LalafoNotFound("Reserve listing is no longer active")
+                        ad = parse_detail_data(payload, source_url=apartment.source_url)
+                    else:
+                        ad = await client.detail(apartment.source_url)
         except LalafoNotFound:
-            if is_requested:
-                await apartments.set_availability(apartment.id, status="unavailable",
-                    checked_at=datetime.now(timezone.utc), reason="source_removed")
-                return await _skip(inventory, item.id, "not_found")
-            last_seen = as_utc(apartment.last_seen_at or apartment.updated_at)
-            if last_seen >= datetime.now(timezone.utc) - timedelta(
-                hours=STORED_FALLBACK_MAX_AGE_HOURS
-            ):
-                ad = stored
-                stored_fallback = True
-                archived = stored.rooms == "1"
-            else:
-                await apartments.mark_inactive(apartment.id)
-                return await _skip(inventory, item.id, "not_found")
+            await apartments.set_availability(apartment.id, status="unavailable",
+                checked_at=datetime.now(timezone.utc), reason="source_removed")
+            return await _skip(inventory, item.id, "not_found")
         except (LalafoError, LalafoParseError, ValueError, TimeoutError) as exc:
+            if is_repeat:
+                await inventory.retry_item(item.id, error="reserve_verification_unknown")
+                return None
             last_seen = as_utc(apartment.last_seen_at or apartment.updated_at)
             if last_seen >= datetime.now(timezone.utc) - timedelta(
                 hours=STORED_FALLBACK_MAX_AGE_HOURS
