@@ -22,6 +22,7 @@ from app.models import (
 )
 from app.state import normalized_district
 from app.listing_lifecycle import listing_expired
+from app.lalafo.exclusions import is_excluded_contact
 from app.listing_policy import PUBLIC_ROOMS
 
 
@@ -49,6 +50,8 @@ def _aware(value: datetime | None) -> datetime | None:
 
 
 def apartment_matches(apartment: Apartment, profile: ApartmentSearchProfile) -> bool:
+    if is_excluded_contact(apartment):
+        return False
     if apartment.rooms not in SUPPORTED_ROOMS or apartment.rooms not in set(profile.rooms or []):
         return False
     seller_types = set(
@@ -214,7 +217,7 @@ class MatchingRepository:
         return [
             apartment
             for apartment in await self._fresh_apartments(limit=limit)
-            if apartment.photo_urls
+            if apartment.photo_urls and not is_excluded_contact(apartment)
         ]
 
     async def hot_apartments(
@@ -224,7 +227,7 @@ class MatchingRepository:
         rows = [
             item
             for item in await self._fresh_apartments()
-            if item.photo_urls and item.id not in excluded
+            if item.photo_urls and item.id not in excluded and not is_excluded_contact(item)
         ]
         # When no exact profile card is available, use the strongest general
         # offer: lower rent first, then a fuller photo set and freshness.
