@@ -8,7 +8,7 @@ from app.security import TokenSigner
 from app.payment_plans import LIFETIME_PRICE, WEEK_PRICE
 
 
-APARTMENT_KEYBOARD_VERSION = 21
+APARTMENT_KEYBOARD_VERSION = 22
 MINI_APP_SHORT_NAME = "access"
 
 
@@ -58,9 +58,6 @@ def apartment_keyboard(
             ]
         )
     rows.append(_support_row(support_url))
-    rows.append([InlineKeyboardButton(
-        text="🔎 Подобрать по бюджету и району", url=f"{bot_url}?start=search"
-    )])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
