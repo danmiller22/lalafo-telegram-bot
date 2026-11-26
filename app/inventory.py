@@ -62,7 +62,7 @@ DISCOVERY_PERIOD_TARGET = (MAX_PUBLICATIONS_PER_DAY + 1) // 2
 PUBLICATION_SPACING_MINUTES = 21 * 60 / MAX_PUBLICATIONS_PER_DAY
 MIN_PUBLICATION_GAP_MINUTES = 10
 INVENTORY_CLAIM_LOCK_ID = 731_290_512
-PUBLICATION_POLICY_VERSION = "publication-110-owner-first-v34"
+PUBLICATION_POLICY_VERSION = "publication-110-verified-reserve-v35"
 # Two equal 10.5-hour periods cover 05:00 through 02:00 the next day.
 PUBLICATION_PERIOD_MINUTES = 630
 
@@ -264,6 +264,7 @@ def _pick_for_window(
             bucket = price_bucket(item.price)
             return (
                 _seller_type(item) == "realtor",
+                getattr(item, "publication_status", "discovered") == "published",
                 district_priority(item.district) == 0,
                 _seller_type(item) == "realtor" and item.rooms != "1",
                 *_room_mix_score(item.rooms, room_counts),
@@ -804,13 +805,11 @@ class InventoryRepository:
             historical_stock = await _balanced_stock(
                 session,
                 select(Apartment).where(
-                    or_(
-                        Apartment.active.is_(False),
-                        Apartment.availability_status == "unavailable",
-                    ),
-                    Apartment.publication_status == "discovered",
-                    Apartment.fingerprint.not_in(select(Apartment.fingerprint).where(
-                        Apartment.publication_status == "published")),
+                    Apartment.active.is_(True),
+                    func.coalesce(Apartment.availability_status, "unknown") != "unavailable",
+                    Apartment.publication_status == "published",
+                    Apartment.published_at <= now - timedelta(hours=REPOST_AFTER_HOURS),
+                    Apartment.source_url.like("https://lalafo.kg/%"),
                     _supported_source_filter(),
                     func.json_array_length(Apartment.photo_urls) > 0,
                     Apartment.id.not_in(active_queue_ids),
@@ -837,9 +836,15 @@ class InventoryRepository:
             )))).all())
             published_index = ListingIndex(published)
             fresh_stock = [item for item in fresh_stock if not published_index.contains(item)]
-            historical_stock = [
-                item for item in historical_stock if not published_index.contains(item)
-            ]
+            reserve_seen = [ad for ad in published if ad.published_at is None
+                            or as_utc(ad.published_at) > now - timedelta(hours=REPOST_AFTER_HOURS)]
+            reserve_seen.extend(fresh_stock)
+            unique_reserve = []
+            for item in historical_stock:
+                if not ListingIndex(reserve_seen).contains(item):
+                    unique_reserve.append(item)
+                    reserve_seen.append(item)
+            historical_stock = unique_reserve
             chooser = rng or random.SystemRandom()
             period_target, period_central_target = period_publication_targets(period)
             period_target = await self._period_stock_target(session, now)
