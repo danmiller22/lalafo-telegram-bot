@@ -35,13 +35,11 @@ EXCLUDED_CONTACT_SUFFIXES = frozenset({
     "703108500", "703223711", "702133014", "700014220",
     "500066355", "708516601", "700014496",
 })
-_CONTACT_SEPARATOR = r"[\s().-]*"
-_CONTACT_PATTERNS = [
-    _CONTACT_SEPARATOR.join((number[:3], number[3:6], number[6:]))
-    for number in sorted(EXCLUDED_CONTACT_SUFFIXES)
-]
+_PHONE_SEPARATOR = r"[\s().-]*"
 EXCLUDED_CONTACT_RE = re.compile(
-    rf"(?<!\d)(?:\+?996{_CONTACT_SEPARATOR})?0?(?:{'|'.join(_CONTACT_PATTERNS)})(?!\d)"
+    r"(?<!\d)(?:\+?996" + _PHONE_SEPARATOR + r"|0" + _PHONE_SEPARATOR + r")?(?:"
+    + "|".join(_PHONE_SEPARATOR.join(number) for number in sorted(EXCLUDED_CONTACT_SUFFIXES))
+    + r")(?!\d)"
 )
 
 def is_excluded_contact(ad) -> bool:
