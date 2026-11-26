@@ -36,15 +36,15 @@ def _room_mix_score(room: str | None, counts: dict[str, int]) -> tuple[int, int]
     """Aim for twice as many one-room flats as either other room type."""
     return (counts.get(room, 0) * (1 if room == "1" else 2), 0 if room == "1" else 1)
 
-REALTOR_STOCK_RESERVE_SHARE = 0.50
-MIN_PUBLICATIONS_PER_DAY = 120
-MAX_PUBLICATIONS_PER_DAY = 120
+REALTOR_STOCK_RESERVE_SHARE = 0.0
+MIN_PUBLICATIONS_PER_DAY = 110
+MAX_PUBLICATIONS_PER_DAY = 110
 # The daily target is chosen once per Bishkek date, then split across the two
 # discovery periods so retries cannot increase the day's publication volume.
 # Realtors may fill missing whole-apartment supply after ordinary authors.
-MIN_NON_OWNERS_PER_DAY = MAX_PUBLICATIONS_PER_DAY * REALTOR_BASE_PERCENT // 100
+MIN_NON_OWNERS_PER_DAY = 0
 MAX_NON_OWNERS_PER_DAY = MAX_PUBLICATIONS_PER_DAY
-TARGET_NON_OWNERS_PER_PERIOD = (MAX_PUBLICATIONS_PER_DAY // 2 + 1) // 2
+TARGET_NON_OWNERS_PER_PERIOD = 0
 # Ordinary daily slots are fresh-only. Managed promotions have their own
 # explicitly requested repeat schedule and do not turn an old card into new.
 REPOST_AFTER_HOURS = 48
@@ -62,7 +62,7 @@ DISCOVERY_PERIOD_TARGET = (MAX_PUBLICATIONS_PER_DAY + 1) // 2
 PUBLICATION_SPACING_MINUTES = 21 * 60 / MAX_PUBLICATIONS_PER_DAY
 MIN_PUBLICATION_GAP_MINUTES = 10
 INVENTORY_CLAIM_LOCK_ID = 731_290_512
-PUBLICATION_POLICY_VERSION = "publication-120-realtor-backfill-v33"
+PUBLICATION_POLICY_VERSION = "publication-110-owner-first-v34"
 # Two equal 10.5-hour periods cover 05:00 through 02:00 the next day.
 PUBLICATION_PERIOD_MINUTES = 630
 
@@ -353,13 +353,10 @@ def plan_period(
         kind: sum(_seller_type(item) == kind for item in apartments)
         for kind in ("owner", "realtor", "unknown")
     }
-    morning = period_start.astimezone(BISHKEK).hour == 5
-    if non_owner_target is None:
-        non_owner_target = (target_count + int(morning)) // 2
     if owner_limit is None:
-        owner_limit = target_count - non_owner_target
+        owner_limit = target_count
     ordinary_budget = min(available["owner"], max(0, owner_limit), target_count)
-    # Reserve the owner share when it exists, then fill its missing slots with agents.
+    # Use all available owners first; agents fill only the remaining slots.
     agents = min(available["realtor"], max(0, non_owner_limit), target_count - ordinary_budget)
     ordinary_budget = min(available["owner"], target_count - agents)
     seller_remaining = {"owner": available["owner"], "unknown": 0,
@@ -868,7 +865,7 @@ class InventoryRepository:
                 period_start=period,
                 non_owner_limit=remaining_non_owners,
                 non_owner_target=max(0, realtor_goal - period_realtors),
-                owner_limit=max(0, period_target - realtor_goal - (used_in_period - period_realtors)),
+                owner_limit=target_override,
                 target_count_override=target_override,
                 central_target_override=central_override,
                 repeat_apartment_ids=set(),
@@ -1114,7 +1111,7 @@ class InventoryRepository:
             if not due_rows:
                 return None
             # Leave room for repeats that become due later today. They belong
-            # to the same 120-card plan, rather than being added above it.
+            # to the same daily plan, rather than being added above it.
             if published_today >= MAX_PUBLICATIONS_PER_DAY - reserved_promotions:
                 due_rows = [row for row in due_rows if row[4].startswith(REQUESTED_WINDOW_PREFIX)]
                 if not due_rows:
@@ -1124,7 +1121,7 @@ class InventoryRepository:
             central_needed = published_central < math.ceil(
                 (published_today + 1) * CENTRAL_DAILY_SHARE
             )
-            preferred_seller = "owner" if published_owners <= published_realtors else "realtor"
+            preferred_seller = "owner"
             preferred_seller_rows = [row for row in due_rows if row[2] == preferred_seller]
             due_rows = preferred_seller_rows or due_rows
             preferred_rows = [row for row in due_rows if district_priority(row[1]) > 0]
