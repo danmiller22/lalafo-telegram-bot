@@ -37,8 +37,8 @@ def _room_mix_score(room: str | None, counts: dict[str, int]) -> tuple[int, int]
     return (counts.get(room, 0) * (1 if room == "1" else 2), 0 if room == "1" else 1)
 
 REALTOR_STOCK_RESERVE_SHARE = 0.50
-MIN_PUBLICATIONS_PER_DAY = 110
-MAX_PUBLICATIONS_PER_DAY = 110
+MIN_PUBLICATIONS_PER_DAY = 120
+MAX_PUBLICATIONS_PER_DAY = 120
 # The daily target is chosen once per Bishkek date, then split across the two
 # discovery periods so retries cannot increase the day's publication volume.
 # Realtors may fill missing whole-apartment supply after ordinary authors.
@@ -62,7 +62,7 @@ DISCOVERY_PERIOD_TARGET = (MAX_PUBLICATIONS_PER_DAY + 1) // 2
 PUBLICATION_SPACING_MINUTES = 21 * 60 / MAX_PUBLICATIONS_PER_DAY
 MIN_PUBLICATION_GAP_MINUTES = 10
 INVENTORY_CLAIM_LOCK_ID = 731_290_512
-PUBLICATION_POLICY_VERSION = "publication-110-realtor-backfill-v32"
+PUBLICATION_POLICY_VERSION = "publication-120-realtor-backfill-v33"
 # Two equal 10.5-hour periods cover 05:00 through 02:00 the next day.
 PUBLICATION_PERIOD_MINUTES = 630
 
