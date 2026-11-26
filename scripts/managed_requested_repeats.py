@@ -40,7 +40,7 @@ async def latest_delivery_time(session, events):
 
 
 def reservation_gap(now, published_count, *, catch_up=False):
-    return 5 if catch_up and publication_slots_due(now) - published_count >= 3 else MIN_PUBLICATION_GAP_MINUTES
+    return 3 if catch_up and publication_slots_due(now) - published_count >= 3 else MIN_PUBLICATION_GAP_MINUTES
 
 
 def reservation_time(now, published_count, last_sent, *, catch_up=False):

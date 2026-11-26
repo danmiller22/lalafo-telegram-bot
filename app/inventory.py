@@ -1042,7 +1042,7 @@ class InventoryRepository:
             if published_today >= expected_by_now and now < next_publication_slot(now, published_today, last_sent):
                 return None
             catch_up = expected_by_now - published_today >= 3
-            gap_minutes = 5 if catch_up else MIN_PUBLICATION_GAP_MINUTES
+            gap_minutes = 3 if catch_up else MIN_PUBLICATION_GAP_MINUTES
             if catch_up:
                 eligible_until = max(eligible_until, (day_start_local + timedelta(hours=21)).astimezone(timezone.utc))
             if publication_times and max(publication_times) > now - timedelta(
