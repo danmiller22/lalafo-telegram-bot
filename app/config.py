@@ -197,6 +197,8 @@ class Settings(BaseSettings):
     xpay_api_url: str = "https://api.xpay.kg"
     xpay_client_id: str = Field(default="", repr=False)
     xpay_client_secret: str = Field(default="", repr=False)
+    pushover_app_token: str = Field(default="", repr=False)
+    pushover_user_key: str = Field(default="", repr=False)
     xpay_service_uuid: str = ""
     callback_secret: str = "change-me-in-production"
 
