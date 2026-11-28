@@ -174,15 +174,32 @@ function setup(initial, fetchOverride, dynamic = false, overrides = {}) {
   await failed.node('pay-now').onclick();
   assert.deepEqual(failed.opened, []);
 
-  // A restored weekly checkout must reopen its URL without a new request.
-  const restored = setup({status: 'awaiting_receipt', plan: 'weekly_7d'});
+  // Reopening must validate the checkout even if a stale URL remains cached
+  // after a suspended WebView. Never send a customer back to an expired QR.
+  let reopenCalls = 0, finishReopen;
+  const restored = setup(null, path => {
+    if (path.endsWith('/start')) {
+      reopenCalls++;
+      return new Promise(resolve => { finishReopen = resolve; });
+    }
+    return Promise.resolve(response({status: 'awaiting_receipt', plan: 'weekly_7d'}));
+  });
   await new Promise(setImmediate);
   assert.equal(restored.node('reopen-payment').hidden, false);
-  assert.equal(restored.node('checkout').hidden, false);
-  assert.equal(restored.node('pay-lifetime').hidden, true);
-  restored.node('reopen-payment').onclick();
-  restored.node('reopen-payment').onclick();
-  assert.deepEqual(restored.opened, ['https://example.com/week', 'https://example.com/week']);
+  const reopening = restored.node('reopen-payment').onclick();
+  await restored.node('reopen-payment').onclick();
+  assert.equal(reopenCalls, 1, 'double-click must not create concurrent checkouts');
+  assert.deepEqual(restored.opened, []);
+  finishReopen(response({status: 'awaiting_receipt', plan: 'weekly_7d', payment_url: 'https://example.com/renewed'}));
+  await reopening;
+  assert.deepEqual(restored.opened, ['https://example.com/renewed']);
+  for (const status of ['approved', 'pending', 'unavailable']) {
+    const completed = setup(null, path => Promise.resolve(response(path.endsWith('/start') ?
+      {status, plan: 'weekly_7d', apartment: {}} : {status: 'awaiting_receipt', plan: 'weekly_7d'})));
+    await new Promise(setImmediate);
+    await completed.node('reopen-payment').onclick();
+    assert.deepEqual(completed.opened, [], status + ' must not reopen cached checkout');
+  }
 
   let sessionCalls = 0, resolvePoll;
   const race = setup(null, path => {
