@@ -82,6 +82,8 @@ async def test_empty_active_profile_is_reported_without_fabricating_originals(re
     from app.profile_originals import scan_profile
     apartments,_,sessions=repositories
     class Feed:
+        routes=[None]
+        route_index=0
         def __init__(self,**kwargs):pass
         async def __aenter__(self):return self
         async def __aexit__(self,*args):pass
@@ -146,6 +148,8 @@ async def test_hosted_feed_fills_queue_without_external_ingest(repositories,monk
     from app.rental_feed import refill
     apartments,_,sessions=repositories
     class Feed:
+        routes=[None]
+        route_index=0
         def __init__(self,**kwargs):pass
         async def __aenter__(self):return self
         async def __aexit__(self,*args):pass
@@ -176,6 +180,8 @@ async def test_profile_reuses_mapping_and_records_acknowledged_original(reposito
     await apartments.save_managed_lalafo_source(managed_lalafo_ad_id=200,
         managed_lalafo_ad_url='https://lalafo.kg/bishkek/ads/owned-id-200',apartment=apartment)
     class Feed:
+        routes=[None]
+        route_index=0
         def __init__(self,**kwargs):pass
         async def __aenter__(self):return self
         async def __aexit__(self,*args):pass
@@ -200,6 +206,9 @@ async def test_profile_reuses_mapping_and_records_acknowledged_original(reposito
         receipt=await session.get(RentalFeedState,'original_send:'+str(apartment.id))
         assert receipt.value['state']=='published'
         assert receipt.value['message_id']==456
+        published=await session.get(Apartment,apartment.id)
+        assert published.publication_status=='published'
+        assert published.telegram_message_id==456
     assert await reserve_original(sessions,await apartments.get(apartment.id)) is None
 
 @pytest.mark.asyncio

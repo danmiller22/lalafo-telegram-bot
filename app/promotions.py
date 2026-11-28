@@ -70,6 +70,7 @@ async def publication_counts_in_window(session, start, end):
         func.count().label('total'),
         func.coalesce(func.sum(case((records.c.external_repeat.is_(False), 1), else_=0)), 0).label('ordinary'),
         func.max(records.c.published_at).label('latest'),
+        func.max(case((records.c.external_repeat.is_(False), records.c.published_at),else_=None)).label('latest_ordinary'),
     ).select_from(records))).one()
 
 
