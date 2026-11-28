@@ -257,3 +257,11 @@ async def test_dispatch_uses_fresh_verified_json_snapshot_without_second_source_
     publisher.publish.assert_awaited_once()
     assert publisher.publish.await_args.kwargs=={}
     queue.finish_item.assert_awaited_once_with(987,status='published')
+
+
+@pytest.mark.asyncio
+async def test_profile_original_never_replays_legacy_uncertain_publication(repositories):
+    apartments,_,sessions=repositories
+    apartment=await apartments.upsert_discovered(make_ad())
+    await apartments.mark_publication_uncertain(apartment.id)
+    assert await reserve_original(sessions,await apartments.get(apartment.id)) is None

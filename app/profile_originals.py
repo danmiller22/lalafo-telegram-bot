@@ -48,6 +48,11 @@ async def reserve_original(sessions,apartment):
         marker=await session.get(RentalFeedState,'original_send:'+str(apartment.id),with_for_update=True)
         if marker and marker.value.get('state') in {'reserved','uncertain'}:return None
         if marker and marker.value.get('last_sent_at') and datetime.fromisoformat(marker.value['last_sent_at'])>now-timedelta(hours=2):return None
+        legacy_uncertain=list((await session.scalars(select(Apartment).where(
+            (Apartment.publication_status=='uncertain') | Apartment.id.in_(
+                select(ApartmentInventoryQueue.apartment_id).where(ApartmentInventoryQueue.status=='uncertain'))
+        ))).all())
+        if ListingIndex(legacy_uncertain).contains(apartment_to_ad(apartment)):return None
         recent=list((await session.scalars(select(Apartment).where(Apartment.published_at>now-timedelta(hours=2)))).all())
         if ListingIndex(recent).contains(apartment_to_ad(apartment)):return None
         busy=int(await session.scalar(select(func.count()).select_from(ApartmentInventoryQueue).where(ApartmentInventoryQueue.status=='publishing')) or 0)
