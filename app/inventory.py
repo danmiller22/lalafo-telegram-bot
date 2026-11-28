@@ -37,8 +37,8 @@ def _room_mix_score(room: str | None, counts: dict[str, int]) -> tuple[int, int]
     return (counts.get(room, 0) * (1 if room == "1" else 2), 0 if room == "1" else 1)
 
 REALTOR_STOCK_RESERVE_SHARE = 0.0
-MIN_PUBLICATIONS_PER_DAY = 70
-MAX_PUBLICATIONS_PER_DAY = 70
+MIN_PUBLICATIONS_PER_DAY = 110
+MAX_PUBLICATIONS_PER_DAY = 110
 # The daily target is chosen once per Bishkek date, then split across the two
 # discovery periods so retries cannot increase the day's publication volume.
 # Realtors may fill missing whole-apartment supply after ordinary authors.
