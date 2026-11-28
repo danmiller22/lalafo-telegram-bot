@@ -761,7 +761,7 @@ async def _inventory_queue_status(*, whole_apartments_only: bool = False) -> tup
             published = counts.ordinary
             daily_limit_reached = published >= MAX_PUBLICATIONS_PER_DAY
             quiet_hours = not publication_window_open(now)
-            latest = counts.latest
+            latest = counts.latest_ordinary
             next_slot = next_publication_slot(now, published, latest)
             pace_reached = now < next_slot
             slot_at = (

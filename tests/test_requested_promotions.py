@@ -46,7 +46,7 @@ async def test_publication_summary_matches_receipts_in_one_query(repositories, l
         assert counts.ordinary == len(ordinary) == 2
         assert counts.latest == max(a.published_at for a in all_events)
         empty = await publication_counts_in_window(session, START-timedelta(days=2), START-timedelta(days=1))
-        assert tuple(empty) == (0, 0, None)
+        assert tuple(empty) == (0, 0, None, None)
 
 async def work(sessions, now):
     async with sessions() as session:

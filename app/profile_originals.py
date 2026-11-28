@@ -12,6 +12,7 @@ from app.inventory import INVENTORY_CLAIM_LOCK_ID,InventoryRepository,as_utc
 from app.lalafo.public_feed import PublicFeed,parsed_public_ad
 from app.models import Apartment,ApartmentInventoryQueue,RentalFeedState,LalafoAutoReplyMeta
 from app.payments.repository import ApartmentRepository
+from app.photo_match import PhotoMatcher
 from app.promotions import external_repeat_receipt_key
 from app.rental_feed import claim_cycle,finish_cycle
 from app.security import TokenSigner
@@ -28,8 +29,7 @@ def shared_photos(own,original):
     return len(photos(own)&photos(original))
 
 
-def same_apartment(own,original):
-    if shared_photos(own,original)<2:return False
+def matching_terms(own,original):
     if own.rooms!=original.rooms or abs(own.price-original.price)>max(own.price,original.price)*0.1:return False
     if normalized_district(own.district)!=normalized_district(original.district):return False
     def area(ad):
@@ -38,6 +38,15 @@ def same_apartment(own,original):
                 return str(p.get('value') or '')
     a,b=area(own),area(original)
     return not a or not b or a==b
+
+
+def same_apartment(own,original):
+    return shared_photos(own,original)>=2 and matching_terms(own,original)
+
+
+async def verified_photos(own,original,matcher):
+    return matching_terms(own,original) and (shared_photos(own,original)>=2
+        or await matcher.matches(own.photo_urls,original.photo_urls))
 
 
 async def reserve_original(sessions,apartment):
@@ -95,8 +104,22 @@ async def send_original(runtime,ad):
             row.status='published';row.published_at=now
             session.add(LalafoAutoReplyMeta(key=external_repeat_receipt_key(settings.telegram_group_id,message.message_id),value='hosted-profile-original'))
             from app.promotions import record_delivery
-            await record_delivery(session,apartment,chat_id=settings.telegram_group_id,message_id=message.message_id,published_at=now)
-        await repo.mark_published(apartment.id,chat_id=settings.telegram_group_id,message_id=message.message_id,acknowledged_at=now)
+            from app.telegram.keyboards import APARTMENT_KEYBOARD_VERSION
+            live=await session.get(Apartment,apartment.id,with_for_update=True)
+            if live.telegram_message_id and live.telegram_chat_id and live.published_at:
+                await record_delivery(session,live,chat_id=live.telegram_chat_id,
+                    message_id=live.telegram_message_id,published_at=live.published_at)
+            await record_delivery(session,live,chat_id=settings.telegram_group_id,
+                message_id=message.message_id,published_at=now)
+            live.telegram_chat_id=settings.telegram_group_id
+            live.telegram_message_id=message.message_id
+            live.published_at=now
+            live.publication_status='published'
+            live.active=True
+            live.availability_status='active'
+            live.availability_checked_at=now
+            live.availability_reason='publication_age_window'
+            live.keyboard_version=APARTMENT_KEYBOARD_VERSION
         return True
     except (Exception,asyncio.CancelledError) as exc:
         # A send without an acknowledged card is never repeated blindly.
@@ -118,10 +141,46 @@ async def optional_detail(source, source_id):
         raise
 
 
+async def original_from_catalog(own,mapped,repo,source,matcher,own_ids,settings,stats):
+    async def current(apartment):
+        raw=await optional_detail(source,apartment.lalafo_id)
+        if raw is None:
+            stats['unavailable_originals']+=1
+            return None
+        if int(raw.get('id') or 0) in own_ids:return None
+        try:ad=parsed_public_ad(raw)
+        except ValueError:return None
+        if _valid(ad,settings)[0] and await verified_photos(own,ad,matcher):return ad
+    if mapped is not None:
+        ad=await current(mapped)
+        if ad is not None:return ad
+    async with repo.sessions() as session:
+        rows=list((await session.scalars(select(Apartment).where(
+            Apartment.lalafo_id>0,Apartment.lalafo_id.not_in(own_ids),
+            Apartment.rooms==own.rooms,Apartment.active.is_(True),
+            Apartment.availability_status!='unavailable',
+            Apartment.price.between(int(own.price/1.1),int(own.price*1.1)),
+        ).order_by(Apartment.last_seen_at.desc()))).all())
+    found={}
+    attempted=0
+    for row in rows:
+        candidate=apartment_to_ad(row)
+        if not matching_terms(own,candidate) or not _valid(candidate,settings)[0]:continue
+        attempted+=1
+        if attempted>30:break
+        if not await verified_photos(own,candidate,matcher):continue
+        ad=await current(row)
+        if ad is not None:found[ad.lalafo_id]=ad
+    owners=[ad for ad in found.values() if ad.owner_listing and ad.seller_type=='owner']
+    if len(owners)==1:return owners[0]
+    return next(iter(found.values())) if len(found)==1 else None
+
+
 async def scan_profile(runtime):
     settings=runtime.workflow_data['settings'];repo=runtime.workflow_data['apartments'];sessions=repo.sessions
-    if not await claim_cycle(sessions,'profile_originals',interval=timedelta(hours=2),lease=timedelta(minutes=20)):return
+    if not await claim_cycle(sessions,'profile_originals',interval=timedelta(hours=2),lease=timedelta(minutes=20),version=2):return
     found=published=active=0
+    matching_stats={"unavailable_originals":0}
     try:
         profile=int(settings.rental_originals_profile_id)
         mappings={r.managed_lalafo_ad_id:r.apartment for r in await repo.managed_lalafo_sources()}
@@ -130,7 +189,8 @@ async def scan_profile(runtime):
             page_start=int(previous.value.get('next_search_page',1))
         search_cache={}
 
-        async with PublicFeed(proxy_urls=settings.lalafo_proxy_url, verify_routes=True) as source:
+        async with asyncio.timeout(900), PublicFeed(proxy_urls=settings.lalafo_proxy_url, verify_routes=True) as source, PhotoMatcher(
+                sessions) as matcher:
             own_items=[]
             for page in range(1,11):
                 data=await source.get('/api/search/v3/feed/active/'+str(profile),{'expand':'url','per-page':100,'page':page})
@@ -152,12 +212,7 @@ async def scan_profile(runtime):
                 mapped=mappings.get(own.lalafo_id)
                 if mapped is None:
                     mapped=await repo.verified_source_by_photos(own.photo_urls,excluded_lalafo_ids=own_ids)
-                original=None
-                if mapped is not None:
-                    original_raw=await optional_detail(source,mapped.lalafo_id)
-                    if original_raw is not None and original_raw.get('user_id')!=profile:
-                        try:original=parsed_public_ad(original_raw)
-                        except ValueError:pass
+                original=await original_from_catalog(own,mapped,repo,source,matcher,own_ids,settings,matching_stats)
                 if original is None:
                     # Search the same room/price segment, then require unique
                     # exact-photo evidence. No phone is inferred from similarity.
@@ -171,24 +226,36 @@ async def scan_profile(runtime):
                             if item.get('id') in own_ids:continue
                             try:ad=parsed_public_ad(item,include_contact=False)
                             except ValueError:continue
-                            if shared_photos(own,ad)<2:continue
+                            plausible = (abs(own.price-ad.price)<=max(own.price,ad.price)*0.1
+                                and normalized_district(own.district)==normalized_district(ad.district))
+                            if shared_photos(own,ad)<2 and not plausible:continue
+                            if shared_photos(own,ad)<2 and not await matcher.matches(own.photo_urls,ad.photo_urls):continue
                             original_raw=await optional_detail(source,ad.lalafo_id)
                             if original_raw is None or original_raw.get('user_id')==profile:continue
                             try:ad=parsed_public_ad(original_raw)
                             except ValueError:continue
-                            if same_apartment(own,ad) and _valid(ad,settings)[0]:candidates.append(ad)
+                            if _valid(ad,settings)[0] and await verified_photos(own,ad,matcher):candidates.append(ad)
                     unique={ad.lalafo_id:ad for ad in candidates}
                     if len(unique)==1:
                         original=next(iter(unique.values()))
                         original_raw=await optional_detail(source,original.lalafo_id)
                         original=parsed_public_ad(original_raw) if original_raw is not None else None
-                if original is None or not same_apartment(own,original) or not _valid(original,settings)[0]:continue
+                if original is None or not _valid(original,settings)[0] or not await verified_photos(own,original,matcher):continue
                 found+=1
+                async with sessions.begin() as session:
+                    key='original_match:'+str(own.lalafo_id)
+                    evidence=await session.get(RentalFeedState,key)
+                    value={'original_id':original.lalafo_id,'minimum_matching_photos':2,
+                        'method':'filenames' if shared_photos(own,original)>=2 else 'dual_perceptual_hash',
+                        'checked_at':datetime.now(timezone.utc).isoformat()}
+                    if evidence:evidence.value=value
+                    else:session.add(RentalFeedState(key=key,value=value))
                 apartment=await repo.upsert_discovered(original)
                 await repo.save_managed_lalafo_source(managed_lalafo_ad_id=own.lalafo_id,managed_lalafo_ad_url=own.source_url,apartment=apartment)
                 published+=int(await send_original(runtime,original))
         await finish_cycle(sessions,'profile_originals',{'profile_id':profile,'active_ads':active,'originals_found':found,'published':published,
-            'search_pages':len(search_cache),'next_search_page':1 if page_start>=25 else page_start+12})
+            'search_pages':len(search_cache),'next_search_page':1 if page_start>=25 else page_start+12,
+            'photo_matching':matcher.stats,**matching_stats})
     except asyncio.CancelledError:raise
     except Exception as exc:
         await finish_cycle(sessions,'profile_originals',{'active_ads':active,'originals_found':found,'published':published},error=(type(exc).__name__ + (':HTTP'+str(exc.response.status_code) if isinstance(exc, httpx.HTTPStatusError) else '')))

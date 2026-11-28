@@ -1249,7 +1249,7 @@ async def test_watermarked_listing_is_not_queued_again(repositories):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("overdue_count,minute,expected", [(1,30,False),(3,30,False),(3,90,True)])
+@pytest.mark.parametrize("overdue_count,minute,expected", [(1,30,False),(3,30,False),(3,90,False)])
 async def test_backlog_catches_up_only_when_daily_pace_is_behind(repositories, overdue_count, minute, expected):
     apartments, _, sessions = repositories
     now = (datetime.now(timezone.utc).astimezone(BISHKEK).replace(hour=5,minute=0,second=0,microsecond=0)
@@ -1285,7 +1285,7 @@ async def test_late_day_catchup_can_use_future_reserved_stock(repositories):
     old=await apartments.upsert_discovered(make_ad(lalafo_id=223000,phone="+996555601000"))
     waiting=await apartments.upsert_discovered(make_ad(lalafo_id=223001,phone="+996555601001"))
     async with sessions.begin() as session:
-        await session.execute(update(Apartment).where(Apartment.id==old.id).values(publication_status="published",published_at=now-timedelta(minutes=6)))
+        await session.execute(update(Apartment).where(Apartment.id==old.id).values(publication_status="published",published_at=now-timedelta(minutes=11)))
         session.add(ApartmentInventoryQueue(apartment_id=waiting.id,scheduled_at=now+timedelta(minutes=18),window_key="today",sequence=1))
     assert await InventoryRepository(sessions).claim_due(now=now) is not None
 

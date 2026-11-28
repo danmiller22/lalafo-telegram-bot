@@ -17,7 +17,7 @@ from scripts.publish_inventory import _valid
 logger=logging.getLogger(__name__)
 
 
-async def claim_cycle(sessions,key,*,interval=timedelta(minutes=10),lease=timedelta(minutes=8)):
+async def claim_cycle(sessions,key,*,interval=timedelta(minutes=10),lease=timedelta(minutes=8),version=None):
     now=datetime.now(timezone.utc)
     async with sessions.begin() as session:
         if session.bind.dialect.name=='postgresql':
@@ -25,8 +25,10 @@ async def claim_cycle(sessions,key,*,interval=timedelta(minutes=10),lease=timede
         row=await session.get(RentalFeedState,key,with_for_update=True)
         value=row.value if row else {}
         if value.get('lease_until') and datetime.fromisoformat(value['lease_until'])>now:return False
-        if value.get('last_success_at') and datetime.fromisoformat(value['last_success_at'])+interval>now:return False
-        value={**value,'last_started_at':now.isoformat(),'lease_until':(now+lease).isoformat(),'state':'running'}
+        same_version=version is None or value.get('version')==version
+        if same_version and value.get('last_success_at') and datetime.fromisoformat(value['last_success_at'])+interval>now:return False
+        if not same_version:value={k:v for k,v in value.items() if k!='last_success_at'}
+        value={**value,'last_started_at':now.isoformat(),'lease_until':(now+lease).isoformat(),'state':'running','version':version}
         if row:row.value=value
         else:session.add(RentalFeedState(key=key,value=value))
     return True
@@ -47,7 +49,13 @@ async def refill(runtime):
     settings=runtime.workflow_data['settings']
     apartments=runtime.workflow_data['apartments']
     sessions=apartments.sessions
-    if not await claim_cycle(sessions,'primary_feed'):return
+    async with sessions() as session:
+        before=int(await session.scalar(select(func.count()).select_from(ApartmentInventoryQueue).where(ApartmentInventoryQueue.status=='queued')) or 0)
+    interval=timedelta(minutes=2 if before<20 else 10)
+    if not await claim_cycle(sessions,'primary_feed',interval=interval,version=2):return
+    async with sessions() as session:
+        previous=await session.get(RentalFeedState,'primary_feed')
+        page_start=int(previous.value.get('next_page',1))
     stored=pages=details=0
     try:
         async with sessions.begin() as session:
@@ -66,7 +74,7 @@ async def refill(runtime):
                     try:
                         ad=parsed_public_ad(raw)
                         allowed,reason=_valid(ad,settings)
-                        if allowed:return ad if ad.seller_type in {'owner','realtor'} else None
+                        if allowed:return ad if ad.photo_urls and ad.seller_type in {'owner','realtor'} else None
                         if reason not in {'phone','rooms','wrong_category','wrong_city'}:return None
                         if reason=='rooms' and raw.get('params'):return None
                         raise ValueError('SearchNeedsDetail')
@@ -80,10 +88,10 @@ async def refill(runtime):
                             details+=1
                         try:ad=parsed_public_ad(full)
                         except ValueError:return None
-                        return ad if _valid(ad,settings)[0] and ad.seller_type in {'owner','realtor'} else None
+                        return ad if ad.photo_urls and _valid(ad,settings)[0] and ad.seller_type in {'owner','realtor'} else None
                 async with asyncio.timeout(360):
                     # Alternate page depths durably; repeated IDs are cached in DB.
-                    page=1+int(datetime.now(timezone.utc).timestamp()//600)%4
+                    page=page_start
                     for route in INVENTORY_SEARCH_URLS:
                         raw_page=await source.search(route,page)
                         if not isinstance(raw_page.get('items'),list):raise ValueError('InvalidSearchFeed')
@@ -114,10 +122,10 @@ async def refill(runtime):
         async with sessions() as session:
             reserve=int(await session.scalar(select(func.count()).select_from(ApartmentInventoryQueue).where(ApartmentInventoryQueue.status=="queued")) or 0)
         if boundary<=now+timedelta(hours=6) or reserve<20:await inventory.schedule_period(now=boundary)
-        await finish_cycle(sessions,'primary_feed',{'stored':stored,'search_pages':pages,'detail_requests':details})
+        await finish_cycle(sessions,'primary_feed',{'stored':stored,'search_pages':pages,'detail_requests':details,'next_page':1 if page_start>=30 else page_start+1})
     except asyncio.CancelledError:raise
     except Exception as exc:
-        await finish_cycle(sessions,'primary_feed',{'stored':stored,'search_pages':pages,'detail_requests':details},error=(type(exc).__name__ + (':HTTP'+str(exc.response.status_code) if isinstance(exc, httpx.HTTPStatusError) else '')))
+        await finish_cycle(sessions,'primary_feed',{'stored':stored,'search_pages':pages,'detail_requests':details,'next_page':1 if page_start>=30 else page_start+1},error=(type(exc).__name__ + (':HTTP'+str(exc.response.status_code) if isinstance(exc, httpx.HTTPStatusError) else '')))
         logger.error('Hosted Lalafo refill failed: %s',type(exc).__name__)
 
 

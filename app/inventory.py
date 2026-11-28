@@ -106,7 +106,7 @@ def next_publication_slot(now: datetime, published_count: int, last_sent: dateti
         return nominal
     remaining = MAX_PUBLICATIONS_PER_DAY - published_count
     final_slot = start + timedelta(hours=21, minutes=-MIN_PUBLICATION_GAP_MINUTES)
-    gap = min(timedelta(minutes=15), max(timedelta(minutes=MIN_PUBLICATION_GAP_MINUTES),
+    gap = min(timedelta(minutes=13), max(timedelta(minutes=MIN_PUBLICATION_GAP_MINUTES),
               (final_slot - last_sent) / remaining))
     return min(nominal, last_sent + gap)
 
@@ -1019,23 +1019,14 @@ class InventoryRepository:
                 select(func.max(ApartmentInventoryQueue.published_at)).where(
                     ApartmentInventoryQueue.status == "published",
                     ApartmentInventoryQueue.published_at.is_not(None),
+                    ~ApartmentInventoryQueue.window_key.startswith("profile-original:"),
                 )
             )
-            latest_apartment_publication = await session.scalar(
-                select(func.max(Apartment.published_at)).where(
-                    Apartment.published_at.is_not(None)
-                )
-            )
-            publication_times = [
-                as_utc(value)
-                for value in (
-                    latest_queue_publication,
-                    latest_apartment_publication,
-                )
-                if value is not None
-            ]
             day_publications = await publications_in_window(
                 session, day_start, day_end, include_external_repeats=False)
+            publication_times = [as_utc(row.published_at) for row in day_publications]
+            if latest_queue_publication is not None:
+                publication_times.append(as_utc(latest_queue_publication))
             published_today = len(day_publications)
             published_owners = sum(row.seller_type == "owner" for row in day_publications)
             published_realtors = sum(row.seller_type == "realtor" for row in day_publications)
@@ -1047,7 +1038,7 @@ class InventoryRepository:
             if published_today >= expected_by_now and now < next_publication_slot(now, published_today, last_sent):
                 return None
             catch_up = expected_by_now - published_today >= 3
-            gap_minutes = 3 if catch_up else MIN_PUBLICATION_GAP_MINUTES
+            gap_minutes = MIN_PUBLICATION_GAP_MINUTES
             if catch_up:
                 eligible_until = max(eligible_until, (day_start_local + timedelta(hours=21)).astimezone(timezone.utc))
             if publication_times and max(publication_times) > now - timedelta(

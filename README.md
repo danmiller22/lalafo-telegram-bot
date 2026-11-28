@@ -301,3 +301,20 @@ all existing hard price/room/contact filters still apply.
 (`primary_feed`, `profile_originals`, `district_medians`). The scheduler watches
 and restarts both child workers. Former recurring Actions publishers/refillers
 are manual-only recovery tools; no external runner is required for these flows.
+
+
+Reuploaded profile photos are compared by cached, independent difference and
+average image hashes plus color agreement; two distinct frames must agree.
+Room, normalized district, price (within 10%) and available area must also agree.
+The candidate is re-read from Lalafo and must be active with a real public
+contact before publication. Hashing is restricted to HTTPS Lalafo image hosts,
+with bounded download size/concurrency, and caches signatures rather than images
+or image URLs. Ambiguous matches and previously uncertain sends remain blocked.
+The profile worker has a 15-minute collection budget and persists verified match
+evidence. Its receipts and apartment metadata commit together and retain any
+preceding ordinary delivery, so two-hour repeats cannot erase the daily count.
+
+When reserve is below 20, the hosted source returns after two minutes and
+advances a persisted page cursor through up to 30 pages per configured route.
+The ordinary clock is independent of special original repeats, and catch-up
+never reduces the minimum publication gap below ten minutes.
