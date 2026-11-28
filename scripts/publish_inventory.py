@@ -210,7 +210,10 @@ async def _publish_item(settings, sessions, inventory, apartments, item) -> int 
                     return await _skip(inventory,item.id,"not_found")
                 await inventory.retry_item(item.id,error="source_http_"+str(exc.response.status_code))
                 return None
-            except (httpx.TransportError, RuntimeError, TimeoutError):
+            except (httpx.TransportError, RuntimeError, TimeoutError) as exc:
+                last_seen=as_utc(apartment.last_seen_at or apartment.updated_at)
+                if last_seen < datetime.now(timezone.utc)-timedelta(hours=48):
+                    return await _skip(inventory,item.id,"stale_"+type(exc).__name__)
                 await inventory.retry_item(item.id,error="source_verification_unknown")
                 return None
 
