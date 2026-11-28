@@ -1,7 +1,9 @@
 """XPAY dynamic checkout and provider-verified settlement."""
 from __future__ import annotations
 
+import asyncio
 import secrets
+import time
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlsplit
@@ -26,6 +28,36 @@ class XPayError(RuntimeError):
     pass
 
 
+# A fresh httpx client plus a fresh /login for every checkout cost two TLS
+# handshakes and a login round trip (measured 0.5-1.2 s TLS and ~0.9 s per
+# request to api.xpay.kg from outside Kyrgyzstan) before the QR was even asked
+# for.  Keep one warm connection pool and the bearer token per event loop.
+_TOKEN_TTL_SECONDS = 240.0
+_pools: dict[int, tuple[asyncio.AbstractEventLoop, httpx.AsyncClient]] = {}
+_tokens: dict[tuple[str, str, str], tuple[str, float]] = {}
+
+
+def _shared_client() -> httpx.AsyncClient:
+    loop = asyncio.get_running_loop()
+    entry = _pools.get(id(loop))
+    if entry is not None and entry[0] is loop and not entry[1].is_closed:
+        return entry[1]
+    client = httpx.AsyncClient(
+        timeout=20,
+        limits=httpx.Limits(max_keepalive_connections=4, keepalive_expiry=120),
+    )
+    _pools[id(loop)] = (loop, client)
+    return client
+
+
+async def close_shared_client() -> None:
+    loop = asyncio.get_running_loop()
+    entry = _pools.pop(id(loop), None)
+    if entry is not None and not entry[1].is_closed:
+        await entry[1].aclose()
+    _tokens.clear()
+
+
 class XPayClient:
     def __init__(self, settings):
         self.settings = settings
@@ -33,7 +65,11 @@ class XPayClient:
         if urlsplit(self.base).scheme != 'https':
             raise XPayError('XPAY requires HTTPS')
 
-    async def _token(self, client):
+    @property
+    def _token_key(self):
+        return (self.base, self.settings.xpay_client_id, self.settings.xpay_service_uuid)
+
+    async def _login(self, client):
         response = await client.post(self.base + '/api/v1/developer/login', json={
             'client_id': self.settings.xpay_client_id,
             'client_secret': self.settings.xpay_client_secret,
@@ -46,44 +82,61 @@ class XPayClient:
             raise XPayError('XPAY service unavailable')
         return data['access_token']
 
+    async def _token(self, client, *, refresh=False):
+        cached = _tokens.get(self._token_key)
+        if not refresh and cached is not None and cached[1] > time.monotonic():
+            return cached[0]
+        token = await self._login(client)
+        _tokens[self._token_key] = (token, time.monotonic() + _TOKEN_TTL_SECONDS)
+        return token
+
+    async def _authorized(self, client, method, path, **kwargs):
+        """Call XPAY with the cached token; re-login once if it was rejected."""
+        for attempt in (0, 1):
+            token = await self._token(client, refresh=attempt == 1)
+            response = await client.request(method, self.base + path,
+                headers={'Authorization': 'Bearer ' + token, 'Accept': 'application/json'}, **kwargs)
+            if response.status_code in (401, 403) and attempt == 0:
+                _tokens.pop(self._token_key, None)
+                continue
+            response.raise_for_status()
+            return response
+
+    async def warm(self):
+        """Open the TLS connection and cache a token before a customer clicks."""
+        await self._token(_shared_client())
+
     async def create(self, *, amount, callback_url, check_url, payer_id, service_name, comments):
         if not service_name or len(service_name) > 32 or not comments or len(comments) > 32:
             raise XPayError('Invalid XPAY payment description')
-        async with httpx.AsyncClient(timeout=20) as client:
-            token = await self._token(client)
-            response = await client.post(self.base + '/api/v1/developer/qr/get',
-                headers={'Authorization': 'Bearer ' + token, 'Accept': 'application/json'}, json={
-                    'uuid': self.settings.xpay_service_uuid, 'amount': amount * 100,
-                    'type': 'dynamic', 'amount_change': False, 'payer_id': str(payer_id),
-                    'service_name': service_name, 'comments': comments, 'callback_url': callback_url,
-                    'check_url': check_url,
-                })
-            response.raise_for_status()
-            payload = response.json()
-            data = payload.get('data') or {}
-            url = data.get('pay_link') or data.get('qr_code')
-            parts = urlsplit(url or '')
-            if (payload.get('status') != 'Success' or data.get('type') != 'dynamic'
-                or data.get('amount_change') is not False or not data.get('qr_transaction_id')
-                or parts.scheme != 'https' or parts.hostname not in {'pay.xpay.kg', 'devpay.xpay.kg'}
-                or int(data.get('amount', -1)) != amount * 100
-                or int(data.get('request_amount', -1)) != amount * 100):
-                raise XPayError('Unexpected XPAY checkout response')
-            return str(data['qr_transaction_id']), url
+        response = await self._authorized(_shared_client(), 'POST', '/api/v1/developer/qr/get', json={
+            'uuid': self.settings.xpay_service_uuid, 'amount': amount * 100,
+            'type': 'dynamic', 'amount_change': False, 'payer_id': str(payer_id),
+            'service_name': service_name, 'comments': comments, 'callback_url': callback_url,
+            'check_url': check_url,
+        })
+        payload = response.json()
+        data = payload.get('data') or {}
+        url = data.get('pay_link') or data.get('qr_code')
+        parts = urlsplit(url or '')
+        if (payload.get('status') != 'Success' or data.get('type') != 'dynamic'
+            or data.get('amount_change') is not False or not data.get('qr_transaction_id')
+            or parts.scheme != 'https' or parts.hostname not in {'pay.xpay.kg', 'devpay.xpay.kg'}
+            or int(data.get('amount', -1)) != amount * 100
+            or int(data.get('request_amount', -1)) != amount * 100):
+            raise XPayError('Unexpected XPAY checkout response')
+        return str(data['qr_transaction_id']), url
 
     async def status(self, provider_id):
         if not provider_id.isalnum() or len(provider_id) > 128:
             raise XPayError('Invalid XPAY transaction')
-        async with httpx.AsyncClient(timeout=20) as client:
-            token = await self._token(client)
-            response = await client.get(self.base + '/api/v1/developer/qr/dynamic/status/' + provider_id,
-                headers={'Authorization': 'Bearer ' + token, 'Accept': 'application/json'})
-            response.raise_for_status()
-            body = response.json()
-            data = body.get('data') or {}
-            if body.get('status') != 'Success' or data.get('qr_transaction_id') != provider_id:
-                raise XPayError('Unexpected XPAY status response')
-            return data
+        response = await self._authorized(_shared_client(), 'GET',
+            '/api/v1/developer/qr/dynamic/status/' + provider_id)
+        body = response.json()
+        data = body.get('data') or {}
+        if body.get('status') != 'Success' or data.get('qr_transaction_id') != provider_id:
+            raise XPayError('Unexpected XPAY status response')
+        return data
 
 
 async def create_checkout(sessions, settings, *, request_id=None, wanted_ad_id=None, expected_plan=None):
@@ -254,3 +307,37 @@ async def reconcile(sessions, settings, token):
             outcome = 'approved'
         attempt.status, attempt.payment_url = 'paid', None
         return outcome, None, attempt.wanted_ad_id
+
+
+async def discard_unopened_checkout(sessions, *, user_id: int, plan: str) -> bool:
+    """Close this account's prefetched ``plan`` checkout if it was never opened.
+
+    A prefetched checkout leaves its request ``prepared``. ``/miniapp/api/start``
+    (which must succeed before the client opens the link) moves it to
+    ``awaiting_receipt``. So while no request of the account on this plan has
+    left ``prepared``, the payable link was never opened and can be dropped,
+    which lets the customer switch tariff without waiting out the five-minute
+    "different tariff is still active" guard.
+    """
+    if plan not in OFFERED_CONTACT_PLANS:
+        return False
+    now = datetime.now(UTC)
+    async with sessions.begin() as session:
+        if session.bind.dialect.name == 'postgresql':
+            await session.execute(text('SELECT pg_advisory_xact_lock(:namespace, :user_id)'),
+                {'namespace': 1481654617, 'user_id': int(user_id) % 2147483647})
+        account_requests = select(PaymentRequest.id).where(PaymentRequest.telegram_user_id == user_id)
+        opened = await session.scalar(select(PaymentRequest.id).where(
+            PaymentRequest.telegram_user_id == user_id, PaymentRequest.plan == plan,
+            PaymentRequest.status.in_(['awaiting_receipt', 'pending', 'approved'])).limit(1))
+        if opened is not None:
+            return False
+        attempts = list((await session.scalars(select(XPayAttempt).where(
+            XPayAttempt.request_id.in_(account_requests),
+            XPayAttempt.checkout_plan == plan,
+            XPayAttempt.expires_at > now,
+            XPayAttempt.status == 'waiting',
+        ).with_for_update())).all())
+        for attempt in attempts:
+            attempt.status, attempt.payment_url = 'closed', None
+        return bool(attempts)
