@@ -81,9 +81,9 @@ class PublicFeed:
         return raw
 
 
-def parsed_public_ad(raw):
+def parsed_public_ad(raw, *, include_contact=True):
     url=raw.get('url') or ''
     if url.startswith('/'):url='https://lalafo.kg'+url
     if not url.startswith(('https://lalafo.kg/','https://www.lalafo.kg/')):
         raise ValueError('MissingPublicSourceURL')
-    return parse_detail_data(raw,source_url=url)
+    return parse_detail_data(raw,source_url=url,include_contact=include_contact)

@@ -23,9 +23,13 @@ from scripts.scrape_publish import apartment_to_ad
 logger=logging.getLogger(__name__)
 
 
-def same_apartment(own,original):
+def shared_photos(own,original):
     def photos(ad):return {PurePosixPath(urlsplit(url).path).name.casefold() for url in ad.photo_urls}
-    if len(photos(own)&photos(original))<2:return False
+    return len(photos(own)&photos(original))
+
+
+def same_apartment(own,original):
+    if shared_photos(own,original)<2:return False
     if own.rooms!=original.rooms or abs(own.price-original.price)>max(own.price,original.price)*0.1:return False
     if normalized_district(own.district)!=normalized_district(original.district):return False
     def area(ad):
@@ -120,8 +124,11 @@ async def scan_profile(runtime):
             for raw in own_items:
                 # Own ads can hide the public phone. It is never used as the
                 # original contact, but rooms/photos/location must be parsed.
-                view={**raw,'hide_phone':False,'mobile':''}
-                own=parsed_public_ad(view)
+                if not raw.get('params'):
+                    try:raw=await source.detail(int(raw['id']))
+                    except ValueError:continue
+                if int(raw.get('user_id') or 0)!=profile:raise ValueError('ProfileOwnerMismatch')
+                own=parsed_public_ad(raw, include_contact=False)
                 mapped=mappings.get(own.lalafo_id)
                 if mapped is None:
                     mapped=await repo.verified_source_by_photos(own.photo_urls,excluded_lalafo_ids=own_ids)
@@ -139,6 +146,9 @@ async def scan_profile(runtime):
                         for item in data.get('items',[]):
                             if item.get('id') in own_ids:continue
                             try:ad=parsed_public_ad(item)
+                            except ValueError:continue
+                            if shared_photos(own,ad)<2:continue
+                            try:ad=parsed_public_ad(await source.detail(ad.lalafo_id))
                             except ValueError:continue
                             if same_apartment(own,ad) and _valid(ad,settings)[0]:candidates.append(ad)
                     unique={ad.lalafo_id:ad for ad in candidates}

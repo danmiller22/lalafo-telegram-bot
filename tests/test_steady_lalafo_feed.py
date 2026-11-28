@@ -181,8 +181,8 @@ async def test_profile_reuses_mapping_and_records_acknowledged_original(reposito
         async def __aexit__(self,*args):pass
         async def get(self,*args):return {'items':[{'id':200,'user_id':18041923,'status_id':2,'category_id':2044}]}
         async def detail(self,source_id):
-            assert source_id==100
-            return {'id':100}
+            assert source_id in {100,200}
+            return {'id':source_id,'user_id':18041923 if source_id==200 else 999}
     class Publisher:
         def __init__(self,*args,**kwargs):pass
         async def publish(self,apartment_id,ad):
@@ -190,7 +190,7 @@ async def test_profile_reuses_mapping_and_records_acknowledged_original(reposito
             return SimpleNamespace(message_id=456,date=datetime.now(timezone.utc))
     monkeypatch.setattr('app.profile_originals.PublicFeed',Feed)
     monkeypatch.setattr('app.profile_originals.TelegramPublisher',Publisher)
-    monkeypatch.setattr('app.profile_originals.parsed_public_ad',lambda raw:own if raw['id']==200 else original)
+    monkeypatch.setattr('app.profile_originals.parsed_public_ad',lambda raw,**kwargs:own if raw['id']==200 else original)
     runtime=SimpleNamespace(bot=object(),workflow_data={'settings':Settings(callback_secret='test-secret-at-least-16',telegram_group_id=-1001),'apartments':apartments})
     await scan_profile(runtime)
     async with sessions() as session:
@@ -224,3 +224,15 @@ def test_incremental_listing_index_keeps_duplicate_protection():
     assert index.contains(original)
     assert index.contains(make_ad(lalafo_id=11))
     assert not index.contains(make_ad(lalafo_id=12,phone='+996555999123',photo_urls=['https://example.com/distinct.jpg']))
+
+
+def test_hidden_phone_profile_terms_never_invent_a_contact():
+    from app.lalafo.parser import parse_detail_data,LalafoParseError
+    raw={'id':116823000,'hide_phone':True,'category_id':2044,'price':36000,
+         'city':'Бишкек','currency':'KGS','params':[{'name':'Количество комнат','value':'1 комната'}]}
+    with pytest.raises(LalafoParseError):
+        parse_detail_data(raw,source_url='https://lalafo.kg/bishkek/ads/owned-id-116823000')
+    own=parse_detail_data(raw,source_url='https://lalafo.kg/bishkek/ads/owned-id-116823000',include_contact=False)
+    assert own.phone==''
+    assert own.rooms=='1'
+    assert not _valid(own,Settings())[0]
