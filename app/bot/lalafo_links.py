@@ -722,7 +722,7 @@ async def manual_card_price(
     except ValueError:
         price = 0
     if not RENT_MIN_PRICE <= price <= RENT_MAX_PRICE:
-        await message.answer("Укажите цену от 25 000 до 50 000 сом.")
+        await message.answer("Укажите цену от 25 000 до 45 000 сом.")
         return
     await state.update_data(price=price)
     await state.set_state(ManualCardPublish.waiting_for_author)
