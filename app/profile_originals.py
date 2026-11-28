@@ -3,6 +3,7 @@ import asyncio
 from datetime import datetime,timedelta,timezone
 import json
 import logging
+import httpx
 from pathlib import PurePosixPath
 from urllib.parse import urlsplit
 
@@ -103,9 +104,9 @@ async def scan_profile(runtime):
     if not await claim_cycle(sessions,'profile_originals',interval=timedelta(hours=2),lease=timedelta(minutes=20)):return
     found=published=active=0
     try:
-        profile=int(settings.lalafo_showcase_profile_id)
+        profile=int(settings.rental_originals_profile_id)
         mappings={r.managed_lalafo_ad_id:r.apartment for r in await repo.managed_lalafo_sources()}
-        async with PublicFeed(proxy_urls=settings.lalafo_proxy_url) as source:
+        async with PublicFeed(proxy_urls=settings.lalafo_proxy_url, verify_routes=True) as source:
             own_items=[]
             for page in range(1,11):
                 data=await source.get('/api/search/v3/feed/active/'+str(profile),{'expand':'url','per-page':100,'page':page})
@@ -152,7 +153,7 @@ async def scan_profile(runtime):
         await finish_cycle(sessions,'profile_originals',{'profile_id':profile,'active_ads':active,'originals_found':found,'published':published})
     except asyncio.CancelledError:raise
     except Exception as exc:
-        await finish_cycle(sessions,'profile_originals',{'active_ads':active,'originals_found':found,'published':published},error=type(exc).__name__)
+        await finish_cycle(sessions,'profile_originals',{'active_ads':active,'originals_found':found,'published':published},error=(type(exc).__name__ + (':HTTP'+str(exc.response.status_code) if isinstance(exc, httpx.HTTPStatusError) else '')))
         logger.error('Profile original scan failed: %s',type(exc).__name__)
 
 

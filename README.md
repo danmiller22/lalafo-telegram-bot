@@ -268,10 +268,13 @@ Koyeb owns both recurring rental processes. The ordinary dispatcher publishes
 collection in PostgreSQL, and refills toward 40 queued cards (minimum reserve:
 20). It uses first-party JSON search snapshots when sufficient and at most three
 concurrent bounded detail reads otherwise. Transport/server errors have bounded
-retries; 403/429 are terminal for that cycle. Configured proxies are tried only
-on transport failures, never to evade an access restriction.
+retries; 403/429 are terminal for that cycle. The existing network-route preflight verifies search and detail access before
+a cycle; its result is shared for ten minutes. Verified routes rotate only on
+transport failures; an access restriction stops the cycle.
 
-`app/profile_originals.py` scans the configured showcase profile every two hours.
+`app/profile_originals.py` scans `RENTAL_ORIGINALS_PROFILE_ID` (currently 18041923, resolved from the
+user-provided active ad 116823000) every two hours. This is independent of the
+legacy showcase/auto-reply profile.
 It uses the public active-profile API and verifies every result's user ID.
 Existing `DailyFeaturedPublication` mappings are reused. New matches require at
 least two identical image filenames, matching room/location information and a

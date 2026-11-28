@@ -59,7 +59,7 @@ async def refill(runtime):
             seen=set(known)
             accepted=[]
             semaphore=asyncio.Semaphore(3)
-            async with PublicFeed(proxy_urls=settings.lalafo_proxy_url) as source:
+            async with PublicFeed(proxy_urls=settings.lalafo_proxy_url, verify_routes=True) as source:
                 async def read(raw):
                     nonlocal details
                     if raw.get('status_id')!=2 or raw.get('hide_phone'):return None
@@ -117,7 +117,7 @@ async def refill(runtime):
         await finish_cycle(sessions,'primary_feed',{'stored':stored,'search_pages':pages,'detail_requests':details})
     except asyncio.CancelledError:raise
     except Exception as exc:
-        await finish_cycle(sessions,'primary_feed',{'stored':stored,'search_pages':pages,'detail_requests':details},error=type(exc).__name__)
+        await finish_cycle(sessions,'primary_feed',{'stored':stored,'search_pages':pages,'detail_requests':details},error=(type(exc).__name__ + (':HTTP'+str(exc.response.status_code) if isinstance(exc, httpx.HTTPStatusError) else '')))
         logger.error('Hosted Lalafo refill failed: %s',type(exc).__name__)
 
 

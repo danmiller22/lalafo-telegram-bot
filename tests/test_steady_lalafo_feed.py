@@ -179,7 +179,7 @@ async def test_profile_reuses_mapping_and_records_acknowledged_original(reposito
         def __init__(self,**kwargs):pass
         async def __aenter__(self):return self
         async def __aexit__(self,*args):pass
-        async def get(self,*args):return {'items':[{'id':200,'user_id':18225388,'status_id':2,'category_id':2044}]}
+        async def get(self,*args):return {'items':[{'id':200,'user_id':18041923,'status_id':2,'category_id':2044}]}
         async def detail(self,source_id):
             assert source_id==100
             return {'id':100}
@@ -201,3 +201,26 @@ async def test_profile_reuses_mapping_and_records_acknowledged_original(reposito
         assert receipt.value['state']=='published'
         assert receipt.value['message_id']==456
     assert await reserve_original(sessions,await apartments.get(apartment.id)) is None
+
+@pytest.mark.asyncio
+async def test_network_preflight_is_shared_between_hosted_workers(monkeypatch):
+    from unittest.mock import AsyncMock
+    from app.lalafo.public_feed import PublicFeed
+    probe=AsyncMock(return_value=['http://verified.example:8080'])
+    monkeypatch.setattr('scripts.select_lalafo_proxy.find_working_proxies',probe)
+    monkeypatch.setattr(PublicFeed,'_route_cache',{})
+    for _ in range(2):
+        async with PublicFeed(proxy_urls='http://configured.example:8080',verify_routes=True) as feed:
+            assert feed.routes==['http://verified.example:8080']
+    probe.assert_awaited_once_with('http://configured.example:8080')
+
+
+def test_incremental_listing_index_keeps_duplicate_protection():
+    from app.state import ListingIndex
+    original=make_ad(lalafo_id=10)
+    index=ListingIndex([])
+    assert not index.contains(original)
+    index.add(original)
+    assert index.contains(original)
+    assert index.contains(make_ad(lalafo_id=11))
+    assert not index.contains(make_ad(lalafo_id=12,phone='+996555999123',photo_urls=['https://example.com/distinct.jpg']))

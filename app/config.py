@@ -211,6 +211,7 @@ class Settings(BaseSettings):
     lalafo_login: str = ""
     lalafo_password: str = ""
     lalafo_showcase_profile_id: int = 18225388
+    rental_originals_profile_id: int = 18041923
     showcase_card_interval_seconds: float = 5.0
     lalafo_auto_reply_poll_seconds: float = 10.0
     lalafo_auto_reply_watchdog_seconds: float = 30.0
