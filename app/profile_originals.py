@@ -3,6 +3,7 @@ import asyncio
 from datetime import datetime,timedelta,timezone
 import json
 import logging
+import httpx
 from pathlib import PurePosixPath
 from urllib.parse import urlsplit
 
@@ -22,9 +23,13 @@ from scripts.scrape_publish import apartment_to_ad
 logger=logging.getLogger(__name__)
 
 
-def same_apartment(own,original):
+def shared_photos(own,original):
     def photos(ad):return {PurePosixPath(urlsplit(url).path).name.casefold() for url in ad.photo_urls}
-    if len(photos(own)&photos(original))<2:return False
+    return len(photos(own)&photos(original))
+
+
+def same_apartment(own,original):
+    if shared_photos(own,original)<2:return False
     if own.rooms!=original.rooms or abs(own.price-original.price)>max(own.price,original.price)*0.1:return False
     if normalized_district(own.district)!=normalized_district(original.district):return False
     def area(ad):
@@ -43,6 +48,11 @@ async def reserve_original(sessions,apartment):
         marker=await session.get(RentalFeedState,'original_send:'+str(apartment.id),with_for_update=True)
         if marker and marker.value.get('state') in {'reserved','uncertain'}:return None
         if marker and marker.value.get('last_sent_at') and datetime.fromisoformat(marker.value['last_sent_at'])>now-timedelta(hours=2):return None
+        legacy_uncertain=list((await session.scalars(select(Apartment).where(
+            (Apartment.publication_status=='uncertain') | Apartment.id.in_(
+                select(ApartmentInventoryQueue.apartment_id).where(ApartmentInventoryQueue.status=='uncertain'))
+        ))).all())
+        if ListingIndex(legacy_uncertain).contains(apartment_to_ad(apartment)):return None
         recent=list((await session.scalars(select(Apartment).where(Apartment.published_at>now-timedelta(hours=2)))).all())
         if ListingIndex(recent).contains(apartment_to_ad(apartment)):return None
         busy=int(await session.scalar(select(func.count()).select_from(ApartmentInventoryQueue).where(ApartmentInventoryQueue.status=='publishing')) or 0)
@@ -98,14 +108,29 @@ async def send_original(runtime,ad):
         raise
 
 
+async def optional_detail(source, source_id):
+    try:
+        return await source.detail(source_id)
+    except ValueError:
+        return None
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code in (404,410):return None
+        raise
+
+
 async def scan_profile(runtime):
     settings=runtime.workflow_data['settings'];repo=runtime.workflow_data['apartments'];sessions=repo.sessions
     if not await claim_cycle(sessions,'profile_originals',interval=timedelta(hours=2),lease=timedelta(minutes=20)):return
     found=published=active=0
     try:
-        profile=int(settings.lalafo_showcase_profile_id)
+        profile=int(settings.rental_originals_profile_id)
         mappings={r.managed_lalafo_ad_id:r.apartment for r in await repo.managed_lalafo_sources()}
-        async with PublicFeed(proxy_urls=settings.lalafo_proxy_url) as source:
+        async with sessions() as session:
+            previous=await session.get(RentalFeedState,'profile_originals')
+            page_start=int(previous.value.get('next_search_page',1))
+        search_cache={}
+
+        async with PublicFeed(proxy_urls=settings.lalafo_proxy_url, verify_routes=True) as source:
             own_items=[]
             for page in range(1,11):
                 data=await source.get('/api/search/v3/feed/active/'+str(profile),{'expand':'url','per-page':100,'page':page})
@@ -119,40 +144,54 @@ async def scan_profile(runtime):
             for raw in own_items:
                 # Own ads can hide the public phone. It is never used as the
                 # original contact, but rooms/photos/location must be parsed.
-                view={**raw,'hide_phone':False,'mobile':''}
-                own=parsed_public_ad(view)
+                if not raw.get('params'):
+                    raw=await optional_detail(source,int(raw['id']))
+                    if raw is None:continue
+                if int(raw.get('user_id') or 0)!=profile:raise ValueError('ProfileOwnerMismatch')
+                own=parsed_public_ad(raw, include_contact=False)
                 mapped=mappings.get(own.lalafo_id)
                 if mapped is None:
                     mapped=await repo.verified_source_by_photos(own.photo_urls,excluded_lalafo_ids=own_ids)
                 original=None
                 if mapped is not None:
-                    try:original=parsed_public_ad(await source.detail(mapped.lalafo_id))
-                    except ValueError:pass
+                    original_raw=await optional_detail(source,mapped.lalafo_id)
+                    if original_raw is not None and original_raw.get('user_id')!=profile:
+                        try:original=parsed_public_ad(original_raw)
+                        except ValueError:pass
                 if original is None:
                     # Search the same room/price segment, then require unique
                     # exact-photo evidence. No phone is inferred from similarity.
                     from app.config import DEFAULT_SEARCH_URL
                     candidates=[]
-                    for page in range(1,5):
-                        data=await source.search(DEFAULT_SEARCH_URL,page)
+                    for page in range(page_start,page_start+12):
+                        if page not in search_cache:
+                            search_cache[page]=await source.search(DEFAULT_SEARCH_URL.replace('/owner',''),page)
+                        data=search_cache[page]
                         for item in data.get('items',[]):
                             if item.get('id') in own_ids:continue
-                            try:ad=parsed_public_ad(item)
+                            try:ad=parsed_public_ad(item,include_contact=False)
+                            except ValueError:continue
+                            if shared_photos(own,ad)<2:continue
+                            original_raw=await optional_detail(source,ad.lalafo_id)
+                            if original_raw is None or original_raw.get('user_id')==profile:continue
+                            try:ad=parsed_public_ad(original_raw)
                             except ValueError:continue
                             if same_apartment(own,ad) and _valid(ad,settings)[0]:candidates.append(ad)
                     unique={ad.lalafo_id:ad for ad in candidates}
                     if len(unique)==1:
                         original=next(iter(unique.values()))
-                        original=parsed_public_ad(await source.detail(original.lalafo_id))
+                        original_raw=await optional_detail(source,original.lalafo_id)
+                        original=parsed_public_ad(original_raw) if original_raw is not None else None
                 if original is None or not same_apartment(own,original) or not _valid(original,settings)[0]:continue
                 found+=1
                 apartment=await repo.upsert_discovered(original)
                 await repo.save_managed_lalafo_source(managed_lalafo_ad_id=own.lalafo_id,managed_lalafo_ad_url=own.source_url,apartment=apartment)
                 published+=int(await send_original(runtime,original))
-        await finish_cycle(sessions,'profile_originals',{'profile_id':profile,'active_ads':active,'originals_found':found,'published':published})
+        await finish_cycle(sessions,'profile_originals',{'profile_id':profile,'active_ads':active,'originals_found':found,'published':published,
+            'search_pages':len(search_cache),'next_search_page':1 if page_start>=25 else page_start+12})
     except asyncio.CancelledError:raise
     except Exception as exc:
-        await finish_cycle(sessions,'profile_originals',{'active_ads':active,'originals_found':found,'published':published},error=type(exc).__name__)
+        await finish_cycle(sessions,'profile_originals',{'active_ads':active,'originals_found':found,'published':published},error=(type(exc).__name__ + (':HTTP'+str(exc.response.status_code) if isinstance(exc, httpx.HTTPStatusError) else '')))
         logger.error('Profile original scan failed: %s',type(exc).__name__)
 
 

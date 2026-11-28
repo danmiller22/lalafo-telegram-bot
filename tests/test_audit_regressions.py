@@ -364,7 +364,7 @@ async def test_timed_out_source_skips_old_snapshot_and_publishes_next_card(repos
     send=SimpleNamespace(publish=AsyncMock(return_value=SimpleNamespace(message_id=999)))
     monkeypatch.setattr(publisher,'get_settings',lambda:Settings(telegram_bot_token='123456:token',callback_secret='c'*32))
     monkeypatch.setattr(publisher,'PUBLIC_DETAIL_REFRESH_SECONDS',0.01)
-    monkeypatch.setattr(publisher,'LalafoClient',lambda **kwargs:SlowSource())
+    monkeypatch.setattr('app.lalafo.public_feed.PublicFeed',lambda **kwargs:SlowSource())
     monkeypatch.setattr(publisher,'InventoryRepository',lambda *args:inventory)
     monkeypatch.setattr(publisher,'Bot',lambda **kwargs:bot)
     monkeypatch.setattr(publisher,'TelegramPublisher',lambda *args,**kwargs:send)

@@ -179,10 +179,10 @@ async def test_profile_reuses_mapping_and_records_acknowledged_original(reposito
         def __init__(self,**kwargs):pass
         async def __aenter__(self):return self
         async def __aexit__(self,*args):pass
-        async def get(self,*args):return {'items':[{'id':200,'user_id':18225388,'status_id':2,'category_id':2044}]}
+        async def get(self,*args):return {'items':[{'id':200,'user_id':18041923,'status_id':2,'category_id':2044}]}
         async def detail(self,source_id):
-            assert source_id==100
-            return {'id':100}
+            assert source_id in {100,200}
+            return {'id':source_id,'user_id':18041923 if source_id==200 else 999}
     class Publisher:
         def __init__(self,*args,**kwargs):pass
         async def publish(self,apartment_id,ad):
@@ -190,7 +190,7 @@ async def test_profile_reuses_mapping_and_records_acknowledged_original(reposito
             return SimpleNamespace(message_id=456,date=datetime.now(timezone.utc))
     monkeypatch.setattr('app.profile_originals.PublicFeed',Feed)
     monkeypatch.setattr('app.profile_originals.TelegramPublisher',Publisher)
-    monkeypatch.setattr('app.profile_originals.parsed_public_ad',lambda raw:own if raw['id']==200 else original)
+    monkeypatch.setattr('app.profile_originals.parsed_public_ad',lambda raw,**kwargs:own if raw['id']==200 else original)
     runtime=SimpleNamespace(bot=object(),workflow_data={'settings':Settings(callback_secret='test-secret-at-least-16',telegram_group_id=-1001),'apartments':apartments})
     await scan_profile(runtime)
     async with sessions() as session:
@@ -200,4 +200,68 @@ async def test_profile_reuses_mapping_and_records_acknowledged_original(reposito
         receipt=await session.get(RentalFeedState,'original_send:'+str(apartment.id))
         assert receipt.value['state']=='published'
         assert receipt.value['message_id']==456
+    assert await reserve_original(sessions,await apartments.get(apartment.id)) is None
+
+@pytest.mark.asyncio
+async def test_network_preflight_is_shared_between_hosted_workers(monkeypatch):
+    from unittest.mock import AsyncMock
+    from app.lalafo.public_feed import PublicFeed
+    probe=AsyncMock(return_value=['http://verified.example:8080'])
+    monkeypatch.setattr('scripts.select_lalafo_proxy.find_working_proxies',probe)
+    monkeypatch.setattr(PublicFeed,'_route_cache',{})
+    for _ in range(2):
+        async with PublicFeed(proxy_urls='http://configured.example:8080',verify_routes=True) as feed:
+            assert feed.routes==['http://verified.example:8080']
+    probe.assert_awaited_once_with('http://configured.example:8080')
+
+
+def test_incremental_listing_index_keeps_duplicate_protection():
+    from app.state import ListingIndex
+    original=make_ad(lalafo_id=10)
+    index=ListingIndex([])
+    assert not index.contains(original)
+    index.add(original)
+    assert index.contains(original)
+    assert index.contains(make_ad(lalafo_id=11))
+    assert not index.contains(make_ad(lalafo_id=12,phone='+996555999123',photo_urls=['https://example.com/distinct.jpg']))
+
+
+def test_hidden_phone_profile_terms_never_invent_a_contact():
+    from app.lalafo.parser import parse_detail_data,LalafoParseError
+    raw={'id':116823000,'hide_phone':True,'category_id':2044,'price':36000,
+         'city':'Бишкек','currency':'KGS','params':[{'name':'Количество комнат','value':'1 комната'}]}
+    with pytest.raises(LalafoParseError):
+        parse_detail_data(raw,source_url='https://lalafo.kg/bishkek/ads/owned-id-116823000')
+    own=parse_detail_data(raw,source_url='https://lalafo.kg/bishkek/ads/owned-id-116823000',include_contact=False)
+    assert own.phone==''
+    assert own.rooms=='1'
+    assert not _valid(own,Settings())[0]
+
+@pytest.mark.asyncio
+async def test_dispatch_uses_fresh_verified_json_snapshot_without_second_source_read(repositories,monkeypatch):
+    from unittest.mock import AsyncMock
+    from scripts import publish_inventory as worker
+    apartments,_,sessions=repositories
+    apartment=await apartments.upsert_discovered(make_ad())
+    await apartments.set_availability(apartment.id,status='active',checked_at=datetime.now(timezone.utc),reason='public_feed_status_2')
+    apartment=await apartments.get(apartment.id)
+    item=SimpleNamespace(id=987,apartment=apartment,window_key='ordinary')
+    queue=SimpleNamespace(finish_item=AsyncMock(),retry_item=AsyncMock())
+    bot=SimpleNamespace(session=SimpleNamespace(close=AsyncMock()))
+    publisher=SimpleNamespace(publish=AsyncMock(return_value=SimpleNamespace(message_id=900,date=datetime.now(timezone.utc))))
+    monkeypatch.setattr(worker,'Bot',lambda **kwargs:bot)
+    monkeypatch.setattr(worker,'TelegramPublisher',lambda *args,**kwargs:publisher)
+    monkeypatch.setattr('app.lalafo.public_feed.PublicFeed',lambda **kwargs:pytest.fail('Fresh JSON evidence must avoid another source request'))
+    settings=Settings(telegram_bot_token='123456:'+('a'*35),callback_secret='test-callback-secret-16',telegram_group_id=-1001)
+    assert await worker._publish_item(settings,sessions,queue,apartments,item)==0
+    publisher.publish.assert_awaited_once()
+    assert publisher.publish.await_args.kwargs=={}
+    queue.finish_item.assert_awaited_once_with(987,status='published')
+
+
+@pytest.mark.asyncio
+async def test_profile_original_never_replays_legacy_uncertain_publication(repositories):
+    apartments,_,sessions=repositories
+    apartment=await apartments.upsert_discovered(make_ad())
+    await apartments.mark_publication_uncertain(apartment.id)
     assert await reserve_original(sessions,await apartments.get(apartment.id)) is None

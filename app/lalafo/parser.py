@@ -252,11 +252,11 @@ def parse_search_page(html: str, *, base_url: str = "https://lalafo.kg") -> Sear
     return parse_search_data(pages[0], base_url=base_url)
 
 
-def parse_detail_data(raw: dict[str, Any], *, source_url: str) -> LalafoAd:
+def parse_detail_data(raw: dict[str, Any], *, source_url: str, include_contact: bool = True) -> LalafoAd:
     """Parse one response from Lalafo's first-party public details endpoint."""
     if not isinstance(raw, dict) or not raw.get("id"):
         raise LalafoParseError("Lalafo detail payload is empty")
-    if raw.get("hide_phone"):
+    if raw.get("hide_phone") and include_contact:
         raise LalafoParseError("Advertisement owner hides the phone number")
     params = {str(item.get("name", "")).strip(): item.get("value") for item in raw.get("params") or []}
     rooms_value = str(params.get("Количество комнат") or "").strip().lower()
@@ -292,7 +292,7 @@ def parse_detail_data(raw: dict[str, Any], *, source_url: str) -> LalafoAd:
     return LalafoAd(
         lalafo_id=int(raw["id"]),
         source_url=source_url,
-        phone=normalize_kg_phone(raw.get("mobile")),
+        phone=normalize_kg_phone(raw.get("mobile")) if include_contact else "",
         phone_source_version=PHONE_SOURCE_VERSION,
         price=price,
         currency=str(raw.get("currency") or ""),

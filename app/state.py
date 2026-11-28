@@ -77,15 +77,19 @@ class ListingIndex:
         self.contacts: dict[tuple, list[frozenset[str]]] = defaultdict(list)
         self.photos: dict[tuple, list[tuple[int, int, int]]] = defaultdict(list)
         for item in listings:
-            self.ids.add(item.lalafo_id)
-            district = normalized_district(item.district)
-            if not district or not isinstance(item.price, int):
-                continue
-            urls = item.photo_urls or []
-            self.contacts[(item.rooms, district, item.phone, item.price)].append(frozenset(urls))
-            keys = _photo_keys(urls)
-            for photo in keys:
-                self.photos[(item.rooms, district, photo)].append((item.lalafo_id, item.price, len(keys)))
+            self.add(item)
+
+    def add(self, item: object) -> None:
+        self.ids.add(item.lalafo_id)
+        district = normalized_district(item.district)
+        if not district or not isinstance(item.price, int):
+            return
+        urls = item.photo_urls or []
+        self.contacts[(item.rooms, district, item.phone, item.price)].append(frozenset(urls))
+        keys = _photo_keys(urls)
+        for photo in keys:
+            self.photos[(item.rooms, district, photo)].append((item.lalafo_id, item.price, len(keys)))
+
 
     def contains(self, ad: LalafoAd) -> bool:
         if ad.lalafo_id in self.ids:

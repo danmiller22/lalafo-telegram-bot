@@ -39,12 +39,14 @@ async def daily_medians(session, *, now=None):
     ).order_by(Apartment.last_seen_at.desc()))).all())
     groups = defaultdict(list)
     unique = []
+    index = ListingIndex([])
     for row in rows:
         ad = apartment_to_ad(row)
         if (is_permanently_excluded(row.lalafo_id) or is_excluded_contact(ad)
-                or is_excluded_agency(ad) or ListingIndex(unique).contains(ad)):
+                or is_excluded_agency(ad) or index.contains(ad)):
             continue
         unique.append(row)
+        index.add(row)
         if row.district:
             groups[market_key(row.rooms, row.district)].append(row.price)
     medians = {key: median(prices) for key, prices in groups.items() if len(prices) >= 5}
