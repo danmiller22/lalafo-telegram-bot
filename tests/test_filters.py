@@ -133,17 +133,17 @@ def test_expanded_source_keeps_reposts_strictly_limited():
     assert SOURCE_PUBLISH_SPACING_SECONDS == 150
     assert SOURCE_MAX_SEARCH_PAGES == 30
     assert SOURCE_MIN_PRICE == 25_000
-    assert SOURCE_MAX_PRICE == 45_000
+    assert SOURCE_MAX_PRICE == 50_000
     assert SOURCE_MIN_PHOTOS == 0
     assert MAX_REPOSTS_PER_RUN == 18
     assert SOURCE_REPOST_AFTER_HOURS == 48
     assert TWO_BEDROOM_MIN_PRICE == 25_000
-    assert TWO_BEDROOM_MAX_PRICE == 45_000
+    assert TWO_BEDROOM_MAX_PRICE == 50_000
     assert TWO_BEDROOM_DAILY_LIMIT == 20
     assert TWO_BEDROOM_MAX_PER_RUN == 2
     assert settings.rooms == "studio,1,2"
     assert settings.min_price == 25_000
-    assert settings.max_price == 45_000
+    assert settings.max_price == 50_000
     assert settings.max_new_posts_per_run == 18
     assert settings.max_search_pages == 36
     assert settings.allow_no_district is True
@@ -156,11 +156,11 @@ def test_source_urls_follow_the_operator_filters():
     assert "/semeynym/param-bez-detey/studentam/" in DEFAULT_SEARCH_URL
     assert "/bez-podseleniya/mozhno-s-zhivotnymi" in DEFAULT_SEARCH_URL
     assert "bez-zhivotnyh" not in DEFAULT_SEARCH_URL
-    assert "price[from]=25000&price[to]=45000" in DEFAULT_SEARCH_URL
+    assert "price[from]=25000&price[to]=50000" in DEFAULT_SEARCH_URL
     assert len(ADDITIONAL_SEARCH_URLS) == 14
     assert all("/owner?" in url for url in ADDITIONAL_SEARCH_URLS)
     assert all("bez-podseleniya" not in url for url in ADDITIONAL_SEARCH_URLS)
-    assert all("price[from]=25000&price[to]=45000" in url for url in ADDITIONAL_SEARCH_URLS)
+    assert all("price[from]=25000&price[to]=50000" in url for url in ADDITIONAL_SEARCH_URLS)
 
 
 def test_discovery_reserves_capacity_for_owner_shortage():
@@ -811,7 +811,7 @@ def test_searches_cover_owner_mixed_and_agency_inventory():
         if urlsplit(url).path.endswith('/studio/1-bedroom/owner'):
             q=parse_qs(urlsplit(url).query)
             owner_ranges.append((int(q['price[from]'][0]),int(q['price[to]'][0])))
-    assert owner_ranges==[(25000,45000),(25000,27999),(28000,31999),(32000,35999),(36000,45000)]
+    assert owner_ranges==[(25000,50000),(25000,27999),(28000,31999),(32000,35999),(36000,50000)]
     assert set(INVENTORY_OWNER_DISTRICTS) == {
         slug for slug, _ in LALAFO_DISTRICT_FILTERS
     }
@@ -824,7 +824,7 @@ def test_source_rotation_covers_owner_and_unknown_sources():
     from scripts.scrape_publish import rotate_inventory_sources
     from app.config import INVENTORY_SEARCH_URLS
     primary = next(url for url in INVENTORY_SEARCH_URLS
-                   if "/studio/1-bedroom/owner?price[from]=25000&price[to]=45000" in url)
+                   if "/studio/1-bedroom/owner?price[from]=25000&price[to]=50000" in url)
     agencies = {url for url in INVENTORY_SEARCH_URLS if "real-estate-agency" in url}
     rotating = set(INVENTORY_SEARCH_URLS) - {primary} - agencies
     first_rotating = set()
@@ -840,6 +840,6 @@ def test_source_rotation_covers_owner_and_unknown_sources():
     assert first_agency == agencies
 
 @pytest.mark.parametrize('rooms', ['studio', '1', '2'])
-@pytest.mark.parametrize('price,eligible', [(24999, False), (25000, True), (45000, True), (45001, False)])
+@pytest.mark.parametrize('price,eligible', [(24999, False), (25000, True), (45000, True), (50000, True), (50001, False)])
 def test_public_rent_price_boundaries_for_each_room_type(rooms, price, eligible):
     assert listing_policy_eligible(make_ad(rooms=rooms, price=price, owner_listing=True, seller_type='owner')) is eligible
