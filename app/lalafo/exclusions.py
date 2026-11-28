@@ -35,7 +35,7 @@ EXCLUDED_CONTACT_SUFFIXES = frozenset({
     "703108500", "703223711", "702133014", "700014220",
     "500066355", "708516601", "700014496",
 })
-_PHONE_SEPARATOR = r"[\s().-]*"
+_PHONE_SEPARATOR = r"[\s().\-\u2010-\u2015\u2212]*"
 EXCLUDED_CONTACT_RE = re.compile(
     r"(?<!\d)(?:\+?996" + _PHONE_SEPARATOR + r"|0" + _PHONE_SEPARATOR + r")?(?:"
     + "|".join(_PHONE_SEPARATOR.join(number) for number in sorted(EXCLUDED_CONTACT_SUFFIXES))
