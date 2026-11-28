@@ -258,3 +258,43 @@ Workflow `managed-requested-repeats.yml` проверяет очередь ка�
 
 Старые общие QR-ссылки отключены. Персональные ссылки действуют пять минут.
 Ранее созданные счета на 499 сом сохраняют исходную сумму для подтверждения.
+
+
+### Hosted rental feed
+
+Koyeb owns both recurring rental processes. The ordinary dispatcher publishes
+100 Lalafo apartments per Bishkek publication day, 05:00–02:00, with a nominal
+12.6-minute interval. The source worker wakes every minute, reserves its next
+collection in PostgreSQL, and refills toward 40 queued cards (minimum reserve:
+20). It uses first-party JSON search snapshots when sufficient and at most three
+concurrent bounded detail reads otherwise. Transport/server errors have bounded
+retries; 403/429 are terminal for that cycle. Configured proxies are tried only
+on transport failures, never to evade an access restriction.
+
+`app/profile_originals.py` scans the configured showcase profile every two hours.
+It uses the public active-profile API and verifies every result's user ID.
+Existing `DailyFeaturedPublication` mappings are reused. New matches require at
+least two identical image filenames, matching room/location information and a
+price difference no greater than 10%; area must agree when present in both ads.
+Only one unambiguous candidate can become a saved original. Unmatched ads are
+skipped. A profile with no active advertisements produces a successful empty
+scan, not invented publications.
+
+Ordinary stock has a 72-hour duplicate cooldown; verified profile originals are
+an explicit two-hour exception and have their own durable pre-send reservation.
+They use the same publisher, exclusions and eligibility rules as ordinary stock.
+Their acknowledged receipts are recorded separately from the ordinary 100-card
+budget. Unacknowledged sends remain uncertain across restarts. Existing channel
+posts and persistent publication history are preserved.
+
+`rental_feed_state` stores collection leases, daily district/room medians and
+original-send reservations. Medians use deduplicated, eligible Lalafo inventory
+observed over 30 days, require five observations per district/room, and refresh
+once per Bishkek date. This is an observed-catalog reference, not a claim to cover
+the entire rental market. Prices up to 1.1 times that reference win priority;
+all existing hard price/room/contact filters still apply.
+
+`/health` exposes the ordinary publication counters plus `hosted_rental_feed`
+(`primary_feed`, `profile_originals`, `district_medians`). The scheduler watches
+and restarts both child workers. Former recurring Actions publishers/refillers
+are manual-only recovery tools; no external runner is required for these flows.

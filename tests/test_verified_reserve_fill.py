@@ -8,7 +8,7 @@ from tests.helpers import make_ad
 @pytest.mark.asyncio
 async def test_only_old_active_reserve_enters_empty_queue(repositories):
     apartments, _, sessions = repositories
-    now = publication_day_start(datetime.now(timezone.utc)) + timedelta(hours=2)
+    now = (publication_day_start(datetime.now(timezone.utc)) + timedelta(hours=2)).astimezone(timezone.utc)
     cards=[]
     for index, age, active in [(1,72,True),(2,12,True),(3,72,False)]:
         card=await apartments.upsert_discovered(make_ad(lalafo_id=990000+index,

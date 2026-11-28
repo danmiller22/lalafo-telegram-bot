@@ -136,7 +136,7 @@ def test_expanded_source_keeps_reposts_strictly_limited():
     assert SOURCE_MAX_PRICE == 45_000
     assert SOURCE_MIN_PHOTOS == 0
     assert MAX_REPOSTS_PER_RUN == 18
-    assert SOURCE_REPOST_AFTER_HOURS == 48
+    assert SOURCE_REPOST_AFTER_HOURS == 72
     assert TWO_BEDROOM_MIN_PRICE == 25_000
     assert TWO_BEDROOM_MAX_PRICE == 45_000
     assert TWO_BEDROOM_DAILY_LIMIT == 20

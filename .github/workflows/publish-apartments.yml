@@ -1,11 +1,6 @@
 name: Publish apartments to Telegram
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "app/**"
-      - "scripts/**"
   workflow_dispatch:
     inputs:
       force_publish:
@@ -13,12 +8,6 @@ on:
         required: true
         type: boolean
         default: true
-  schedule:
-    # The durable queue decides whether a card is due. A ten-minute cloud tick
-    # keeps publication working while the owner's PC is off. At 06:00/18:00 UTC
-    # the same tick starts the 00:00/12:00 Bishkek large discovery.
-    - cron: "*/10 * * * *"
-
 permissions:
   contents: read
 

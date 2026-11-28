@@ -15,7 +15,7 @@ from app.telegram.formatting import is_confirmed_owner, format_public_apartment,
 from app.telegram.keyboards import apartment_keyboard
 
 from app.listing_policy import PUBLIC_ROOMS, author_policy_eligible
-from app.lalafo.exclusions import is_excluded_agency
+from app.lalafo.exclusions import is_excluded_agency, is_permanently_excluded
 
 logger = logging.getLogger(__name__)
 TELEGRAM_ALBUM_LIMIT = 10
@@ -41,6 +41,7 @@ class TelegramPublisher:
         support_url: str,
         max_photos: int = 5,
         include_duplicate: bool = False,
+        card_delay_seconds: float = 0.0,
         request_timeout_seconds: float | None = None,
     ) -> None:
         self.bot = bot
@@ -50,6 +51,7 @@ class TelegramPublisher:
         self.support_url = support_url
         self.max_photos = max(1, min(max_photos, 5))
         self.include_duplicate = include_duplicate
+        self.card_delay_seconds = max(0.0, card_delay_seconds)
         self.request_timeout_seconds = (TELEGRAM_REQUEST_TIMEOUT_SECONDS
                                         if request_timeout_seconds is None else request_timeout_seconds)
         self._retry_not_before = 0.0
@@ -155,6 +157,8 @@ class TelegramPublisher:
             raise TelegramPublishError("Unsupported apartment source")
         if not author_policy_eligible(seller_type=ad.seller_type, owner_listing=ad.owner_listing):
             raise TelegramPublishError("inconsistent owner metadata")
+        if is_permanently_excluded(ad.lalafo_id):
+            raise TelegramPublishError("Permanently excluded advertisement")
         if is_excluded_agency(ad):
             raise TelegramPublishError("Excluded agency source")
         if ad.rooms not in PUBLIC_ROOMS:
@@ -252,6 +256,8 @@ class TelegramPublisher:
             album_messages.extend(sent)
         if not self._photos_acknowledged(album_messages):
             raise TelegramPublishError("Apartment photos are required")
+        if self.card_delay_seconds:
+            await asyncio.sleep(self.card_delay_seconds)
         try:
             return await self._retry(
                 self.bot.send_message,
