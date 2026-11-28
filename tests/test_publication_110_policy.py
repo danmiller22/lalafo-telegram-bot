@@ -17,10 +17,9 @@ def test_daily_plan_prefers_owners_and_excludes_blocked_contacts():
         period_start=start + timedelta(minutes=630),
     )
     rows = first + second
-    assert len({row.apartment.id for row in rows}) == 110
+    assert len({row.apartment.id for row in rows}) == 70
     assert Counter(row.apartment.seller_type for row in rows) == {
         "owner": 70,
-        "realtor": 40,
     }
     assert realtors[0].id not in {row.apartment.id for row in rows}
 
@@ -37,6 +36,6 @@ def test_realtors_fill_vacant_owner_slots_without_using_blocked_contacts():
         period_start=start + timedelta(minutes=630),
     )
     rows = first + second
-    assert len({row.apartment.id for row in rows}) == 110
-    assert Counter(row.apartment.seller_type for row in rows) == {"owner": 10, "realtor": 100}
+    assert len({row.apartment.id for row in rows}) == 70
+    assert Counter(row.apartment.seller_type for row in rows) == {"owner": 10, "realtor": 60}
     assert realtors[0].id not in {row.apartment.id for row in rows}

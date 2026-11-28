@@ -50,8 +50,8 @@ def test_parses_fresh_owner_apartment_with_album_and_contact() -> None:
 
 
 @pytest.mark.parametrize("seller", ["Собственник", "Агентство", "Автор не указан"])
-@pytest.mark.parametrize("price,eligible", [(24_999,False),(25_000,True),(40_000,True),(40_001,True),(45_000,True),(45_001,False)])
-def test_telegram_whole_apartments_share_the_exact_25_to_45k_range(seller, price, eligible):
+@pytest.mark.parametrize("price,eligible", [(24_999,False),(25_000,True),(40_000,True),(40_001,True),(45_000,True),(50_000,True),(50_001,False)])
+def test_telegram_whole_apartments_share_the_exact_25_to_50k_range(seller, price, eligible):
     from app.config import Settings
     from scripts.publish_inventory import _valid
     html=_post(f"Сдам 1-комнатную квартиру. Район: ЦУМ. Цена {price} сом. {seller}. 0705 123 456")
