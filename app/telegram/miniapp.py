@@ -531,16 +531,10 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
   el("pay-weekly").onclick = () => selectPlan("weekly_7d");
   el("pay-lifetime").onclick = () => selectPlan("lifetime");
   el("pay-now").onclick = () => startPayment(selectedPlan, "pay-now");
-  el("reopen-payment").onclick = () => {{
-    if (accessApproved) return;
-    const url = paymentUrls[selectedPlan];
-    if (url) {{
-      const current = telegramContext();
-      if (current) current.openLink(url); else location.href = url;
-    }} else {{
-      startPayment(selectedPlan, "reopen-payment");
-    }}
-  }};
+  // XPAY links expire after five minutes. Revalidate with the server on every
+  // reopen: WebView timers may have been suspended while the bank app was open,
+  // and a payment may already have completed in another tab.
+  el("reopen-payment").onclick = () => startPayment(selectedPlan, "reopen-payment");
   el("access").onclick = async () => {{
     el("access").disabled = true;
     try {{
