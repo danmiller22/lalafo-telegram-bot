@@ -198,6 +198,9 @@ class Settings(BaseSettings):
     xpay_client_id: str = Field(default="", repr=False)
     xpay_client_secret: str = Field(default="", repr=False)
     xpay_service_uuid: str = ""
+    # Create the XPAY checkout while the Mini App opens, so «Оплата» only has to
+    # open the ready link. Set MINIAPP_PREFETCH_CHECKOUT=false to restore on-click creation.
+    miniapp_prefetch_checkout: bool = True
     callback_secret: str = "change-me-in-production"
 
     lalafo_proxy_url: str = ""

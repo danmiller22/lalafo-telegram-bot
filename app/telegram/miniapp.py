@@ -62,11 +62,12 @@ def verify_telegram_init_data(
         return None
 
 
-def mini_app_html(*, title: str = "Получить доступ", payment_urls: dict[str, str] | None = None) -> str:
+def mini_app_html(*, title: str = "Получить доступ", payment_urls: dict[str, str] | None = None, prefetch_checkout: bool = False) -> str:
     safe_title = escape(title)
     safe_terms = escape(TERMS_TEXT)
     # Script-safe JSON: configured public checkout URLs are not credentials.
     checkout_json = json.dumps(payment_urls or {}, ensure_ascii=True).replace("<", "\\u003c")
+    prefetch_json = "true" if prefetch_checkout else "false"
     return f"""<!doctype html>
 <html lang="ru">
 <head>
@@ -180,31 +181,28 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
   let pollingVersion = 0;
   let initializedWebApp = null;
   const paymentUrls = {checkout_json};
+  const prefetchCheckout = {prefetch_json};
   const preparedUntil = {{week: Infinity}};
   const checkoutPreparation = {{}};
   const refreshCheckoutTimer = {{}};
 
-  function prepareCheckout(plan = "weekly_7d") {{
+  function prepareCheckout(plan = "weekly_7d", silent = false) {{
     if (!offeredPlans.includes(plan)) return;
     if (accessApproved || checkoutPreparation[plan]) return checkoutPreparation[plan];
     if (paymentUrls[plan] && preparedUntil[plan] > Date.now()) return Promise.resolve();
-    const buttonId = plan === "lifetime" ? "pay-lifetime" : "pay-weekly";
-    el(buttonId).disabled = true;
-    el("reopen-payment").disabled = true;
+    // Buttons stay enabled: a click while the checkout is still being created
+    // joins this request (see startPayment) instead of starting a second one.
     checkoutPreparation[plan] = api("/miniapp/api/prepare", {{plan}}).then(data => {{
-      if (data.status === "approved" || data.status === "unavailable") {{ render(data); return; }}
+      if (!data.payment_url) {{ if (data.status) render(data); return; }}
       paymentUrls[plan] = data.payment_url;
       preparedUntil[plan] = data.expires_at_ms;
-      el(buttonId).disabled = !paymentUrls[plan];
-      el("reopen-payment").disabled = false;
       if (refreshCheckoutTimer[plan]) clearTimeout(refreshCheckoutTimer[plan]);
       refreshCheckoutTimer[plan] = setTimeout(() => {{
         paymentUrls[plan] = "";
       }}, Math.max(1000, preparedUntil[plan] - Date.now()));
     }}).catch(error => {{
-      message(error.message);
-      el(buttonId).disabled = !paymentUrls[plan];
-      el("reopen-payment").disabled = false;
+      // A failed warm-up is not fatal: the click creates the checkout itself.
+      if (!silent) message(error.message);
     }}).finally(() => {{ checkoutPreparation[plan] = null; }});
     return checkoutPreparation[plan];
   }}
@@ -360,6 +358,8 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
         return;
       }}
       message("");
+      // Start the checkout in parallel with the session lookup instead of on click.
+      if (prefetchCheckout) prepareCheckout(selectedPlan, true);
       render(await api("/miniapp/api/session", {{}}));
       sessionReady = true;
       el("pay-lifetime").disabled = false;
@@ -390,6 +390,7 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
     button.setAttribute("aria-busy", "true");
     button.setAttribute("aria-label", "Подождите");
     try {{
+      if (planSwitch) await planSwitch;
       if (!paymentUrls[plan] || preparedUntil[plan] <= Date.now()) {{
         paymentUrls[plan] = "";
         // Join an existing warm-up; otherwise /start creates the checkout in
@@ -496,10 +497,31 @@ def mini_app_html(*, title: str = "Получить доступ", payment_urls:
     el("pay-lifetime").setAttribute("aria-pressed", String(selectedPlan === "lifetime"));
     el("pay-weekly").setAttribute("aria-pressed", String(selectedPlan === "weekly_7d"));
   }}
+  let planSwitch = null;
+  function switchPrefetchedPlan(previous, plan) {{
+    // Only one XPAY checkout per customer may be live. Release the prefetched
+    // one for the old tariff (the server refuses if it was ever opened), then
+    // prefetch the newly chosen tariff.
+    const had = paymentUrls[previous] || checkoutPreparation[previous];
+    planSwitch = (async () => {{
+      try {{
+        if (had) {{
+          if (checkoutPreparation[previous]) await checkoutPreparation[previous];
+          if (paymentUrls[previous]) {{
+            const result = await api("/miniapp/api/discard", {{plan: previous}});
+            if (result.discarded) paymentUrls[previous] = "";
+          }}
+        }}
+      }} catch (_) {{}}
+      await prepareCheckout(plan, true);
+    }})().finally(() => {{ planSwitch = null; }});
+  }}
   function selectPlan(plan) {{
     if (accessApproved || apartmentUnavailable || paymentOpening || !offeredPlans.includes(plan)) return;
+    const previous = selectedPlan;
     selectedPlan = plan;
     updatePlanSelection();
+    if (prefetchCheckout && sessionReady && previous !== plan) switchPrefetchedPlan(previous, plan);
     if (sessionReady) {{ accessApproved = false; loadSelectedPlan(); }}
   }}
   async function loadSelectedPlan() {{

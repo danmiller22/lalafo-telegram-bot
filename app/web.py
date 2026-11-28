@@ -126,6 +126,9 @@ _lalafo_hourly_state: dict[str, Any] = {
     "last_result": None,
     "last_error": None,
 }
+_xpay_warm_tasks: set[asyncio.Task] = set()
+
+
 class MiniAppRequest(BaseModel):
     init_data: str
     start_param: str
@@ -162,6 +165,17 @@ async def _finik_checkout_url(settings, payments, payment_request, *, apartment_
         raise ValueError("Unsupported payment plan")
     url, _ = await create_checkout(payments.sessions, settings, request_id=payment_request.id, expected_plan=plan)
     return url
+
+
+async def _warm_xpay(settings: Any) -> None:
+    """Open the XPAY TLS connection and cache its bearer token ahead of a click."""
+    if not getattr(settings, "xpay_auto_enabled", False):
+        return
+    try:
+        from app.xpay import XPayClient
+        await XPayClient(settings).warm()
+    except Exception as exc:
+        logger.warning("XPAY warm-up failed: %s", type(exc).__name__)
 
 
 def _now() -> str:
@@ -303,6 +317,7 @@ async def _keep_service_awake() -> None:
             try:
                 response = await client.get(health_url)
                 response.raise_for_status()
+                await _warm_xpay(settings)
                 _service_keepalive_state.update(
                     state="running",
                     last_success_at=_now(),
@@ -1075,6 +1090,10 @@ async def startup() -> None:
             await load_stored_credentials(settings)
         except Exception as exc:
             logger.warning("XPAY configuration unavailable: %s", type(exc).__name__)
+    if settings.run_bot and settings.xpay_auto_enabled:
+        warm_task = asyncio.create_task(_warm_xpay(settings), name="xpay-warmup")
+        _xpay_warm_tasks.add(warm_task)
+        warm_task.add_done_callback(_xpay_warm_tasks.discard)
     if settings.run_bot:
         # Validate configuration synchronously, but do not wait for Telegram
         # network calls before FastAPI starts accepting customer webhooks.
@@ -1159,6 +1178,11 @@ async def shutdown() -> None:
     global _shutting_down
     global _lalafo_mcp_context
     _shutting_down = True
+    try:
+        from app.xpay import close_shared_client
+        await close_shared_client()
+    except Exception:
+        logger.debug("XPAY client close failed", exc_info=True)
     if _lalafo_mcp_context is not None:
         await _lalafo_mcp_context.__aexit__(None, None, None)
         _lalafo_mcp_context = None
@@ -1594,7 +1618,10 @@ async def telegram_mini_app() -> HTMLResponse:
     settings = get_settings()
     payment_urls = {} if settings.xpay_auto_enabled else {WEEK_PLAN: _finik_payment_url(settings, WEEK_PLAN)}
     return HTMLResponse(
-        mini_app_html(payment_urls=payment_urls),
+        mini_app_html(
+            payment_urls=payment_urls,
+            prefetch_checkout=bool(settings.xpay_auto_enabled and settings.miniapp_prefetch_checkout),
+        ),
         headers={
             "Cache-Control": "no-store",
             "Content-Security-Policy": (
@@ -1729,6 +1756,18 @@ async def miniapp_prepare_payment(payload: MiniAppRequest) -> dict[str, Any]:
     if created.tzinfo is None:
         created = created.replace(tzinfo=UTC)
     return {"payment_url": url, "expires_at_ms": int(created.timestamp() * 1000) + 300_000}
+
+
+@app.post("/miniapp/api/discard", include_in_schema=False)
+async def miniapp_discard_prefetched_checkout(payload: MiniAppRequest) -> dict[str, Any]:
+    """Drop a prefetched checkout the customer never opened (tariff switch)."""
+    settings, runtime, user, _ = _miniapp_context(payload)
+    plan = payload.plan or WEEKLY_PLAN
+    if plan not in OFFERED_CONTACT_PLANS or not settings.xpay_auto_enabled:
+        return {"discarded": False}
+    from app.xpay import discard_unopened_checkout
+    payments = runtime.workflow_data["payments"]
+    return {"discarded": await discard_unopened_checkout(payments.sessions, user_id=user.id, plan=plan)}
 
 
 @app.post("/miniapp/api/start", include_in_schema=False)

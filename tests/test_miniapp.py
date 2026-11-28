@@ -163,3 +163,14 @@ def test_miniapp_checkout_reopening_and_late_status_response():
         ["node", str(Path(__file__).with_name("miniapp_ui_regression.cjs"))],
         input=json.dumps(html), text=True, check=True, capture_output=True, timeout=15,
     )
+
+
+def test_miniapp_checkout_prefetch_and_tariff_switch():
+    if not shutil.which("node"):
+        import pytest
+        pytest.skip("Node.js is required for the browser script regression checks")
+    assert "const prefetchCheckout = false;" in mini_app_html()
+    subprocess.run(
+        ["node", str(Path(__file__).with_name("miniapp_prefetch_regression.cjs"))],
+        input=json.dumps(mini_app_html(prefetch_checkout=True)), text=True, check=True, capture_output=True, timeout=15,
+    )
