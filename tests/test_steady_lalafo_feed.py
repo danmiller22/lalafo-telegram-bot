@@ -236,3 +236,24 @@ def test_hidden_phone_profile_terms_never_invent_a_contact():
     assert own.phone==''
     assert own.rooms=='1'
     assert not _valid(own,Settings())[0]
+
+@pytest.mark.asyncio
+async def test_dispatch_uses_fresh_verified_json_snapshot_without_second_source_read(repositories,monkeypatch):
+    from unittest.mock import AsyncMock
+    from scripts import publish_inventory as worker
+    apartments,_,sessions=repositories
+    apartment=await apartments.upsert_discovered(make_ad())
+    await apartments.set_availability(apartment.id,status='active',checked_at=datetime.now(timezone.utc),reason='public_feed_status_2')
+    apartment=await apartments.get(apartment.id)
+    item=SimpleNamespace(id=987,apartment=apartment,window_key='ordinary')
+    queue=SimpleNamespace(finish_item=AsyncMock(),retry_item=AsyncMock())
+    bot=SimpleNamespace(session=SimpleNamespace(close=AsyncMock()))
+    publisher=SimpleNamespace(publish=AsyncMock(return_value=SimpleNamespace(message_id=900,date=datetime.now(timezone.utc))))
+    monkeypatch.setattr(worker,'Bot',lambda **kwargs:bot)
+    monkeypatch.setattr(worker,'TelegramPublisher',lambda *args,**kwargs:publisher)
+    monkeypatch.setattr('app.lalafo.public_feed.PublicFeed',lambda **kwargs:pytest.fail('Fresh JSON evidence must avoid another source request'))
+    settings=Settings(telegram_bot_token='123456:'+('a'*35),callback_secret='test-callback-secret-16',telegram_group_id=-1001)
+    assert await worker._publish_item(settings,sessions,queue,apartments,item)==0
+    publisher.publish.assert_awaited_once()
+    assert publisher.publish.await_args.kwargs=={}
+    queue.finish_item.assert_awaited_once_with(987,status='published')

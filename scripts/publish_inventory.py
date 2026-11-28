@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timedelta, timezone
 import logging
+import httpx
 
 from aiogram import Bot
 
@@ -30,7 +31,7 @@ from scripts.scrape_publish import (
 
 
 logger = logging.getLogger(__name__)
-PUBLIC_DETAIL_REFRESH_SECONDS = 10.0
+PUBLIC_DETAIL_REFRESH_SECONDS = 50.0
 ITEM_PUBLISH_TIMEOUT_SECONDS = 60.0
 # Bound one hosted tick so a run cannot spend many minutes walking stale
 # Lalafo rows. The next minute resumes from the durable queue.
@@ -177,37 +178,41 @@ async def _publish_item(settings, sessions, inventory, apartments, item) -> int 
                 return None
         ad = stored
     else:
-        try:
-            async with asyncio.timeout(PUBLIC_DETAIL_REFRESH_SECONDS):
-                async with LalafoClient(
-                    timeout=settings.http_timeout_seconds,
-                    max_retries=settings.http_max_retries,
-                    proxy_url=settings.lalafo_proxy_url,
-                ) as client:
-                    if is_repeat:
-                        payload = await client._get_json(
-                            f"https://lalafo.kg/api/search/v3/feed/details/{apartment.lalafo_id}?expand=url")
-                        if payload.get("status_id") != 2:
-                            raise LalafoNotFound("Reserve listing is no longer active")
-                        ad = parse_detail_data(payload, source_url=apartment.source_url)
-                    else:
-                        ad = await client.detail(apartment.source_url)
-        except LalafoNotFound:
-            await apartments.set_availability(apartment.id, status="unavailable",
-                checked_at=datetime.now(timezone.utc), reason="source_removed")
-            return await _skip(inventory, item.id, "not_found")
-        except (LalafoError, LalafoParseError, ValueError, TimeoutError) as exc:
-            if is_repeat:
-                await inventory.retry_item(item.id, error="reserve_verification_unknown")
+        # Fresh JSON evidence from the hosted source worker avoids a second
+        # slow HTML/proxy read immediately before sending the same apartment.
+        checked = apartment.availability_checked_at
+        fresh_evidence = (apartment.availability_status == "active"
+            and apartment.availability_reason == "public_feed_status_2"
+            and checked is not None
+            and as_utc(checked) >= datetime.now(timezone.utc)-timedelta(minutes=15))
+        if fresh_evidence:
+            ad = stored
+        else:
+            from app.lalafo.public_feed import PublicFeed, parsed_public_ad
+            try:
+                async with asyncio.timeout(PUBLIC_DETAIL_REFRESH_SECONDS):
+                    async with PublicFeed(proxy_urls=settings.lalafo_proxy_url, verify_routes=True) as source:
+                        payload = await source.detail(apartment.lalafo_id)
+                        ad = parsed_public_ad(payload)
+                await apartments.set_availability(apartment.id, status="active",
+                    checked_at=datetime.now(timezone.utc), reason="public_feed_status_2")
+            except ValueError as exc:
+                if str(exc) == "ListingNotActive":
+                    await apartments.set_availability(apartment.id, status="unavailable",
+                        checked_at=datetime.now(timezone.utc), reason="source_removed")
+                    return await _skip(inventory, item.id, "not_found")
+                await inventory.retry_item(item.id, error="source_parse_unknown")
                 return None
-            last_seen = as_utc(apartment.last_seen_at or apartment.updated_at)
-            if last_seen >= datetime.now(timezone.utc) - timedelta(
-                hours=STORED_FALLBACK_MAX_AGE_HOURS
-            ):
-                ad = stored
-                stored_fallback = True
-            else:
-                return await _skip(inventory, item.id, f"stale_{type(exc).__name__}")
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code in (404,410):
+                    await apartments.set_availability(apartment.id, status="unavailable",
+                        checked_at=datetime.now(timezone.utc), reason="source_removed")
+                    return await _skip(inventory,item.id,"not_found")
+                await inventory.retry_item(item.id,error="source_http_"+str(exc.response.status_code))
+                return None
+            except (httpx.TransportError, RuntimeError, TimeoutError):
+                await inventory.retry_item(item.id,error="source_verification_unknown")
+                return None
 
     assert ad is not None
     # Detail responses may omit media even when discovery already saved it.
