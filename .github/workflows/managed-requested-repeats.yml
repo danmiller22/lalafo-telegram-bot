@@ -1,7 +1,5 @@
 name: Publish Telegram queue and managed apartment repeats
 on:
-  schedule:
-    - cron: '*/5 * * * *'
   workflow_dispatch:
     inputs:
       managed_only:

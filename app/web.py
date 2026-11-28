@@ -875,15 +875,17 @@ async def _run_hosted_apartment_scheduler() -> None:
     # Otherwise an old healthy-sized queue can survive a code update forever.
     await _refill_saved_inventory()
     next_refill_at = datetime.now(UTC) + timedelta(minutes=DISCOVERY_RETRY_MINUTES)
-    collectors: list[asyncio.Task[None]] = []
-    if settings.hosted_inventory_collection_enabled:
-        collectors = [
-            asyncio.create_task(_run_telegram_inventory_collector(), name="telegram-inventory-collector"),
-            asyncio.create_task(_run_lalafo_inventory_collector(), name="lalafo-inventory-collector"),
-        ]
+    from app.rental_feed import run_rental_feed
+    from app.profile_originals import run_profile_originals
+    collector_specs = [(run_rental_feed, "rental-feed"), (run_profile_originals, "profile-originals")]
+    collectors = [asyncio.create_task(fn(_bot_runtime), name=name) for fn, name in collector_specs]
     try:
         while True:
             try:
+                for index, (fn, name) in enumerate(collector_specs):
+                    if collectors[index].done():
+                        logger.error("Restarting hosted collector %s", name)
+                        collectors[index] = asyncio.create_task(fn(_bot_runtime), name=name)
                 queued_count, _, _ = await _inventory_queue_status(whole_apartments_only=True)
                 now = datetime.now(UTC)
                 if queued_count < MIN_HEALTHY_PERIOD_QUEUE and now >= next_refill_at:
@@ -1357,8 +1359,18 @@ async def relay_lalafo_ingest(
     if runtime is None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Bot is starting")
     apartments = runtime.workflow_data["apartments"]
+    from scripts.publish_inventory import _valid
+    from urllib.parse import urlsplit
+    rejected = {}
     stored = 0
     for ad in payload.ads[:240]:
+        host = urlsplit(ad.source_url).hostname
+        valid, reason = _valid(ad, settings)
+        if host not in {"lalafo.kg", "www.lalafo.kg"} or ad.lalafo_id <= 0:
+            valid, reason = False, "not_lalafo"
+        if not valid:
+            rejected[reason] = rejected.get(reason, 0) + 1
+            continue
         await apartments.upsert_discovered(ad)
         stored += 1
     # The residential collector is now a discovery source, not a publisher.
@@ -1367,7 +1379,7 @@ async def relay_lalafo_ingest(
     from app.inventory import InventoryRepository
 
     queued = await InventoryRepository(apartments.sessions).schedule_period()
-    return JSONResponse({"ok": True, "stored": stored, "queued": queued})
+    return JSONResponse({"ok": True, "stored": stored, "queued": queued, "rejected": rejected})
 
 
 @app.get("/health")
@@ -1396,9 +1408,19 @@ async def health() -> JSONResponse:
         )
         # The watchdog repairs this auxiliary worker.  Never make Koyeb restart
         # the customer/payment bot merely because Lalafo itself is unavailable.
+    hosted_feed = {}
+    if _bot_runtime is not None and getattr(_bot_runtime, "workflow_data", {}).get("apartments") is not None:
+        from app.models import RentalFeedState
+        from sqlalchemy import select
+        async with _bot_runtime.workflow_data["apartments"].sessions() as session:
+            states = (await session.scalars(select(RentalFeedState).where(
+                RentalFeedState.key.in_(["primary_feed", "profile_originals", "district_medians"])
+            ))).all()
+            hosted_feed = {row.key: row.value for row in states}
     return JSONResponse(
         content={
             "status": "ok",
+            "hosted_rental_feed": hosted_feed,
             "bot": "running" if settings.run_bot else "disabled",
             "finik_auto_payment": "ready" if settings.xpay_auto_enabled else "disabled",
             "xpay_auto_payment": "ready" if settings.xpay_auto_enabled else "disabled",
@@ -1410,14 +1432,8 @@ async def health() -> JSONResponse:
                 if settings.run_bot and not _task_stopped(_payment_review_worker_task)
                 else "stopped" if settings.run_bot else "disabled"
             ),
-            "telegram_inventory": (
-                dict(_telegram_inventory_state) if settings.hosted_inventory_collection_enabled
-                else {"state": "external", "runner": "github_actions"}
-            ) if settings.run_bot and settings.hosted_apartment_scheduler_enabled else "disabled",
-            "lalafo_inventory": (
-                dict(_lalafo_inventory_state) if settings.hosted_inventory_collection_enabled
-                else {"state": "external", "runner": "github_actions"}
-            ) if settings.run_bot and settings.hosted_apartment_scheduler_enabled else "disabled",
+            "telegram_inventory": "disabled",
+            "lalafo_inventory": hosted_feed.get("primary_feed", {"state": "starting", "runner": "koyeb"}),
             "listing_validity_days": MAX_LISTING_AGE_DAYS,
             "payment_receipt_required": False,
             "contact_tariff": {"plan": WEEKLY_PLAN, "price": WEEK_PRICE, "expires": True, "days": 7, "storage": "persistent_ledger"},
@@ -1452,6 +1468,9 @@ async def health() -> JSONResponse:
             "publication_policy": {
                 "daily_target": MAX_PUBLICATIONS_PER_DAY, "start": "05:00", "end": "02:00",
                 "timezone": "Asia/Bishkek", "spacing_minutes": PUBLICATION_SPACING_MINUTES, "watermark_check": False,
+                "repeat_after_hours": 72, "allowed_sources": ["lalafo.kg"],
+                "feed_runner": "koyeb", "minimum_reserve": 20,
+                "market_preference": {"refresh": "daily", "max_median_ratio": 1.1, "minimum_samples": 5},
                 "seller_mix": {"mode": "owners_first_with_realtor_backfill", "realtor_min_percent": 0, "realtor_max_percent": 100, "unknown_included": False,
                                "realtor_daily_target": 0, "realtor_daily_max": MAX_PUBLICATIONS_PER_DAY},
                 "single_photo_duplicate_guard": True,

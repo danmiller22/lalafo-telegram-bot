@@ -53,8 +53,10 @@ def is_excluded_agency(ad: LalafoAd) -> bool:
     if is_excluded_contact(ad):
         return True
     text = " ".join((
-        ad.source_url, ad.source_title, ad.source_description,
-        json.dumps(ad.source_params, ensure_ascii=False),
-        " ".join(ad.photo_urls),
+        str(getattr(ad, "source_url", "") or ""),
+        str(getattr(ad, "source_title", "") or ""),
+        str(getattr(ad, "source_description", "") or ""),
+        json.dumps(getattr(ad, "source_params", []) or [], ensure_ascii=False),
+        " ".join(getattr(ad, "photo_urls", []) or []),
     )).casefold()
     return bool(re.search(r"(?<![\w-])salut\.kg\b|\bсалют\b|\bsalut\b", text))

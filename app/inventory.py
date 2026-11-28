@@ -17,7 +17,7 @@ from app.models import (
     ApartmentInventoryQueue,
     LalafoAutoReplyMeta,
 )
-from app.lalafo.exclusions import is_excluded_contact, EXCLUDED_CONTACT_SUFFIXES
+from app.lalafo.exclusions import is_excluded_contact, is_excluded_agency, is_permanently_excluded, EXCLUDED_CONTACT_SUFFIXES
 from app.state import normalized_district, ListingIndex, ad_fingerprint
 from app.listing_quality import district_priority, price_bucket, mix_prices, rental_value_band, price_mix_rank
 from app.listing_policy import OWNER_MAX_PRICE, PUBLIC_ROOMS, seller_policy_eligible
@@ -37,8 +37,8 @@ def _room_mix_score(room: str | None, counts: dict[str, int]) -> tuple[int, int]
     return (counts.get(room, 0) * (1 if room == "1" else 2), 0 if room == "1" else 1)
 
 REALTOR_STOCK_RESERVE_SHARE = 0.0
-MIN_PUBLICATIONS_PER_DAY = 110
-MAX_PUBLICATIONS_PER_DAY = 110
+MIN_PUBLICATIONS_PER_DAY = 100
+MAX_PUBLICATIONS_PER_DAY = 100
 # The daily target is chosen once per Bishkek date, then split across the two
 # discovery periods so retries cannot increase the day's publication volume.
 # Realtors may fill missing whole-apartment supply after ordinary authors.
@@ -47,7 +47,7 @@ MAX_NON_OWNERS_PER_DAY = MAX_PUBLICATIONS_PER_DAY
 TARGET_NON_OWNERS_PER_PERIOD = 0
 # Ordinary daily slots are fresh-only. Managed promotions have their own
 # explicitly requested repeat schedule and do not turn an old card into new.
-REPOST_AFTER_HOURS = 48
+REPOST_AFTER_HOURS = 72
 MAX_REPOSTS_PER_PERIOD = 0
 MAX_FRESH_STOCK_LOAD = 600
 HISTORICAL_STOCK_DAYS = 30
@@ -55,7 +55,7 @@ HISTORICAL_STOCK_DAYS = 30
 # workflow itself is concurrency-limited, so a short retry is safe and lets
 # Telegram reserve sources recover the queue on the next cloud tick.
 DISCOVERY_RETRY_MINUTES = 3
-MIN_HEALTHY_PERIOD_QUEUE = 12
+MIN_HEALTHY_PERIOD_QUEUE = 20
 # Scheduling a small stock densely is separate from filling the daily plan.
 DISCOVERY_PERIOD_TARGET = (MAX_PUBLICATIONS_PER_DAY + 1) // 2
 # Spread publications over the 21-hour daily window.
@@ -106,8 +106,8 @@ def next_publication_slot(now: datetime, published_count: int, last_sent: dateti
         return nominal
     remaining = MAX_PUBLICATIONS_PER_DAY - published_count
     final_slot = start + timedelta(hours=21, minutes=-MIN_PUBLICATION_GAP_MINUTES)
-    gap = max(timedelta(minutes=MIN_PUBLICATION_GAP_MINUTES),
-              (final_slot - last_sent) / remaining)
+    gap = min(timedelta(minutes=15), max(timedelta(minutes=MIN_PUBLICATION_GAP_MINUTES),
+              (final_slot - last_sent) / remaining))
     return min(nominal, last_sent + gap)
 
 
@@ -236,8 +236,6 @@ def _supported_source_filter():
     return (
         Apartment.source_url.like("https://lalafo.kg/%")
         | Apartment.source_url.like("https://www.lalafo.kg/%")
-        | Apartment.source_url.like("https://t.me/%")
-        | Apartment.source_url.like("manual://telegram/%")
     )
 
 
@@ -317,6 +315,10 @@ def plan_period(
         for item in apartments
         if item.rooms in ALLOWED_ROOMS
         and not is_excluded_contact(item)
+        and not is_permanently_excluded(getattr(item, "lalafo_id", item.id))
+        and not is_excluded_agency(item)
+        and getattr(item, "lalafo_id", item.id) > 0
+        and str(item.source_url).startswith(("https://lalafo.kg/", "https://www.lalafo.kg/"))
         and is_supported_source(item)
         and seller_policy_eligible(
             seller_type=item.seller_type,
@@ -1002,7 +1004,10 @@ class InventoryRepository:
                 await session.scalar(
                     select(func.count())
                     .select_from(ApartmentInventoryQueue)
-                    .where(ApartmentInventoryQueue.status == "publishing")
+                    .where(or_(ApartmentInventoryQueue.status == "publishing",
+                        and_(ApartmentInventoryQueue.status == "uncertain",
+                             ApartmentInventoryQueue.window_key.startswith("profile-original:"),
+                             ApartmentInventoryQueue.scheduled_at > now - timedelta(minutes=3))))
                 )
                 or 0
             )
@@ -1148,8 +1153,11 @@ class InventoryRepository:
             for apartment_id in published_ids:
                 room = room_by_id.get(apartment_id)
                 day_room_counts[room] = day_room_counts.get(room, 0) + 1
+            from app.rental_market import daily_medians, value_rank
+            medians = await daily_medians(session, now=now)
             selected_id = min(due_rows, key=lambda row: (
                 not row[4].startswith(REQUESTED_WINDOW_PREFIX),
+                value_rank(row[3], row[5], row[1], medians),
                 row[2] == "realtor" and row[5] != "1",
                 *_room_mix_score(row[5], day_room_counts),
                 row[5] in recent_rooms,

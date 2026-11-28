@@ -596,3 +596,10 @@ class PersonalMatchReservation(Base):
     )
     delivery_id: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+
+class RentalFeedState(Base):
+    """Durable daily market snapshot and deduplicated feed-monitor state."""
+    __tablename__ = "rental_feed_state"
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)

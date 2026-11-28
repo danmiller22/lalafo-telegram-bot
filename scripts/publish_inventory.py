@@ -14,7 +14,7 @@ from app.lalafo.client import LalafoClient, LalafoError, LalafoNotFound
 from app.lalafo.parser import LalafoParseError, is_allowed, parse_detail_data
 from app.payments.repository import ApartmentRepository
 from app.security import TokenSigner
-from app.lalafo.exclusions import is_excluded_agency
+from app.lalafo.exclusions import is_excluded_agency, is_permanently_excluded
 from app.telegram.publisher import TelegramPublishAmbiguousError, TelegramPublishError, TelegramPublisher
 from app.telegram.formatting import is_supported_source
 from app.listing_policy import listing_policy_eligible
@@ -39,6 +39,8 @@ STORED_FALLBACK_MAX_AGE_HOURS = 30 * 24
 
 
 def _valid(ad, settings, *, allow_chat_contact=False) -> tuple[bool, str]:
+    if is_permanently_excluded(ad.lalafo_id):
+        return False, "permanently_excluded"
     if not is_supported_source(ad):
         return False, "unsupported_source"
     if is_excluded_agency(ad):
@@ -215,20 +217,11 @@ async def _publish_item(settings, sessions, inventory, apartments, item) -> int 
             return await _skip(inventory, item.id, "missing_source_photos")
         ad = ad.model_copy(update={"photo_urls": stored.photo_urls})
     valid, reason = _valid(ad, settings, allow_chat_contact=bool(binding))
-    # Hand-picked cards may legitimately have a different budget/room count;
-    # source, whole-apartment, structure and lodging protections still apply.
-    if is_requested and reason in {
-        "rooms", "min_price", "max_price", "price", "seller_policy"
-    }:
-        valid = (is_supported_source(ad) and not is_excluded_agency(ad)
-                 and bool(ad.phone)
-                 and ad.price > 0 and ad.no_subletting and not is_substandard_structure(ad))
     if not valid:
         return await _skip(inventory, item.id, reason)
-    if not is_requested and await apartments.is_duplicate(
+    if await apartments.is_duplicate(
         ad,
-        repost_before=(datetime.now(timezone.utc) - timedelta(hours=REPOST_AFTER_HOURS))
-        if is_repeat else None,
+        repost_before=(datetime.now(timezone.utc) - timedelta(hours=REPOST_AFTER_HOURS)),
     ):
         return await _skip(inventory, item.id, "duplicate")
 
@@ -256,6 +249,7 @@ async def _publish_item(settings, sessions, inventory, apartments, item) -> int 
         bot_username=settings.telegram_bot_username,
         support_url=settings.support_bot_url,
         max_photos=settings.max_photos_per_apartment,
+        card_delay_seconds=settings.showcase_card_interval_seconds,
     )
     try:
         message = await publisher.publish(apartment.id, ad, **({"archived": True} if archived else {}))
